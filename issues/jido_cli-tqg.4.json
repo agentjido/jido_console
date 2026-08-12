@@ -2,6 +2,7 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-12T21:42:13Z",
   "created": "2026-08-12T17:14:32Z",
   "description": "# Phase outcome\n\nExtension foundation. Entry: public client, policy, sequence, and execution seams. Exit: data-only requests resolve to trusted built-in or process extensions with lifecycle events and project trust.\n\n# Ranked child stories\n\n1. `jido_cli-tqg.4.1` — Add data-only extension requests to agent documents (P1)\n2. `jido_cli-tqg.4.2` — Define trusted extension identity and permission bindings (P1)\n3. `jido_cli-tqg.4.3` — Emit versioned portable extension lifecycle events (P1)\n4. `jido_cli-tqg.4.4` — Add the built-in Jidoka extension host (P1)\n5. `jido_cli-tqg.4.5` — Specify the process-extension protocol v1 (P2)\n6. `jido_cli-tqg.4.6` — Host trusted process extensions through the extension host (P2)\n7. `jido_cli-tqg.4.7` — Resolve trusted extensions and project trust in both CLI modes (P2)\n\n# Status rule\n\nAll child stories remain open. Story dependency links, not priority alone, control implementation order.",
   "id": "jido_cli-tqg.4",
@@ -12,8 +13,8 @@
   ],
   "parent": "jido_cli-tqg",
   "priority": 1,
-  "status": "open",
+  "status": "closed",
   "title": "Phase 3: Define the extension host before extensions",
   "type": "epic",
-  "updated_at": "2026-08-12T17:19:55Z"
+  "updated_at": "2026-08-12T21:42:13Z"
 }
