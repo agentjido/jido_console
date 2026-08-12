@@ -1,7 +1,8 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-tqg.7.18"
+    "jido_cli-tqg.7.18",
+    "jido_cli-tqg.7.19"
   ],
   "blocks": [],
   "created": "2026-08-12T22:14:06Z",
