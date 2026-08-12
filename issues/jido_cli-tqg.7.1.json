@@ -6,6 +6,7 @@
     "jido_cli-tqg.6.4"
   ],
   "blocks": [
+    "jido_cli-tqg.7.16",
     "jido_cli-tqg.7.2",
     "jido_cli-tqg.7.3"
   ],
@@ -23,5 +24,5 @@
   "status": "open",
   "title": "Publish against the approved Hex Jidoka dependency",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:02Z"
+  "updated_at": "2026-08-12T22:15:05Z"
 }
