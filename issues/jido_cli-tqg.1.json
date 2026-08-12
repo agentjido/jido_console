@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:32Z",
+  "description": "Make the CLI use the checked-out Jidoka package and remove the known private cancellation dependency. Exit when public-client tests guard the boundary.",
+  "id": "jido_cli-tqg.1",
+  "labels": [],
+  "parent": "jido_cli-tqg",
+  "priority": 0,
+  "status": "open",
+  "title": "Phase 0: Establish the strict public Jidoka client",
+  "type": "epic",
+  "updated_at": "2026-08-12T17:14:32Z"
+}
