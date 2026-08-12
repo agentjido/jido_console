@@ -5,7 +5,11 @@
   "created": "2026-08-12T17:14:32Z",
   "description": "Build the default coding use case as replaceable extension registrations over the policy and execution boundaries.",
   "id": "jido_cli-tqg.5",
-  "labels": [],
+  "labels": [
+    "coding-pack",
+    "interactive",
+    "security"
+  ],
   "parent": "jido_cli-tqg",
   "priority": 1,
   "status": "open",
