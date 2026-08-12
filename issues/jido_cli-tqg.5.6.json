@@ -3,7 +3,8 @@
   "blocked_by": [
     "jido_cli-tqg.4.7",
     "jido_cli-tqg.5.2",
-    "jido_cli-tqg.5.4"
+    "jido_cli-tqg.5.4",
+    "jido_cli-tqg.5.5"
   ],
   "blocks": [],
   "created": "2026-08-12T17:14:36Z",
@@ -20,5 +21,5 @@
   "status": "open",
   "title": "Make the default coding setup selectable and context-aware",
   "type": "task",
-  "updated_at": "2026-08-12T17:14:41Z"
+  "updated_at": "2026-08-12T17:14:42Z"
 }
