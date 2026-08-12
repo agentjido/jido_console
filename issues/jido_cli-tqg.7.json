@@ -5,7 +5,13 @@
   "created": "2026-08-12T22:08:48Z",
   "description": "# Phase outcome\n\nJido ships as one target-specific package that contains a private Erlang/OTP runtime. The package provides the TUI, `run`, `eval`, and the optional foreground daemon. Native release jobs publish tested archives, metadata, checksums, and notices. The distribution channels use the same command and version contract.\n\n# Entry gate\n\nStart this phase after the current coding-pack and deterministic-automation terminal stories are complete: `jido_cli-tqg.5.7`, `jido_cli-tqg.6.2`, and `jido_cli-tqg.6.4`.\n\n# Decision gates\n\n- Define daemon protocol v1 before transport implementation.\n- Run one bounded Burrito spike before package implementation.\n- Keep only Burrito or the custom Mix release fallback after the spike.\n- Pass the first native target matrix before service and distribution hardening.\n\n# Source\n\nUse `RELEASE_PLAN.md` as the product and release contract. If a task must change that contract, update the document in the same task and record the decision.\n\n# Status rule\n\nAll child tasks remain open. Dependency links control implementation order. Manual TUI checks are release gates. They are not substitutes for deterministic automated checks.",
   "id": "jido_cli-tqg.7",
-  "labels": [],
+  "labels": [
+    "cli",
+    "cross-repo",
+    "foundation",
+    "packaging",
+    "release"
+  ],
   "parent": "jido_cli-tqg",
   "priority": 1,
   "status": "open",
