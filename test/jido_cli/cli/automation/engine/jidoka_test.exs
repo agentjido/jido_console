@@ -6,7 +6,108 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
   alias Jidoka.Agent.Spec.Operation
   alias Jidoka.Cancellation
   alias Jidoka.Effect
+  alias Jidoka.ExecutionEnvironment
+  alias Jidoka.ExecutionEnvironment.AdapterCapabilities
+  alias Jidoka.ExecutionEnvironment.Binding
+  alias Jidoka.ExecutionEnvironment.Checkpoint
+  alias Jidoka.ExecutionEnvironment.EnforcementEvidence
+  alias Jidoka.ExecutionEnvironment.PolicyRequest
+  alias Jidoka.ExecutionEnvironment.Registration
+  alias Jidoka.ExecutionEnvironment.SecurityProfile
+  alias Jidoka.Policy.Decision
   alias Jidoka.Runtime.LocalOperations
+
+  @profile_digest "sha256:" <> String.duplicate("a", 64)
+  @image_digest "sha256:" <> String.duplicate("b", 64)
+
+  defmodule EnvironmentAdapter do
+    @behaviour Jidoka.ExecutionEnvironment.Adapter
+
+    alias Jidoka.ExecutionEnvironment
+    alias Jidoka.ExecutionEnvironment.Binding
+    alias Jidoka.ExecutionEnvironment.Checkpoint
+    alias Jidoka.ExecutionEnvironment.EnforcementEvidence
+
+    @impl true
+    def open(profile, _request, opts) do
+      record(opts, :open)
+
+      binding =
+        Binding.new!(
+          adapter_id: profile.adapter_id,
+          adapter_version: "1",
+          profile_id: profile.profile_id,
+          profile_digest: profile.digest,
+          resource_ref: Keyword.get(opts, :resource_ref, "automation-cell"),
+          state: :available
+        )
+
+      {:ok, binding, evidence()}
+    end
+
+    @impl true
+    def acquire(binding, opts) do
+      record(opts, :acquire)
+      {:ok, %{resource_ref: binding.resource_ref}, evidence()}
+    end
+
+    @impl true
+    def checkpoint(_handle, %Binding{} = binding, opts) do
+      record(opts, :checkpoint)
+      binding = %Binding{binding | revision: binding.revision + 1}
+
+      checkpoint =
+        Checkpoint.new!(
+          checkpoint_ref: "checkpoint-#{binding.resource_ref}-#{binding.revision}",
+          binding_revision: binding.revision,
+          profile_digest: binding.profile_digest,
+          evidence_digest: ExecutionEnvironment.digest(evidence()),
+          preserves: %{"files" => true},
+          forkable: false,
+          created_at_ms: binding.revision
+        )
+
+      {:ok, binding, checkpoint, evidence()}
+    end
+
+    @impl true
+    def restore(binding, _checkpoint, opts) do
+      record(opts, :restore)
+      {:ok, binding, evidence()}
+    end
+
+    @impl true
+    def fork(_binding, _checkpoint, _opts), do: {:error, :unsupported}
+
+    @impl true
+    def close(_handle, opts) do
+      record(opts, :close)
+      {:ok, evidence()}
+    end
+
+    @impl true
+    def cleanup(_binding, opts) do
+      record(opts, :cleanup)
+      {:ok, evidence()}
+    end
+
+    defp evidence do
+      EnforcementEvidence.new!(
+        status: :confirmed,
+        adapter_id: "test.cli-environment",
+        backend: "test-backend",
+        isolation: :container,
+        network: :disabled,
+        workspace: :ephemeral,
+        image_digest: "sha256:" <> String.duplicate("b", 64),
+        applied_limits: %{},
+        checkpoint: %{"supported" => true, "forkable" => false},
+        observed_at_ms: 10
+      )
+    end
+
+    defp record(opts, event), do: Agent.update(Keyword.fetch!(opts, :probe), &[event | &1])
+  end
 
   test "runs ordered turns in one session and carries prior agent state" do
     {:ok, calls} = Agent.start_link(fn -> 0 end)
@@ -372,6 +473,113 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
     assert Agent.get(calls, & &1) == 2
   end
 
+  test "passes one resolved environment to the public sequence for the full cell" do
+    {:ok, probe} = Agent.start_link(fn -> [] end)
+    parent = self()
+
+    llm = fn _intent, _journal, context ->
+      send(parent, {:cell_environment, Jidoka.Context.runtime(context)})
+      {:ok, %{type: :final, content: "done"}}
+    end
+
+    spec =
+      Spec.new!(
+        id: "profiled_cell_agent",
+        model: "openai:gpt-4o-mini",
+        instructions: "Answer in the constrained environment."
+      )
+
+    profiled_cell =
+      cell(spec, [
+        %{id: "one", input: "First", context: %{}, assertions: %{}},
+        %{id: "two", input: "Second", context: %{}, assertions: %{}}
+      ])
+      |> Map.put(:runtime_opts, llm: llm)
+      |> Map.put(:execution_environment, resolved_environment())
+
+    result =
+      Engine.run(profiled_cell,
+        execution_environment_policy: allow_environment_policy(),
+        execution_environment_adapter_opts: [probe: probe]
+      )
+
+    assert result.execution.status == :ok, inspect(result.error)
+    assert Enum.map(result.turns, & &1.status) == [:ok, :ok]
+
+    assert_receive {:cell_environment,
+                    %{execution_environment: %{handle: %Jidoka.ExecutionEnvironment.Manager.Handle{}}}}
+
+    assert_receive {:cell_environment,
+                    %{execution_environment: %{handle: %Jidoka.ExecutionEnvironment.Manager.Handle{}}}}
+
+    assert environment_events(probe) == [
+             :open,
+             :acquire,
+             :checkpoint,
+             :close,
+             :acquire,
+             :checkpoint,
+             :close,
+             :cleanup
+           ]
+  end
+
+  test "fails a profiled cell before execution when trusted policy is absent" do
+    {:ok, probe} = Agent.start_link(fn -> [] end)
+    parent = self()
+
+    spec =
+      Spec.new!(
+        id: "missing_policy_agent",
+        model: "openai:gpt-4o-mini",
+        instructions: "Answer."
+      )
+
+    profiled_cell =
+      spec
+      |> cell(%{id: "one", input: "Blocked", context: %{}, assertions: %{}})
+      |> Map.put(
+        :runtime_opts,
+        llm: fn _intent, _journal, _context ->
+          send(parent, :profiled_llm_called)
+          {:ok, %{type: :final, content: "unsafe"}}
+        end
+      )
+      |> Map.put(:execution_environment, resolved_environment())
+
+    result = Engine.run(profiled_cell, execution_environment_adapter_opts: [probe: probe])
+
+    assert result.execution.status == :error
+    refute_received :profiled_llm_called
+    assert environment_events(probe) == []
+  end
+
+  test "closes and cleans the cell environment after a model error" do
+    {:ok, probe} = Agent.start_link(fn -> [] end)
+
+    spec =
+      Spec.new!(
+        id: "profiled_error_agent",
+        model: "openai:gpt-4o-mini",
+        instructions: "Answer."
+      )
+
+    profiled_cell =
+      spec
+      |> cell(%{id: "one", input: "Fail", context: %{}, assertions: %{}})
+      |> Map.put(:runtime_opts, llm: fn _intent, _journal, _context -> {:error, :offline} end)
+      |> Map.put(:execution_environment, resolved_environment())
+
+    result =
+      Engine.run(profiled_cell,
+        execution_environment_policy: allow_environment_policy(),
+        execution_environment_adapter_opts: [probe: probe]
+      )
+
+    assert result.execution.status == :error
+    assert environment_events(probe) == [:open, :acquire, :close, :cleanup]
+  end
+
   test "supports unscored turns and injected clocks" do
     llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "answer"}} end
 
@@ -457,6 +665,50 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
       wait_for_cancellation(context, attempts_left - 1)
     end
   end
+
+  defp resolved_environment do
+    request = PolicyRequest.new!(profile_id: "restricted")
+
+    profile =
+      SecurityProfile.new!(
+        profile_id: "restricted",
+        revision: 1,
+        digest: @profile_digest,
+        adapter_id: "test.cli-environment",
+        required_isolation: :container,
+        required_network: :disabled,
+        required_workspace: :ephemeral,
+        required_image_digest: @image_digest,
+        checkpoint_required: true,
+        retention: :ephemeral
+      )
+
+    capabilities =
+      AdapterCapabilities.new!(
+        adapter_id: "test.cli-environment",
+        adapter_version: "1",
+        isolations: [:container],
+        networks: [:disabled],
+        workspaces: [:ephemeral],
+        immutable_image_evidence: true,
+        checkpoint: true
+      )
+
+    registration =
+      Registration.new!(
+        profile: profile,
+        adapter: EnvironmentAdapter,
+        capabilities: capabilities
+      )
+
+    %{request: request, registration: registration}
+  end
+
+  defp allow_environment_policy do
+    fn _request, _context -> {:ok, Decision.new!(outcome: :allow, rule_id: "test.allow")} end
+  end
+
+  defp environment_events(probe), do: Agent.get(probe, &Enum.reverse/1)
 
   defp sources do
     %{

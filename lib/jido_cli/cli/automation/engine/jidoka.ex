@@ -281,13 +281,25 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
   defp sequence_runtime_opts(cell, opts) do
     cell.runtime_opts
-    |> Keyword.merge(Keyword.take(opts, [:id_generator]))
+    |> Keyword.merge(
+      Keyword.take(opts, [
+        :id_generator,
+        :execution_environment_policy,
+        :execution_environment_adapter_opts
+      ])
+    )
+    |> maybe_put_execution_environment(Map.get(cell, :execution_environment))
     |> Keyword.put(:sequence_request_id, "cell-" <> cell.cell_id)
     |> Keyword.put(:sequence_metadata, %{
       "run_id" => cell.run_id,
       "cell_id" => cell.cell_id
     })
   end
+
+  defp maybe_put_execution_environment(opts, nil), do: opts
+
+  defp maybe_put_execution_environment(opts, environment),
+    do: Keyword.put(opts, :execution_environment, environment)
 
   defp utc_now(opts) do
     case Keyword.get(opts, :utc_now) do

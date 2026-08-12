@@ -132,6 +132,12 @@ commands, images, mounts, network rules, adapter modules, backend options, or
 runtime option maps. Invalid and unknown profiles fail before artifact output
 starts and return exit status 64.
 
+For a profiled automation cell, the CLI passes only the resolved public data to
+Jidoka. Jidoka owns one environment manager for all ordered turns in that cell.
+It acquires and releases transient handles for each turn, and it closes the
+environment after completion, error, or cancellation. The CLI does not inspect
+or store an adapter handle.
+
 ## Run an evaluation suite
 
 An evaluation suite creates this matrix:
