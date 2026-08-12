@@ -5,7 +5,10 @@
   "created": "2026-08-12T17:14:32Z",
   "description": "Make the CLI use the checked-out Jidoka package and remove the known private cancellation dependency. Exit when public-client tests guard the boundary.",
   "id": "jido_cli-tqg.1",
-  "labels": [],
+  "labels": [
+    "cli",
+    "foundation"
+  ],
   "parent": "jido_cli-tqg",
   "priority": 0,
   "status": "open",
