@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_cli-tqg.1.1",
     "jido_cli-tqg.2.1"
@@ -19,8 +19,8 @@
   ],
   "parent": "jido_cli-tqg.2",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "Run automation cells through the public Jidoka sequence",
   "type": "task",
-  "updated_at": "2026-08-12T17:15:49Z"
+  "updated_at": "2026-08-12T17:51:19Z"
 }
