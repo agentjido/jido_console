@@ -4,7 +4,8 @@
     "jido_cli-tqg.7.17",
     "jido_cli-tqg.7.19",
     "jido_cli-tqg.7.20",
-    "jido_cli-tqg.7.21"
+    "jido_cli-tqg.7.21",
+    "jido_cli-tqg.7.22"
   ],
   "blocks": [],
   "created": "2026-08-12T22:14:07Z",
@@ -22,5 +23,5 @@
   "status": "open",
   "title": "Publish coordinated signed GitHub and Hex releases",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:09Z"
+  "updated_at": "2026-08-12T22:15:10Z"
 }
