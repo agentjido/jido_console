@@ -17,8 +17,8 @@
   ],
   "parent": "jido_cli-tqg.3",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "Resolve trusted security profiles and fail closed",
   "type": "task",
-  "updated_at": "2026-08-12T17:15:50Z"
+  "updated_at": "2026-08-12T19:47:49Z"
 }
