@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:37Z",
+  "description": "The full researched story description is being attached.",
+  "id": "jido_cli-tqg.6.2",
+  "labels": [],
+  "parent": "jido_cli-tqg.6",
+  "priority": 2,
+  "status": "open",
+  "title": "Expose replay through trusted automation profiles",
+  "type": "task",
+  "updated_at": "2026-08-12T17:14:37Z"
+}
