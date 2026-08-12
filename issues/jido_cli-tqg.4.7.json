@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:35Z",
+  "description": "The full researched story description is being attached.",
+  "id": "jido_cli-tqg.4.7",
+  "labels": [],
+  "parent": "jido_cli-tqg.4",
+  "priority": 2,
+  "status": "open",
+  "title": "Resolve trusted extensions and project trust in both CLI modes",
+  "type": "task",
+  "updated_at": "2026-08-12T17:14:35Z"
+}
