@@ -8,7 +8,8 @@
   ],
   "blocks": [
     "jido_cli-tqg.7.18",
-    "jido_cli-tqg.7.26"
+    "jido_cli-tqg.7.26",
+    "jido_cli-tqg.7.28"
   ],
   "created": "2026-08-12T22:12:34Z",
   "description": "## Outcome\n\nRelease tooling generates validated `release.json`, SHA-256 checksums, a software bill of materials when supported, and build provenance for each final artifact.\n\n## Work\n\n1. Generate internal release metadata from the single version, target, runtime, protocol, builder, and dependency inputs.\n2. Generate stable file digests inside the package and external SHA-256 checksums after the final archive or signature step.\n3. Create one release-level metadata document that maps immutable artifact names to targets and checksums.\n4. Produce an SBOM in a standard format when the selected toolchain supports it.\n5. Retain native runner, source commit, action, compiler, OTP, and signing provenance.\n6. Validate all documents before upload and make signing order explicit.\n7. Keep secrets, temporary paths, tokens, and runner-specific private data out of public metadata.\n\n## Acceptance criteria\n\n- [ ] `checksums.txt` verifies every published archive and no extra file.\n- [ ] Each `release.json` passes the artifact contract schema.\n- [ ] Metadata versions and targets match archive names and command output.\n- [ ] Checksums are created after the last content-changing step.\n- [ ] Provenance links every artifact to a source commit and native build job.\n- [ ] The release states clearly when SBOM or signing evidence is unavailable.\n\n## Tests\n\nTest deterministic metadata, checksum verification, tampering, wrong target, stale version, missing notice, and secret redaction.\n\n## Non-goals\n\nDo not sign artifacts or upload release assets in this task.",
@@ -25,5 +26,5 @@
   "status": "open",
   "title": "Generate release metadata, checksums, SBOM, and provenance",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:09Z"
+  "updated_at": "2026-08-12T22:15:11Z"
 }
