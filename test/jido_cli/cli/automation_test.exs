@@ -247,6 +247,7 @@ defmodule Jido.Cli.AutomationTest do
     assert length(records) == 4
     assert Enum.all?(records, &(&1["schema"] == "jido.case-result"))
     assert Enum.all?(records, &(&1["execution_environment"] == %{"status" => "not_requested"}))
+    assert Enum.all?(records, &(&1["runtime_limits"]["status"] == "within"))
     assert File.regular?(Path.join(output, "manifest.json"))
     assert File.regular?(Path.join(output, "summary.json"))
     assert length(decode_jsonl(File.read!(Path.join(output, "results.jsonl")))) == 4
@@ -254,6 +255,11 @@ defmodule Jido.Cli.AutomationTest do
     assert length(decode_jsonl(File.read!(Path.join(output, "by-agent/b.jsonl")))) == 2
 
     manifest = output |> Path.join("manifest.json") |> File.read!() |> Jason.decode!()
+    summary = output |> Path.join("summary.json") |> File.read!() |> Jason.decode!()
+
+    assert manifest["runtime_limits"]["status"] == "configured"
+    assert summary["runtime_limits"]["status"] == "within"
+    assert summary["runtime_limits"]["observed"]["total_tokens"] == 40
 
     assert Enum.all?(
              manifest["cells"],

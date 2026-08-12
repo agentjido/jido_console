@@ -284,6 +284,46 @@ suite:
 All relative paths start at the file that contains the path. You can also use a
 model entry with `source: agent` to keep the model from each agent file.
 
+### Automation limits
+
+Every suite uses trusted runtime ceilings. A suite can reduce a ceiling under
+`run.limits`; it cannot raise one:
+
+```yaml
+run:
+  jobs: 4
+  limits:
+    max_cells: 100
+    max_turns_per_cell: 8
+    cell_timeout_ms: 120000
+    suite_timeout_ms: 900000
+    max_total_tokens: 250000
+    max_total_cost: 25.0
+    provider_concurrency:
+      openai: 2
+      anthropic: 1
+```
+
+The host can set lower trusted values with `:automation_limit_ceiling`. The
+default ceilings are 10,000 cells, 100 turns per cell, five minutes per cell,
+one hour per suite, 10 million reported tokens, and 1,000 units of reported
+provider cost. The default provider concurrency is `run.jobs`. All values must
+be positive. Unknown values, unsafe values, an oversized matrix, and a request
+above a host ceiling fail with exit status 64 before artifact creation.
+
+Cells use both the total job limit and the limit for their model provider. The
+admission order is deterministic. A cell and its model, tool, extension, and
+execution-environment calls use the applied cell deadline. A suite deadline or
+reported usage budget stops new admission. Active cells finish by default. A
+trusted host can set `:cancel_active_on_limit` when it must cancel them.
+
+The manifest, case results, and summary contain `runtime_limits` evidence. It
+separates requested, applied, observed, and exceeded values. Provider usage is
+reported evidence; the CLI does not look up prices. A provider that does not
+report a usage fact cannot add that fact to the observed budget. A runtime
+limit reached during execution gives exit status 1 and lists cells that did not
+start.
+
 ## Output contract
 
 Automated commands write one `jido.case-result` JSON object per physical line

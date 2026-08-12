@@ -39,6 +39,10 @@ defmodule Jido.Cli.Automation.Contract do
   @spec capability_replay_schema() :: Zoi.schema()
   def capability_replay_schema, do: capability_replay_schema(:error)
 
+  @doc "Returns the additive automation runtime-limit evidence schema."
+  @spec runtime_limits_schema() :: Zoi.schema()
+  def runtime_limits_schema, do: runtime_limits_schema(:error)
+
   @doc "Returns the strict cell-evaluation schema used by case-result version 1."
   @spec evaluation_schema() :: Zoi.schema()
   def evaluation_schema, do: evaluation_schema(:error)
@@ -113,6 +117,7 @@ defmodule Jido.Cli.Automation.Contract do
         execution: execution_schema(keys),
         execution_environment: execution_environment_schema(keys) |> Zoi.optional(),
         capability_replay: capability_replay_schema(keys) |> Zoi.optional(),
+        runtime_limits: runtime_limits_schema(keys) |> Zoi.optional(),
         evaluation: evaluation_schema(keys),
         turns: Zoi.array(turn_schema(keys)),
         usage: usage_schema(),
@@ -227,6 +232,73 @@ defmodule Jido.Cli.Automation.Contract do
         class: Zoi.enum(["llm", "operation", "policy", "environment"]) |> Zoi.optional(),
         action: non_empty_string() |> Zoi.optional(),
         occurrence: positive_integer() |> Zoi.optional()
+      },
+      keys
+    )
+  end
+
+  defp runtime_limits_schema(keys) do
+    object(
+      %{
+        status: atom_enum([:configured, :within, :exceeded]),
+        requested: runtime_limit_values_schema(keys, :requested),
+        applied: runtime_limit_values_schema(keys, :applied),
+        observed: runtime_limit_observed_schema(keys),
+        exceeded: runtime_limit_exceeded_schema(keys) |> Zoi.nullish()
+      },
+      keys
+    )
+  end
+
+  defp runtime_limit_values_schema(keys, mode) do
+    fields = %{
+      max_cells: positive_integer(),
+      max_turns_per_cell: positive_integer(),
+      cell_timeout_ms: positive_integer(),
+      suite_timeout_ms: positive_integer(),
+      max_total_tokens: positive_integer(),
+      max_total_cost: Zoi.number() |> Zoi.gt(0),
+      provider_concurrency: Zoi.map(non_empty_string(), positive_integer(), [])
+    }
+
+    fields =
+      if mode == :requested, do: Map.new(fields, fn {key, schema} -> {key, Zoi.optional(schema)} end), else: fields
+
+    object(fields, keys)
+  end
+
+  defp runtime_limit_observed_schema(keys) do
+    object(
+      %{
+        cells: non_negative_integer(),
+        turns: non_negative_integer(),
+        duration_ms: non_negative_integer(),
+        total_tokens: non_negative_integer(),
+        total_cost: non_negative_number()
+      },
+      keys
+    )
+  end
+
+  defp runtime_limit_exceeded_schema(keys) do
+    object(
+      %{
+        kind:
+          atom_enum([
+            :max_cells,
+            :max_turns_per_cell,
+            :cell_timeout,
+            :suite_timeout,
+            :model_turns,
+            :turn_timeout,
+            :capability_timeout,
+            :sequence_timeout,
+            :total_tokens,
+            :total_cost,
+            :environment
+          ]),
+        limit: non_negative_number(),
+        observed: non_negative_number()
       },
       keys
     )
@@ -443,6 +515,7 @@ defmodule Jido.Cli.Automation.Contract do
         suite_sha256: non_empty_string(),
         versions: versions_schema(keys),
         matrix: matrix_schema(keys),
+        runtime_limits: runtime_limits_schema(keys) |> Zoi.optional(),
         cells: Zoi.array(manifest_cell_schema(keys)),
         extensions: extensions_schema() |> Zoi.optional()
       },
@@ -503,6 +576,7 @@ defmodule Jido.Cli.Automation.Contract do
         counts: counts_schema(keys),
         duration_ms: non_negative_integer(),
         not_started: Zoi.array(non_empty_string()) |> Zoi.optional(),
+        runtime_limits: runtime_limits_schema(keys) |> Zoi.optional(),
         extensions: extensions_schema() |> Zoi.optional()
       },
       keys

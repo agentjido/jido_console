@@ -3,7 +3,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
   @behaviour Jido.Cli.Automation.Engine
 
-  alias Jido.Cli.Automation.{Replay, Result}
+  alias Jido.Cli.Automation.{Limits, Replay, Result}
   alias Jido.Cli.Extensions
   alias Jidoka.Effect.OperationResult
   alias Jidoka.Eval
@@ -122,7 +122,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
   @impl true
   def await(%Request{} = request, opts) do
-    await_opts = [timeout: Keyword.get(opts, :automation_await_timeout, :infinity)]
+    await_opts = [timeout: await_timeout(request.cell, opts)]
 
     result =
       case Jidoka.await(request.sequence, await_opts) do
@@ -242,31 +242,47 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
     case sequence.status do
       :completed ->
-        completed_result(cell, turns, sequence.session.environment, started_at, duration_ms, extension_results)
+        completed_result(
+          cell,
+          turns,
+          sequence.session.environment,
+          started_at,
+          duration_ms,
+          extension_results,
+          sequence.limits
+        )
 
       status when status in [:error, :hibernated, :cancelled] ->
         terminal = sequence.terminal
         turn = Enum.at(cell.scenario.turns, terminal.index - 1)
 
-        interrupted =
-          interrupted_turn(
-            turn,
-            status,
-            terminal_reason(terminal),
-            started_ms,
-            opts,
-            terminal.request_id
-          )
+        terminal_turns =
+          if Enum.any?(sequence.steps, &(&1.index == terminal.index)) do
+            turns
+          else
+            turns ++
+              [
+                interrupted_turn(
+                  turn,
+                  status,
+                  terminal_reason(terminal),
+                  started_ms,
+                  opts,
+                  terminal.request_id
+                )
+              ]
+          end
 
         failed_result(
           cell,
           status,
-          turns ++ [interrupted],
+          terminal_turns,
           terminal_reason(terminal),
           started_at,
           duration_ms,
           sequence.session.environment,
-          extension_results
+          extension_results,
+          sequence.limits
         )
     end
   end
@@ -371,7 +387,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
   defp terminal_reason(%Sequence.Terminal{reason: reason}), do: reason
 
-  defp completed_result(cell, turns, environment, started_at, duration_ms, extension_results) do
+  defp completed_result(cell, turns, environment, started_at, duration_ms, extension_results, limits) do
     evaluation = Result.evaluation(turns, :ok)
 
     Result.new(cell,
@@ -386,11 +402,22 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       turns: turns,
       usage: Result.usage(turns),
       error: nil,
-      extensions: extension_results
+      extensions: extension_results,
+      runtime_limit_evidence: limits
     )
   end
 
-  defp failed_result(cell, status, turns, reason, started_at, duration_ms, environment \\ nil, extension_results \\ %{}) do
+  defp failed_result(
+         cell,
+         status,
+         turns,
+         reason,
+         started_at,
+         duration_ms,
+         environment \\ nil,
+         extension_results \\ %{},
+         limits \\ nil
+       ) do
     Result.new(cell,
       execution: %{
         status: status,
@@ -404,7 +431,9 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       turns: turns,
       usage: Result.usage(turns),
       error: Result.error(reason),
-      extensions: extension_results
+      extensions: extension_results,
+      runtime_limit_evidence: limits,
+      runtime_limit_error: reason
     )
   end
 
@@ -424,6 +453,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       ])
     )
     |> maybe_put_execution_environment(cell)
+    |> maybe_put_runtime_limits(cell)
     |> Keyword.put(:sequence_request_id, "cell-" <> cell.cell_id)
     |> Keyword.put(:sequence_metadata, %{
       "run_id" => cell.run_id,
@@ -438,6 +468,17 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
     do: Keyword.put(opts, :execution_environment, environment)
 
   defp maybe_put_execution_environment(opts, _cell), do: opts
+
+  defp maybe_put_runtime_limits(opts, %{runtime_limits: limits}),
+    do: Keyword.put(opts, :runtime_limits, Limits.jidoka(limits))
+
+  defp maybe_put_runtime_limits(opts, _cell), do: opts
+
+  defp await_timeout(%{runtime_limits: limits}, opts) do
+    min(Keyword.get(opts, :automation_await_timeout, Limits.cell_timeout_ms(limits)), Limits.cell_timeout_ms(limits))
+  end
+
+  defp await_timeout(_cell, opts), do: Keyword.get(opts, :automation_await_timeout, :infinity)
 
   defp utc_now(opts) do
     case Keyword.get(opts, :utc_now) do

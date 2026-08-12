@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation.Result do
   @moduledoc "Builds the stable JSONL result contract for one run cell."
 
-  alias Jido.Cli.Automation.{Contract, Replay}
+  alias Jido.Cli.Automation.{Contract, Limits, Replay}
   alias Jidoka.ExecutionEnvironment
   alias Jidoka.ExecutionEnvironment.Binding
   alias Jidoka.ExecutionEnvironment.Checkpoint
@@ -23,7 +23,10 @@ defmodule Jido.Cli.Automation.Result do
   @doc "Builds one result record."
   @spec new(map(), keyword()) :: map()
   def new(cell, attrs) do
-    Contract.case_result!(%{
+    execution = Keyword.fetch!(attrs, :execution)
+    usage = Keyword.get(attrs, :usage, %{})
+
+    values = %{
       schema: @schema,
       schema_version: @schema_version,
       type: "case.result",
@@ -32,7 +35,7 @@ defmodule Jido.Cli.Automation.Result do
       sequence: cell.sequence,
       dimensions: cell.dimensions,
       sources: cell.sources,
-      execution: Keyword.fetch!(attrs, :execution),
+      execution: execution,
       execution_environment:
         execution_environment(
           cell,
@@ -42,10 +45,30 @@ defmodule Jido.Cli.Automation.Result do
       capability_replay: Keyword.get(attrs, :capability_replay, replay_projection(cell)),
       evaluation: Keyword.fetch!(attrs, :evaluation),
       turns: Keyword.get(attrs, :turns, []),
-      usage: Keyword.get(attrs, :usage, %{}),
+      usage: usage,
       error: Keyword.get(attrs, :error),
       extensions: result_extensions(cell, Keyword.get(attrs, :extensions, %{}))
-    })
+    }
+
+    values =
+      case Map.get(cell, :runtime_limits) do
+        nil ->
+          values
+
+        limits ->
+          evidence =
+            Limits.result(
+              limits,
+              Keyword.get(attrs, :runtime_limit_evidence),
+              execution,
+              usage,
+              Keyword.get(attrs, :runtime_limit_error, Keyword.get(attrs, :error))
+            )
+
+          Map.put(values, :runtime_limits, evidence)
+      end
+
+    Contract.case_result!(values)
   end
 
   defp result_extensions(cell, values) do

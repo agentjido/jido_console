@@ -19,6 +19,7 @@ defmodule Jido.Cli.Automation.Loader do
          :ok <- reject_execution_controls(suite),
          {:ok, run} <- optional_section(suite, "run"),
          :ok <- reject_execution_controls(run),
+         {:ok, limits} <- optional_section(run, "limits"),
          {:ok, execution_profile} <- optional_profile(Map.get(run, "execution_profile")),
          {:ok, agents} <- suite_agents(suite, Path.dirname(path)),
          {:ok, scenarios} <- suite_scenarios(suite, Path.dirname(path), opts),
@@ -39,6 +40,7 @@ defmodule Jido.Cli.Automation.Loader do
          models: models,
          repeats: repeats,
          jobs: jobs,
+         limits: limits,
          execution_profile: execution_profile,
          command_execution_profile: nil,
          output: output

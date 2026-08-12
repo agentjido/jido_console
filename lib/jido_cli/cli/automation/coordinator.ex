@@ -7,12 +7,13 @@ defmodule Jido.Cli.Automation.Coordinator do
   new admission before it asks each active engine request to stop.
   """
 
-  alias Jido.Cli.Automation.{Contract, Interrupt, JSONL, Result}
+  alias Jido.Cli.Automation.{Contract, Interrupt, JSONL, Limits, Result}
 
   @type outcome :: %{
           results: [map()],
           cancelled?: boolean(),
           cancellation_reason: term() | nil,
+          limit_stop: map() | nil,
           not_started: [map()]
         }
 
@@ -21,12 +22,17 @@ defmodule Jido.Cli.Automation.Coordinator do
           {:ok, outcome()} | {:error, term()}
   def run(cells, sink, engine, jobs, opts)
       when is_list(cells) and is_integer(jobs) and jobs > 0 and is_list(opts) do
+    limits = Keyword.fetch!(opts, :automation_limits)
+
     state = %{
       pending: cells,
       active: %{},
       results: [],
       cancelled?: false,
-      cancellation_reason: nil
+      cancellation_reason: nil,
+      limit_stop: nil,
+      limits: limits,
+      started_ms: monotonic_ms(opts)
     }
 
     with {:ok, state} <- admit(state, sink, engine, jobs, opts) do
@@ -35,12 +41,14 @@ defmodule Jido.Cli.Automation.Coordinator do
   end
 
   defp loop(%{active: active, pending: pending} = state, _sink, _engine, _jobs, _opts)
-       when map_size(active) == 0 and (pending == [] or state.cancelled?) do
+       when map_size(active) == 0 and
+              (pending == [] or state.cancelled? or not is_nil(state.limit_stop)) do
     {:ok,
      %{
        results: Enum.reverse(state.results),
        cancelled?: state.cancelled?,
        cancellation_reason: state.cancellation_reason,
+       limit_stop: state.limit_stop,
        not_started: state.pending
      }}
   end
@@ -59,35 +67,61 @@ defmodule Jido.Cli.Automation.Coordinator do
 
       {:DOWN, ref, :process, _pid, reason} when is_reference(ref) ->
         fail_task(state, ref, reason, sink, engine, jobs, opts)
+    after
+      Limits.receive_timeout(state.limits, elapsed_ms(state, opts)) ->
+        state
+        |> apply_limit_stop(engine, opts)
+        |> loop(sink, engine, jobs, opts)
     end
   end
 
-  defp admit(state, _sink, _engine, jobs, _opts)
-       when state.cancelled? or map_size(state.active) >= jobs or state.pending == [],
-       do: {:ok, state}
+  defp admit(state, sink, engine, jobs, opts) do
+    state = apply_limit_stop(state, engine, opts)
 
-  defp admit(%{pending: [cell | pending]} = state, sink, engine, jobs, opts) do
-    state = %{state | pending: pending}
+    cond do
+      state.cancelled? or not is_nil(state.limit_stop) ->
+        {:ok, state}
 
-    case start_cell(engine, cell, opts) do
-      {:ok, entry} ->
-        state
-        |> put_active(entry)
-        |> admit(sink, engine, jobs, opts)
+      map_size(state.active) >= jobs or state.pending == [] ->
+        {:ok, state}
 
-      {:error, reason} ->
-        result = engine_error(cell, reason, opts)
+      true ->
+        admit_next(state, sink, engine, jobs, opts)
+    end
+  end
 
-        case JSONL.emit(sink, result) do
-          :ok ->
+  defp admit_next(state, sink, engine, jobs, opts) do
+    case pop_admissible(state) do
+      :none ->
+        {:ok, state}
+
+      {:ok, cell, pending} ->
+        state = %{state | pending: pending}
+
+        case start_cell(engine, cell, opts) do
+          {:ok, entry} ->
             state
-            |> Map.update!(:results, &[result | &1])
+            |> put_active(Map.put(entry, :provider, Limits.provider_key(cell)))
             |> admit(sink, engine, jobs, opts)
 
           {:error, reason} ->
-            abort_active(state, engine, opts)
-            {:error, reason}
+            emit_start_error(state, cell, reason, sink, engine, jobs, opts)
         end
+    end
+  end
+
+  defp emit_start_error(state, cell, reason, sink, engine, jobs, opts) do
+    result = engine_error(cell, reason, opts)
+
+    case JSONL.emit(sink, result) do
+      :ok ->
+        state
+        |> Map.update!(:results, &[result | &1])
+        |> admit(sink, engine, jobs, opts)
+
+      {:error, reason} ->
+        abort_active(state, engine, opts)
+        {:error, reason}
     end
   end
 
@@ -170,6 +204,26 @@ defmodule Jido.Cli.Automation.Coordinator do
     state
   end
 
+  defp apply_limit_stop(%{limit_stop: stop} = state, _engine, _opts) when not is_nil(stop),
+    do: state
+
+  defp apply_limit_stop(state, engine, opts) do
+    case Limits.stop_reason(state.limits, state.results, elapsed_ms(state, opts)) do
+      nil ->
+        state
+
+      reason ->
+        write_limit_diagnostic(reason, opts)
+        state = %{state | limit_stop: reason}
+
+        if state.limits.cancel_active_on_stop do
+          abort_active(state, engine, opts)
+        end
+
+        state
+    end
+  end
+
   defp continue_loop({:ok, state}, sink, engine, jobs, opts),
     do: loop(state, sink, engine, jobs, opts)
 
@@ -244,6 +298,27 @@ defmodule Jido.Cli.Automation.Coordinator do
     %{state | active: Map.put(state.active, ref, entry)}
   end
 
+  defp pop_admissible(state) do
+    index =
+      Enum.find_index(state.pending, fn cell ->
+        provider = Limits.provider_key(cell)
+        provider_active(state.active, provider) < Limits.provider_limit(state.limits, cell)
+      end)
+
+    case index do
+      nil ->
+        :none
+
+      index ->
+        {cell, pending} = List.pop_at(state.pending, index)
+        {:ok, cell, pending}
+    end
+  end
+
+  defp provider_active(active, provider) do
+    Enum.count(active, fn {_ref, entry} -> Map.get(entry, :provider) == provider end)
+  end
+
   defp cancellable_engine?(engine) do
     function_exported?(engine, :start, 2) and
       function_exported?(engine, :await, 2) and
@@ -260,12 +335,26 @@ defmodule Jido.Cli.Automation.Coordinator do
     IO.puts(device, "jido: could not cancel cell #{cell.cell_id}: #{inspect(reason)}")
   end
 
+  defp write_limit_diagnostic(reason, opts) do
+    device = Keyword.get(opts, :error_device, :stderr)
+    IO.puts(device, "jido: automated run limit reached: #{inspect(reason)}")
+  end
+
   defp utc_now(opts) do
     case Keyword.get(opts, :utc_now) do
       function when is_function(function, 0) -> function.()
       _function -> DateTime.utc_now()
     end
   end
+
+  defp monotonic_ms(opts) do
+    case Keyword.get(opts, :monotonic_ms) do
+      function when is_function(function, 0) -> function.()
+      _function -> System.monotonic_time(:millisecond)
+    end
+  end
+
+  defp elapsed_ms(state, opts), do: max(monotonic_ms(opts) - state.started_ms, 0)
 
   defp positive_integer(value, _default) when is_integer(value) and value > 0, do: value
   defp positive_integer(_value, default), do: default

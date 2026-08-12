@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation.Plan do
   @moduledoc "Builds the agent, scenario, model, and trial run matrix."
 
-  alias Jido.Cli.Automation.{Contract, Loader, Replay}
+  alias Jido.Cli.Automation.{Contract, Limits, Loader, Replay}
   alias Jido.Cli.Extensions
   alias Jidoka.Agent.Spec
   alias Jidoka.ExecutionEnvironment.PolicyRequest
@@ -14,14 +14,16 @@ defmodule Jido.Cli.Automation.Plan do
 
     with {:ok, agents} <- load_agents(suite.agents, opts),
          {:ok, variants} <- agent_model_variants(agents, suite.models),
-         {:ok, cells} <- cells(suite, variants, run_id, opts) do
+         {:ok, limits} <- Limits.resolve(suite, length(variants), opts),
+         {:ok, cells} <- cells(suite, variants, run_id, limits, opts) do
       {:ok,
        %{
          run_id: run_id,
          suite_id: suite.id,
          suite: suite,
+         limits: limits,
          cells: cells,
-         manifest: manifest(suite, variants, cells, run_id)
+         manifest: manifest(suite, variants, cells, run_id, limits)
        }}
     end
   end
@@ -90,7 +92,7 @@ defmodule Jido.Cli.Automation.Plan do
   defp maybe_put_generation(attrs, nil), do: attrs
   defp maybe_put_generation(attrs, generation), do: Map.put(attrs, :generation, generation)
 
-  defp cells(suite, variants, run_id, opts) do
+  defp cells(suite, variants, run_id, limits, opts) do
     combinations =
       for variant <- variants,
           scenario <- suite.scenarios,
@@ -100,7 +102,7 @@ defmodule Jido.Cli.Automation.Plan do
     combinations
     |> Enum.with_index(1)
     |> Enum.reduce_while({:ok, []}, fn {{variant, scenario, trial}, sequence}, {:ok, acc} ->
-      case build_cell(suite, variant, scenario, trial, sequence, run_id, opts) do
+      case build_cell(suite, variant, scenario, trial, sequence, run_id, limits, opts) do
         {:ok, cell} -> {:cont, {:ok, [cell | acc]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -108,7 +110,7 @@ defmodule Jido.Cli.Automation.Plan do
     |> reverse_result()
   end
 
-  defp build_cell(suite, variant, scenario, trial, sequence, run_id, opts) do
+  defp build_cell(suite, variant, scenario, trial, sequence, run_id, limits, opts) do
     dimensions = %{
       suite_id: suite.id,
       agent_key: variant.agent_key,
@@ -131,6 +133,7 @@ defmodule Jido.Cli.Automation.Plan do
          scenario: scenario,
          spec: variant.spec,
          runtime_opts: variant.runtime_opts,
+         runtime_limits: limits,
          execution_environment: environment,
          capability_replay: replay,
          extensions: extensions,
@@ -177,7 +180,7 @@ defmodule Jido.Cli.Automation.Plan do
     end
   end
 
-  defp manifest(suite, variants, cells, run_id) do
+  defp manifest(suite, variants, cells, run_id, limits) do
     Contract.manifest!(%{
       schema: "jido.run-manifest",
       schema_version: 1,
@@ -198,6 +201,7 @@ defmodule Jido.Cli.Automation.Plan do
         repeats: suite.repeats,
         cells: length(cells)
       },
+      runtime_limits: Limits.manifest(limits),
       cells:
         Enum.map(cells, fn cell ->
           %{

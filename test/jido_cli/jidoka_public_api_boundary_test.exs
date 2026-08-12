@@ -21,6 +21,7 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
       "Jidoka.Operation.Source",
       "Jidoka.Replay",
       "Jidoka.Review",
+      "Jidoka.Runtime.Limits",
       "Jidoka.Session.Data",
       "Jidoka.Session.Environment",
       "Jidoka.Session.Sequence",
@@ -114,14 +115,14 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
 
     defp module_violation(module) do
       cond do
-        forbidden_module?(module) ->
-          "forbidden Jidoka implementation module: #{module}"
-
         execution_module?(module) ->
           "forbidden Jidoka execution module: #{module}"
 
         approved_module?(module) ->
           nil
+
+        forbidden_module?(module) ->
+          "forbidden Jidoka implementation module: #{module}"
 
         true ->
           "Jidoka module is not in the public client allow-list: #{module}"

@@ -49,6 +49,7 @@ defmodule Jido.Cli.Automation do
         models: models,
         repeats: 1,
         jobs: 1,
+        limits: %{},
         execution_profile: nil,
         command_execution_profile: Map.get(command, :runtime_profile),
         output: Map.get(command, :output)
@@ -65,15 +66,17 @@ defmodule Jido.Cli.Automation do
     do: Loader.scenario_from_input(input, opts)
 
   defp run(plan, sink, command, opts) do
-    started_ms = System.monotonic_time(:millisecond)
+    started_ms = monotonic_ms(opts)
     jobs = if command.name == :eval, do: plan.suite.jobs, else: 1
     engine = Keyword.get(opts, :engine, Jido.Cli.Automation.Engine.Jidoka)
 
     case Interrupt.start(self(), opts) do
       {:ok, interrupt} ->
         try do
-          with {:ok, outcome} <- Coordinator.run(plan.cells, sink, engine, jobs, opts),
-               summary <- summary(plan, outcome, started_ms),
+          coordinator_opts = Keyword.put(opts, :automation_limits, plan.limits)
+
+          with {:ok, outcome} <- Coordinator.run(plan.cells, sink, engine, jobs, coordinator_opts),
+               summary <- summary(plan, outcome, started_ms, opts),
                :ok <- JSONL.finish(sink, summary) do
             {:ok, summary}
           else
@@ -88,7 +91,7 @@ defmodule Jido.Cli.Automation do
     end
   end
 
-  defp summary(plan, outcome, started_ms) do
+  defp summary(plan, outcome, started_ms, opts) do
     results = outcome.results
 
     counts =
@@ -101,9 +104,12 @@ defmodule Jido.Cli.Automation do
     status =
       cond do
         outcome.cancelled? -> :cancelled
+        not is_nil(outcome.limit_stop) -> :failed
         counts.failed == 0 and counts.errors == 0 -> :passed
         true -> :failed
       end
+
+    duration_ms = max(monotonic_ms(opts) - started_ms, 0)
 
     Contract.summary!(%{
       schema: "jido.run-summary",
@@ -114,8 +120,9 @@ defmodule Jido.Cli.Automation do
       planned: length(plan.cells),
       completed: length(results),
       counts: counts,
-      duration_ms: max(System.monotonic_time(:millisecond) - started_ms, 0),
-      not_started: Enum.map(outcome.not_started, & &1.cell_id)
+      duration_ms: duration_ms,
+      not_started: Enum.map(outcome.not_started, & &1.cell_id),
+      runtime_limits: Jido.Cli.Automation.Limits.summary(plan.limits, outcome, duration_ms)
     })
   end
 
@@ -143,6 +150,13 @@ defmodule Jido.Cli.Automation do
     |> case do
       "" -> "agent"
       key -> key
+    end
+  end
+
+  defp monotonic_ms(opts) do
+    case Keyword.get(opts, :monotonic_ms) do
+      function when is_function(function, 0) -> function.()
+      _function -> System.monotonic_time(:millisecond)
     end
   end
 end
