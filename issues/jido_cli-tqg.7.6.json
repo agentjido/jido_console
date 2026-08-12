@@ -5,7 +5,9 @@
     "jido_cli-tqg.7.4",
     "jido_cli-tqg.7.5"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-tqg.7.7"
+  ],
   "created": "2026-08-12T22:09:58Z",
   "description": "## Outcome\n\nThe daemon owns a random per-user authentication token and an atomic discovery record with its loopback port, PID, runtime version, and protocol version.\n\n## Why now\n\nClients need secure discovery before the loopback server can accept requests. Stale records and weak permissions can connect a client to the wrong process or expose the token.\n\n## Work\n\n1. Generate the token from a cryptographic random source and store it under the resolved state root.\n2. Restrict token and discovery access to the current user with Unix permissions or the Windows access-control capability.\n3. Write discovery state atomically only after the server owns its port.\n4. Validate record schema, PID identity, protocol version, and daemon liveness before use.\n5. Remove stale state with a race-safe lock or compare-and-delete rule.\n6. Remove owned discovery state on clean stop without deleting a newer daemon record.\n7. Redact the token and private paths from all errors, logs, and portable results.\n\n## Acceptance criteria\n\n- [ ] The token has sufficient entropy and is never accepted from argv.\n- [ ] Another local user cannot read the token through supported platform controls.\n- [ ] Concurrent daemon starts produce one owner and one clear failure.\n- [ ] A stale or corrupt record is repaired safely.\n- [ ] Clean stop removes only the record owned by that daemon instance.\n- [ ] Tests cover spaces, non-ASCII profiles, short writes, rename failures, and permission failures.\n\n## Tests\n\nUse injected random, clock, PID, file-system, permission, and liveness capabilities. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not bind a public interface. Do not place secrets in `release.json` or JSONL.",
   "id": "jido_cli-tqg.7.6",
