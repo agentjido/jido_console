@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.25"
+  ],
   "blocks": [],
   "created": "2026-08-12T22:14:07Z",
   "description": "## Outcome\n\nA Scoop manifest installs the signed Windows x86-64 ZIP, exposes `jido`, verifies the release checksum, and upgrades without deleting user state.\n\n## Work\n\n1. Add version, architecture, immutable URL, hash, executable mapping, and update fields.\n2. Use the signed GitHub release ZIP and final SHA-256 checksum.\n3. Keep service registration an explicit separate action.\n4. Test install, version, help, upgrade, uninstall, and state preservation.\n5. Add controlled manifest-update automation after a successful stable release.\n6. Document foreground daemon and optional service behavior.\n\n## Acceptance criteria\n\n- [ ] Scoop installs and runs `jido --version` without system OTP.\n- [ ] A wrong hash blocks installation.\n- [ ] Upgrade replaces program files and preserves the user state root.\n- [ ] Install does not register or start a service.\n- [ ] The manifest update uses immutable release data.\n- [ ] Uninstall behavior for durable state is explicit.\n\n## Tests\n\nRun native Windows Scoop install, upgrade, bad-hash, path, Unicode-profile, and uninstall tests.\n\n## Non-goals\n\nDo not add Winget or MSI support in this task.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "Publish a Scoop manifest for the signed Windows ZIP",
   "type": "task",
-  "updated_at": "2026-08-12T22:14:07Z"
+  "updated_at": "2026-08-12T22:15:10Z"
 }

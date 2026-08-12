@@ -6,7 +6,8 @@
     "jido_cli-tqg.7.23"
   ],
   "blocks": [
-    "jido_cli-tqg.7.26"
+    "jido_cli-tqg.7.26",
+    "jido_cli-tqg.7.27"
   ],
   "created": "2026-08-12T22:14:07Z",
   "description": "## Outcome\n\nEvery executable binary distributed for Windows, including a selected service wrapper, has a verifiable Authenticode signature before the final ZIP checksum is generated.\n\n## Work\n\n1. Inventory packaged EXE, DLL, and service-wrapper files that require signing.\n2. Use an approved timestamped code-signing process and protected CI identity.\n3. Sign binaries before ZIP creation and external checksum generation.\n4. Verify the certificate chain, timestamp, file identity, and trust result after extraction.\n5. Record signing evidence in release provenance.\n6. Fail stable publication for an unsigned or modified required binary.\n7. Document the trust state of unsigned development artifacts.\n\n## Acceptance criteria\n\n- [ ] All required Windows binaries verify after ZIP extraction.\n- [ ] The signature survives installation under spaces and non-ASCII paths.\n- [ ] A modified binary fails verification and blocks publication.\n- [ ] Signing keys and tokens do not appear in logs or artifacts.\n- [ ] The service wrapper, when present, is covered by the same trust policy.\n- [ ] Final checksums describe the signed ZIP bytes.\n\n## Tests\n\nRun native signature, timestamp, tamper, extraction, service-wrapper, and packaged-artifact checks.\n\n## Non-goals\n\nDo not add a Scoop, Winget, or MSI manifest in this task.",
