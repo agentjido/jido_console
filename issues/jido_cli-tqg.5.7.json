@@ -5,11 +5,15 @@
   "created": "2026-08-12T17:14:36Z",
   "description": "The full researched story description is being attached.",
   "id": "jido_cli-tqg.5.7",
-  "labels": [],
+  "labels": [
+    "cli",
+    "coding-pack",
+    "interactive"
+  ],
   "parent": "jido_cli-tqg.5",
   "priority": 2,
   "status": "open",
   "title": "Show edit records and bounded diffs in the TUI",
   "type": "task",
-  "updated_at": "2026-08-12T17:14:36Z"
+  "updated_at": "2026-08-12T17:14:37Z"
 }
