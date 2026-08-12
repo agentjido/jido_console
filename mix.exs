@@ -28,7 +28,9 @@ defmodule Jido.Cli.MixProject do
 
   defp deps do
     [
-      {:jidoka, "~> 0.8.0-beta.1"}
+      {:jason, "~> 1.4"},
+      {:jidoka, "~> 0.8.0-beta.1"},
+      {:yaml_elixir, "~> 2.12"}
     ]
   end
 end

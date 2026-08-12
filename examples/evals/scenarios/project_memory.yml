@@ -1,0 +1,20 @@
+version: 1
+scenario:
+  id: project_memory
+  tags:
+    - session
+    - multi_turn
+  context:
+    value:
+      customer: acme
+  turns:
+    - id: store
+      input:
+        text: The project name is Atlas. Confirm that you stored it.
+      assertions:
+        contains: Atlas
+    - id: recall
+      input:
+        text: What is the project name? Include only the name.
+      assertions:
+        equals: Atlas

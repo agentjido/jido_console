@@ -1,0 +1,6 @@
+version: 1
+agent:
+  id: concise_assistant
+  model: openai:gpt-4o-mini
+  instructions: |
+    Answer with the shortest complete response that satisfies the request.

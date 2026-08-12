@@ -1,0 +1,19 @@
+version: 1
+suite:
+  id: smoke
+  agents:
+    - key: concise
+      file: ../agents/concise.yml
+    - key: explanatory
+      file: ../agents/explanatory.yml
+  scenarios:
+    - scenarios/project_memory.yml
+  models:
+    - key: openai-mini
+      ref: openai:gpt-4o-mini
+    - key: claude-haiku
+      ref: anthropic:claude-3-5-haiku-latest
+  matrix:
+    repeats: 2
+  run:
+    jobs: 4

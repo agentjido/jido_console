@@ -5,14 +5,33 @@ defmodule Jido.Cli do
   @usage """
   Usage:
     jido
+    jido run --agent FILE (--input FILE|- | --scenario FILE) [options]
+    jido eval SUITE [options]
 
   Options:
     -h, --help       Show this help
     -v, --version    Show the version
 
-  Start jido in an interactive terminal. Provider credentials are read from
-  the environment by Jidoka's model provider.
+  Run options:
+    -a, --agent FILE           Load one agent YAML or JSON file
+    -i, --input FILE|-         Read one prompt from a file or standard input
+        --scenario FILE        Run one single-turn or multi-turn scenario
+        --model MODEL          Override the model in the agent file
+        --runtime-profile ID   Use a trusted runtime capability profile
+    -o, --output DIR           Also write run artifacts to a new directory
+
+  Eval options:
+    -j, --jobs N               Set the maximum concurrent scenario cells
+    -o, --output DIR           Also write run artifacts to a new directory
+
+  With no command, start jido in an interactive terminal. Provider credentials
+  are read from the environment by Jidoka's model provider. Automated commands
+  write JSONL records to standard output and diagnostics to standard error.
   """
+
+  @doc "Returns the CLI version."
+  @spec version() :: String.t()
+  def version, do: @version
 
   @doc false
   def main(args) do
@@ -31,6 +50,24 @@ defmodule Jido.Cli do
   @doc "Runs one CLI invocation and returns its exit status without halting the VM."
   @spec run([String.t()], keyword()) :: :ok | {:error, pos_integer()}
   def run(args, opts \\ []) do
+    case args do
+      [command, "--help"] when command in ["run", "eval"] ->
+        IO.write(@usage)
+        :ok
+
+      [command, "-h"] when command in ["run", "eval"] ->
+        IO.write(@usage)
+        :ok
+
+      [command | _rest] when command in ["run", "eval"] ->
+        run_automation(args, opts)
+
+      _args ->
+        run_interactive(args, opts)
+    end
+  end
+
+  defp run_interactive(args, opts) do
     case OptionParser.parse(args,
            strict: [help: :boolean, version: :boolean],
            aliases: [h: :help, v: :version]
@@ -58,6 +95,29 @@ defmodule Jido.Cli do
 
       _other ->
         usage_error()
+    end
+  end
+
+  defp run_automation(args, opts) do
+    automation = Keyword.get(opts, :automation, Jido.Cli.Automation)
+
+    case automation.execute(args, opts) do
+      {:ok, %{status: :passed}} ->
+        :ok
+
+      {:ok, %{status: :failed} = summary} ->
+        IO.puts(:stderr, "jido: automated run failed: #{format_summary(summary)}")
+        {:error, 1}
+
+      {:error, kind, reason} when kind in [:usage, :configuration] ->
+        IO.puts(:stderr, "jido: #{format_error(reason)}")
+        {:error, 64}
+
+      {:error, :execution, reason} ->
+        fail(format_error(reason))
+
+      other ->
+        fail("invalid automation result: #{inspect(other)}")
     end
   end
 
@@ -125,6 +185,11 @@ defmodule Jido.Cli do
     Jidoka.Error.format(reason)
   rescue
     _exception -> inspect(reason)
+  end
+
+  defp format_summary(summary) do
+    counts = Map.get(summary, :counts, %{})
+    "#{Map.get(counts, :failed, 0)} failed, #{Map.get(counts, :errors, 0)} errors"
   end
 
   defp usage_error do
