@@ -5,7 +5,12 @@
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nThe selected builder produces each first-matrix archive with application code, a target-specific private OTP runtime, packaged runtime data, launchers, license files, and metadata.\n\n## Work\n\n1. Implement only the packaging method selected by the spike.\n2. Build the exact target layout and archive names in the artifact contract.\n3. Include `llm_db`, `req_llm`, `time_zone_info`, and all other required runtime resources.\n4. Make launchers resolve paths relative to themselves and invoke only the private runtime.\n5. Preserve arguments, standard streams, signals or console events, and exit statuses.\n6. Make build inputs explicit and pin OTP, Elixir, package, and native dependency versions.\n7. Normalize timestamps, ordering, and permissions where the platform format permits repeatable archives.\n\n## Acceptance criteria\n\n- [ ] Each first target builds on its suitable native runner.\n- [ ] The archive passes layout validation and can move after extraction.\n- [ ] Removing system OTP does not affect the packaged command.\n- [ ] TUI, `run`, `eval`, and foreground daemon modes start from the package.\n- [ ] Paths with spaces and Unicode work.\n- [ ] Two builds from the same controlled inputs have matching content or a documented signed-build variance.\n\n## Tests\n\nRun builder unit checks, archive validation, and the packaged-artifact harness on every target.\n\n## Non-goals\n\nDo not cross-compile unsupported targets, add hot upgrades, or keep the rejected packaging system.",
   "id": "jido_cli-tqg.7.15",
-  "labels": [],
+  "labels": [
+    "cli",
+    "foundation",
+    "packaging",
+    "release"
+  ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
   "status": "open",
