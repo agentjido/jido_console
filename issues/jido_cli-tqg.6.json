@@ -3,7 +3,7 @@
   "blocked_by": [],
   "blocks": [],
   "created": "2026-08-12T17:14:32Z",
-  "description": "Add offline replay, bounded runs, and terminal artifact integrity after the core execution and extension contracts are stable.",
+  "description": "# Phase outcome\n\nAutomation maturity. Entry: stable sequence, evidence, trust, and limits. Exit: offline replay, bounded admission, and explicit partial artifact state are available.\n\n# Ranked child stories\n\n1. `jido_cli-tqg.6.1` — Record and replay deterministic capability fixtures (P2)\n2. `jido_cli-tqg.6.2` — Expose replay through trusted automation profiles (P2)\n3. `jido_cli-tqg.6.3` — Enforce bounded runtime limits and provider-aware admission (P2)\n4. `jido_cli-tqg.6.4` — Finalize partial artifact directories after interruption (P2)\n\n# Status rule\n\nAll child stories remain open. Story dependency links, not priority alone, control implementation order.",
   "id": "jido_cli-tqg.6",
   "labels": [
     "automation",
@@ -14,5 +14,5 @@
   "status": "open",
   "title": "Phase 5: Improve deterministic automation and recovery",
   "type": "epic",
-  "updated_at": "2026-08-12T17:14:32Z"
+  "updated_at": "2026-08-12T17:17:54Z"
 }
