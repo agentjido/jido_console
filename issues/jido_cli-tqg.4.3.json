@@ -18,8 +18,8 @@
   ],
   "parent": "jido_cli-tqg.4",
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "Emit versioned portable extension lifecycle events",
   "type": "task",
-  "updated_at": "2026-08-12T17:15:50Z"
+  "updated_at": "2026-08-12T21:01:11Z"
 }
