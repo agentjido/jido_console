@@ -21,8 +21,8 @@
   ],
   "parent": "jido_cli-tqg.3",
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "Run each automation cell in one constrained environment",
   "type": "task",
-  "updated_at": "2026-08-12T17:19:41Z"
+  "updated_at": "2026-08-12T20:22:52Z"
 }
