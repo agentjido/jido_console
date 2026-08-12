@@ -2,7 +2,8 @@
   "assignee": "",
   "blocked_by": [
     "jido_cli-tqg.5.7",
-    "jido_cli-tqg.6.2"
+    "jido_cli-tqg.6.2",
+    "jido_cli-tqg.6.4"
   ],
   "blocks": [],
   "created": "2026-08-12T22:09:57Z",
@@ -19,5 +20,5 @@
   "status": "open",
   "title": "Publish against the approved Hex Jidoka dependency",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:01Z"
+  "updated_at": "2026-08-12T22:15:02Z"
 }
