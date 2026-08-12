@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T22:09:59Z",
+  "description": "## Outcome\n\nDocumented daemon state survives a clean restart. Unix and Windows shutdown paths stop admission, drain or cancel active work, close durable state, and remove discovery state safely.\n\n## Why now\n\nThe current automation interrupt source handles Unix `SIGTERM` only. A service-ready daemon must also stop correctly under Windows service control and must keep durable data outside the release directory.\n\n## Work\n\n1. Store protocol-defined durable session and task state under the platform state root with a versioned format.\n2. Recover supported state after restart and reject corrupt or incompatible state without unsafe partial execution.\n3. Stop new admission during shutdown. Apply the specified drain deadline, cancellation, and forced-stop policy.\n4. Add a platform shutdown capability for Unix signals, console control events, and service-manager stop requests.\n5. Preserve primary work errors and cleanup errors without secret data.\n6. Remove stale discovery state after crashes and keep valid durable state for recovery.\n7. Document logs, state, recovery, and manual cleanup.\n\n## Acceptance criteria\n\n- [ ] State required by protocol v1 survives a clean daemon restart.\n- [ ] Clean stop leaves no listener, active lease, token leak, or owned discovery record.\n- [ ] Active, blocked, and cancelled work follows the documented deadline policy.\n- [ ] Windows behavior does not depend on `SIGTERM`.\n- [ ] Corrupt state produces a clear health or startup failure and does not execute work.\n- [ ] TUI, `run`, and `eval` remain local and usable when no daemon runs.\n\n## Tests\n\nAdd deterministic restart, recovery, shutdown-race, blocked-work, cleanup-failure, Unix, and Windows capability tests. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not add a system-wide daemon, hot upgrades, public networking, or automatic daemon selection.",
+  "id": "jido_cli-tqg.7.8",
+  "labels": [],
+  "parent": "jido_cli-tqg.7",
+  "priority": 1,
+  "status": "open",
+  "title": "Persist daemon state and handle cross-platform shutdown",
+  "type": "task",
+  "updated_at": "2026-08-12T22:09:59Z"
+}
