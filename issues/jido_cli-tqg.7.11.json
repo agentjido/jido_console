@@ -5,7 +5,9 @@
     "jido_cli-tqg.7.3",
     "jido_cli-tqg.7.9"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-tqg.7.13"
+  ],
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nThe CLI and daemon have explicit cross-platform boundaries for shutdown, file access, process launch, and path handling. Windows does not depend on Unix signals, modes, or shell syntax.\n\n## Work\n\n1. Audit production code and package scripts for Unix-only permissions, signals, executable bits, path separators, quoting, and shell commands.\n2. Add a shutdown source for Windows console and service-manager stop events. Keep the Unix signal adapter for Unix.\n3. Route file privacy through the platform access-control capability.\n4. Use argument-vector process launch and platform launchers. Do not build command strings with user paths.\n5. Add tests for drive paths, UNC-like invalid cases, spaces, non-ASCII profiles, reserved names, and long paths where supported.\n6. Document any supported Windows Terminal requirement and old Console Host non-goal.\n\n## Acceptance criteria\n\n- [ ] Windows shutdown does not call the Unix `SIGTERM` implementation.\n- [ ] No supported Windows path passes through a POSIX shell.\n- [ ] Token and state privacy use Windows access control, not ignored Unix modes.\n- [ ] Launchers preserve arguments that contain spaces and Unicode.\n- [ ] The audit has no unexplained Unix-only production operation.\n- [ ] Windows-specific tests run on a native Windows runner.\n\n## Tests\n\nAdd platform capability tests and native Windows integration checks. Run the normal quality, coverage, and docs commands on Unix and the selected checks on Windows.\n\n## Non-goals\n\nDo not register a Windows service or support old Windows Console Host graphics in this task.",
   "id": "jido_cli-tqg.7.11",
@@ -21,5 +23,5 @@
   "status": "open",
   "title": "Make file, signal, and shell boundaries portable to Windows",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:04Z"
+  "updated_at": "2026-08-12T22:15:05Z"
 }
