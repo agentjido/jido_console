@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:32Z",
+  "description": "Add offline replay, bounded runs, and terminal artifact integrity after the core execution and extension contracts are stable.",
+  "id": "jido_cli-tqg.6",
+  "labels": [],
+  "parent": "jido_cli-tqg",
+  "priority": 2,
+  "status": "open",
+  "title": "Phase 5: Improve deterministic automation and recovery",
+  "type": "epic",
+  "updated_at": "2026-08-12T17:14:32Z"
+}
