@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.17"
+  ],
   "blocks": [],
   "created": "2026-08-12T22:14:07Z",
   "description": "## Outcome\n\nA tagged pipeline validates one version, builds and tests signed native artifacts, creates final metadata and checksums, publishes Hex and GitHub in a controlled order, and opens the Homebrew tap update pull request.\n\n## Work\n\n1. Validate the exact tag and single application version.\n2. Run quality, tests, dependency audit, and license checks.\n3. Build on native runners, run automated acceptance, apply signatures and notarization, then generate final checksums and metadata.\n4. Upload all archives, notices, SBOM, provenance, `release.json`, checksums, and notes to a draft GitHub release.\n5. Publish the Hex package and then the GitHub release according to an idempotent recovery plan.\n6. Open the Homebrew tap update pull request after immutable release URLs exist.\n7. Pin actions by SHA and give each job the minimum permission and repository scope.\n\n## Acceptance criteria\n\n- [ ] A tag/version mismatch stops before publication.\n- [ ] Stable publication requires all automated and manual target gates plus configured signatures.\n- [ ] GitHub assets have immutable names and verified checksums.\n- [ ] Release notes identify supported targets, service status, known limits, and trust evidence.\n- [ ] A partial publication has a documented safe resume procedure.\n- [ ] The tap credential cannot write to this repository or other repositories.\n\n## Tests\n\nRun dry-run, tag mismatch, artifact failure, signing failure, Hex dry-run, draft upload, rerun, and tap-PR simulations.\n\n## Non-goals\n\nDo not publish Scoop, Winget, Linux ARM64, or `homebrew/core` in this task.",
@@ -17,5 +19,5 @@
   "status": "open",
   "title": "Publish coordinated signed GitHub and Hex releases",
   "type": "task",
-  "updated_at": "2026-08-12T22:14:07Z"
+  "updated_at": "2026-08-12T22:15:09Z"
 }
