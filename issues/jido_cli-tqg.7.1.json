@@ -6,7 +6,8 @@
     "jido_cli-tqg.6.4"
   ],
   "blocks": [
-    "jido_cli-tqg.7.2"
+    "jido_cli-tqg.7.2",
+    "jido_cli-tqg.7.3"
   ],
   "created": "2026-08-12T22:09:57Z",
   "description": "## Outcome\n\nA clean `jido_cli` checkout resolves one approved Hex release of `jidoka`. It does not need the sibling `../jidoka` checkout.\n\n## Why now\n\n`mix.exs` now uses `{:jidoka, path: \"../jidoka\"}`. An isolated source build and every packaged release will fail without the sibling repository.\n\n## Work\n\n1. Select or publish the first Jidoka Hex version that contains every public API used by the completed CLI phases.\n2. Replace the default path dependency with a bounded Hex requirement and refresh the relevant lock entries.\n3. Keep any local workspace override explicit and development-only. The release and CI path must use Hex.\n4. Add a clean-checkout check that copies or checks out only `jido_cli`, runs `mix deps.get`, and compiles without the sibling repository.\n5. Keep the public Jidoka boundary test active and update contributor release instructions.\n\n## Acceptance criteria\n\n- [ ] `mix deps` reports a Hex Jidoka dependency in the release path.\n- [ ] A clean checkout with no `../jidoka` directory runs dependency resolution, compilation, tests, and docs.\n- [ ] `mix.lock` contains the approved immutable package version.\n- [ ] Production CLI code uses only documented public Jidoka APIs.\n- [ ] No live provider credential is necessary for verification.\n\n## Tests\n\nRun the clean-checkout check, `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not vendor Jidoka. Do not copy private Jidoka modules into this package. Do not publish a release in this task.",
