@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-tqg.7.13"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-tqg.7.15"
+  ],
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nA time-bounded native spike selects Burrito or the custom Mix release fallback. The repository keeps only the selected implementation path.\n\n## Work\n\n1. Prototype Burrito for macOS ARM64, macOS x86-64, Linux x86-64, and Windows x86-64 on native runners.\n2. Run the packaged-artifact harness and focused interactive checks for raw input and alternate-screen cleanup.\n3. Verify packaged `priv` data, one-shot exit statuses, foreground daemon behavior, native dependencies, startup time, and artifact size.\n4. Record measured results and every failed required gate.\n5. Accept Burrito only if all required acceptance checks pass.\n6. If one required gate fails, prototype the custom Mix release step with copied OTP and platform launchers, using the Livebook standalone release as the reference.\n7. Write one decision record and remove the rejected experimental path.\n\n## Acceptance criteria\n\n- [ ] The decision has evidence from all four first targets.\n- [ ] Required terminal, runtime-data, CLI, daemon, and exit checks pass for the selected method.\n- [ ] Startup and size measurements are recorded with thresholds or an explicit accepted range.\n- [ ] Native dependency behavior is known for every target.\n- [ ] Only one packaging system remains maintained.\n- [ ] The decision record states how to reverse the choice if a later target fails.\n\n## Tests\n\nUse native-runner spike artifacts and the shared harness. Keep live providers disabled.\n\n## Non-goals\n\nDo not publish a release, add signing, or maintain both package builders.",
   "id": "jido_cli-tqg.7.14",
