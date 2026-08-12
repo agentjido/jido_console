@@ -2,6 +2,7 @@
   "assignee": "",
   "blocked_by": [
     "jido_cli-tqg.3.8",
+    "jido_cli-tqg.4.7",
     "jido_cli-tqg.6.1"
   ],
   "blocks": [],
