@@ -49,7 +49,7 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
         model_ref: "openai:gpt-4o-mini",
         trial: 1
       },
-      sources: %{},
+      sources: sources(),
       spec: spec,
       runtime_opts: [llm: llm],
       scenario: %{
@@ -136,7 +136,7 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
         model_ref: "openai:gpt-4o-mini",
         trial: 1
       },
-      sources: %{},
+      sources: sources(),
       spec: spec,
       runtime_opts: [llm: llm],
       scenario: %{
@@ -382,7 +382,7 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
         model_ref: "openai:gpt-4o-mini",
         trial: 1
       },
-      sources: %{},
+      sources: sources(),
       spec: spec,
       runtime_opts: [],
       scenario: %{turns: List.wrap(turn)}
@@ -395,5 +395,15 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
 
   defp get_key(map, key, default \\ nil) do
     Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+  end
+
+  defp sources do
+    %{
+      agent_file: "agent.yml",
+      scenario_file: "scenario.yml",
+      agent_sha256: "agent-sha",
+      effective_agent_sha256: "effective-agent-sha",
+      scenario_sha256: "scenario-sha"
+    }
   end
 end

@@ -1,6 +1,8 @@
 defmodule Jido.Cli.Automation.JSONL do
   @moduledoc "Writes case result records to standard output and optional run files."
 
+  alias Jido.Cli.Automation.Contract
+
   defstruct [:root, stdout: :stdio]
 
   @type t :: %__MODULE__{root: String.t() | nil, stdout: IO.device()}
@@ -10,28 +12,32 @@ defmodule Jido.Cli.Automation.JSONL do
   def open(manifest, output_dir, opts \\ []) do
     stdout = Keyword.get(opts, :output_device, :stdio)
 
-    case output_dir do
-      nil ->
-        {:ok, %__MODULE__{stdout: stdout}}
-
-      output_dir when is_binary(output_dir) and output_dir != "" ->
-        root = Path.expand(output_dir)
-
-        with :ok <- prepare_directory(root),
-             :ok <- File.mkdir_p(Path.join(root, "by-agent")),
-             :ok <- write_json(Path.join(root, "manifest.json"), manifest) do
-          {:ok, %__MODULE__{root: root, stdout: stdout}}
-        end
-
-      output_dir ->
-        {:error, {:invalid_output_directory, output_dir}}
+    with {:ok, manifest} <- Contract.validate_manifest(manifest) do
+      do_open(manifest, output_dir, stdout)
     end
   end
+
+  defp do_open(_manifest, nil, stdout), do: {:ok, %__MODULE__{stdout: stdout}}
+
+  defp do_open(manifest, output_dir, stdout)
+       when is_binary(output_dir) and output_dir != "" do
+    root = Path.expand(output_dir)
+
+    with :ok <- prepare_directory(root),
+         :ok <- File.mkdir_p(Path.join(root, "by-agent")),
+         :ok <- write_json(Path.join(root, "manifest.json"), manifest) do
+      {:ok, %__MODULE__{root: root, stdout: stdout}}
+    end
+  end
+
+  defp do_open(_manifest, output_dir, _stdout),
+    do: {:error, {:invalid_output_directory, output_dir}}
 
   @doc "Writes one complete result as one physical JSON line."
   @spec emit(t(), map()) :: :ok | {:error, term()}
   def emit(%__MODULE__{} = sink, result) do
-    with {:ok, json} <- Jason.encode(result),
+    with {:ok, result} <- Contract.validate_case_result(result),
+         {:ok, json} <- Jason.encode(result),
          line = json <> "\n",
          :ok <- write_device(sink.stdout, line),
          :ok <- maybe_append(sink.root, "results.jsonl", line),
@@ -42,10 +48,17 @@ defmodule Jido.Cli.Automation.JSONL do
 
   @doc "Writes the final summary when file output is enabled."
   @spec finish(t(), map()) :: :ok | {:error, term()}
-  def finish(%__MODULE__{root: nil}, _summary), do: :ok
+  def finish(%__MODULE__{root: nil}, summary) do
+    case Contract.validate_summary(summary) do
+      {:ok, _summary} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   def finish(%__MODULE__{root: root}, summary) do
-    write_json(Path.join(root, "summary.json"), summary)
+    with {:ok, summary} <- Contract.validate_summary(summary) do
+      write_json(Path.join(root, "summary.json"), summary)
+    end
   end
 
   defp prepare_directory(root) do

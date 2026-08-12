@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation.Plan do
   @moduledoc "Builds the agent, scenario, model, and trial run matrix."
 
-  alias Jido.Cli.Automation.Loader
+  alias Jido.Cli.Automation.{Contract, Loader}
   alias Jidoka.Agent.Spec
 
   @doc "Builds validated run cells in stable matrix order."
@@ -183,7 +183,7 @@ defmodule Jido.Cli.Automation.Plan do
   end
 
   defp manifest(suite, variants, cells, run_id) do
-    %{
+    Contract.manifest!(%{
       schema: "jido.run-manifest",
       schema_version: 1,
       run_id: run_id,
@@ -212,7 +212,7 @@ defmodule Jido.Cli.Automation.Plan do
             sources: cell.sources
           }
         end)
-    }
+    })
   end
 
   defp cell_id(dimensions) do

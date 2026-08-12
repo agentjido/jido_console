@@ -169,6 +169,18 @@ fields. It also has one result for each turn, usage data, assertion results, and
 portable error data. Concurrent cells can finish in any order. Use `sequence`
 or `cell_id` to align records from separate runs.
 
+The CLI validates every case result before it writes the JSONL line. It also
+validates the version 1 manifest before it creates the output directory and the
+version 1 summary before it writes `summary.json`. The schemas require JSON
+data, known status values, and nonnegative counts and times. Process values,
+functions, ports, references, and non-string JSON map keys are invalid.
+
+Version 1 producers can add data only in a documented optional field or in an
+`extensions` entry. Extension identifiers must have a namespace, such as
+`acme.metrics`. Version 1 readers ignore unknown optional fields. They reject a
+missing required field or an invalid value. This rule lets a newer producer add
+optional data without changing the meaning of an existing field.
+
 The CLI does not include compare or validate commands. Keep the raw JSONL files
 as the integration boundary. A benchmark tool can group records by the matrix
 fields and compare separate run directories.

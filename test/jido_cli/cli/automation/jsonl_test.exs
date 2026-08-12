@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation.JSONLTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Cli.Automation.JSONL
+  alias Jido.Cli.Automation.{Contract, JSONL}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-cli-jsonl-#{System.unique_integer([:positive])}")
@@ -11,9 +11,9 @@ defmodule Jido.Cli.Automation.JSONLTest do
 
   test "writes to a selected output device without a file directory" do
     {:ok, device} = StringIO.open("")
-    assert {:ok, sink} = JSONL.open(%{}, nil, output_device: device)
+    assert {:ok, sink} = JSONL.open(manifest(), nil, output_device: device)
     assert :ok = JSONL.emit(sink, result("agent"))
-    assert :ok = JSONL.finish(sink, %{})
+    assert :ok = JSONL.finish(sink, summary())
     {_input, output} = StringIO.contents(device)
     assert Jason.decode!(String.trim(output))["schema"] == "jido.case-result"
   end
@@ -23,30 +23,60 @@ defmodule Jido.Cli.Automation.JSONLTest do
     File.mkdir_p!(empty)
     {:ok, device} = StringIO.open("")
 
-    assert {:ok, sink} = JSONL.open(%{run_id: "run"}, empty, output_device: device)
+    assert {:ok, sink} = JSONL.open(manifest(), empty, output_device: device)
     assert File.regular?(Path.join(empty, "manifest.json"))
-    assert :ok = JSONL.finish(sink, %{status: :passed})
+    assert :ok = JSONL.finish(sink, summary())
 
-    assert {:error, {:invalid_output_directory, 42}} = JSONL.open(%{}, 42)
+    assert {:error, {:invalid_output_directory, 42}} = JSONL.open(manifest(), 42)
 
     blocked = Path.join(root, "blocked")
     File.mkdir_p!(blocked)
     File.write!(Path.join(blocked, "keep"), "data")
 
     assert {:error, {:output_directory_not_empty, ^blocked, ["keep"]}} =
-             JSONL.open(%{}, blocked)
+             JSONL.open(manifest(), blocked)
 
     file = Path.join(root, "file")
     File.write!(file, "data")
 
     assert {:error, {:output_directory_unavailable, ^file, :enotdir}} =
-             JSONL.open(%{}, file)
+             JSONL.open(manifest(), file)
+  end
+
+  test "validates a manifest before it creates an output directory", %{root: root} do
+    output = Path.join(root, "not-created")
+
+    assert {:error, {:invalid_automation_contract, :manifest, _errors}} =
+             JSONL.open(%{schema: "jido.run-manifest"}, output)
+
+    refute File.exists?(output)
+  end
+
+  test "rejects malformed records and summaries before write" do
+    {:ok, device} = StringIO.open("")
+    assert {:ok, sink} = JSONL.open(manifest(), nil, output_device: device)
+
+    assert {:error, {:invalid_automation_contract, :case_result, _errors}} =
+             JSONL.emit(sink, %{schema: "jido.case-result"})
+
+    assert {:error, {:invalid_automation_contract, :summary, _errors}} =
+             JSONL.finish(sink, %{schema: "jido.run-summary"})
+
+    assert {_input, ""} = StringIO.contents(device)
+  end
+
+  test "reads manifest and summary JSON with unknown optional fields" do
+    decoded_manifest = json_round_trip(manifest()) |> Map.put("future_field", %{})
+    decoded_summary = json_round_trip(summary()) |> Map.put("future_field", %{})
+
+    assert {:ok, %{schema: "jido.run-manifest"}} = Contract.read_manifest(decoded_manifest)
+    assert {:ok, %{schema: "jido.run-summary"}} = Contract.read_summary(decoded_summary)
   end
 
   test "keeps explicit agent keys inside the output directory", %{root: root} do
     output = Path.join(root, "artifacts")
     {:ok, device} = StringIO.open("")
-    assert {:ok, sink} = JSONL.open(%{}, output, output_device: device)
+    assert {:ok, sink} = JSONL.open(manifest(), output, output_device: device)
     assert :ok = JSONL.emit(sink, result("../../Outside Agent"))
 
     assert [path] = Path.wildcard(Path.join(output, "by-agent/*.jsonl"))
@@ -57,8 +87,76 @@ defmodule Jido.Cli.Automation.JSONLTest do
   defp result(agent_key) do
     %{
       schema: "jido.case-result",
+      schema_version: 1,
+      type: "case.result",
+      run_id: "run",
+      cell_id: "cell",
+      sequence: 1,
       dimensions: %{agent_key: agent_key},
-      execution: %{status: :ok}
+      sources: sources(),
+      execution: %{
+        status: :ok,
+        started_at: "2026-08-12T12:00:00Z",
+        duration_ms: 0,
+        turn_count: 0
+      },
+      evaluation: %{status: :unscored, assertion_count: 0, failed_assertion_count: 0},
+      turns: [],
+      usage: %{},
+      error: nil
+    }
+    |> put_in([:dimensions], dimensions(agent_key))
+  end
+
+  defp manifest do
+    %{
+      schema: "jido.run-manifest",
+      schema_version: 1,
+      run_id: "run",
+      suite_id: "suite",
+      suite_file: "suite.yml",
+      suite_sha256: "suite-sha",
+      versions: %{jido_cli: "1", jidoka: "1", elixir: "1", otp: "1"},
+      matrix: %{agents: ["agent"], models: ["model"], scenarios: ["scenario"], repeats: 1, cells: 1},
+      cells: [%{sequence: 1, cell_id: "cell", dimensions: dimensions("agent"), sources: sources()}]
     }
   end
+
+  defp summary do
+    %{
+      schema: "jido.run-summary",
+      schema_version: 1,
+      run_id: "run",
+      suite_id: "suite",
+      status: :passed,
+      planned: 1,
+      completed: 1,
+      counts: %{passed: 1, failed: 0, errors: 0, unscored: 0},
+      duration_ms: 0
+    }
+  end
+
+  defp dimensions(agent_key) do
+    %{
+      suite_id: "suite",
+      agent_key: agent_key,
+      agent_spec_id: "agent",
+      scenario_id: "scenario",
+      model_key: "model",
+      model_ref: "openai:test",
+      trial: 1
+    }
+  end
+
+  defp sources do
+    %{
+      agent_file: "agent.yml",
+      scenario_file: "scenario.yml",
+      agent_sha256: "agent-sha",
+      effective_agent_sha256: "effective-sha",
+      scenario_sha256: "scenario-sha"
+    }
+  end
+
+  defp json_round_trip(value), do: value |> Jason.encode!() |> Jason.decode!()
 end

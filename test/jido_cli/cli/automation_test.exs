@@ -32,7 +32,12 @@ defmodule Jido.Cli.AutomationTest do
     @impl true
     def run(cell, _opts) do
       Result.new(cell,
-        execution: %{status: :ok, started_at: "2026-08-12T12:00:00Z", duration_ms: 1},
+        execution: %{
+          status: :ok,
+          started_at: "2026-08-12T12:00:00Z",
+          duration_ms: 1,
+          turn_count: 0
+        },
         evaluation: %{status: :failed, assertion_count: 1, failed_assertion_count: 1}
       )
     end
@@ -44,7 +49,12 @@ defmodule Jido.Cli.AutomationTest do
     @impl true
     def run(cell, _opts) do
       Result.new(cell,
-        execution: %{status: :ok, started_at: "2026-08-12T12:00:00Z", duration_ms: 1},
+        execution: %{
+          status: :ok,
+          started_at: "2026-08-12T12:00:00Z",
+          duration_ms: 1,
+          turn_count: 0
+        },
         evaluation: %{status: :unscored, assertion_count: 0, failed_assertion_count: 0}
       )
     end
@@ -61,6 +71,16 @@ defmodule Jido.Cli.AutomationTest do
         :throw -> throw(:engine_failed)
         :exit -> exit(:engine_failed)
       end
+    end
+  end
+
+  defmodule MalformedEngine do
+    @behaviour Jido.Cli.Automation.Engine
+
+    @impl true
+    def run(cell, _opts) do
+      FakeEngine.run(cell, [])
+      |> put_in([:execution, :duration_ms], "not-an-integer")
     end
   end
 
@@ -228,6 +248,29 @@ defmodule Jido.Cli.AutomationTest do
 
       assert is_binary(error["message"])
     end
+  end
+
+  test "converts a malformed engine map into one valid execution error", %{root: root} do
+    agent = Path.join(root, "agent.yml")
+    input = Path.join(root, "prompt.md")
+    write_agent(agent, "agent")
+    File.write!(input, "Hello")
+
+    output =
+      capture_io(fn ->
+        assert {:ok, summary} =
+                 Automation.execute(
+                   ["run", "--agent", agent, "--input", input],
+                   engine: MalformedEngine,
+                   run_id: "run-malformed"
+                 )
+
+        assert summary.counts.errors == 1
+      end)
+
+    assert [record] = decode_jsonl(output)
+    assert record["execution"]["status"] == "error"
+    assert record["error"]["message"] =~ "execution failed"
   end
 
   test "tags command and configuration errors" do

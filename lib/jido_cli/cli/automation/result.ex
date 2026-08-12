@@ -1,13 +1,15 @@
 defmodule Jido.Cli.Automation.Result do
   @moduledoc "Builds the stable JSONL result contract for one run cell."
 
+  alias Jido.Cli.Automation.Contract
+
   @schema "jido.case-result"
   @schema_version 1
 
   @doc "Builds one result record."
   @spec new(map(), keyword()) :: map()
   def new(cell, attrs) do
-    %{
+    Contract.case_result!(%{
       schema: @schema,
       schema_version: @schema_version,
       type: "case.result",
@@ -21,7 +23,7 @@ defmodule Jido.Cli.Automation.Result do
       turns: Keyword.get(attrs, :turns, []),
       usage: Keyword.get(attrs, :usage, %{}),
       error: Keyword.get(attrs, :error)
-    }
+    })
   end
 
   @doc "Returns a portable error map."

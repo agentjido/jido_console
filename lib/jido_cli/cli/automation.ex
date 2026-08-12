@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation do
   @moduledoc "Runs file-based Jido scenarios and evaluation suites."
 
-  alias Jido.Cli.Automation.{Command, JSONL, Loader, Plan, Result}
+  alias Jido.Cli.Automation.{Command, Contract, JSONL, Loader, Plan, Result}
 
   @doc "Parses and executes one automated CLI command."
   @spec execute([String.t()], keyword()) ::
@@ -88,8 +88,14 @@ defmodule Jido.Cli.Automation do
 
   defp safe_engine_run(engine, cell, opts) do
     case engine.run(cell, opts) do
-      %{} = result -> result
-      result -> engine_error(cell, {:invalid_engine_result, result})
+      %{} = result ->
+        case Contract.validate_case_result(result) do
+          {:ok, result} -> result
+          {:error, reason} -> engine_error(cell, reason)
+        end
+
+      result ->
+        engine_error(cell, {:invalid_engine_result, result})
     end
   rescue
     exception -> engine_error(cell, exception)
@@ -139,7 +145,7 @@ defmodule Jido.Cli.Automation do
 
     status = if counts.failed == 0 and counts.errors == 0, do: :passed, else: :failed
 
-    %{
+    Contract.summary!(%{
       schema: "jido.run-summary",
       schema_version: 1,
       run_id: plan.run_id,
@@ -149,7 +155,7 @@ defmodule Jido.Cli.Automation do
       completed: length(results),
       counts: counts,
       duration_ms: max(System.monotonic_time(:millisecond) - started_ms, 0)
-    }
+    })
   end
 
   defp count_result(result, counts) do
