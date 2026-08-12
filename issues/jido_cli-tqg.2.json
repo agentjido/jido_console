@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:32Z",
+  "description": "Add the missing ordered session contract, migrate the CLI engine, validate automation records, and add public headless cancellation.",
+  "id": "jido_cli-tqg.2",
+  "labels": [],
+  "parent": "jido_cli-tqg",
+  "priority": 0,
+  "status": "open",
+  "title": "Phase 1: Move ordered automation execution into Jidoka",
+  "type": "epic",
+  "updated_at": "2026-08-12T17:14:32Z"
+}
