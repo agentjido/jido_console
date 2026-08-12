@@ -26,14 +26,5 @@ defmodule Jido.Cli.Runtime.Jidoka do
   def await(request, opts), do: Jidoka.await(request, opts)
 
   @impl Jido.Cli.Runtime
-  def cancel(%Jidoka.Chat.Request{task: %Task{} = task}, opts) do
-    shutdown = Keyword.get(opts, :shutdown, :brutal_kill)
-
-    case Task.shutdown(task, shutdown) do
-      nil -> {:ok, :cancelled}
-      result -> {:ok, result}
-    end
-  rescue
-    exception -> {:error, exception}
-  end
+  def cancel(request, opts), do: Jidoka.cancel(request, opts)
 end

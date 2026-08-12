@@ -102,7 +102,7 @@ defmodule Jido.Cli.MixProject do
 
   defp deps do
     [
-      {:jidoka, "~> 0.8.0-beta.1"},
+      {:jidoka, path: "../jidoka"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.12"},
       {:zoi, "~> 0.18"},

@@ -3,10 +3,10 @@ defmodule Jido.Cli.Runtime.JidokaTest do
 
   alias Jido.Cli.Runtime.Jidoka, as: Runtime
   alias Jidoka.Event
-  alias Jidoka.Harness.Session
+  alias Jidoka.Session.Data, as: Session
 
   test "completes a real asynchronous Jidoka session" do
-    llm = fn _intent, _journal ->
+    llm = fn _intent, _journal, _context ->
       {:ok, %{type: :final, content: "deterministic answer"}}
     end
 
@@ -19,12 +19,12 @@ defmodule Jido.Cli.Runtime.JidokaTest do
   end
 
   test "cancels an active public Jidoka request" do
-    llm = fn _intent, _journal ->
+    llm = fn _intent, _journal, _context ->
       Process.sleep(:infinity)
     end
 
     assert {:ok, %Session{} = session} = Runtime.start_session(Jido.Cli.DefaultAgent, [])
     assert {:ok, request} = Runtime.start_turn(session, "wait", self(), llm: llm)
-    assert {:ok, :cancelled} = Runtime.cancel(request, [])
+    assert {:ok, %Jidoka.Cancellation{}} = Runtime.cancel(request, [])
   end
 end

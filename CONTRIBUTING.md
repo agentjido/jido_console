@@ -10,9 +10,28 @@
 
 ## Setup
 
+Development and tests use the public API from the sibling Jidoka checkout. Put
+both repositories in the same parent directory:
+
+```text
+workspace/
+  jido_cli/
+  jidoka/
+```
+
+Then, get the dependencies from the `jido_cli` directory:
+
 ```bash
 mix deps.get
 ```
+
+CLI source must use the documented Jidoka facades and stable data contracts.
+It must not use Jidoka runtime, adapter, execution, or asynchronous task
+internals.
+
+Before a package release, a maintainer must replace the sibling path dependency
+with the approved Jidoka Hex requirement and refresh the Jidoka lock entry. Do
+not publish the package with a local path dependency.
 
 ## Quality Gate
 

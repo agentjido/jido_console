@@ -7,11 +7,10 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
   test "runs ordered turns in one session and carries prior agent state" do
     {:ok, calls} = Agent.start_link(fn -> 0 end)
 
-    llm = fn intent, _journal ->
+    llm = fn intent, _journal, _context ->
       call = Agent.get_and_update(calls, &{&1, &1 + 1})
 
-      messages =
-        intent.payload |> Jidoka.Schema.get_key(:prompt) |> Jidoka.Schema.get_key(:messages, [])
+      messages = intent.payload |> get_key(:prompt) |> get_key(:messages, [])
 
       case call do
         0 ->
@@ -78,7 +77,7 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
   end
 
   test "reports an assertion failure without changing execution status" do
-    llm = fn _intent, _journal ->
+    llm = fn _intent, _journal, _context ->
       {:ok, %{type: :final, content: "actual"}}
     end
 
@@ -119,7 +118,7 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
   end
 
   test "reports a runtime failure and keeps the interrupted turn" do
-    llm = fn _intent, _journal -> {:error, :provider_offline} end
+    llm = fn _intent, _journal, _context -> {:error, :provider_offline} end
 
     spec =
       Spec.new!(
@@ -142,7 +141,7 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
   end
 
   test "supports unscored turns and injected clocks" do
-    llm = fn _intent, _journal -> {:ok, %{type: :final, content: "answer"}} end
+    llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "answer"}} end
 
     spec =
       Spec.new!(
@@ -206,5 +205,9 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
       runtime_opts: [],
       scenario: %{turns: [turn]}
     }
+  end
+
+  defp get_key(map, key, default \\ nil) do
+    Map.get(map, key, Map.get(map, Atom.to_string(key), default))
   end
 end

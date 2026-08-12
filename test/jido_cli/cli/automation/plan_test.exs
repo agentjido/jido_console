@@ -76,7 +76,7 @@ defmodule Jido.Cli.Automation.PlanTest do
       output: nil
     }
 
-    llm = fn _intent, _journal -> {:ok, %{type: :final, content: "ok"}} end
+    llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "ok"}} end
     profiles = %{"tools" => [run_opts: [llm: llm]]}
 
     assert {:ok, %{cells: [cell]}} =
@@ -88,7 +88,7 @@ defmodule Jido.Cli.Automation.PlanTest do
   test "accepts map, list, application, and atom runtime profiles", %{root: root} do
     write_agent(Path.join(root, "a.yml"), "agent_a")
     write_scenario(Path.join(root, "one.yml"), "one")
-    llm = fn _intent, _journal -> {:ok, %{type: :final, content: "ok"}} end
+    llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "ok"}} end
     suite = suite(root, "tools")
 
     assert {:ok, %{cells: [%{runtime_opts: opts}]}} =
