@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:36Z",
+  "description": "The full researched story description is being attached.",
+  "id": "jido_cli-tqg.5.7",
+  "labels": [],
+  "parent": "jido_cli-tqg.5",
+  "priority": 2,
+  "status": "open",
+  "title": "Show edit records and bounded diffs in the TUI",
+  "type": "task",
+  "updated_at": "2026-08-12T17:14:36Z"
+}
