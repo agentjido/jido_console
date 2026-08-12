@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:36Z",
+  "description": "The full researched story description is being attached.",
+  "id": "jido_cli-tqg.5.6",
+  "labels": [],
+  "parent": "jido_cli-tqg.5",
+  "priority": 2,
+  "status": "open",
+  "title": "Make the default coding setup selectable and context-aware",
+  "type": "task",
+  "updated_at": "2026-08-12T17:14:36Z"
+}
