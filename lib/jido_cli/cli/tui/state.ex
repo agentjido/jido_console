@@ -16,6 +16,7 @@ defmodule Jido.Cli.Tui.State do
             finishing?: false,
             prepare_prompt?: false,
             project_instructions: [],
+            coding_reviews: [],
             dirty?: true,
             render_scheduled?: false
 
@@ -126,6 +127,15 @@ defmodule Jido.Cli.Tui.State do
 
   def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content}}) do
     finish(state, session, content, :idle, nil)
+  end
+
+  def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content, reviews}}) do
+    state = %{state | coding_reviews: Jido.Cli.CodingReview.normalize(reviews)}
+    finish(state, session, content, :idle, nil)
+  end
+
+  def update(%__MODULE__{} = state, {:coding_review, reviews}) do
+    changed(state, coding_reviews: Jido.Cli.CodingReview.normalize(reviews))
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:ok, content}}) do

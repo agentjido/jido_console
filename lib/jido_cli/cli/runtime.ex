@@ -81,7 +81,8 @@ defmodule Jido.Cli.Runtime.Jidoka do
   def await(%Request{} = request, opts) do
     case Jidoka.await(request.request, opts) do
       {:ok, next_session, content} ->
-        {:ok, %{request.session | data: next_session}, content}
+        review = Jido.Cli.CodingReview.from_session(next_session)
+        {:ok, %{request.session | data: next_session}, content, review}
 
       result ->
         result

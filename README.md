@@ -89,6 +89,19 @@ outside-root mention shows an error and does not submit the turn. File mentions
 do not use a shell and cannot bypass workspace ignore or path rules. Automated
 scenario input does not use fuzzy file mentions; it must give explicit data.
 
+After a coding turn, the TUI shows a read-only review section. An edit record
+shows its relative path, action, before and after digests, structural line
+counts, status, and checkpoint reference. A Git review shows bounded file facts
+and at most 8,192 bytes of portable patch text. Binary and truncated results are
+marked. The CLI keeps at most 50 review records and also limits visible rows to
+the terminal size.
+
+The stable review states are `changed`, `no_change`, `conflict`, `interrupted`,
+`restored`, `restore_failed`, `failed`, and `cancelled`. Sensitive paths and
+patches are redacted. A checkpoint is recovery evidence only. The TUI does not
+restore a checkpoint, accept a change, read a changed file, or run a Git
+command. Malformed and unsafe review data is not shown.
+
 ## Run one input or scenario
 
 Use a text file or standard input for one turn:

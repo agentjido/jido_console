@@ -66,7 +66,7 @@ defmodule Jido.Cli.TuiTest do
       test_pid = Keyword.fetch!(opts, :test_pid)
       send(test_pid, :turn_started)
       send(test_pid, {:turn_prompt, prompt, Keyword.get(opts, :context)})
-      request = %{request_id: "request-1", test_pid: test_pid}
+      request = %{request_id: "request-1", test_pid: test_pid, prompt: prompt}
 
       delta =
         Event.build(:llm_delta, [],
@@ -87,7 +87,29 @@ defmodule Jido.Cli.TuiTest do
     @impl true
     def await(request, opts) do
       send(request.test_pid, {:turn_awaited, opts})
-      {:ok, :next_session, "Hello back"}
+
+      if request.prompt == "review edit" do
+        {:ok, :next_session, "Edit complete.",
+         [
+           %{
+             "kind" => "edit",
+             "path" => "lib/value.ex",
+             "action" => "edit",
+             "status" => "changed",
+             "before_sha256" => "sha256:" <> String.duplicate("1", 64),
+             "after_sha256" => "sha256:" <> String.duplicate("2", 64),
+             "checkpoint" => %{"checkpoint_ref" => "check-1"},
+             "diff" => %{
+               "before_lines" => 4,
+               "after_lines" => 5,
+               "changed_before_lines" => 1,
+               "changed_after_lines" => 2
+             }
+           }
+         ]}
+      else
+        {:ok, :next_session, "Hello back"}
+      end
     end
 
     @impl true
@@ -190,6 +212,38 @@ defmodule Jido.Cli.TuiTest do
     assert await_opts[:cancel_on_timeout] == false
 
     assert_frame_contains("Hello back")
+
+    send(owner, {:jido_terminal, ref, {:key, :escape}})
+    assert :ok = Task.await(task)
+    assert_receive :terminal_closed
+  end
+
+  test "shows bounded coding review returned by the runtime" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive :session_started
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+
+    send(owner, {:jido_terminal, ref, {:text, "review edit"}})
+    send(owner, {:jido_terminal, ref, {:key, :enter}})
+    assert_receive :turn_started
+    assert_receive {:turn_awaited, _opts}
+
+    frame = assert_frame_contains("[changed] lib/value.ex")
+    assert frame =~ "checkpoint check-1"
+    assert frame =~ "changed -1 +2"
 
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)

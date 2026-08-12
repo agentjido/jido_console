@@ -200,4 +200,33 @@ defmodule Jido.Cli.Tui.StateTest do
     assert state.editor.text == "Review @missing"
     assert state.messages == []
   end
+
+  test "stores only normalized coding review data from a completed turn" do
+    digest = "sha256:" <> String.duplicate("a", 64)
+
+    review = %{
+      "kind" => "edit",
+      "path" => "lib/value.ex",
+      "action" => "edit",
+      "operation_id" => "edit-1",
+      "before_sha256" => digest,
+      "after_sha256" => digest,
+      "checkpoint" => %{"checkpoint_ref" => "checkpoint-1"},
+      "diff" => %{"changed_before_lines" => 1, "changed_after_lines" => 1}
+    }
+
+    state = %{State.new(:session, {80, 24}) | request: :request}
+
+    {state, []} =
+      State.update(state, {:turn_result, {:ok, :next_session, "done", [review, %{"bad" => true}]}})
+
+    assert state.session == :next_session
+    assert state.status == :idle
+    assert [%{"path" => "lib/value.ex", "status" => "changed"}] = state.coding_reviews
+
+    {state, []} =
+      State.update(state, {:coding_review, [%{"kind" => "mutation_state", "status" => "cancelled"}]})
+
+    assert [%{"status" => "cancelled"}] = state.coding_reviews
+  end
 end
