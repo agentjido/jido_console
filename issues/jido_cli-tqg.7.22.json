@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T22:14:06Z",
+  "description": "## Outcome\n\nThe Homebrew formula defines an optional per-user service that runs the installed `jido daemon` foreground command on macOS and Linux.\n\n## Work\n\n1. Add a formula service block that uses the installed launcher and user state root.\n2. Support `brew services start`, `info`, `restart`, and `stop` without `sudo`.\n3. Define log locations, environment, restart behavior, and shutdown deadlines.\n4. Keep service installation and start as explicit user actions.\n5. Test upgrade while compatible daemon state exists and while the service is stopped or running.\n6. Document health checks, recovery, stale discovery cleanup, logs, and uninstall behavior.\n\n## Acceptance criteria\n\n- [ ] The service runs as the current user on macOS and Linux.\n- [ ] Install and upgrade do not start it automatically.\n- [ ] Start, info, restart, and stop report correct daemon state.\n- [ ] Clean stop follows the daemon lifecycle policy.\n- [ ] Upgrade preserves compatible state outside the Cellar.\n- [ ] Uninstall does not silently delete durable user state.\n\n## Tests\n\nRun separate native service lifecycle tests. Do not rely on the normal formula test for interactive or service behavior.\n\n## Non-goals\n\nDo not add a system-wide service, require `sudo`, or change local execution defaults.",
+  "id": "jido_cli-tqg.7.22",
+  "labels": [],
+  "parent": "jido_cli-tqg.7",
+  "priority": 2,
+  "status": "open",
+  "title": "Add the Homebrew per-user daemon service",
+  "type": "task",
+  "updated_at": "2026-08-12T22:14:06Z"
+}
