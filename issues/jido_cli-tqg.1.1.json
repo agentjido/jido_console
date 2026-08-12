@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [
     "jido_cli-tqg.1.2",
@@ -18,8 +18,8 @@
   ],
   "parent": "jido_cli-tqg.1",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "Use the sibling Jidoka checkout as the CLI development contract",
   "type": "task",
-  "updated_at": "2026-08-12T17:15:49Z"
+  "updated_at": "2026-08-12T17:25:38Z"
 }
