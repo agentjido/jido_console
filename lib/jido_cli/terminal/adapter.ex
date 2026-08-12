@@ -1,0 +1,18 @@
+defmodule Jido.Terminal.Adapter do
+  @moduledoc "Adapter contract for terminal effects."
+
+  @type handle :: term()
+  @type size :: {pos_integer(), pos_integer()}
+  @type event ::
+          {:text, String.t()}
+          | {:paste, String.t()}
+          | {:key, :enter | :backspace | :left | :right | :escape | :ctrl_c}
+          | {:resize, pos_integer(), pos_integer()}
+          | :eof
+
+  @callback open(owner :: pid(), keyword()) ::
+              {:ok, handle(), reference(), size()} | {:error, term()}
+  @callback write(handle(), iodata()) :: :ok | {:error, term()}
+  @callback size(handle()) :: {:ok, size()} | {:error, term()}
+  @callback close(handle()) :: :ok
+end

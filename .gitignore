@@ -1,0 +1,7 @@
+/_build/
+/cover/
+/deps/
+/jido
+/.elixir_ls/
+/.DS_Store
+/erl_crash.dump
