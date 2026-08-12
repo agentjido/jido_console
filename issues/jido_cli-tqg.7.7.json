@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T22:09:58Z",
+  "description": "## Outcome\n\nThe daemon server binds only to `127.0.0.1` on a dynamic port. The client uses discovery, authenticates, checks protocol compatibility, and exchanges framed requests and streamed events.\n\n## Why now\n\nThe protocol and discovery contracts are the stable boundaries needed for a cross-platform local client.\n\n## Work\n\n1. Implement incremental frame encode and decode with strict size and JSON schema limits.\n2. Bind IPv4 loopback only and publish the selected port through the discovery owner.\n3. Authenticate every connection before dispatch and reject incompatible versions.\n4. Implement status, health, and the protocol v1 Jidoka-backed request.\n5. Stream ordered events with one terminal response and bounded per-connection buffering.\n6. Cancel or detach work on disconnect according to the protocol policy.\n7. Route `jido daemon status` and `jido daemon health` through the client with documented no-daemon behavior.\n\n## Acceptance criteria\n\n- [ ] The server cannot bind a non-loopback address through public options.\n- [ ] Split, combined, empty, oversized, malformed, and truncated frames have deterministic results.\n- [ ] Wrong tokens and versions fail before request work starts.\n- [ ] Stream order, terminal uniqueness, backpressure, and disconnect behavior match the contract.\n- [ ] Status and health do not require provider credentials.\n- [ ] Tokens and private runtime values never enter logs or protocol errors.\n\n## Tests\n\nAdd protocol unit tests and local TCP integration tests with injected request engines. Do not call a live provider. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not make normal CLI execution connect to the daemon. Do not add TLS, remote binding, Unix sockets, or named pipes.",
+  "id": "jido_cli-tqg.7.7",
+  "labels": [],
+  "parent": "jido_cli-tqg.7",
+  "priority": 0,
+  "status": "open",
+  "title": "Implement the framed loopback daemon client and server",
+  "type": "task",
+  "updated_at": "2026-08-12T22:09:58Z"
+}
