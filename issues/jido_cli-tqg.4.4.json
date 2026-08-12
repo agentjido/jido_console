@@ -1,6 +1,7 @@
 {
   "assignee": "",
   "blocked_by": [
+    "jido_cli-tqg.3.1",
     "jido_cli-tqg.4.3"
   ],
   "blocks": [],
@@ -18,5 +19,5 @@
   "status": "open",
   "title": "Add the built-in Jidoka extension host",
   "type": "task",
-  "updated_at": "2026-08-12T17:14:39Z"
+  "updated_at": "2026-08-12T17:14:40Z"
 }
