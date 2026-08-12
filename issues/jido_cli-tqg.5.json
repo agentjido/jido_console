@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:32Z",
+  "description": "Build the default coding use case as replaceable extension registrations over the policy and execution boundaries.",
+  "id": "jido_cli-tqg.5",
+  "labels": [],
+  "parent": "jido_cli-tqg",
+  "priority": 1,
+  "status": "open",
+  "title": "Phase 4: Ship a removable default coding pack",
+  "type": "epic",
+  "updated_at": "2026-08-12T17:14:32Z"
+}
