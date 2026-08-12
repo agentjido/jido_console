@@ -199,10 +199,22 @@ defmodule Jido.Cli.Automation.Plan do
             sequence: cell.sequence,
             cell_id: cell.cell_id,
             dimensions: cell.dimensions,
-            sources: cell.sources
+            sources: cell.sources,
+            execution_environment: manifest_environment(cell.execution_environment)
           }
         end)
     })
+  end
+
+  defp manifest_environment(nil), do: %{status: :not_requested}
+
+  defp manifest_environment(environment) do
+    Jido.Cli.Automation.Result.execution_environment(
+      %{execution_environment: environment},
+      nil,
+      nil
+    )
+    |> Map.put(:status, :resolved)
   end
 
   defp cell_id(dimensions) do

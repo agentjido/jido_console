@@ -246,11 +246,19 @@ defmodule Jido.Cli.AutomationTest do
     records = decode_jsonl(stdout)
     assert length(records) == 4
     assert Enum.all?(records, &(&1["schema"] == "jido.case-result"))
+    assert Enum.all?(records, &(&1["execution_environment"] == %{"status" => "not_requested"}))
     assert File.regular?(Path.join(output, "manifest.json"))
     assert File.regular?(Path.join(output, "summary.json"))
     assert length(decode_jsonl(File.read!(Path.join(output, "results.jsonl")))) == 4
     assert length(decode_jsonl(File.read!(Path.join(output, "by-agent/a.jsonl")))) == 2
     assert length(decode_jsonl(File.read!(Path.join(output, "by-agent/b.jsonl")))) == 2
+
+    manifest = output |> Path.join("manifest.json") |> File.read!() |> Jason.decode!()
+
+    assert Enum.all?(
+             manifest["cells"],
+             &(&1["execution_environment"] == %{"status" => "not_requested"})
+           )
   end
 
   test "runs one prompt file without a scenario file", %{root: root} do

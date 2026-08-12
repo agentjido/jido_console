@@ -19,6 +19,7 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
       "Jidoka.Operation.Source",
       "Jidoka.Review",
       "Jidoka.Session.Data",
+      "Jidoka.Session.Environment",
       "Jidoka.Session.Sequence",
       "Jidoka.Session.Store",
       "Jidoka.Snapshot",

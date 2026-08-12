@@ -32,17 +32,21 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
     def open(profile, _request, opts) do
       record(opts, :open)
 
-      binding =
-        Binding.new!(
-          adapter_id: profile.adapter_id,
-          adapter_version: "1",
-          profile_id: profile.profile_id,
-          profile_digest: profile.digest,
-          resource_ref: Keyword.get(opts, :resource_ref, "automation-cell"),
-          state: :available
-        )
+      if Keyword.get(opts, :fail_open, false) do
+        {:error, :open_failed}
+      else
+        binding =
+          Binding.new!(
+            adapter_id: profile.adapter_id,
+            adapter_version: "1",
+            profile_id: profile.profile_id,
+            profile_digest: profile.digest,
+            resource_ref: Keyword.get(opts, :resource_ref, "automation-cell"),
+            state: :available
+          )
 
-      {:ok, binding, evidence()}
+        {:ok, binding, evidence()}
+      end
     end
 
     @impl true
@@ -88,7 +92,10 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
     @impl true
     def cleanup(_binding, opts) do
       record(opts, :cleanup)
-      {:ok, evidence()}
+
+      if Keyword.get(opts, :fail_cleanup, false),
+        do: {:error, :cleanup_failed},
+        else: {:ok, evidence()}
     end
 
     defp evidence do
@@ -505,6 +512,10 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
 
     assert result.execution.status == :ok, inspect(result.error)
     assert Enum.map(result.turns, & &1.status) == [:ok, :ok]
+    assert result.execution_environment.status == :closed
+    assert result.execution_environment.requested.profile_id == "restricted"
+    assert result.execution_environment.confirmed.backend == "test-backend"
+    assert result.execution_environment.lifecycle.cleanup == :confirmed
 
     assert_receive {:cell_environment,
                     %{execution_environment: %{handle: %Jidoka.ExecutionEnvironment.Manager.Handle{}}}}
@@ -550,6 +561,8 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
     result = Engine.run(profiled_cell, execution_environment_adapter_opts: [probe: probe])
 
     assert result.execution.status == :error
+    assert result.execution_environment.status == :rejected
+    refute Map.has_key?(result.execution_environment, :confirmed)
     refute_received :profiled_llm_called
     assert environment_events(probe) == []
   end
@@ -577,7 +590,70 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
       )
 
     assert result.execution.status == :error
+    assert result.execution_environment.status == :closed
+    assert result.execution_environment.confirmed.status == :confirmed
     assert environment_events(probe) == [:open, :acquire, :close, :cleanup]
+  end
+
+  test "keeps confirmed evidence when cleanup fails" do
+    {:ok, probe} = Agent.start_link(fn -> [] end)
+
+    spec =
+      Spec.new!(
+        id: "profiled_cleanup_error_agent",
+        model: "openai:gpt-4o-mini",
+        instructions: "Answer."
+      )
+
+    profiled_cell =
+      spec
+      |> cell(%{id: "one", input: "Answer", context: %{}, assertions: %{}})
+      |> Map.put(
+        :runtime_opts,
+        llm: fn _intent, _journal, _context -> {:ok, %{type: :final, content: "done"}} end
+      )
+      |> Map.put(:execution_environment, resolved_environment())
+
+    result =
+      Engine.run(profiled_cell,
+        execution_environment_policy: allow_environment_policy(),
+        execution_environment_adapter_opts: [probe: probe, fail_cleanup: true]
+      )
+
+    assert result.execution.status == :error
+    assert result.execution_environment.status == :cleanup_failed
+    assert result.execution_environment.confirmed.status == :confirmed
+    assert result.execution_environment.lifecycle.close == :confirmed
+    assert result.execution_environment.lifecycle.cleanup == :failed
+    assert environment_events(probe) == [:open, :acquire, :checkpoint, :close, :cleanup]
+  end
+
+  test "keeps requested facts when environment open fails" do
+    {:ok, probe} = Agent.start_link(fn -> [] end)
+
+    spec =
+      Spec.new!(
+        id: "profiled_open_error_agent",
+        model: "openai:gpt-4o-mini",
+        instructions: "Answer."
+      )
+
+    profiled_cell =
+      spec
+      |> cell(%{id: "one", input: "Answer", context: %{}, assertions: %{}})
+      |> Map.put(:execution_environment, resolved_environment())
+
+    result =
+      Engine.run(profiled_cell,
+        execution_environment_policy: allow_environment_policy(),
+        execution_environment_adapter_opts: [probe: probe, fail_open: true]
+      )
+
+    assert result.execution.status == :error
+    assert result.execution_environment.status == :open_failed
+    assert result.execution_environment.requested.profile_id == "restricted"
+    refute Map.has_key?(result.execution_environment, :confirmed)
+    assert environment_events(probe) == [:open]
   end
 
   test "supports unscored turns and injected clocks" do

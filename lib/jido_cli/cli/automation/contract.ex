@@ -31,6 +31,10 @@ defmodule Jido.Cli.Automation.Contract do
   @spec execution_schema() :: Zoi.schema()
   def execution_schema, do: execution_schema(:error)
 
+  @doc "Returns the additive execution-environment schema used by case-result version 1."
+  @spec execution_environment_schema() :: Zoi.schema()
+  def execution_environment_schema, do: execution_environment_schema(:error)
+
   @doc "Returns the strict cell-evaluation schema used by case-result version 1."
   @spec evaluation_schema() :: Zoi.schema()
   def evaluation_schema, do: evaluation_schema(:error)
@@ -103,6 +107,7 @@ defmodule Jido.Cli.Automation.Contract do
         dimensions: dimensions_schema(keys),
         sources: sources_schema(keys),
         execution: execution_schema(keys),
+        execution_environment: execution_environment_schema(keys) |> Zoi.optional(),
         evaluation: evaluation_schema(keys),
         turns: Zoi.array(turn_schema(keys)),
         usage: usage_schema(),
@@ -151,6 +156,113 @@ defmodule Jido.Cli.Automation.Contract do
         duration_ms: non_negative_integer(),
         turn_count: non_negative_integer(),
         extensions: extensions_schema() |> Zoi.optional()
+      },
+      keys
+    )
+  end
+
+  defp execution_environment_schema(keys) do
+    object(
+      %{
+        status:
+          atom_enum([
+            :not_requested,
+            :resolved,
+            :rejected,
+            :open_failed,
+            :enforced,
+            :closed,
+            :close_failed,
+            :cleanup_failed
+          ]),
+        requested: environment_request_schema(keys) |> Zoi.optional(),
+        resolved: environment_resolution_schema(keys) |> Zoi.optional(),
+        binding: environment_binding_schema(keys) |> Zoi.optional(),
+        confirmed: environment_evidence_schema(keys) |> Zoi.optional(),
+        lifecycle: environment_lifecycle_schema(keys) |> Zoi.optional()
+      },
+      keys
+    )
+  end
+
+  defp environment_request_schema(keys) do
+    object(
+      %{
+        profile_id: non_empty_string(),
+        capability_ids: Zoi.array(non_empty_string()),
+        policy_digest: digest_string()
+      },
+      keys
+    )
+  end
+
+  defp environment_resolution_schema(keys) do
+    object(
+      %{
+        profile_id: non_empty_string(),
+        profile_digest: digest_string(),
+        registration_fingerprint: digest_string()
+      },
+      keys
+    )
+  end
+
+  defp environment_binding_schema(keys) do
+    object(
+      %{
+        fingerprint: digest_string(),
+        revision: non_negative_integer(),
+        state: atom_enum([:opened, :available, :acquired, :closed, :cleaned])
+      },
+      keys
+    )
+  end
+
+  defp environment_evidence_schema(keys) do
+    object(
+      %{
+        status: atom_enum([:confirmed, :partial, :unknown, :unsupported]),
+        adapter_id: non_empty_string(),
+        backend: non_empty_string(),
+        isolation: atom_enum([:unknown, :none, :process, :container, :vm, :microvm]),
+        network: atom_enum([:unknown, :disabled, :restricted, :unrestricted]),
+        workspace: atom_enum([:unknown, :ephemeral, :persistent, :isolated_copy]),
+        image_digest: digest_string() |> Zoi.nullish(),
+        applied_limits: Zoi.json(),
+        checkpoint: Zoi.json(),
+        observed_at_ms: non_negative_integer(),
+        attestation_ref: Zoi.string() |> Zoi.nullish()
+      },
+      keys
+    )
+  end
+
+  defp environment_lifecycle_schema(keys) do
+    observation = atom_enum([:confirmed, :failed, :not_observed, :not_applied, :unknown])
+
+    object(
+      %{
+        session_status: atom_enum([:opened, :available, :checkpointed, :restored, :forked, :cleaned]),
+        checkpoint: observation,
+        restore: observation,
+        fork: observation,
+        close: observation,
+        cleanup: observation,
+        checkpoint_facts: environment_checkpoint_schema(keys) |> Zoi.nullish()
+      },
+      keys
+    )
+  end
+
+  defp environment_checkpoint_schema(keys) do
+    object(
+      %{
+        fingerprint: digest_string(),
+        binding_revision: non_negative_integer(),
+        evidence_digest: digest_string(),
+        preserves: Zoi.json(),
+        forkable: Zoi.boolean(),
+        created_at_ms: non_negative_integer()
       },
       keys
     )
@@ -322,7 +434,8 @@ defmodule Jido.Cli.Automation.Contract do
         sequence: positive_integer(),
         cell_id: non_empty_string(),
         dimensions: dimensions_schema(keys),
-        sources: sources_schema(keys)
+        sources: sources_schema(keys),
+        execution_environment: execution_environment_schema(keys) |> Zoi.optional()
       },
       keys
     )
@@ -369,6 +482,7 @@ defmodule Jido.Cli.Automation.Contract do
   end
 
   defp non_empty_string, do: Zoi.string() |> Zoi.regex(~r/\S/)
+  defp digest_string, do: Zoi.string() |> Zoi.regex(~r/^sha256:[0-9a-f]{64}$/)
   defp positive_integer, do: Zoi.integer() |> Zoi.positive()
   defp non_negative_integer, do: Zoi.integer() |> Zoi.gte(0)
   defp non_negative_number, do: Zoi.number() |> Zoi.gte(0)

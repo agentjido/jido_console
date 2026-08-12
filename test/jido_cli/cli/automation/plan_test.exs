@@ -64,7 +64,7 @@ defmodule Jido.Cli.Automation.PlanTest do
     suite = suite(root, "suite-profile")
     llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "ok"}} end
 
-    assert {:ok, %{cells: [cell]}} =
+    assert {:ok, %{cells: [cell]} = plan} =
              Plan.build(suite,
                run_id: "run-fixed",
                execution_profile_resolver: resolver(),
@@ -74,6 +74,12 @@ defmodule Jido.Cli.Automation.PlanTest do
     assert cell.execution_environment.request.profile_id == "agent-profile"
     assert cell.execution_environment.registration.profile.profile_id == "agent-profile"
     assert cell.runtime_opts[:llm] == llm
+
+    [manifest_cell] = plan.manifest.cells
+    assert manifest_cell.execution_environment.status == :resolved
+    assert manifest_cell.execution_environment.requested.profile_id == "agent-profile"
+    assert manifest_cell.execution_environment.resolved.profile_digest =~ "sha256:"
+    refute Map.has_key?(manifest_cell.execution_environment, :confirmed)
   end
 
   test "uses command, scenario, agent, suite, and none precedence", %{root: root} do

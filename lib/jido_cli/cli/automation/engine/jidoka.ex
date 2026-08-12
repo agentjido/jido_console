@@ -73,7 +73,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
           [],
           reason,
           request.started_at,
-          elapsed_ms(request.started_ms, opts)
+          elapsed_ms(request.started_ms, opts),
+          nil
         )
     end
   rescue
@@ -84,7 +85,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
         [],
         exception,
         request.started_at,
-        elapsed_ms(request.started_ms, opts)
+        elapsed_ms(request.started_ms, opts),
+        nil
       )
   catch
     kind, reason ->
@@ -94,7 +96,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
         [],
         {kind, reason},
         request.started_at,
-        elapsed_ms(request.started_ms, opts)
+        elapsed_ms(request.started_ms, opts),
+        nil
       )
   end
 
@@ -114,7 +117,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
     case sequence.status do
       :completed ->
-        completed_result(cell, turns, started_at, duration_ms)
+        completed_result(cell, turns, sequence.session.environment, started_at, duration_ms)
 
       status when status in [:error, :hibernated, :cancelled] ->
         terminal = sequence.terminal
@@ -136,7 +139,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
           turns ++ [interrupted],
           terminal_reason(terminal),
           started_at,
-          duration_ms
+          duration_ms,
+          sequence.session.environment
         )
     end
   end
@@ -241,7 +245,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
   defp terminal_reason(%Sequence.Terminal{reason: reason}), do: reason
 
-  defp completed_result(cell, turns, started_at, duration_ms) do
+  defp completed_result(cell, turns, environment, started_at, duration_ms) do
     evaluation = Result.evaluation(turns, :ok)
 
     Result.new(cell,
@@ -251,6 +255,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
         duration_ms: duration_ms,
         turn_count: length(turns)
       },
+      environment: environment,
       evaluation: evaluation,
       turns: turns,
       usage: Result.usage(turns),
@@ -258,7 +263,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
     )
   end
 
-  defp failed_result(cell, status, turns, reason, started_at, duration_ms) do
+  defp failed_result(cell, status, turns, reason, started_at, duration_ms, environment \\ nil) do
     Result.new(cell,
       execution: %{
         status: status,
@@ -266,6 +271,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
         duration_ms: duration_ms,
         turn_count: length(turns)
       },
+      environment: environment,
+      environment_error: reason,
       evaluation: Result.evaluation(turns, status),
       turns: turns,
       usage: Result.usage(turns),

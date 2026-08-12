@@ -210,6 +210,28 @@ fields. It also has one result for each turn, usage data, assertion results, and
 portable error data. Concurrent cells can finish in any order. Use `sequence`
 or `cell_id` to align records from separate runs.
 
+Each case has an `execution_environment` value. An unprofiled cell uses only
+`{"status":"not_requested"}`. A profiled cell keeps these facts separate:
+
+| Field | Meaning |
+| --- | --- |
+| `requested` | Profile ID, capability IDs, and a digest of the data-only request |
+| `resolved` | Trusted profile ID, profile digest, and registration fingerprint |
+| `binding` | Redacted binding fingerprint, revision, and state |
+| `confirmed` | Adapter-confirmed backend, isolation, network, workspace, image digest, limits, and checkpoint support |
+| `lifecycle` | Confirmed or failed checkpoint, restore, fork, close, and cleanup facts |
+
+The status is `not_requested`, `resolved`, `rejected`, `open_failed`,
+`enforced`, `closed`, `close_failed`, or `cleanup_failed`. A request is never
+reported as enforced unless Jidoka returns confirmed evidence. Manifest cells
+contain only requested and resolved identity facts. Case records contain final
+confirmed facts. The same case record is copied to `results.jsonl` and the
+matching `by-agent` file.
+
+These fields never contain credentials, commands, host paths, adapter options,
+provider handles, resource references, or provider-private metadata. Digests
+and fingerprints give stable cross-references without exposing these values.
+
 The CLI validates every case result before it writes the JSONL line. It also
 validates the version 1 manifest before it creates the output directory and the
 version 1 summary before it writes `summary.json`. The schemas require JSON

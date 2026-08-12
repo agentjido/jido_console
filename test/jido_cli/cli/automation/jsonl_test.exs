@@ -15,7 +15,10 @@ defmodule Jido.Cli.Automation.JSONLTest do
     assert :ok = JSONL.emit(sink, result("agent"))
     assert :ok = JSONL.finish(sink, summary())
     {_input, output} = StringIO.contents(device)
-    assert Jason.decode!(String.trim(output))["schema"] == "jido.case-result"
+    assert [line] = String.split(output, "\n", trim: true)
+    decoded = Jason.decode!(line)
+    assert decoded["schema"] == "jido.case-result"
+    assert decoded["execution_environment"] == %{"status" => "not_requested"}
   end
 
   test "accepts an empty directory and rejects unsafe output targets", %{root: root} do
@@ -100,6 +103,7 @@ defmodule Jido.Cli.Automation.JSONLTest do
         duration_ms: 0,
         turn_count: 0
       },
+      execution_environment: %{status: :not_requested},
       evaluation: %{status: :unscored, assertion_count: 0, failed_assertion_count: 0},
       turns: [],
       usage: %{},
@@ -118,7 +122,15 @@ defmodule Jido.Cli.Automation.JSONLTest do
       suite_sha256: "suite-sha",
       versions: %{jido_cli: "1", jidoka: "1", elixir: "1", otp: "1"},
       matrix: %{agents: ["agent"], models: ["model"], scenarios: ["scenario"], repeats: 1, cells: 1},
-      cells: [%{sequence: 1, cell_id: "cell", dimensions: dimensions("agent"), sources: sources()}]
+      cells: [
+        %{
+          sequence: 1,
+          cell_id: "cell",
+          dimensions: dimensions("agent"),
+          sources: sources(),
+          execution_environment: %{status: :not_requested}
+        }
+      ]
     }
   end
 
