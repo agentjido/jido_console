@@ -1,7 +1,8 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-tqg.7.1"
+    "jido_cli-tqg.7.1",
+    "jido_cli-tqg.7.12"
   ],
   "blocks": [],
   "created": "2026-08-12T22:12:34Z",
@@ -18,5 +19,5 @@
   "status": "open",
   "title": "Audit bundled dependencies and prepare license notices",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:05Z"
+  "updated_at": "2026-08-12T22:15:06Z"
 }
