@@ -2,7 +2,8 @@
   "assignee": "",
   "blocked_by": [
     "jido_cli-tqg.7.3",
-    "jido_cli-tqg.7.4"
+    "jido_cli-tqg.7.4",
+    "jido_cli-tqg.7.5"
   ],
   "blocks": [],
   "created": "2026-08-12T22:09:58Z",
@@ -19,5 +20,5 @@
   "status": "open",
   "title": "Store daemon authentication and discovery state securely",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:02Z"
+  "updated_at": "2026-08-12T22:15:03Z"
 }
