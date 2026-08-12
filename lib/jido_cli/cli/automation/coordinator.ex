@@ -98,14 +98,21 @@ defmodule Jido.Cli.Automation.Coordinator do
       {:ok, cell, pending} ->
         state = %{state | pending: pending}
 
-        case start_cell(engine, cell, opts) do
-          {:ok, entry} ->
-            state
-            |> put_active(Map.put(entry, :provider, Limits.provider_key(cell)))
-            |> admit(sink, engine, jobs, opts)
+        case JSONL.started(sink, cell) do
+          :ok ->
+            case start_cell(engine, cell, opts) do
+              {:ok, entry} ->
+                state
+                |> put_active(Map.put(entry, :provider, Limits.provider_key(cell)))
+                |> admit(sink, engine, jobs, opts)
+
+              {:error, reason} ->
+                emit_start_error(state, cell, reason, sink, engine, jobs, opts)
+            end
 
           {:error, reason} ->
-            emit_start_error(state, cell, reason, sink, engine, jobs, opts)
+            abort_active(state, engine, opts)
+            {:error, reason}
         end
     end
   end

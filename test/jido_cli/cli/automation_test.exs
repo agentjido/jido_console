@@ -256,10 +256,15 @@ defmodule Jido.Cli.AutomationTest do
 
     manifest = output |> Path.join("manifest.json") |> File.read!() |> Jason.decode!()
     summary = output |> Path.join("summary.json") |> File.read!() |> Jason.decode!()
+    lifecycle = output |> Path.join("lifecycle.json") |> File.read!() |> Jason.decode!()
 
     assert manifest["runtime_limits"]["status"] == "configured"
     assert summary["runtime_limits"]["status"] == "within"
     assert summary["runtime_limits"]["observed"]["total_tokens"] == 40
+    assert lifecycle["status"] == "completed"
+    assert length(lifecycle["started"]) == 4
+    assert length(lifecycle["completed"]) == 4
+    assert lifecycle["missing"] == []
 
     assert Enum.all?(
              manifest["cells"],
@@ -394,6 +399,31 @@ defmodule Jido.Cli.AutomationTest do
     assert record["error"]["message"] =~ "execution failed"
   end
 
+  test "a task exit gives a failed terminal lifecycle with a complete error record", %{root: root} do
+    agent = Path.join(root, "agent.yml")
+    input = Path.join(root, "prompt.md")
+    output = Path.join(root, "task-exit")
+    write_agent(agent, "agent")
+    File.write!(input, "Hello")
+
+    capture_io(fn ->
+      assert {:ok, %{status: :failed, completed: 1}} =
+               Automation.execute(
+                 ["run", "--agent", agent, "--input", input, "--output", output],
+                 engine: InvalidEngine,
+                 engine_failure: :exit,
+                 run_id: "run-task-exit"
+               )
+    end)
+
+    lifecycle = output |> Path.join("lifecycle.json") |> File.read!() |> Jason.decode!()
+    assert lifecycle["status"] == "failed"
+    assert length(lifecycle["completed"]) == 1
+    assert length(lifecycle["failed"]) == 1
+    assert lifecycle["missing"] == []
+    assert [_record] = decode_jsonl(File.read!(Path.join(output, "results.jsonl")))
+  end
+
   test "cancels active cells, stops admission, and records not-started cells", %{root: root} do
     write_agent(Path.join(root, "agent.yml"), "agent")
     write_scenario(Path.join(root, "scenario.yml"))
@@ -458,9 +488,18 @@ defmodule Jido.Cli.AutomationTest do
     assert stderr_text =~ "test_interrupt"
 
     summary_file = output |> Path.join("summary.json") |> File.read!() |> Jason.decode!()
+    lifecycle = output |> Path.join("lifecycle.json") |> File.read!() |> Jason.decode!()
     assert summary_file["status"] == "cancelled"
     assert length(summary_file["not_started"]) == 2
     assert length(decode_jsonl(File.read!(Path.join(output, "results.jsonl")))) == 1
+    assert lifecycle["status"] == "cancelled"
+
+    assert lifecycle["completed"] == [
+             %{"cell_id" => started_cell_id, "sequence" => 1}
+           ]
+
+    assert lifecycle["cancelled"] == lifecycle["completed"]
+    assert length(lifecycle["missing"]) == 2
   end
 
   test "the signal handler forwards termination through the interrupt boundary" do

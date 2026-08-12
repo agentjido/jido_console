@@ -8,7 +8,7 @@ defmodule Jido.Cli.Automation.Contract do
   `acme.metrics`.
   """
 
-  @type kind :: :case_result | :manifest | :summary
+  @type kind :: :case_result | :manifest | :summary | :lifecycle
   @type validation_error :: {:invalid_automation_contract, kind(), term()}
 
   @doc "Returns the strict version 1 case-result schema."
@@ -22,6 +22,10 @@ defmodule Jido.Cli.Automation.Contract do
   @doc "Returns the strict version 1 run-summary schema."
   @spec summary_schema() :: Zoi.schema()
   def summary_schema, do: summary_schema(:error)
+
+  @doc "Returns the strict version 1 run-lifecycle schema."
+  @spec lifecycle_schema() :: Zoi.schema()
+  def lifecycle_schema, do: lifecycle_schema(:error)
 
   @doc "Returns the strict turn schema used by case-result version 1."
   @spec turn_schema() :: Zoi.schema()
@@ -79,6 +83,10 @@ defmodule Jido.Cli.Automation.Contract do
   @spec validate_summary(term()) :: {:ok, map()} | {:error, validation_error()}
   def validate_summary(value), do: validate(:summary, summary_schema(:error), value)
 
+  @doc "Validates and normalizes one producer run lifecycle."
+  @spec validate_lifecycle(term()) :: {:ok, map()} | {:error, validation_error()}
+  def validate_lifecycle(value), do: validate(:lifecycle, lifecycle_schema(:error), value)
+
   @doc "Reads a version 1 case result and ignores unknown optional fields."
   @spec read_case_result(term()) :: {:ok, map()} | {:error, validation_error()}
   def read_case_result(value), do: validate(:case_result, case_result_schema(:strip), value)
@@ -91,6 +99,10 @@ defmodule Jido.Cli.Automation.Contract do
   @spec read_summary(term()) :: {:ok, map()} | {:error, validation_error()}
   def read_summary(value), do: validate(:summary, summary_schema(:strip), value)
 
+  @doc "Reads a version 1 run lifecycle and ignores unknown optional fields."
+  @spec read_lifecycle(term()) :: {:ok, map()} | {:error, validation_error()}
+  def read_lifecycle(value), do: validate(:lifecycle, lifecycle_schema(:strip), value)
+
   @doc "Validates a case-result record and raises for an internal producer bug."
   @spec case_result!(term()) :: map()
   def case_result!(value), do: validate!(validate_case_result(value))
@@ -102,6 +114,10 @@ defmodule Jido.Cli.Automation.Contract do
   @doc "Validates a run summary and raises for an internal producer bug."
   @spec summary!(term()) :: map()
   def summary!(value), do: validate!(validate_summary(value))
+
+  @doc "Validates a run lifecycle and raises for an internal producer bug."
+  @spec lifecycle!(term()) :: map()
+  def lifecycle!(value), do: validate!(validate_lifecycle(value))
 
   defp case_result_schema(keys) do
     object(
@@ -578,6 +594,39 @@ defmodule Jido.Cli.Automation.Contract do
         not_started: Zoi.array(non_empty_string()) |> Zoi.optional(),
         runtime_limits: runtime_limits_schema(keys) |> Zoi.optional(),
         extensions: extensions_schema() |> Zoi.optional()
+      },
+      keys
+    )
+  end
+
+  defp lifecycle_schema(keys) do
+    object(
+      %{
+        schema: Zoi.enum(["jido.run-lifecycle"]),
+        schema_version: Zoi.enum([1]),
+        run_id: non_empty_string(),
+        suite_id: non_empty_string(),
+        status: atom_enum([:running, :completed, :failed, :cancelled, :incomplete]),
+        started_at: non_empty_string(),
+        finished_at: non_empty_string() |> Zoi.nullish(),
+        planned: Zoi.array(lifecycle_cell_schema(keys)),
+        started: Zoi.array(lifecycle_cell_schema(keys)),
+        completed: Zoi.array(lifecycle_cell_schema(keys)),
+        failed: Zoi.array(lifecycle_cell_schema(keys)),
+        cancelled: Zoi.array(lifecycle_cell_schema(keys)),
+        missing: Zoi.array(lifecycle_cell_schema(keys)),
+        primary_error: error_schema(keys) |> Zoi.nullish(),
+        finalization_errors: Zoi.array(error_schema(keys))
+      },
+      keys
+    )
+  end
+
+  defp lifecycle_cell_schema(keys) do
+    object(
+      %{
+        cell_id: non_empty_string(),
+        sequence: positive_integer()
       },
       keys
     )

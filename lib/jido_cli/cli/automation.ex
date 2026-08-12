@@ -75,19 +75,38 @@ defmodule Jido.Cli.Automation do
         try do
           coordinator_opts = Keyword.put(opts, :automation_limits, plan.limits)
 
-          with {:ok, outcome} <- Coordinator.run(plan.cells, sink, engine, jobs, coordinator_opts),
-               summary <- summary(plan, outcome, started_ms, opts),
-               :ok <- JSONL.finish(sink, summary) do
-            {:ok, summary}
-          else
-            {:error, reason} -> {:error, :execution, reason}
+          case Coordinator.run(plan.cells, sink, engine, jobs, coordinator_opts) do
+            {:ok, outcome} ->
+              summary = summary(plan, outcome, started_ms, opts)
+
+              case JSONL.finish(sink, summary) do
+                :ok -> {:ok, summary}
+                {:error, reason} -> {:error, :execution, reason}
+              end
+
+            {:error, reason} ->
+              execution_failure(sink, reason)
           end
+        rescue
+          exception -> execution_failure(sink, {:automation_run_exception, exception.__struct__})
+        catch
+          kind, reason -> execution_failure(sink, {:automation_run_exit, kind, reason})
         after
           Interrupt.stop(interrupt)
         end
 
       {:error, reason} ->
+        execution_failure(sink, reason)
+    end
+  end
+
+  defp execution_failure(sink, reason) do
+    case JSONL.abort(sink, reason) do
+      :ok ->
         {:error, :execution, reason}
+
+      {:error, finalization_error} ->
+        {:error, :execution, {:automation_failed_with_finalization_error, reason, finalization_error}}
     end
   end
 

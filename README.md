@@ -343,6 +343,7 @@ The command writes:
 ```text
 DIR/
   manifest.json
+  lifecycle.json
   results.jsonl
   summary.json
   by-agent/<agent-key>.jsonl
@@ -370,6 +371,30 @@ reported as enforced unless Jidoka returns confirmed evidence. Manifest cells
 contain only requested and resolved identity facts. Case records contain final
 confirmed facts. The same case record is copied to `results.jsonl` and the
 matching `by-agent` file.
+
+`manifest.json` is immutable source and plan provenance. `lifecycle.json` is
+created with status `running` and is replaced atomically as work changes. Its
+terminal status is `completed`, `failed`, `cancelled`, or `incomplete`.
+`summary.json` is also written through a temporary file and an atomic rename.
+The lifecycle lists each planned, started, completed, failed, cancelled, and
+missing cell by `cell_id` and `sequence`. A completed cell has a full record in
+both aggregate and per-agent artifacts. Failed and cancelled cells are subsets
+of the completed list.
+
+If standard output fails, the run stops further standard output writes. It
+keeps complete file records when possible and marks the directory incomplete.
+If `results.jsonl` or a per-agent write fails, the CLI does not write that case
+to standard output. Each JSONL update replaces the file atomically, so a
+surviving file cannot end with a partial physical line. A per-agent failure can
+leave a complete aggregate record; the lifecycle still marks the run
+incomplete. `primary_error` records the run failure, and
+`finalization_errors` records artifact failures in portable form. These fields
+do not contain runtime handles or provider-private values.
+
+All artifact files use mode `0600`. A rejected nonempty output directory is not
+changed. The CLI does not resume or repair an incomplete directory. Consumers
+can read its complete JSONL lines and use `lifecycle.json` to find missing
+cells.
 
 These fields never contain credentials, commands, host paths, adapter options,
 provider handles, resource references, or provider-private metadata. Digests

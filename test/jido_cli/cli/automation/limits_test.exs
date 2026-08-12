@@ -36,6 +36,26 @@ defmodule Jido.Cli.Automation.LimitsTest do
     end
   end
 
+  defmodule UsageEngine do
+    @behaviour Jido.Cli.Automation.Engine
+
+    @impl true
+    def run(cell, _opts) do
+      Result.new(cell,
+        execution: %{
+          status: :ok,
+          started_at: "2026-08-12T12:00:00Z",
+          duration_ms: 1,
+          turn_count: 1
+        },
+        evaluation: %{status: :passed, assertion_count: 1, failed_assertion_count: 0},
+        turns: [],
+        usage: %{total_tokens: 10, total_cost: 0.1},
+        error: nil
+      )
+    end
+  end
+
   setup do
     root = Path.join(System.tmp_dir!(), "jido-cli-limits-#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
@@ -147,6 +167,31 @@ defmodule Jido.Cli.Automation.LimitsTest do
               limit_stop: %{kind: :total_tokens, limit: 15, observed: 20},
               not_started: [%{sequence: 3}]
             }} = Task.await(task, 2_000)
+  end
+
+  test "a limit stop finalizes completed and missing cells", %{root: root} do
+    suite = write_suite(root, repeats: 3, limits: "max_total_tokens: 15")
+    output = Path.join(root, "limited-output")
+    {:ok, stdout} = StringIO.open("")
+    {:ok, stderr} = StringIO.open("")
+
+    assert {:ok, summary} =
+             Jido.Cli.Automation.execute(["eval", suite, "--output", output],
+               engine: UsageEngine,
+               output_device: stdout,
+               error_device: stderr,
+               run_id: "limited-run"
+             )
+
+    assert summary.status == :failed
+    assert summary.completed == 2
+    assert length(summary.not_started) == 1
+
+    lifecycle = output |> Path.join("lifecycle.json") |> File.read!() |> Jason.decode!()
+    assert lifecycle["status"] == "failed"
+    assert length(lifecycle["completed"]) == 2
+    assert length(lifecycle["missing"]) == 1
+    assert length(lifecycle["planned"]) == 3
   end
 
   test "a suite deadline stops later admission without cancelling active work" do

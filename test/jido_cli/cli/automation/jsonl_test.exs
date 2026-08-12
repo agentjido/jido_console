@@ -28,7 +28,15 @@ defmodule Jido.Cli.Automation.JSONLTest do
 
     assert {:ok, sink} = JSONL.open(manifest(), empty, output_device: device)
     assert File.regular?(Path.join(empty, "manifest.json"))
+    assert File.regular?(Path.join(empty, "lifecycle.json"))
+    assert :ok = JSONL.started(sink, %{cell_id: "cell", sequence: 1})
+    assert :ok = JSONL.emit(sink, result("agent"))
     assert :ok = JSONL.finish(sink, summary())
+
+    lifecycle = empty |> Path.join("lifecycle.json") |> File.read!() |> Jason.decode!()
+    assert lifecycle["status"] == "completed"
+    assert lifecycle["completed"] == [%{"cell_id" => "cell", "sequence" => 1}]
+    assert lifecycle["missing"] == []
 
     assert {:error, {:invalid_output_directory, 42}} = JSONL.open(manifest(), 42)
 
@@ -71,9 +79,11 @@ defmodule Jido.Cli.Automation.JSONLTest do
   test "reads manifest and summary JSON with unknown optional fields" do
     decoded_manifest = json_round_trip(manifest()) |> Map.put("future_field", %{})
     decoded_summary = json_round_trip(summary()) |> Map.put("future_field", %{})
+    decoded_lifecycle = lifecycle() |> json_round_trip() |> Map.put("future_field", %{})
 
     assert {:ok, %{schema: "jido.run-manifest"}} = Contract.read_manifest(decoded_manifest)
     assert {:ok, %{schema: "jido.run-summary"}} = Contract.read_summary(decoded_summary)
+    assert {:ok, %{schema: "jido.run-lifecycle"}} = Contract.read_lifecycle(decoded_lifecycle)
   end
 
   test "keeps explicit agent keys inside the output directory", %{root: root} do
@@ -85,6 +95,21 @@ defmodule Jido.Cli.Automation.JSONLTest do
     assert [path] = Path.wildcard(Path.join(output, "by-agent/*.jsonl"))
     assert Path.dirname(path) == Path.join(output, "by-agent")
     refute File.exists?(Path.join(root, "Outside Agent.jsonl"))
+  end
+
+  test "rejects an unplanned lifecycle transition", %{root: root} do
+    output = Path.join(root, "transition")
+    {:ok, device} = StringIO.open("")
+    assert {:ok, sink} = JSONL.open(manifest(), output, output_device: device)
+
+    assert {:error, {:unplanned_lifecycle_cell, %{cell_id: "other", sequence: 2}}} =
+             JSONL.started(sink, %{cell_id: "other", sequence: 2})
+
+    assert :ok = JSONL.abort(sink, :invalid_transition)
+    lifecycle = output |> Path.join("lifecycle.json") |> File.read!() |> Jason.decode!()
+    assert lifecycle["status"] == "incomplete"
+    assert lifecycle["started"] == []
+    assert lifecycle["missing"] == [%{"cell_id" => "cell", "sequence" => 1}]
   end
 
   defp result(agent_key) do
@@ -145,6 +170,26 @@ defmodule Jido.Cli.Automation.JSONLTest do
       completed: 1,
       counts: %{passed: 1, failed: 0, errors: 0, unscored: 0},
       duration_ms: 0
+    }
+  end
+
+  defp lifecycle do
+    %{
+      schema: "jido.run-lifecycle",
+      schema_version: 1,
+      run_id: "run",
+      suite_id: "suite",
+      status: :running,
+      started_at: "2026-08-12T12:00:00Z",
+      finished_at: nil,
+      planned: [%{cell_id: "cell", sequence: 1}],
+      started: [],
+      completed: [],
+      failed: [],
+      cancelled: [],
+      missing: [%{cell_id: "cell", sequence: 1}],
+      primary_error: nil,
+      finalization_errors: []
     }
   end
 
