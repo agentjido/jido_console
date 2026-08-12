@@ -35,6 +35,10 @@ defmodule Jido.Cli.Automation.Contract do
   @spec execution_environment_schema() :: Zoi.schema()
   def execution_environment_schema, do: execution_environment_schema(:error)
 
+  @doc "Returns the additive capability-replay evidence schema."
+  @spec capability_replay_schema() :: Zoi.schema()
+  def capability_replay_schema, do: capability_replay_schema(:error)
+
   @doc "Returns the strict cell-evaluation schema used by case-result version 1."
   @spec evaluation_schema() :: Zoi.schema()
   def evaluation_schema, do: evaluation_schema(:error)
@@ -108,6 +112,7 @@ defmodule Jido.Cli.Automation.Contract do
         sources: sources_schema(keys),
         execution: execution_schema(keys),
         execution_environment: execution_environment_schema(keys) |> Zoi.optional(),
+        capability_replay: capability_replay_schema(keys) |> Zoi.optional(),
         evaluation: evaluation_schema(keys),
         turns: Zoi.array(turn_schema(keys)),
         usage: usage_schema(),
@@ -173,13 +178,55 @@ defmodule Jido.Cli.Automation.Contract do
             :enforced,
             :closed,
             :close_failed,
-            :cleanup_failed
+            :cleanup_failed,
+            :recorded
           ]),
         requested: environment_request_schema(keys) |> Zoi.optional(),
         resolved: environment_resolution_schema(keys) |> Zoi.optional(),
         binding: environment_binding_schema(keys) |> Zoi.optional(),
         confirmed: environment_evidence_schema(keys) |> Zoi.optional(),
         lifecycle: environment_lifecycle_schema(keys) |> Zoi.optional()
+      },
+      keys
+    )
+  end
+
+  defp capability_replay_schema(keys) do
+    object(
+      %{
+        mode: atom_enum([:live, :replay]),
+        status: atom_enum([:not_replayed, :configured, :matched, :mismatch, :cancelled]),
+        fixture_schema: positive_integer() |> Zoi.optional(),
+        fixture_digest: digest_string() |> Zoi.optional(),
+        recorded_evidence: Zoi.boolean(),
+        matched_calls: non_negative_integer(),
+        total_calls: non_negative_integer(),
+        mismatch: replay_mismatch_schema(keys) |> Zoi.optional()
+      },
+      keys
+    )
+  end
+
+  defp replay_mismatch_schema(keys) do
+    object(
+      %{
+        kind: atom_enum([:changed_or_out_of_order, :missing_call, :extra_calls]),
+        expected: replay_call_schema(keys) |> Zoi.optional(),
+        actual: replay_call_schema(keys) |> Zoi.optional(),
+        index: positive_integer() |> Zoi.optional(),
+        remaining: positive_integer() |> Zoi.optional()
+      },
+      keys
+    )
+  end
+
+  defp replay_call_schema(keys) do
+    object(
+      %{
+        index: positive_integer() |> Zoi.optional(),
+        class: Zoi.enum(["llm", "operation", "policy", "environment"]) |> Zoi.optional(),
+        action: non_empty_string() |> Zoi.optional(),
+        occurrence: positive_integer() |> Zoi.optional()
       },
       keys
     )
@@ -436,6 +483,7 @@ defmodule Jido.Cli.Automation.Contract do
         dimensions: dimensions_schema(keys),
         sources: sources_schema(keys),
         execution_environment: execution_environment_schema(keys) |> Zoi.optional(),
+        capability_replay: capability_replay_schema(keys) |> Zoi.optional(),
         extensions: extensions_schema() |> Zoi.optional()
       },
       keys

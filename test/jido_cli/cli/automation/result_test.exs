@@ -30,6 +30,14 @@ defmodule Jido.Cli.Automation.ResultTest do
     assert result.evaluation.status == :not_run
     assert is_binary(result.error.message)
     assert result.execution_environment == %{status: :not_requested}
+
+    assert result.capability_replay == %{
+             mode: :live,
+             status: :not_replayed,
+             recorded_evidence: false,
+             matched_calls: 0,
+             total_calls: 0
+           }
   end
 
   test "keeps requested, resolved, and confirmed environment facts separate" do

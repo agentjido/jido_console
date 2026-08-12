@@ -79,6 +79,8 @@ defmodule Jido.Cli.Automation.PlanTest do
     assert manifest_cell.execution_environment.status == :resolved
     assert manifest_cell.execution_environment.requested.profile_id == "agent-profile"
     assert manifest_cell.execution_environment.resolved.profile_digest =~ "sha256:"
+    assert manifest_cell.capability_replay.mode == :live
+    assert manifest_cell.capability_replay.status == :not_replayed
     refute Map.has_key?(manifest_cell.execution_environment, :confirmed)
   end
 

@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation.Plan do
   @moduledoc "Builds the agent, scenario, model, and trial run matrix."
 
-  alias Jido.Cli.Automation.{Contract, Loader}
+  alias Jido.Cli.Automation.{Contract, Loader, Replay}
   alias Jido.Cli.Extensions
   alias Jidoka.Agent.Spec
   alias Jidoka.ExecutionEnvironment.PolicyRequest
@@ -120,6 +120,7 @@ defmodule Jido.Cli.Automation.Plan do
     }
 
     with {:ok, environment} <- execution_environment(suite, scenario, variant.spec, opts),
+         {:ok, replay} <- Replay.resolve(environment, opts),
          {:ok, extensions} <- Extensions.resolve(variant.spec.extensions, :automation, opts) do
       {:ok,
        %{
@@ -131,6 +132,7 @@ defmodule Jido.Cli.Automation.Plan do
          spec: variant.spec,
          runtime_opts: variant.runtime_opts,
          execution_environment: environment,
+         capability_replay: replay,
          extensions: extensions,
          sources: %{
            agent_file: variant.agent_path,
@@ -204,6 +206,7 @@ defmodule Jido.Cli.Automation.Plan do
             dimensions: cell.dimensions,
             sources: cell.sources,
             execution_environment: manifest_environment(cell.execution_environment),
+            capability_replay: Replay.projection(cell.capability_replay),
             extensions: %{"jido.cli.trust" => cell.extensions.projection}
           }
         end)

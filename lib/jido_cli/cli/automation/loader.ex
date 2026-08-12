@@ -2,7 +2,10 @@ defmodule Jido.Cli.Automation.Loader do
   @moduledoc "Loads agent, scenario, and suite files for automated runs."
 
   @default_max_bytes 1_000_000
-  @forbidden_execution_keys ~w(execution_environment runtime_profile adapter backend command image mount mounts network)
+  @forbidden_execution_keys ~w(
+    execution_environment runtime_profile adapter backend command image mount mounts network
+    replay fixture fixture_path fixture_json fixture_digest
+  )
 
   @doc "Loads one version 1 suite and all referenced scenarios."
   @spec load_suite(String.t(), keyword()) :: {:ok, map()} | {:error, term()}

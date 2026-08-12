@@ -1,0 +1,8 @@
+version: 1
+scenario:
+  id: offline_exact
+  request:
+    id: exact
+    input: Reply with exactly OFFLINE.
+  assertions:
+    equals: OFFLINE

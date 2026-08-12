@@ -3,7 +3,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
   @behaviour Jido.Cli.Automation.Engine
 
-  alias Jido.Cli.Automation.Result
+  alias Jido.Cli.Automation.{Replay, Result}
   alias Jido.Cli.Extensions
   alias Jidoka.Effect.OperationResult
   alias Jidoka.Eval
@@ -14,14 +14,15 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
     @moduledoc false
 
     @enforce_keys [:cell, :sequence, :started_at, :started_ms]
-    defstruct [:cell, :sequence, :started_at, :started_ms, :extension_host]
+    defstruct [:cell, :sequence, :started_at, :started_ms, :extension_host, :replay_player]
 
     @type t :: %__MODULE__{
             cell: map(),
             sequence: Jidoka.Session.Sequence.Request.t(),
             started_at: DateTime.t(),
             started_ms: integer(),
-            extension_host: Jidoka.Extension.Host.t() | nil
+            extension_host: Jidoka.Extension.Host.t() | nil,
+            replay_player: Jidoka.Replay.Recorder.controller() | nil
           }
   end
 
@@ -46,35 +47,77 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
              Map.get(cell, :extensions, %{registry: %{}}),
              :automation,
              operations: Keyword.get(cell.runtime_opts, :operations)
-           ),
-         request_inputs = Enum.map(cell.scenario.turns, &request_input(&1, cell)),
-         runtime_opts = Keyword.merge(sequence_runtime_opts(cell, opts), extension_runtime.runtime_opts) do
-      case Jidoka.Session.run_sequence_async(extension_runtime.session, request_inputs, runtime_opts) do
-        {:ok, sequence} ->
-          Jidoka.Extension.RuntimeEvents.emit(
-            "automation.cell.start",
-            %{session_ref: extension_runtime.session.session_id, data: %{cell_id: cell.cell_id}},
-            runtime_opts
-          )
-
-          {:ok,
-           %Request{
-             cell: cell,
-             sequence: sequence,
-             started_at: started_at,
-             started_ms: started_ms,
-             extension_host: extension_runtime.host
-           }}
-
-        {:error, reason} ->
-          Extensions.close(extension_runtime.host)
-          {:error, reason}
-      end
+           ) do
+      start_sequence(cell, extension_runtime, opts, started_at, started_ms)
     end
   rescue
     exception -> {:error, exception}
   catch
     kind, reason -> {:error, {kind, reason}}
+  end
+
+  defp start_sequence(cell, extension_runtime, opts, started_at, started_ms) do
+    replay = Map.get(cell, :capability_replay, %{mode: :live})
+
+    case Replay.open(replay) do
+      {:ok, replay_player} ->
+        start_sequence_request(
+          cell,
+          extension_runtime,
+          replay_player,
+          opts,
+          started_at,
+          started_ms
+        )
+
+      {:error, reason} ->
+        Extensions.close(extension_runtime.host)
+        {:error, reason}
+    end
+  end
+
+  defp start_sequence_request(cell, extension_runtime, replay_player, opts, started_at, started_ms) do
+    request_inputs = Enum.map(cell.scenario.turns, &request_input(&1, cell))
+
+    runtime_opts =
+      cell
+      |> sequence_runtime_opts(opts)
+      |> Keyword.merge(extension_runtime.runtime_opts)
+      |> Replay.put_runtime(replay_player)
+
+    case Jidoka.Session.run_sequence_async(extension_runtime.session, request_inputs, runtime_opts) do
+      {:ok, sequence} ->
+        Jidoka.Extension.RuntimeEvents.emit(
+          "automation.cell.start",
+          %{session_ref: extension_runtime.session.session_id, data: %{cell_id: cell.cell_id}},
+          runtime_opts
+        )
+
+        {:ok,
+         %Request{
+           cell: cell,
+           sequence: sequence,
+           started_at: started_at,
+           started_ms: started_ms,
+           extension_host: extension_runtime.host,
+           replay_player: replay_player
+         }}
+
+      {:error, reason} ->
+        Replay.stop(replay_player)
+        Extensions.close(extension_runtime.host)
+        {:error, reason}
+    end
+  rescue
+    exception ->
+      Replay.stop(replay_player)
+      Extensions.close(extension_runtime.host)
+      {:error, exception}
+  catch
+    kind, reason ->
+      Replay.stop(replay_player)
+      Extensions.close(extension_runtime.host)
+      {:error, {kind, reason}}
   end
 
   @impl true
@@ -102,9 +145,13 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       end
 
     close_result = Extensions.close(request.extension_host)
-    apply_extension_close(result, close_result)
+
+    result
+    |> apply_extension_close(close_result)
+    |> Replay.finalize(Map.get(request.cell, :capability_replay, %{mode: :live}), request.replay_player)
   rescue
     exception ->
+      Replay.stop(request.replay_player)
       Extensions.close(request.extension_host)
 
       failed_result(
@@ -118,6 +165,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       )
   catch
     kind, reason ->
+      Replay.stop(request.replay_player)
       Extensions.close(request.extension_host)
 
       failed_result(
@@ -375,7 +423,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
         :execution_environment_adapter_opts
       ])
     )
-    |> maybe_put_execution_environment(Map.get(cell, :execution_environment))
+    |> maybe_put_execution_environment(cell)
     |> Keyword.put(:sequence_request_id, "cell-" <> cell.cell_id)
     |> Keyword.put(:sequence_metadata, %{
       "run_id" => cell.run_id,
@@ -383,10 +431,13 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
     })
   end
 
-  defp maybe_put_execution_environment(opts, nil), do: opts
+  defp maybe_put_execution_environment(opts, %{capability_replay: %{mode: :replay}}), do: opts
+  defp maybe_put_execution_environment(opts, %{execution_environment: nil}), do: opts
 
-  defp maybe_put_execution_environment(opts, environment),
+  defp maybe_put_execution_environment(opts, %{execution_environment: environment}),
     do: Keyword.put(opts, :execution_environment, environment)
+
+  defp maybe_put_execution_environment(opts, _cell), do: opts
 
   defp utc_now(opts) do
     case Keyword.get(opts, :utc_now) do

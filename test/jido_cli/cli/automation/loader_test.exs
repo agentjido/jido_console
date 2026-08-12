@@ -137,7 +137,8 @@ defmodule Jido.Cli.Automation.LoaderTest do
                Loader.load_scenario(scenario_path)
     end
 
-    for key <- ~w(execution_environment runtime_profile adapter backend command image mount network) do
+    for key <-
+          ~w(execution_environment runtime_profile adapter backend command image mount network replay fixture fixture_path fixture_json fixture_digest) do
       File.write!(
         scenario_path,
         Jason.encode!(%{

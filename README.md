@@ -182,7 +182,60 @@ commands, images, mounts, network rules, adapter modules, backend options, or
 runtime option maps. Invalid and unknown profiles fail before artifact output
 starts and return exit status 64.
 
-For a profiled automation cell, the CLI passes only the resolved public data to
+### Offline capability replay
+
+A trusted execution-profile registration can select a pinned Jidoka capability
+fixture. Put this data in the host-owned registration `metadata`, not in an
+agent, scenario, or suite file:
+
+```elixir
+metadata: %{
+  "jido_cli.replay" => %{
+    "mode" => "replay",
+    "fixture_path" => "/trusted/fixtures/offline.json",
+    "fixture_digest" => "sha256:...",
+    "compatibility" => %{"agent" => "support-v1"}
+  }
+}
+```
+
+The host can use `fixture_json` instead of `fixture_path`, but it cannot use
+both. Jidoka verifies the fixture schema and digest. The CLI also checks the
+pinned digest and an 8 MB default size limit before it creates an output
+directory or starts a cell. A host can set a lower
+`:max_replay_fixture_bytes` limit. Data files can select only the trusted
+profile ID. Raw fixture paths, JSON, digests, commands, and replay options in
+data files are rejected.
+
+Each replay cell gets an isolated player and no live model, operation, policy,
+or execution-environment call. The player must match all calls in order and
+consume the full fixture. A missing, changed, reordered, or unused call gives a
+valid cell error and exit status 1. A missing, malformed, oversized, unpinned,
+or incompatible trusted fixture is a configuration error and gives exit status
+64 before artifact mutation.
+
+The manifest and each case result have `capability_replay` evidence. `mode` is
+`live` or `replay`; live cells use `not_replayed`. Replay results include the
+fixture schema and digest, matched and total call counts, recorded-evidence
+status, and a bounded mismatch summary. They do not include the fixture path,
+raw entries, or secret response fields. Recorded provider or tool errors can be
+fully matched while the cell execution status remains an error. A replay
+profile reports execution-environment status `recorded`; it does not claim
+current live enforcement.
+
+The repository includes `examples/evals/offline/suite.yml` and a pinned fixture.
+After the host registers `offline-example` with that fixture, this command does
+not need a provider credential:
+
+```sh
+./jido eval examples/evals/offline/suite.yml
+```
+
+The CLI does not have a fixture-recording command. Record fixtures through the
+public Jidoka capability API, review and redact them, and then pin their digest
+in trusted host configuration.
+
+For a live profiled automation cell, the CLI passes only the resolved public data to
 Jidoka. Jidoka owns one environment manager for all ordered turns in that cell.
 It acquires and releases transient handles for each turn, and it closes the
 environment after completion, error, or cancellation. The CLI does not inspect

@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation.Result do
   @moduledoc "Builds the stable JSONL result contract for one run cell."
 
-  alias Jido.Cli.Automation.Contract
+  alias Jido.Cli.Automation.{Contract, Replay}
   alias Jidoka.ExecutionEnvironment
   alias Jidoka.ExecutionEnvironment.Binding
   alias Jidoka.ExecutionEnvironment.Checkpoint
@@ -39,6 +39,7 @@ defmodule Jido.Cli.Automation.Result do
           Keyword.get(attrs, :environment),
           Keyword.get(attrs, :environment_error)
         ),
+      capability_replay: Keyword.get(attrs, :capability_replay, replay_projection(cell)),
       evaluation: Keyword.fetch!(attrs, :evaluation),
       turns: Keyword.get(attrs, :turns, []),
       usage: Keyword.get(attrs, :usage, %{}),
@@ -50,6 +51,12 @@ defmodule Jido.Cli.Automation.Result do
   defp result_extensions(cell, values) do
     trust = get_in(cell, [:extensions, :projection]) || %{"status" => "not_requested"}
     Map.put(values, "jido.cli.trust", trust)
+  end
+
+  defp replay_projection(cell) do
+    cell
+    |> Map.get(:capability_replay, %{mode: :live})
+    |> Replay.projection()
   end
 
   @doc "Projects requested, resolved, and confirmed environment facts."
@@ -70,6 +77,16 @@ defmodule Jido.Cli.Automation.Result do
     |> Map.put(:binding, binding_projection(environment.binding))
     |> Map.put(:confirmed, evidence_projection(environment.evidence))
     |> Map.put(:lifecycle, lifecycle_projection(environment, error))
+  end
+
+  def execution_environment(
+        %{execution_environment: resolved, capability_replay: %{mode: :replay}},
+        _environment,
+        _error
+      ) do
+    resolved
+    |> identity_projection()
+    |> Map.put(:status, :recorded)
   end
 
   def execution_environment(%{execution_environment: resolved}, _environment, error) do
