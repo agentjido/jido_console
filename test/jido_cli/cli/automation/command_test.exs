@@ -38,8 +38,21 @@ defmodule Jido.Cli.Automation.CommandTest do
   end
 
   test "parses an eval suite and validates jobs" do
-    assert {:ok, %{name: :eval, suite: "suite.yml", jobs: 3}} =
-             Command.parse(["eval", "suite.yml", "--jobs", "3"])
+    assert {:ok,
+            %{
+              name: :eval,
+              suite: "suite.yml",
+              jobs: 3,
+              runtime_profile: "restricted"
+            }} =
+             Command.parse([
+               "eval",
+               "suite.yml",
+               "--jobs",
+               "3",
+               "--runtime-profile",
+               "restricted"
+             ])
 
     assert {:error, {:invalid_jobs, 0}} =
              Command.parse(["eval", "suite.yml", "--jobs", "0"])

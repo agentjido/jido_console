@@ -20,7 +20,7 @@ defmodule Jido.Cli.Automation do
   defp suite(%{name: :eval} = command, opts) do
     with {:ok, suite} <- Loader.load_suite(command.suite, opts) do
       jobs = command.jobs || suite.jobs
-      {:ok, %{suite | jobs: jobs}}
+      {:ok, %{suite | jobs: jobs, command_execution_profile: Map.get(command, :runtime_profile)}}
     end
   end
 
@@ -42,14 +42,15 @@ defmodule Jido.Cli.Automation do
         agents: [
           %{
             key: agent_key,
-            file: agent_path,
-            runtime_profile: Map.get(command, :runtime_profile)
+            file: agent_path
           }
         ],
         scenarios: [scenario],
         models: models,
         repeats: 1,
         jobs: 1,
+        execution_profile: nil,
+        command_execution_profile: Map.get(command, :runtime_profile),
         output: Map.get(command, :output)
       }
 

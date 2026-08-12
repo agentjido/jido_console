@@ -463,6 +463,35 @@ defmodule Jido.Cli.AutomationTest do
              Automation.execute(["eval", "/path/that/does/not/exist.yml"])
   end
 
+  test "profile resolution fails before output artifacts open", %{root: root} do
+    agent = Path.join(root, "profile-agent.yml")
+    input = Path.join(root, "profile-input.txt")
+    output = Path.join(root, "must-not-exist")
+
+    File.write!(agent, """
+    version: 1
+    agent:
+      id: profile_agent
+      model: openai:gpt-4o-mini
+      execution_profile: missing
+    """)
+
+    File.write!(input, "Hello")
+
+    assert {:error, :configuration, {:missing_execution_profile_resolver, "missing"}} =
+             Automation.execute([
+               "run",
+               "--agent",
+               agent,
+               "--input",
+               input,
+               "--output",
+               output
+             ])
+
+    refute File.exists?(output)
+  end
+
   defp decode_jsonl(text) do
     text
     |> String.split("\n", trim: true)

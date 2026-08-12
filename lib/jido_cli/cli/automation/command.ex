@@ -91,7 +91,7 @@ defmodule Jido.Cli.Automation.Command do
   end
 
   defp parse_eval(args) do
-    switches = [jobs: :integer, output: :string]
+    switches = [jobs: :integer, output: :string, runtime_profile: :string]
 
     case OptionParser.parse(args, strict: switches, aliases: [j: :jobs, o: :output]) do
       {options, [suite], []} ->
@@ -115,6 +115,7 @@ defmodule Jido.Cli.Automation.Command do
     cond do
       blank?(command.agent) -> {:error, :missing_agent}
       present?(command.input) == present?(command.scenario) -> {:error, :choose_one_input_or_scenario}
+      command.runtime_profile == "" -> {:error, {:invalid_execution_profile, ""}}
       true -> {:ok, command}
     end
   end
@@ -122,6 +123,7 @@ defmodule Jido.Cli.Automation.Command do
   defp validate(%Command{name: :eval} = command) do
     cond do
       is_integer(command.jobs) and command.jobs <= 0 -> {:error, {:invalid_jobs, command.jobs}}
+      command.runtime_profile == "" -> {:error, {:invalid_execution_profile, ""}}
       true -> {:ok, command}
     end
   end

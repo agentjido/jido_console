@@ -22,6 +22,7 @@ defmodule Jido.Cli do
 
   Eval options:
     -j, --jobs N               Set the maximum concurrent scenario cells
+        --runtime-profile ID   Override the trusted execution profile
     -o, --output DIR           Also write run artifacts to a new directory
 
   With no command, start jido in an interactive terminal. Provider credentials

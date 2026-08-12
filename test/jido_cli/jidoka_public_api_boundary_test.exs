@@ -15,6 +15,7 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
       "Jidoka.Cancellation",
       "Jidoka.Effect",
       "Jidoka.Event",
+      "Jidoka.ExecutionEnvironment",
       "Jidoka.Operation.Source",
       "Jidoka.Review",
       "Jidoka.Session.Data",

@@ -3,6 +3,8 @@ defmodule Jido.Cli.Automation.Plan do
 
   alias Jido.Cli.Automation.{Contract, Loader}
   alias Jidoka.Agent.Spec
+  alias Jidoka.ExecutionEnvironment.PolicyRequest
+  alias Jidoka.ExecutionEnvironment.ProfileResolver
 
   @doc "Builds validated run cells in stable matrix order."
   @spec build(map(), keyword()) :: {:ok, map()} | {:error, term()}
@@ -11,7 +13,7 @@ defmodule Jido.Cli.Automation.Plan do
 
     with {:ok, agents} <- load_agents(suite.agents, opts),
          {:ok, variants} <- agent_model_variants(agents, suite.models),
-         {:ok, cells} <- cells(suite, variants, run_id) do
+         {:ok, cells} <- cells(suite, variants, run_id, opts) do
       {:ok,
        %{
          run_id: run_id,
@@ -26,20 +28,11 @@ defmodule Jido.Cli.Automation.Plan do
   defp load_agents(agent_entries, opts) do
     agent_entries
     |> Enum.reduce_while({:ok, []}, fn entry, {:ok, acc} ->
-      with {:ok, profile} <- runtime_profile(entry.runtime_profile, opts),
-           import_opts <-
-             Keyword.merge(
-               Keyword.get(opts, :import_opts, []),
-               profile.import_opts
-             ),
-           {:ok, loaded} <- Loader.load_agent(entry.file, import_opts) do
+      with {:ok, loaded} <- Loader.load_agent(entry.file, Keyword.get(opts, :import_opts, [])) do
         agent =
           entry
           |> Map.merge(loaded)
-          |> Map.put(
-            :runtime_opts,
-            Keyword.merge(profile.run_opts, Keyword.get(opts, :runtime_opts, []))
-          )
+          |> Map.put(:runtime_opts, Keyword.get(opts, :runtime_opts, []))
 
         {:cont, {:ok, [agent | acc]}}
       else
@@ -48,54 +41,6 @@ defmodule Jido.Cli.Automation.Plan do
     end)
     |> reverse_result()
   end
-
-  defp runtime_profile(nil, _opts), do: {:ok, %{import_opts: [], run_opts: []}}
-
-  defp runtime_profile(name, opts) do
-    profiles =
-      Keyword.get_lazy(opts, :runtime_profiles, fn ->
-        Application.get_env(:jido_cli, :automation_runtime_profiles, %{})
-      end)
-
-    case profile_value(profiles, name) do
-      nil -> {:error, {:unknown_runtime_profile, name}}
-      profile -> normalize_profile(name, profile)
-    end
-  end
-
-  defp profile_value(profiles, name) when is_map(profiles) do
-    Map.get(profiles, name) ||
-      Enum.find_value(profiles, fn
-        {key, value} when is_atom(key) -> if Atom.to_string(key) == name, do: value
-        _entry -> nil
-      end)
-  end
-
-  defp profile_value(profiles, name) when is_list(profiles) do
-    Enum.find_value(profiles, fn {key, value} -> if to_string(key) == name, do: value end)
-  end
-
-  defp profile_value(_profiles, _name), do: nil
-
-  defp normalize_profile(name, profile) when is_map(profile) do
-    normalize_profile(name,
-      import_opts: Map.get(profile, :import_opts, Map.get(profile, "import_opts", [])),
-      run_opts: Map.get(profile, :run_opts, Map.get(profile, "run_opts", []))
-    )
-  end
-
-  defp normalize_profile(_name, profile) when is_list(profile) do
-    import_opts = Keyword.get(profile, :import_opts, [])
-    run_opts = Keyword.get(profile, :run_opts, [])
-
-    if Keyword.keyword?(import_opts) and Keyword.keyword?(run_opts) do
-      {:ok, %{import_opts: import_opts, run_opts: run_opts}}
-    else
-      {:error, {:invalid_runtime_profile, profile}}
-    end
-  end
-
-  defp normalize_profile(name, profile), do: {:error, {:invalid_runtime_profile, name, profile}}
 
   defp agent_model_variants(agents, models) do
     agents
@@ -109,7 +54,6 @@ defmodule Jido.Cli.Automation.Plan do
               agent_spec_id: spec.id,
               agent_path: agent.path,
               agent_digest: agent.digest,
-              runtime_profile: agent.runtime_profile,
               runtime_opts: agent.runtime_opts,
               model_key: model.key,
               model_ref: Jidoka.Config.model_ref(spec.model),
@@ -145,41 +89,87 @@ defmodule Jido.Cli.Automation.Plan do
   defp maybe_put_generation(attrs, nil), do: attrs
   defp maybe_put_generation(attrs, generation), do: Map.put(attrs, :generation, generation)
 
-  defp cells(suite, variants, run_id) do
-    cells =
+  defp cells(suite, variants, run_id, opts) do
+    combinations =
       for variant <- variants,
           scenario <- suite.scenarios,
-          trial <- 1..suite.repeats do
-        dimensions = %{
-          suite_id: suite.id,
-          agent_key: variant.agent_key,
-          agent_spec_id: variant.agent_spec_id,
-          scenario_id: scenario.id,
-          model_key: variant.model_key,
-          model_ref: variant.model_ref,
-          trial: trial
-        }
+          trial <- 1..suite.repeats,
+          do: {variant, scenario, trial}
 
-        %{
-          run_id: run_id,
-          cell_id: cell_id(dimensions),
-          dimensions: dimensions,
-          scenario: scenario,
-          spec: variant.spec,
-          runtime_opts: variant.runtime_opts,
-          sources: %{
-            agent_file: variant.agent_path,
-            scenario_file: scenario.path,
-            agent_sha256: variant.agent_digest,
-            effective_agent_sha256: variant.effective_spec_digest,
-            scenario_sha256: scenario.digest
-          }
-        }
+    combinations
+    |> Enum.with_index(1)
+    |> Enum.reduce_while({:ok, []}, fn {{variant, scenario, trial}, sequence}, {:ok, acc} ->
+      case build_cell(suite, variant, scenario, trial, sequence, run_id, opts) do
+        {:ok, cell} -> {:cont, {:ok, [cell | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
       end
-      |> Enum.with_index(1)
-      |> Enum.map(fn {cell, sequence} -> Map.put(cell, :sequence, sequence) end)
+    end)
+    |> reverse_result()
+  end
 
-    {:ok, cells}
+  defp build_cell(suite, variant, scenario, trial, sequence, run_id, opts) do
+    dimensions = %{
+      suite_id: suite.id,
+      agent_key: variant.agent_key,
+      agent_spec_id: variant.agent_spec_id,
+      scenario_id: scenario.id,
+      model_key: variant.model_key,
+      model_ref: variant.model_ref,
+      trial: trial
+    }
+
+    with {:ok, environment} <- execution_environment(suite, scenario, variant.spec, opts) do
+      {:ok,
+       %{
+         run_id: run_id,
+         cell_id: cell_id(dimensions),
+         sequence: sequence,
+         dimensions: dimensions,
+         scenario: scenario,
+         spec: variant.spec,
+         runtime_opts: variant.runtime_opts,
+         execution_environment: environment,
+         sources: %{
+           agent_file: variant.agent_path,
+           scenario_file: scenario.path,
+           agent_sha256: variant.agent_digest,
+           effective_agent_sha256: variant.effective_spec_digest,
+           scenario_sha256: scenario.digest
+         }
+       }}
+    end
+  end
+
+  defp execution_environment(suite, scenario, spec, opts) do
+    profile_id =
+      Map.get(suite, :command_execution_profile) ||
+        Map.get(scenario, :execution_profile) ||
+        spec.execution_profile ||
+        Map.get(suite, :execution_profile)
+
+    resolve_execution_profile(profile_id, opts)
+  end
+
+  defp resolve_execution_profile(nil, _opts), do: {:ok, nil}
+
+  defp resolve_execution_profile(profile_id, opts) do
+    resolver =
+      Keyword.get(opts, :execution_profile_resolver) ||
+        Application.get_env(:jido_cli, :execution_profile_resolver)
+
+    if is_nil(resolver) do
+      {:error, {:missing_execution_profile_resolver, profile_id}}
+    else
+      with {:ok, request} <- PolicyRequest.new(profile_id: profile_id),
+           {:ok, registration} <-
+             ProfileResolver.resolve(
+               request,
+               resolver,
+               Keyword.get(opts, :execution_profile_resolver_opts, [])
+             ) do
+        {:ok, %{request: request, registration: registration}}
+      end
+    end
   end
 
   defp manifest(suite, variants, cells, run_id) do

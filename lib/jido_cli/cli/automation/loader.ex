@@ -2,6 +2,7 @@ defmodule Jido.Cli.Automation.Loader do
   @moduledoc "Loads agent, scenario, and suite files for automated runs."
 
   @default_max_bytes 1_000_000
+  @forbidden_execution_keys ~w(execution_environment runtime_profile adapter backend command image mount mounts network)
 
   @doc "Loads one version 1 suite and all referenced scenarios."
   @spec load_suite(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
@@ -12,6 +13,10 @@ defmodule Jido.Cli.Automation.Loader do
          :ok <- version_one(document, path),
          {:ok, suite} <- required_map(document, "suite", path),
          {:ok, id} <- required_id(suite, "id", path),
+         :ok <- reject_execution_controls(suite),
+         {:ok, run} <- optional_section(suite, "run"),
+         :ok <- reject_execution_controls(run),
+         {:ok, execution_profile} <- optional_profile(Map.get(run, "execution_profile")),
          {:ok, agents} <- suite_agents(suite, Path.dirname(path)),
          {:ok, scenarios} <- suite_scenarios(suite, Path.dirname(path), opts),
          {:ok, models} <- suite_models(suite),
@@ -31,6 +36,8 @@ defmodule Jido.Cli.Automation.Loader do
          models: models,
          repeats: repeats,
          jobs: jobs,
+         execution_profile: execution_profile,
+         command_execution_profile: nil,
          output: output
        }}
     end
@@ -45,6 +52,8 @@ defmodule Jido.Cli.Automation.Loader do
          :ok <- version_one(document, path),
          {:ok, scenario} <- required_map(document, "scenario", path),
          {:ok, id} <- required_id(scenario, "id", path),
+         :ok <- reject_execution_controls(scenario),
+         {:ok, execution_profile} <- optional_profile(Map.get(scenario, "execution_profile")),
          {:ok, context} <- data_source(Map.get(scenario, "context"), Path.dirname(path), opts),
          {:ok, turns} <- scenario_turns(scenario, context, path, opts),
          :ok <- unique_values(turns, :id, :turn) do
@@ -54,6 +63,7 @@ defmodule Jido.Cli.Automation.Loader do
          path: path,
          digest: digest(contents),
          tags: string_list(Map.get(scenario, "tags", [])),
+         execution_profile: execution_profile,
          turns: turns
        }}
     end
@@ -71,6 +81,7 @@ defmodule Jido.Cli.Automation.Loader do
          path: path,
          digest: digest(text),
          tags: [],
+         execution_profile: nil,
          turns: [%{id: "turn-1", input: text, context: %{}, assertions: %{}}]
        }}
     end
@@ -172,16 +183,16 @@ defmodule Jido.Cli.Automation.Loader do
   defp suite_agent(file, base_dir) when is_binary(file) do
     path = resolve_path(base_dir, file)
 
-    {:ok, %{key: path |> Path.basename() |> Path.rootname() |> key(), file: path, runtime_profile: nil}}
+    {:ok, %{key: path |> Path.basename() |> Path.rootname() |> key(), file: path}}
   end
 
   defp suite_agent(agent, base_dir) when is_map(agent) do
-    with {:ok, file} <- required_string(agent, "file"),
+    with :ok <- reject_execution_controls(agent),
+         {:ok, file} <- required_string(agent, "file"),
          path = resolve_path(base_dir, file),
          {:ok, key} <-
-           optional_id(Map.get(agent, "key"), path |> Path.basename() |> Path.rootname() |> key()),
-         {:ok, runtime_profile} <- optional_string(Map.get(agent, "runtime_profile")) do
-      {:ok, %{key: key, file: path, runtime_profile: runtime_profile}}
+           optional_id(Map.get(agent, "key"), path |> Path.basename() |> Path.rootname() |> key()) do
+      {:ok, %{key: key, file: path}}
     end
   end
 
@@ -418,6 +429,26 @@ defmodule Jido.Cli.Automation.Loader do
   defp optional_string(nil), do: {:ok, nil}
   defp optional_string(value) when is_binary(value), do: {:ok, value}
   defp optional_string(value), do: {:error, {:invalid_string, value}}
+
+  defp optional_profile(nil), do: {:ok, nil}
+  defp optional_profile(value) when is_binary(value) and value != "", do: {:ok, value}
+  defp optional_profile(value), do: {:error, {:invalid_execution_profile, value}}
+
+  defp optional_section(map, key) do
+    case Map.get(map, key, %{}) do
+      value when is_map(value) -> {:ok, value}
+      value -> {:error, {:invalid_optional_map, key, value}}
+    end
+  end
+
+  defp reject_execution_controls(map) when is_map(map) do
+    keys = map |> Map.keys() |> Enum.map(&to_string/1)
+
+    case keys -- (keys -- @forbidden_execution_keys) do
+      [] -> :ok
+      forbidden -> {:error, {:forbidden_execution_profile_keys, Enum.sort(forbidden)}}
+    end
+  end
 
   defp optional_map(nil), do: {:ok, nil}
   defp optional_map(value) when is_map(value), do: {:ok, value}

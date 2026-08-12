@@ -104,6 +104,34 @@ Use `--model PROVIDER:MODEL` to replace the model in one agent file. Use
 `--runtime-profile ID` to select a trusted runtime profile that the host
 application registered. Scenario and agent files cannot load Elixir modules.
 
+Agent and scenario files can select only a profile ID:
+
+```yaml
+agent:
+  id: concise
+  model: openai:gpt-4o-mini
+  execution_profile: restricted
+```
+
+```yaml
+scenario:
+  id: project_memory
+  execution_profile: network-disabled
+  request:
+    input: Remember Atlas.
+```
+
+The CLI uses this fixed order: command `--runtime-profile`, scenario profile,
+agent profile, suite default, then no profile. A suite default is under
+`suite.run.execution_profile`. `--runtime-profile` is also valid for `eval`.
+
+The host must configure `:execution_profile_resolver` with a trusted Jidoka
+resolver function or module. The resolver maps the ID to a host-owned security
+profile and adapter registration. Agent, scenario, and suite files cannot set
+commands, images, mounts, network rules, adapter modules, backend options, or
+runtime option maps. Invalid and unknown profiles fail before artifact output
+starts and return exit status 64.
+
 ## Run an evaluation suite
 
 An evaluation suite creates this matrix:
@@ -141,6 +169,7 @@ suite:
     repeats: 2
   run:
     jobs: 4
+    execution_profile: restricted
 ```
 
 All relative paths start at the file that contains the path. You can also use a

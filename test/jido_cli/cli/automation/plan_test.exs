@@ -58,84 +58,70 @@ defmodule Jido.Cli.Automation.PlanTest do
     assert Enum.all?(plan.cells, &(byte_size(&1.cell_id) == 64))
   end
 
-  test "resolves a trusted runtime profile", %{root: root} do
-    write_agent(Path.join(root, "a.yml"), "agent_a")
+  test "resolves a data-only profile and keeps host runtime injection separate", %{root: root} do
+    write_agent(Path.join(root, "a.yml"), "agent_a", "agent-profile")
     write_scenario(Path.join(root, "one.yml"), "one")
-
-    suite = %{
-      id: "profile",
-      path: "suite.yml",
-      digest: "suite-digest",
-      agents: [
-        %{key: "a", file: Path.join(root, "a.yml"), runtime_profile: "tools"}
-      ],
-      scenarios: [Loader.load_scenario(Path.join(root, "one.yml")) |> elem(1)],
-      models: [%{key: "declared", source: :agent, ref: nil, generation: nil}],
-      repeats: 1,
-      jobs: 1,
-      output: nil
-    }
-
+    suite = suite(root, "suite-profile")
     llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "ok"}} end
-    profiles = %{"tools" => [run_opts: [llm: llm]]}
 
     assert {:ok, %{cells: [cell]}} =
-             Plan.build(suite, run_id: "run-fixed", runtime_profiles: profiles)
+             Plan.build(suite,
+               run_id: "run-fixed",
+               execution_profile_resolver: resolver(),
+               runtime_opts: [llm: llm]
+             )
 
+    assert cell.execution_environment.request.profile_id == "agent-profile"
+    assert cell.execution_environment.registration.profile.profile_id == "agent-profile"
     assert cell.runtime_opts[:llm] == llm
   end
 
-  test "accepts map, list, application, and atom runtime profiles", %{root: root} do
+  test "uses command, scenario, agent, suite, and none precedence", %{root: root} do
+    write_agent(Path.join(root, "a.yml"), "agent_a", "agent-profile")
+    write_scenario(Path.join(root, "one.yml"), "one", "scenario-profile")
+
+    suite =
+      root
+      |> suite("suite-profile")
+      |> Map.put(:command_execution_profile, "command-profile")
+
+    opts = [execution_profile_resolver: resolver(), run_id: "run-fixed"]
+
+    assert profile_id(Plan.build(suite, opts)) == "command-profile"
+    assert profile_id(Plan.build(%{suite | command_execution_profile: nil}, opts)) == "scenario-profile"
+
+    no_scenario = put_in(suite.scenarios, [Map.put(hd(suite.scenarios), :execution_profile, nil)])
+    assert profile_id(Plan.build(%{no_scenario | command_execution_profile: nil}, opts)) == "agent-profile"
+
     write_agent(Path.join(root, "a.yml"), "agent_a")
-    write_scenario(Path.join(root, "one.yml"), "one")
-    llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "ok"}} end
-    suite = suite(root, "tools")
+    assert profile_id(Plan.build(%{no_scenario | command_execution_profile: nil}, opts)) == "suite-profile"
 
-    assert {:ok, %{cells: [%{runtime_opts: opts}]}} =
-             Plan.build(suite,
-               runtime_profiles: %{"tools" => %{"import_opts" => [], "run_opts" => [llm: llm]}}
-             )
-
-    assert opts[:llm] == llm
-
-    assert {:ok, %{cells: [%{runtime_opts: opts}]}} =
-             Plan.build(suite, runtime_profiles: [tools: [run_opts: [llm: llm]]])
-
-    assert opts[:llm] == llm
-
-    previous = Application.get_env(:jido_cli, :automation_runtime_profiles)
-    Application.put_env(:jido_cli, :automation_runtime_profiles, %{tools: [run_opts: [llm: llm]]})
-
-    on_exit(fn ->
-      if previous do
-        Application.put_env(:jido_cli, :automation_runtime_profiles, previous)
-      else
-        Application.delete_env(:jido_cli, :automation_runtime_profiles)
-      end
-    end)
-
-    assert {:ok, %{run_id: "run-" <> _, cells: [%{runtime_opts: opts}]}} = Plan.build(suite)
-    assert opts[:llm] == llm
+    no_profile = %{no_scenario | command_execution_profile: nil, execution_profile: nil}
+    assert {:ok, %{cells: [%{execution_environment: nil}]}} = Plan.build(no_profile, opts)
   end
 
-  test "rejects missing or invalid profiles and agent files", %{root: root} do
-    write_agent(Path.join(root, "a.yml"), "agent_a")
+  test "fails closed for missing, unknown, disabled, and insufficient profiles", %{root: root} do
+    write_agent(Path.join(root, "a.yml"), "agent_a", "restricted")
     write_scenario(Path.join(root, "one.yml"), "one")
-    suite = suite(root, "tools")
+    suite = suite(root, nil)
 
-    assert {:error, {:unknown_runtime_profile, "tools"}} =
-             Plan.build(suite, runtime_profiles: %{})
+    assert {:error, {:missing_execution_profile_resolver, "restricted"}} = Plan.build(suite)
 
-    assert {:error, {:unknown_runtime_profile, "tools"}} =
-             Plan.build(suite, runtime_profiles: :invalid)
+    assert {:error, %Jidoka.ExecutionEnvironment.Error{code: :unknown_profile}} =
+             Plan.build(suite, execution_profile_resolver: fn _id, _opts -> {:error, :unknown_profile} end)
 
-    assert {:error, {:invalid_runtime_profile, "tools", :invalid}} =
-             Plan.build(suite, runtime_profiles: %{"tools" => :invalid})
+    assert {:error, %Jidoka.ExecutionEnvironment.Error{code: :disabled_profile}} =
+             Plan.build(suite, execution_profile_resolver: resolver(enabled: false))
 
-    assert {:error, {:invalid_runtime_profile, _profile}} =
-             Plan.build(suite, runtime_profiles: %{"tools" => [run_opts: %{}]})
+    assert {:error, %Jidoka.ExecutionEnvironment.Error{code: :insufficient_adapter_capability}} =
+             Plan.build(suite, execution_profile_resolver: resolver(available: false))
 
-    missing = put_in(suite.agents, [%{key: "missing", file: "/missing.yml", runtime_profile: nil}])
+    assert {:error, %Jidoka.ExecutionEnvironment.Error{code: :profile_resolution_failed}} =
+             Plan.build(suite,
+               execution_profile_resolver: fn _id, _opts -> raise "resolver failed" end
+             )
+
+    missing = put_in(suite.agents, [%{key: "missing", file: "/missing.yml"}])
     assert {:error, {:agent_load_failed, "/missing.yml", _reason}} = Plan.build(missing)
   end
 
@@ -181,40 +167,85 @@ defmodule Jido.Cli.Automation.PlanTest do
     }
   end
 
-  defp suite(root, runtime_profile) do
+  defp suite(root, execution_profile) do
     %{
       id: "profile",
       path: "suite.yml",
       digest: "suite-digest",
       agents: [
-        %{key: "a", file: Path.join(root, "a.yml"), runtime_profile: runtime_profile}
+        %{key: "a", file: Path.join(root, "a.yml")}
       ],
       scenarios: [Loader.load_scenario(Path.join(root, "one.yml")) |> elem(1)],
       models: [%{key: "declared", source: :agent, ref: nil, generation: nil}],
       repeats: 1,
       jobs: 1,
+      execution_profile: execution_profile,
+      command_execution_profile: nil,
       output: nil
     }
   end
 
-  defp write_agent(path, id) do
+  defp write_agent(path, id, execution_profile \\ nil) do
+    profile = if execution_profile, do: "  execution_profile: #{execution_profile}\n", else: ""
+
     File.write!(path, """
     version: 1
     agent:
       id: #{id}
       model: openai:gpt-4o-mini
       instructions: Answer briefly.
+    #{profile}
     """)
   end
 
-  defp write_scenario(path, id) do
+  defp write_scenario(path, id, execution_profile \\ nil) do
+    profile = if execution_profile, do: "  execution_profile: #{execution_profile}\n", else: ""
+
     File.write!(path, """
     version: 1
     scenario:
       id: #{id}
+    #{profile}
       request:
         input:
           text: Hello
     """)
+  end
+
+  defp profile_id({:ok, %{cells: [%{execution_environment: environment}]}}),
+    do: environment.request.profile_id
+
+  defp resolver(opts \\ []) do
+    fn profile_id, _resolver_opts -> {:ok, registration(profile_id, opts)} end
+  end
+
+  defp registration(profile_id, opts) do
+    profile =
+      Jidoka.ExecutionEnvironment.SecurityProfile.new!(
+        profile_id: profile_id,
+        revision: 1,
+        digest: "sha256:" <> String.duplicate("a", 64),
+        adapter_id: "test.adapter",
+        required_isolation: :container,
+        required_network: :disabled,
+        required_workspace: :ephemeral
+      )
+
+    capabilities =
+      Jidoka.ExecutionEnvironment.AdapterCapabilities.new!(
+        adapter_id: "test.adapter",
+        adapter_version: "1",
+        available: Keyword.get(opts, :available, true),
+        isolations: [:container],
+        networks: [:disabled],
+        workspaces: [:ephemeral]
+      )
+
+    Jidoka.ExecutionEnvironment.Registration.new!(
+      profile: profile,
+      adapter: __MODULE__,
+      capabilities: capabilities,
+      enabled: Keyword.get(opts, :enabled, true)
+    )
   end
 end

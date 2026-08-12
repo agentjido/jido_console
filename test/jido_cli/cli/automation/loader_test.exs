@@ -92,6 +92,7 @@ defmodule Jido.Cli.Automation.LoaderTest do
       run:
         jobs: 3
         output: artifacts
+        execution_profile: suite-restricted
     """)
 
     assert {:ok, suite} = Loader.load_suite(suite_path)
@@ -100,7 +101,86 @@ defmodule Jido.Cli.Automation.LoaderTest do
     assert length(suite.models) == 2
     assert suite.repeats == 2
     assert suite.jobs == 3
+    assert suite.execution_profile == "suite-restricted"
     assert suite.output == Path.join(root, "artifacts")
+  end
+
+  test "loads ID-only scenario profiles and rejects raw execution controls", %{root: root} do
+    scenario_path = Path.join(root, "profile.yml")
+
+    File.write!(scenario_path, """
+    version: 1
+    scenario:
+      id: profiled
+      execution_profile: scenario-restricted
+      request:
+        input: Hello
+    """)
+
+    assert {:ok, %{execution_profile: "scenario-restricted"}} =
+             Loader.load_scenario(scenario_path)
+
+    for invalid <- [42, %{"profile" => "restricted"}, ""] do
+      File.write!(
+        scenario_path,
+        Jason.encode!(%{
+          version: 1,
+          scenario: %{
+            id: "invalid",
+            execution_profile: invalid,
+            request: %{input: "Hello"}
+          }
+        })
+      )
+
+      assert {:error, {:invalid_execution_profile, ^invalid}} =
+               Loader.load_scenario(scenario_path)
+    end
+
+    for key <- ~w(execution_environment runtime_profile adapter backend command image mount network) do
+      File.write!(
+        scenario_path,
+        Jason.encode!(%{
+          version: 1,
+          scenario: %{"id" => "unsafe", "request" => %{"input" => "Hello"}, key => "raw"}
+        })
+      )
+
+      assert {:error, {:forbidden_execution_profile_keys, [^key]}} =
+               Loader.load_scenario(scenario_path)
+    end
+  end
+
+  test "rejects data-driven profile options in suite run and agent entries", %{root: root} do
+    write_agent(Path.join(root, "agent.yml"), "agent")
+    write_single_scenario(Path.join(root, "scenario.yml"))
+    suite_path = Path.join(root, "unsafe-suite.yml")
+
+    File.write!(suite_path, """
+    version: 1
+    suite:
+      id: unsafe
+      agents:
+        - file: agent.yml
+          runtime_profile: legacy-options
+      scenarios: [scenario.yml]
+    """)
+
+    assert {:error, {:forbidden_execution_profile_keys, ["runtime_profile"]}} =
+             Loader.load_suite(suite_path)
+
+    File.write!(suite_path, """
+    version: 1
+    suite:
+      id: unsafe
+      agents: [agent.yml]
+      scenarios: [scenario.yml]
+      run:
+        image: untrusted:latest
+    """)
+
+    assert {:error, {:forbidden_execution_profile_keys, ["image"]}} =
+             Loader.load_suite(suite_path)
   end
 
   test "loads JSON, standard input, file context, and shorthand entries", %{root: root} do
