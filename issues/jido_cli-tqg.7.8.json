@@ -7,7 +7,8 @@
     "jido_cli-tqg.7.7"
   ],
   "blocks": [
-    "jido_cli-tqg.7.13"
+    "jido_cli-tqg.7.13",
+    "jido_cli-tqg.7.22"
   ],
   "created": "2026-08-12T22:09:59Z",
   "description": "## Outcome\n\nProtocol-defined daemon state survives a clean restart. Corrupt, incompatible, or partial state fails safely. All durable data stays outside the installed release.\n\n## Why now\n\nA persistent daemon must recover its own session and task index without confusing that data with Jidoka execution bindings or release files.\n\n## Work\n\n1. Define a versioned daemon-owned state schema and migration policy for protocol v1.\n2. Store only the session, task, and lifecycle data that the daemon protocol requires under the platform state root.\n3. Use atomic writes or a transactional store boundary for state changes.\n4. Reopen supported state after restart and reconcile it with Jidoka public store contracts.\n5. Quarantine or report corrupt and incompatible state without unsafe partial execution.\n6. Keep token, discovery, logs, and durable work data in separate named locations.\n7. Add recovery and manual cleanup documentation.\n\n## Acceptance criteria\n\n- [ ] State required by protocol v1 survives a clean daemon restart.\n- [ ] A partial write cannot replace the last complete state.\n- [ ] Corrupt or incompatible state produces a clear health or startup result and starts no work.\n- [ ] Daemon state never serializes functions, PIDs, sockets, credentials, or private Jidoka runtime data.\n- [ ] Release upgrade tests preserve compatible state and reject unsupported state versions.\n- [ ] No data is written in the installed release directory.\n\n## Tests\n\nUse injected stores, clocks, IDs, and failure points. Test restart, short write, rename failure, corruption, version mismatch, and recovery. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not change Jidoka session persistence without a separate cross-repository task. Do not implement service-manager shutdown in this task.",
@@ -24,5 +25,5 @@
   "status": "open",
   "title": "Persist daemon-owned state and recover after restart",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:05Z"
+  "updated_at": "2026-08-12T22:15:07Z"
 }
