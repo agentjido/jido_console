@@ -2,6 +2,8 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-12T18:37:03Z",
+  "close_reason": "Completed all four Phase 1 stories: ordered Jidoka sequences, CLI sequence integration, validated automation contracts, and public headless cancellation.",
   "created": "2026-08-12T17:14:32Z",
   "description": "# Phase outcome\n\nJidoka-owned sequence. Entry: phase 0 public contract. Exit: the CLI uses one public sequence per cell, records validate, and headless work cancels through public handles.\n\n# Ranked child stories\n\n1. `jido_cli-tqg.2.1` — Add a public ordered Jidoka session sequence (P0)\n2. `jido_cli-tqg.2.2` — Run automation cells through the public Jidoka sequence (P0)\n3. `jido_cli-tqg.2.3` — Validate case results, manifests, and run summaries (P1)\n4. `jido_cli-tqg.2.4` — Cancel headless sequences through public Jidoka handles (P1)\n\n# Status rule\n\nAll child stories remain open. Story dependency links, not priority alone, control implementation order.",
   "id": "jido_cli-tqg.2",
@@ -12,8 +14,8 @@
   ],
   "parent": "jido_cli-tqg",
   "priority": 0,
-  "status": "open",
+  "status": "closed",
   "title": "Phase 1: Move ordered automation execution into Jidoka",
   "type": "epic",
-  "updated_at": "2026-08-12T17:17:54Z"
+  "updated_at": "2026-08-12T18:37:03Z"
 }
