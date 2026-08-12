@@ -5,7 +5,11 @@
   "created": "2026-08-12T17:14:32Z",
   "description": "The full researched story description is being attached.",
   "id": "jido_cli-tqg.2.1",
-  "labels": [],
+  "labels": [
+    "automation",
+    "foundation",
+    "jidoka"
+  ],
   "parent": "jido_cli-tqg.2",
   "priority": 0,
   "status": "open",
