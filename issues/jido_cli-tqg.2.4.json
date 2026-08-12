@@ -5,7 +5,13 @@
   "created": "2026-08-12T17:14:33Z",
   "description": "The full researched story description is being attached.",
   "id": "jido_cli-tqg.2.4",
-  "labels": [],
+  "labels": [
+    "automation",
+    "cli",
+    "cross-repo",
+    "foundation",
+    "jidoka"
+  ],
   "parent": "jido_cli-tqg.2",
   "priority": 1,
   "status": "open",
