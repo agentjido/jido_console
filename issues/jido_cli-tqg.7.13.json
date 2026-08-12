@@ -8,7 +8,9 @@
     "jido_cli-tqg.7.8",
     "jido_cli-tqg.7.9"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-tqg.7.14"
+  ],
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nOne reusable harness unpacks a target archive in an isolated test root and verifies the packaged product without Erlang or Elixir on `PATH`.\n\n## Work\n\n1. Accept an archive, expected target, and expected version as explicit inputs.\n2. unpack under a path with spaces and under a non-ASCII profile path.\n3. Build a minimal `PATH` with no system `erl`, `elixir`, or `mix` and prove the launcher still runs.\n4. Check version and help commands, a provider-free local scenario, exit statuses `0`, `1`, and `64`, daemon lifecycle, restart persistence, and no-daemon behavior.\n5. Validate layout, metadata, notices, file permissions or access controls, and private runtime selection.\n6. Capture diagnostics separately and reject unexpected secret or host-path data.\n7. Emit machine-readable test evidence for CI.\n\n## Acceptance criteria\n\n- [ ] The same harness runs on macOS, Linux, and Windows.\n- [ ] It fails if the launcher finds a system OTP or misses packaged runtime data.\n- [ ] It fails on a partial JSONL line or an ambiguous local run artifact state.\n- [ ] It never calls a live model provider.\n- [ ] It distinguishes automated checks from the manual TUI checklist.\n- [ ] Failures identify the target and exact acceptance check.\n\n## Tests\n\nTest the harness with known-good synthetic packages and packages with removed runtime, bad metadata, bad permissions, corrupt JSONL, and wrong exits.\n\n## Non-goals\n\nDo not duplicate the local output-directory lifecycle owned by `jido_cli-tqg.6.4`. Do not claim a pseudo-terminal is full TUI acceptance.",
   "id": "jido_cli-tqg.7.13",
