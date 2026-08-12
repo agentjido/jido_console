@@ -68,8 +68,9 @@ defmodule Jido.Cli.Automation.JSONL do
   defp write_device(device, line) do
     case IO.write(device, line) do
       :ok -> :ok
-      {:error, reason} -> {:error, {:jsonl_write_failed, reason}}
     end
+  rescue
+    exception -> {:error, {:jsonl_write_failed, Exception.message(exception)}}
   end
 
   defp maybe_append(nil, _relative_path, _line), do: :ok

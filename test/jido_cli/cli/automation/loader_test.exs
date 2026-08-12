@@ -184,8 +184,7 @@ defmodule Jido.Cli.Automation.LoaderTest do
       {"missing.yml", "version: 1\nscenario:\n  id: missing\n", :missing_scenario_turns},
       {"empty.yml", "version: 1\nscenario:\n  id: empty\n  turns: []\n", :invalid_turns},
       {"bad-turn.yml", "version: 1\nscenario:\n  id: bad\n  turns: [text]\n", :invalid_turn},
-      {"bad-input.yml", "version: 1\nscenario:\n  id: bad\n  turns:\n    - input: 3\n",
-       :invalid_text_source},
+      {"bad-input.yml", "version: 1\nscenario:\n  id: bad\n  turns:\n    - input: 3\n", :invalid_text_source},
       {"bad-assertion.yml",
        "version: 1\nscenario:\n  id: bad\n  request:\n    input: Hello\n  assertions:\n    score: 1\n",
        :unsupported_assertions}
@@ -205,10 +204,8 @@ defmodule Jido.Cli.Automation.LoaderTest do
     cases = [
       {"agents", "agents: []", :invalid_suite_agents},
       {"scenarios", "agents: [42]\n  scenarios: []", :invalid_suite_agent},
-      {"models", "agents: [agent.yml]\n  scenarios: [scenario.yml]\n  models: []",
-       :invalid_suite_models},
-      {"repeats", "agents: [agent.yml]\n  scenarios: [scenario.yml]\n  repeats: 0",
-       :invalid_positive_integer}
+      {"models", "agents: [agent.yml]\n  scenarios: [scenario.yml]\n  models: []", :invalid_suite_models},
+      {"repeats", "agents: [agent.yml]\n  scenarios: [scenario.yml]\n  repeats: 0", :invalid_positive_integer}
     ]
 
     for {name, body, expected} <- cases do

@@ -16,6 +16,11 @@ With `run` or `eval` it runs file-based scenarios headless and writes JSONL.
   execution, and assertions. Do not depend on `jido_eval`.
 - Keep agent, scenario, and suite inputs as plain YAML or JSON. They must not
   load Elixir modules.
+- Validate command input through the `Jido.Cli.Automation.Command` Zoi schema;
+  keep cross-field rules there and return the documented reason terms.
+- Normalize user-facing errors through `Jido.Cli.Error` (Splode) at the CLI
+  boundary. The portable JSONL error map still delegates to Jidoka, which owns
+  rich provider and execution error data.
 - Preserve the layering inside `Jido.Cli.Automation`:
   - `Command` parses argv into a validated command;
   - `Loader` validates version-1 documents and resolves relative paths;
@@ -36,8 +41,9 @@ With `run` or `eval` it runs file-based scenarios headless and writes JSONL.
 
 ```sh
 mix deps.get
-mix format
-mix test
+mix quality        # format, compile --warnings-as-errors, credo, dialyzer, doctor --raise
+mix test --cover
+mix docs
 MIX_ENV=prod mix escript.build
 ./jido --version
 ```

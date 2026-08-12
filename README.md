@@ -7,6 +7,23 @@ The executable is `jido`.
 This package uses Jidoka for agent import, execution, sessions, and deterministic
 assertions. It does not use `jido_eval`.
 
+## Installation
+
+`jido` is distributed as a self-contained escript. Build it from source with the
+steps in [Build](#build) below, or install a published build through Homebrew as
+described in [Homebrew packaging](#homebrew-packaging).
+
+The `jido_cli` Mix package also carries Hex metadata for programs that depend on
+the harness programmatically:
+
+```elixir
+def deps do
+  [
+    {:jido_cli, "~> 0.1.0"}
+  ]
+end
+```
+
 ## Build
 
 Elixir 1.18 or newer is necessary.

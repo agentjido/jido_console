@@ -34,6 +34,7 @@ defmodule Jido.Cli do
   def version, do: @version
 
   @doc false
+  @spec main([String.t()]) :: :ok
   def main(args) do
     with :ok <- start_applications() do
       case run(args) do
@@ -178,11 +179,10 @@ defmodule Jido.Cli do
     end
   end
 
-  defp format_error(%{__exception__: true} = error), do: Exception.message(error)
-  defp format_error(reason) when is_binary(reason), do: reason
-
   defp format_error(reason) do
-    Jidoka.Error.format(reason)
+    reason
+    |> Jido.Cli.Error.normalize()
+    |> Exception.message()
   rescue
     _exception -> inspect(reason)
   end

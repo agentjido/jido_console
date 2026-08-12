@@ -1,7 +1,33 @@
+# Build artifacts
 /_build/
 /cover/
 /deps/
+
+# Generated documentation
+/doc/
+
+# Local architecture, research, and planning notes
+/docs/
+
+# Dialyzer PLT files - do not commit these
+*.plt
+*.plt.hash
+
+# The built escript binary
 /jido
+
+# Archive and package tarballs
+*.ez
+jido_cli-*.tar
+
+# Editor and IDE state
 /.elixir_ls/
+/.vscode/
+*.swp
+*.swo
+
+# OS
 /.DS_Store
+
+# Crash dumps
 /erl_crash.dump

@@ -172,8 +172,7 @@ defmodule Jido.Cli.Automation.Loader do
   defp suite_agent(file, base_dir) when is_binary(file) do
     path = resolve_path(base_dir, file)
 
-    {:ok,
-     %{key: path |> Path.basename() |> Path.rootname() |> key(), file: path, runtime_profile: nil}}
+    {:ok, %{key: path |> Path.basename() |> Path.rootname() |> key(), file: path, runtime_profile: nil}}
   end
 
   defp suite_agent(agent, base_dir) when is_map(agent) do
@@ -261,8 +260,8 @@ defmodule Jido.Cli.Automation.Loader do
   defp assertions(nil), do: {:ok, %{}}
 
   defp assertions(assertions) when is_map(assertions) do
-    supported = MapSet.new(["contains", "equals", "operation_called"])
-    unknown = assertions |> Map.keys() |> Enum.reject(&MapSet.member?(supported, &1))
+    supported = ["contains", "equals", "operation_called"]
+    unknown = assertions |> Map.keys() |> Enum.reject(&(&1 in supported))
 
     if unknown == [] do
       with {:ok, contains} <- string_or_list(Map.get(assertions, "contains"), :contains),

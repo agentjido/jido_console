@@ -112,8 +112,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
         {:hibernate, session, snapshot} ->
           turn_result = interrupted_turn(turn, :hibernated, snapshot, started_ms, opts)
 
-          {:halt, :hibernated, %{state | session: session, turns: state.turns ++ [turn_result]},
-           snapshot}
+          {:halt, :hibernated, %{state | session: session, turns: state.turns ++ [turn_result]}, snapshot}
 
         {:error, reason} ->
           turn_result = interrupted_turn(turn, :error, reason, started_ms, opts)

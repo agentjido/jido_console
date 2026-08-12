@@ -19,7 +19,7 @@ defmodule Jido.Cli.Automation do
 
   defp suite(%{name: :eval} = command, opts) do
     with {:ok, suite} <- Loader.load_suite(command.suite, opts) do
-      jobs = Map.get(command, :jobs, suite.jobs)
+      jobs = command.jobs || suite.jobs
       {:ok, %{suite | jobs: jobs}}
     end
   end
@@ -57,8 +57,11 @@ defmodule Jido.Cli.Automation do
     end
   end
 
-  defp command_scenario(%{scenario: path}, opts), do: Loader.load_scenario(path, opts)
-  defp command_scenario(%{input: path}, opts), do: Loader.scenario_from_input(path, opts)
+  defp command_scenario(%{scenario: scenario, input: nil}, opts) when is_binary(scenario),
+    do: Loader.load_scenario(scenario, opts)
+
+  defp command_scenario(%{input: input, scenario: nil}, opts) when is_binary(input),
+    do: Loader.scenario_from_input(input, opts)
 
   defp run(plan, sink, command, opts) do
     started_ms = System.monotonic_time(:millisecond)

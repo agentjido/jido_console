@@ -178,8 +178,7 @@ defmodule Jido.Terminal.OTP do
       reader: Keyword.get(opts, :reader, Reader),
       resize_interval_ms: Keyword.get(opts, :resize_interval_ms, @resize_interval_ms),
       size: Keyword.get(opts, :size, &system_size/0),
-      start_raw:
-        Keyword.get(opts, :start_raw, fn -> :shell.start_interactive({:noshell, :raw}) end),
+      start_raw: Keyword.get(opts, :start_raw, fn -> :shell.start_interactive({:noshell, :raw}) end),
       write: Keyword.get(opts, :write, &system_write/1)
     }
   end
