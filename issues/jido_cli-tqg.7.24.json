@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.18"
+  ],
   "blocks": [],
   "created": "2026-08-12T22:14:06Z",
   "description": "## Outcome\n\nBoth macOS target packages contain correctly signed runtime binaries and pass Apple notarization and trust verification before stable checksums are generated.\n\n## Work\n\n1. Inventory every Mach-O executable and library in the private runtime and application package.\n2. Sign nested code in the required order with the approved Developer ID identity and entitlements.\n3. Submit the final distributable form for notarization and retain the result.\n4. Verify signatures, notarization, and Gatekeeper behavior on clean native systems.\n5. Use protected CI secrets with least privilege and no fork exposure.\n6. Put signing and notarization evidence in release provenance.\n7. Keep unsigned development artifacts clearly marked.\n\n## Acceptance criteria\n\n- [ ] ARM64 and x86-64 packages pass signature verification.\n- [ ] Notarization succeeds for the final downloadable form.\n- [ ] A modified nested runtime file fails verification.\n- [ ] Signing happens before external archive checksums.\n- [ ] Credentials and certificate material do not appear in logs or artifacts.\n- [ ] Failure prevents a stable macOS release.\n\n## Tests\n\nRun codesign, notarization-status, Gatekeeper, tamper, extraction, and packaged-artifact checks on native macOS runners.\n\n## Non-goals\n\nDo not sign non-macOS artifacts or publish the stable release in this task.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "Sign and notarize macOS release artifacts",
   "type": "task",
-  "updated_at": "2026-08-12T22:14:07Z"
+  "updated_at": "2026-08-12T22:15:08Z"
 }
