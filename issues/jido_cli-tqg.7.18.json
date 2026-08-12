@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T22:14:05Z",
+  "description": "## Outcome\n\nA separate GitHub Actions workflow builds the four first-matrix artifacts on native runners, validates them, and uploads unsigned development assets to a draft release.\n\n## Work\n\n1. Use `macos-15`, `macos-15-intel`, `ubuntu-24.04`, and `windows-2025` or the current documented native equivalents.\n2. Pin every action and reusable workflow by full commit SHA.\n3. Resolve Hex dependencies, run quality and tests, build the selected package, and run the shared packaged-artifact harness.\n4. Transfer artifacts between jobs with checksum verification.\n5. Upload archives, notices, metadata, checksums, SBOM, provenance, and draft release notes.\n6. Mark unsigned development artifacts clearly and never publish the draft in this task.\n7. Use read-only permissions except for the one draft-release job.\n\n## Acceptance criteria\n\n- [ ] Each target builds on a suitable native runner.\n- [ ] A target failure prevents draft asset completion.\n- [ ] The uploaded bytes match the verified checksum and provenance.\n- [ ] Workflow dependencies use commit SHAs, not mutable tags such as `@v5`.\n- [ ] Re-runs do not create ambiguous duplicate assets.\n- [ ] The shared Hex release workflow does not publish before target artifacts pass.\n\n## Tests\n\nRun workflow-dispatch dry runs and failure-injection cases for build, harness, transfer, metadata, and draft upload.\n\n## Non-goals\n\nDo not publish Hex, publish a GitHub release, update Homebrew, or claim stable signing.",
+  "id": "jido_cli-tqg.7.18",
+  "labels": [],
+  "parent": "jido_cli-tqg.7",
+  "priority": 1,
+  "status": "open",
+  "title": "Build native unsigned artifacts in a pinned draft-release workflow",
+  "type": "task",
+  "updated_at": "2026-08-12T22:14:05Z"
+}
