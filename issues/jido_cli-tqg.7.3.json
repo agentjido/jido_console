@@ -5,7 +5,12 @@
   "created": "2026-08-12T22:09:58Z",
   "description": "## Outcome\n\nOne platform boundary resolves the per-user Jido state root and creates private state directories outside the installed release. `JIDO_HOME` replaces the default for tests and managed installations.\n\n## Why now\n\nThe daemon, discovery record, token, logs, and durable sessions need a stable writable location. The package directory can be read-only and can change during an upgrade.\n\n## Work\n\n1. Add injected platform and environment resolution for macOS, Linux, and Windows.\n2. Use `~/Library/Application Support/Jido` on macOS, `$XDG_STATE_HOME/jido` or `~/.local/state/jido` on Linux, and `%LOCALAPPDATA%\\Jido` on Windows.\n3. Give `JIDO_HOME` full precedence when it is a valid absolute path.\n4. Define named subdirectories for daemon runtime state, durable data, logs, and release cache.\n5. Create directories with current-user access. Put Unix mode changes and Windows access control behind one capability boundary.\n6. Normalize errors through `Jido.Cli.Error` at the CLI boundary.\n\n## Acceptance criteria\n\n- [ ] Each platform default and precedence rule has a deterministic test.\n- [ ] Paths with spaces and non-ASCII characters work.\n- [ ] Relative, empty, or unsafe overrides fail with a configuration error and exit 64.\n- [ ] State is never written inside the installed release directory.\n- [ ] Directory creation does not broaden current-user access.\n- [ ] Pure path resolution does not mutate the file system.\n\n## Tests\n\nAdd state-root tests with injected environment, platform, home, and file-system functions. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not store authentication tokens or discovery records in this task. Do not add system-wide state.",
   "id": "jido_cli-tqg.7.3",
-  "labels": [],
+  "labels": [
+    "cli",
+    "foundation",
+    "release",
+    "security"
+  ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
   "status": "open",
