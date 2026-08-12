@@ -5,7 +5,12 @@
   "created": "2026-08-12T22:14:06Z",
   "description": "## Outcome\n\n`mikehostetler/homebrew-tap` contains a `jido-cli` formula that installs the correct isolated macOS or Linux artifact and tests `jido --version`. Release automation can open a narrow formula-update pull request.\n\n## Work\n\n1. Add target selectors for macOS ARM64, macOS x86-64, and Linux x86-64 archives.\n2. Use immutable GitHub release URLs and exact SHA-256 values.\n3. Install the packaged `jido` command without a Homebrew Erlang or Elixir dependency.\n4. Add a non-interactive formula test for version and basic help.\n5. Add update automation that changes version, URLs, and checksums in a pull request.\n6. Use a GitHub App or token limited to the tap repository.\n7. Document install, upgrade, uninstall, state preservation, and unsigned candidate limits.\n\n## Acceptance criteria\n\n- [ ] `brew install mikehostetler/tap/jido-cli` selects the correct artifact.\n- [ ] `brew deps jido-cli` does not add Erlang.\n- [ ] The formula test runs the isolated command.\n- [ ] A bad checksum or wrong target fails installation.\n- [ ] Update automation opens a reviewable pull request and never pushes directly to the tap default branch.\n- [ ] The formula has no service definition in this task.\n\n## Tests\n\nRun formula audit and install tests on supported macOS and Linux runners, including upgrade from one fixture version.\n\n## Non-goals\n\nDo not submit to `homebrew/core` or start a daemon during installation.",
   "id": "jido_cli-tqg.7.21",
-  "labels": [],
+  "labels": [
+    "cli",
+    "cross-repo",
+    "documentation",
+    "release"
+  ],
   "parent": "jido_cli-tqg.7",
   "priority": 1,
   "status": "open",
