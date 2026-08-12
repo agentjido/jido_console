@@ -1,11 +1,13 @@
 defmodule Jido.Cli.Runtime do
   @moduledoc "Injectable agent runtime boundary for the TUI."
 
+  @type cancel_result :: {:ok, Jidoka.Cancellation.t()} | {:error, term()}
+
   @callback start_session(agent :: module(), keyword()) :: {:ok, term()} | {:error, term()}
   @callback start_turn(session :: term(), prompt :: String.t(), owner :: pid(), keyword()) ::
               {:ok, term()} | {:error, term()}
   @callback await(request :: term(), keyword()) :: term()
-  @callback cancel(request :: term(), keyword()) :: {:ok, term()} | {:error, term()}
+  @callback cancel(request :: term(), keyword()) :: cancel_result()
 end
 
 defmodule Jido.Cli.Runtime.Jidoka do

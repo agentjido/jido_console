@@ -112,6 +112,9 @@ defmodule Jido.Cli.Tui do
         {state, next_effects} = State.update(state, {:turn_result, {:cancelled, cancellation}})
         run_effects(state, next_effects ++ effects, runtime, opts)
 
+      {:error, :request_already_finished} ->
+        run_effects(state, effects, runtime, opts)
+
       {:error, reason} ->
         {state, next_effects} = State.update(state, {:turn_result, {:error, reason}})
         run_effects(state, next_effects ++ effects, runtime, opts)

@@ -2,6 +2,7 @@ defmodule Jido.Cli.Tui.StateTest do
   use ExUnit.Case, async: true
 
   alias Jido.Cli.Tui.State
+  alias Jidoka.Cancellation
   alias Jidoka.Event
 
   test "submits a prompt and commits a streamed result" do
@@ -42,6 +43,28 @@ defmodule Jido.Cli.Tui.StateTest do
 
     assert {^state, []} =
              State.update(state, {:turn_result, old, {:ok, :old_session, "old answer"}})
+  end
+
+  test "commits one completed result after a cancellation race" do
+    request = %{request_id: "request-1"}
+
+    state = %{
+      State.new(:session, {80, 24})
+      | request: request,
+        status: :cancelling,
+        messages: [%{role: :user, content: "hello"}]
+    }
+
+    {state, []} =
+      State.update(state, {:turn_result, request, {:ok, :next_session, "completed"}})
+
+    assert state.status == :idle
+    assert state.request == nil
+    assert Enum.count(state.messages, &(&1.role == :assistant)) == 1
+    assert List.last(state.messages).content == "completed"
+
+    assert {^state, []} =
+             State.update(state, {:turn_result, request, {:ok, :next_session, "duplicate"}})
   end
 
   test "Ctrl-C exits while idle and cancels while running" do
@@ -117,7 +140,8 @@ defmodule Jido.Cli.Tui.StateTest do
     assert state.session == :session
     assert state.status == :interrupted
 
-    {state, []} = State.update(base, {:turn_result, {:cancelled, :cancellation}})
+    cancellation = Cancellation.new!(request_id: "request-1", cancelled_at_ms: 0)
+    {state, []} = State.update(base, {:turn_result, {:cancelled, cancellation}})
     assert state.status == :idle
     assert state.request == nil
 

@@ -2,6 +2,7 @@ defmodule Jido.Cli.TuiTest do
   use ExUnit.Case, async: true
 
   alias Jido.Cli.Tui
+  alias Jidoka.Cancellation
   alias Jidoka.Event
 
   defmodule FakeAdapter do
@@ -89,7 +90,11 @@ defmodule Jido.Cli.TuiTest do
     end
 
     @impl true
-    def cancel(_request, _opts), do: {:ok, :cancelled}
+    def cancel(request, _opts), do: {:ok, cancellation(request.request_id)}
+
+    defp cancellation(request_id) do
+      Cancellation.new!(request_id: request_id, cancelled_at_ms: 0)
+    end
   end
 
   defmodule FailureRuntime do
@@ -124,17 +129,34 @@ defmodule Jido.Cli.TuiTest do
     @impl true
     def await(%{mode: :await_raise}, _opts), do: raise("await raised")
     def await(%{mode: :await_throw}, _opts), do: throw(:await_thrown)
-    def await(_request, _opts), do: {:cancelled, :cancelled}
+
+    def await(%{mode: :already_finished} = request, opts) do
+      send(request.test_pid, {:turn_awaited, opts})
+      {:ok, :next_session, "completed"}
+    end
+
+    def await(request, _opts), do: {:cancelled, cancellation(request.request_id)}
 
     @impl true
     def cancel(%{mode: :cancel_ok} = request, _opts) do
       send(request.test_pid, {:cancel_called, :cancel_ok})
-      {:ok, :cancelled}
+      {:ok, cancellation(request.request_id)}
     end
 
     def cancel(%{mode: :cancel_error} = request, _opts) do
       send(request.test_pid, {:cancel_called, :cancel_error})
       {:error, :cancel_failed}
+    end
+
+    def cancel(%{mode: :already_finished} = request, _opts) do
+      terminal = Event.build(:turn_finished, [], request_id: request.request_id)
+      send(request.owner, {:jidoka_turn_event, terminal})
+      send(request.test_pid, {:cancel_called, :already_finished})
+      {:error, :request_already_finished}
+    end
+
+    defp cancellation(request_id) do
+      Cancellation.new!(request_id: request_id, cancelled_at_ms: 0)
     end
   end
 
@@ -229,7 +251,24 @@ defmodule Jido.Cli.TuiTest do
     assert_receive {:failure_turn_started, :cancel_error}
     send(owner, {:jido_terminal, ref, {:key, :ctrl_c}})
     assert_receive {:cancel_called, :cancel_error}
-    assert_frame_contains("error ·")
+    assert_frame_contains("error · :cancel_failed")
+    stop_tui(task, owner, ref)
+  end
+
+  test "keeps the completed answer when completion wins cancellation" do
+    {task, owner, ref} = start_failure_tui(:already_finished)
+    send_prompt(owner, ref)
+    assert_receive {:failure_turn_started, :already_finished}
+
+    send(owner, {:jido_terminal, ref, {:key, :ctrl_c}})
+    assert_receive {:cancel_called, :already_finished}
+    assert_receive {:turn_awaited, _opts}
+
+    frame = assert_frame_contains("completed")
+    assert frame =~ "idle ·"
+    refute frame =~ "request_already_finished"
+    refute frame =~ "error ·"
+
     stop_tui(task, owner, ref)
   end
 

@@ -48,6 +48,9 @@ export OPENAI_API_KEY=...
 ```
 
 The terminal UI requires Erlang/OTP 28 or newer for raw terminal input.
+Press Ctrl-C during a turn to request cancellation through Jidoka. If the turn
+has already completed, its completed answer stays in the transcript. Press
+Ctrl-C or Escape while the UI is idle to exit.
 
 ## Run one input or scenario
 
