@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T22:09:58Z",
+  "description": "## Outcome\n\nA reviewed protocol v1 contract defines messages, framing, authentication, compatibility, streaming, persistence, and shutdown behavior before transport code starts.\n\n## Why now\n\nThe release plan selects loopback TCP and length-delimited data, but it does not define concrete operations, limits, errors, or active-work shutdown rules.\n\n## Work\n\n1. Define the protocol version source and the discovery-record schema.\n2. Specify a fixed-width length prefix, JSON payload limits, request IDs, response IDs, event order, terminal events, and connection close behavior.\n3. Define v1 operations for status, health, and one normal Jidoka-backed request with streamed events.\n4. Define authentication and incompatible-version failures before request dispatch.\n5. Define stable portable error maps, malformed-frame handling, timeouts, backpressure, and client disconnect behavior.\n6. State which session data is durable and how restart, drain, cancel, and forced stop work.\n7. Record the decision in a daemon protocol guide and executable schema tests.\n\n## Acceptance criteria\n\n- [ ] Every message direction and terminal state has a versioned data schema.\n- [ ] Frame and message size limits are explicit.\n- [ ] Authentication data cannot appear in command arguments, process titles, events, or logs.\n- [ ] An incompatible version fails closed with a stable reason.\n- [ ] Shutdown rules cover idle, active, blocked, disconnected, and deadline cases.\n- [ ] The contract has no platform-specific socket type.\n\n## Tests\n\nAdd encode, decode, schema, compatibility, redaction, and state-machine tests. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not implement TCP in this task. Do not add remote access, TLS, Unix sockets, named pipes, or automatic daemon fallback.",
+  "id": "jido_cli-tqg.7.5",
+  "labels": [],
+  "parent": "jido_cli-tqg.7",
+  "priority": 0,
+  "status": "open",
+  "title": "Specify daemon protocol v1 and the lifecycle policy",
+  "type": "task",
+  "updated_at": "2026-08-12T22:09:58Z"
+}
