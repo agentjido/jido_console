@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:32Z",
+  "description": "Define the provider-neutral execution environment, durable portable bindings, trusted profile resolution, fail-closed checks, and confirmed evidence.",
+  "id": "jido_cli-tqg.3",
+  "labels": [],
+  "parent": "jido_cli-tqg",
+  "priority": 0,
+  "status": "open",
+  "title": "Phase 2: Add constrained execution and security evidence",
+  "type": "epic",
+  "updated_at": "2026-08-12T17:14:32Z"
+}
