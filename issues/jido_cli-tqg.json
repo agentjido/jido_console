@@ -5,7 +5,12 @@
   "created": "2026-08-12T17:14:32Z",
   "description": "Create the Jidoka-first implementation path for jido_cli. Keep CLI files, matrices, concurrency, terminal output, JSONL, exit status, and artifacts in jido_cli. Keep turns, session sequencing, effects, cancellation, persistence, recovery, execution environments, and extension runtime behavior in Jidoka. This epic does not add jido_eval, compare, or validate commands. It also does not permit agent or scenario data to load code or raw backend controls.",
   "id": "jido_cli-tqg",
-  "labels": [],
+  "labels": [
+    "cli",
+    "cross-repo",
+    "foundation",
+    "jidoka"
+  ],
   "priority": 0,
   "status": "open",
   "title": "Implement the Jidoka-first jido_cli roadmap",
