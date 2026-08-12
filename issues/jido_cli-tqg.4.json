@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:32Z",
+  "description": "Add data-only extension requests, trusted identity records, lifecycle events, the built-in host, and a language-neutral process bridge.",
+  "id": "jido_cli-tqg.4",
+  "labels": [],
+  "parent": "jido_cli-tqg",
+  "priority": 1,
+  "status": "open",
+  "title": "Phase 3: Define the extension host before extensions",
+  "type": "epic",
+  "updated_at": "2026-08-12T17:14:32Z"
+}
