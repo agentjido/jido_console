@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:35Z",
+  "description": "The full researched story description is being attached.",
+  "id": "jido_cli-tqg.4.6",
+  "labels": [],
+  "parent": "jido_cli-tqg.4",
+  "priority": 2,
+  "status": "open",
+  "title": "Host trusted process extensions as operation sources",
+  "type": "task",
+  "updated_at": "2026-08-12T17:14:35Z"
+}
