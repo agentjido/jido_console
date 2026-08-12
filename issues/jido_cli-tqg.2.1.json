@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_cli-tqg.1.1"
   ],
@@ -20,8 +20,8 @@
   ],
   "parent": "jido_cli-tqg.2",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "Add a public ordered Jidoka session sequence",
   "type": "task",
-  "updated_at": "2026-08-12T17:21:18Z"
+  "updated_at": "2026-08-12T17:39:32Z"
 }
