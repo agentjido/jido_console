@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:32Z",
+  "description": "The full researched story description is being attached.",
+  "id": "jido_cli-tqg.1.2",
+  "labels": [],
+  "parent": "jido_cli-tqg.1",
+  "priority": 0,
+  "status": "open",
+  "title": "Cancel interactive turns through Jidoka.cancel/2",
+  "type": "task",
+  "updated_at": "2026-08-12T17:14:32Z"
+}
