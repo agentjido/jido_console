@@ -14,19 +14,30 @@ defmodule Jido.Cli.Tui.State do
             error: nil,
             request: nil,
             finishing?: false,
+            prepare_prompt?: false,
+            project_instructions: [],
             dirty?: true,
             render_scheduled?: false
 
   @type effect ::
           {:start_turn, String.t()}
+          | {:start_turn, String.t(), map()}
+          | {:prepare_prompt, String.t()}
           | {:finish_turn, term()}
           | {:cancel_turn, term()}
           | :exit
 
   @type t :: %__MODULE__{}
 
-  @spec new(term(), {pos_integer(), pos_integer()}) :: t()
-  def new(session, size), do: %__MODULE__{session: session, size: size}
+  @spec new(term(), {pos_integer(), pos_integer()}, keyword()) :: t()
+  def new(session, size, opts \\ []) do
+    %__MODULE__{
+      session: session,
+      size: size,
+      prepare_prompt?: Keyword.get(opts, :prepare_prompt, false),
+      project_instructions: Keyword.get(opts, :project_instructions, [])
+    }
+  end
 
   @spec update(t(), term()) :: {t(), [effect()]}
   def update(%__MODULE__{} = state, {:terminal, {:text, text}}) do
@@ -52,18 +63,26 @@ defmodule Jido.Cli.Tui.State do
     if prompt == "" do
       {state, []}
     else
-      state = %{
-        state
-        | editor: Editor.clear(state.editor),
-          messages: state.messages ++ [%{role: :user, content: prompt}],
-          streaming: "",
-          status: :running,
-          error: nil,
-          dirty?: true
-      }
-
-      {state, [{:start_turn, prompt}]}
+      submit_prompt(state, prompt)
     end
+  end
+
+  def update(%__MODULE__{} = state, {:prompt_ready, prompt, context}) do
+    state = %{
+      state
+      | editor: Editor.clear(state.editor),
+        messages: state.messages ++ [%{role: :user, content: prompt}],
+        streaming: "",
+        status: :running,
+        error: nil,
+        dirty?: true
+    }
+
+    {state, [{:start_turn, prompt, context}]}
+  end
+
+  def update(%__MODULE__{} = state, {:prompt_error, reason}) do
+    {%{state | status: :error, error: format_error(reason), dirty?: true}, []}
   end
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :enter}}), do: {state, []}
@@ -142,6 +161,24 @@ defmodule Jido.Cli.Tui.State do
     do: {%{state | dirty?: false, render_scheduled?: false}, []}
 
   def update(%__MODULE__{} = state, _event), do: {state, []}
+
+  defp submit_prompt(%__MODULE__{prepare_prompt?: true} = state, prompt) do
+    {%{state | status: :resolving, error: nil, dirty?: true}, [{:prepare_prompt, prompt}]}
+  end
+
+  defp submit_prompt(state, prompt) do
+    state = %{
+      state
+      | editor: Editor.clear(state.editor),
+        messages: state.messages ++ [%{role: :user, content: prompt}],
+        streaming: "",
+        status: :running,
+        error: nil,
+        dirty?: true
+    }
+
+    {state, [{:start_turn, prompt}]}
+  end
 
   defp changed(state, updates) do
     state = struct!(state, Keyword.put(updates, :dirty?, true))

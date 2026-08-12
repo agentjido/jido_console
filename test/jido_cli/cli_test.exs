@@ -6,6 +6,7 @@ defmodule Jido.CliTest do
   defmodule FakeTui do
     def run(opts) do
       send(Keyword.fetch!(opts, :test_pid), :tui_started)
+      send(Keyword.fetch!(opts, :test_pid), {:tui_options, opts})
       :ok
     end
   end
@@ -51,6 +52,43 @@ defmodule Jido.CliTest do
   test "starts the TUI with no arguments" do
     assert :ok = Jido.Cli.run([], tui: FakeTui, test_pid: self())
     assert_received :tui_started
+  end
+
+  test "parses trusted interactive coding selections" do
+    assert :ok =
+             Jido.Cli.run(
+               [
+                 "--coding-pack",
+                 "acme.coding_pack",
+                 "--coding-profile",
+                 "restricted",
+                 "--project-root",
+                 "/trusted/project"
+               ],
+               tui: FakeTui,
+               test_pid: self()
+             )
+
+    assert_received {:tui_options, options}
+    assert options[:coding_pack] == "acme.coding_pack"
+    assert options[:coding_profile] == "restricted"
+    assert options[:project_root] == "/trusted/project"
+
+    assert :ok =
+             Jido.Cli.run(["--coding-pack", "disabled"], tui: FakeTui, test_pid: self())
+
+    assert_received {:tui_options, disabled}
+    assert disabled[:coding_pack] == :disabled
+  end
+
+  test "uses configuration exit status for an invalid coding selection" do
+    output =
+      capture_io(:stderr, fn ->
+        assert {:error, 64} =
+                 Jido.Cli.run([], tui: ErrorTui, reason: {:invalid_coding_pack, 42})
+      end)
+
+    assert output =~ "invalid_coding_pack"
   end
 
   test "sends run commands to the automation boundary" do

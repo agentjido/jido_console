@@ -24,23 +24,33 @@ defmodule Jido.Cli.Tui.View do
   end
 
   defp transcript_rows(state, width) do
+    instructions =
+      Enum.map(state.project_instructions, fn instruction ->
+        %{role: :project, content: "Loaded #{instruction["path"]} (scope #{instruction["scope"]})"}
+      end)
+
     messages =
       if state.streaming == "" do
-        state.messages
+        instructions ++ state.messages
       else
-        state.messages ++ [%{role: :assistant, content: state.streaming}]
+        instructions ++ state.messages ++ [%{role: :assistant, content: state.streaming}]
       end
 
     Enum.flat_map(messages, fn message ->
-      role = if message.role == :user, do: "User", else: "Assistant"
+      role = role(message.role)
       [role | Frame.wrap(message.content, width)] ++ [""]
     end)
   end
+
+  defp role(:user), do: "User"
+  defp role(:project), do: "Project"
+  defp role(_role), do: "Assistant"
 
   defp title(width), do: Frame.fit(" Jido " <> String.duplicate("─", width), width)
 
   defp status_row(%State{status: :idle, error: nil}), do: "idle · Enter sends · Esc exits"
   defp status_row(%State{status: :running}), do: "running · Ctrl-C cancels"
+  defp status_row(%State{status: :resolving}), do: "resolving file mentions"
   defp status_row(%State{status: :cancelling}), do: "cancelling"
   defp status_row(%State{status: :interrupted, error: error}), do: error || "paused"
   defp status_row(%State{status: :error, error: error}), do: "error · #{error}"

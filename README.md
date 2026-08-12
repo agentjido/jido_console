@@ -52,6 +52,43 @@ Press Ctrl-C during a turn to request cancellation through Jidoka. If the turn
 has already completed, its completed answer stays in the transcript. Press
 Ctrl-C or Escape while the UI is idle to exit.
 
+### Default coding setup
+
+Interactive use enables the removable `jido.coding_pack` extension by default.
+The trusted default execution-profile ID is `coding.default`. The first-run
+setup enables bounded workspace read and search tools. A host can add reviewed
+write, shell, Git, and verification ports through trusted configuration. Agent
+or project data cannot name an Elixir module, command, adapter, image, mount, or
+network rule.
+
+Use a different trusted pack or profile ID, or disable the pack:
+
+```sh
+./jido --coding-pack acme.coding_pack --coding-profile restricted
+./jido --coding-pack disabled
+```
+
+`--project-root DIR` selects the trusted workspace root. A host embedding the
+CLI can also set `:coding_pack`, `:coding_profile`, `:project_root`,
+`:coding_access`, and bounded `:coding_limits`. Command options take precedence
+over application defaults. A replacement pack ID resolves through the same
+trusted extension-record and project-trust path as an explicit agent request.
+Default tools remain independently replaceable or removable by trusted tool
+IDs.
+
+At session start, the CLI loads project instruction files through
+`Jidoka.CodingPack`. It shows each loaded relative path and scope in the TUI.
+Root instructions load before more specific nested instructions. Instruction
+content and SHA-256 provenance enter the same data-only Jidoka context used by
+coding operations.
+
+Use `@relative/path` to attach a bounded UTF-8 file to one interactive turn.
+Use `\@` for a literal at sign. A unique basename can resolve through bounded
+workspace search. An ambiguous, missing, ignored, binary, oversized, denied, or
+outside-root mention shows an error and does not submit the turn. File mentions
+do not use a shell and cannot bypass workspace ignore or path rules. Automated
+scenario input does not use fuzzy file mentions; it must give explicit data.
+
 ## Run one input or scenario
 
 Use a text file or standard input for one turn:

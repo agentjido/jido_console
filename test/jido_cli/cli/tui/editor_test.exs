@@ -27,4 +27,9 @@ defmodule Jido.Cli.Tui.EditorTest do
     assert Editor.right(editor) == editor
     assert Editor.clear(editor) == empty
   end
+
+  test "keeps mention and escaped-at syntax as ordinary editable text" do
+    editor = %Editor{} |> Editor.insert("Review @lib/value.ex and \\@literal") |> Editor.left() |> Editor.right()
+    assert editor.text == "Review @lib/value.ex and \\@literal"
+  end
 end

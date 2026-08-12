@@ -169,4 +169,35 @@ defmodule Jido.Cli.Tui.StateTest do
     refute state.dirty?
     assert {^state, []} = State.update(state, :unknown)
   end
+
+  test "prepares a prompt before it enters the transcript" do
+    state = State.new(:session, {80, 24}, prepare_prompt: true)
+    {state, []} = State.update(state, {:terminal, {:text, "Review @value.ex"}})
+
+    assert {resolving, [{:prepare_prompt, "Review @value.ex"}]} =
+             State.update(state, {:terminal, {:key, :enter}})
+
+    assert resolving.status == :resolving
+    assert resolving.messages == []
+    assert resolving.editor.text == "Review @value.ex"
+
+    context = %{"coding" => %{"files" => [%{"path" => "value.ex"}]}}
+
+    assert {ready, [{:start_turn, "Review value.ex", ^context}]} =
+             State.update(resolving, {:prompt_ready, "Review value.ex", context})
+
+    assert ready.messages == [%{role: :user, content: "Review value.ex"}]
+    assert ready.editor.text == ""
+  end
+
+  test "a prompt resolution error keeps text editable and starts no turn" do
+    state = State.new(:session, {80, 24}, prepare_prompt: true)
+    {state, []} = State.update(state, {:terminal, {:text, "Review @missing"}})
+    {state, [_effect]} = State.update(state, {:terminal, {:key, :enter}})
+    {state, []} = State.update(state, {:prompt_error, "file is missing"})
+
+    assert state.status == :error
+    assert state.editor.text == "Review @missing"
+    assert state.messages == []
+  end
 end

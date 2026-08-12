@@ -11,6 +11,9 @@ defmodule Jido.Cli do
   Options:
     -h, --help       Show this help
     -v, --version    Show the version
+        --coding-pack ID        Select a trusted coding pack or `disabled`
+        --coding-profile ID     Select the trusted execution profile
+        --project-root DIR      Select the trusted coding workspace root
 
   Run options:
     -a, --agent FILE           Load one agent YAML or JSON file
@@ -71,7 +74,13 @@ defmodule Jido.Cli do
 
   defp run_interactive(args, opts) do
     case OptionParser.parse(args,
-           strict: [help: :boolean, version: :boolean],
+           strict: [
+             help: :boolean,
+             version: :boolean,
+             coding_pack: :string,
+             coding_profile: :string,
+             project_root: :string
+           ],
            aliases: [h: :help, v: :version]
          ) do
       {[help: true], [], []} ->
@@ -82,12 +91,13 @@ defmodule Jido.Cli do
         IO.puts("jido #{@version}")
         :ok
 
-      {[], [], []} ->
+      {options, [], []} ->
         tui = Keyword.get(opts, :tui, Jido.Cli.Tui)
+        opts = Keyword.merge(opts, normalize_interactive_options(options))
 
         case tui.run(opts) do
           :ok -> :ok
-          {:error, reason} -> fail(format_error(reason))
+          {:error, reason} -> interactive_error(reason)
         end
 
       {_options, _arguments, invalid} when invalid != [] ->
@@ -211,6 +221,31 @@ defmodule Jido.Cli do
     IO.write(:stderr, @usage)
     {:error, 64}
   end
+
+  defp normalize_interactive_options(options) do
+    Enum.map(options, fn
+      {:coding_pack, "disabled"} -> {:coding_pack, :disabled}
+      option -> option
+    end)
+  end
+
+  defp interactive_error(reason) do
+    if configuration_error?(reason) do
+      IO.puts(:stderr, "jido: #{format_error(reason)}")
+      {:error, 64}
+    else
+      fail(format_error(reason))
+    end
+  end
+
+  defp configuration_error?({code, _value})
+       when code in [:invalid_coding_pack, :invalid_execution_profile, :unknown_runtime_profile],
+       do: true
+
+  defp configuration_error?({:unknown_runtime_profile, _id, _reason}), do: true
+  defp configuration_error?(:coding_module_name_forbidden), do: true
+  defp configuration_error?(:invalid_coding_profile_resolver), do: true
+  defp configuration_error?(_reason), do: false
 
   defp fail(message, prefix \\ "") do
     IO.puts(:stderr, "jido: #{prefix}#{message}")

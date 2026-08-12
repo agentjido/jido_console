@@ -3,7 +3,7 @@ defmodule Jido.Cli.Tui do
 
   alias Jido.Cli.Tui.State
   alias Jido.Cli.Tui.View
-  alias Jido.Cli.Extensions
+  alias Jido.Cli.CodingSetup
   alias Jido.Terminal
 
   @frame_interval_ms 33
@@ -14,35 +14,24 @@ defmodule Jido.Cli.Tui do
     agent = Keyword.get(opts, :agent, Jido.Cli.DefaultAgent)
     session_opts = Keyword.get(opts, :session_opts, [])
 
-    with {:ok, setup} <- extension_setup(agent, opts),
-         session_opts = Keyword.put(session_opts, :extension_setup, setup),
+    with {:ok, coding} <- CodingSetup.prepare(agent, opts),
+         session_opts =
+           session_opts
+           |> Keyword.put(:extension_setup, coding.extension_setup)
+           |> Keyword.put(:agent_spec_override, coding.spec),
          {:ok, session} <- runtime.start_session(agent, session_opts),
          {:ok, terminal} <- open_terminal(opts) do
       try do
-        state = State.new(session, terminal.size)
+        state = State.new(session, terminal.size, prepare_prompt: true, project_instructions: coding.instructions)
 
         with :ok <- Terminal.draw(terminal, View.render(state)) do
           {state, []} = State.update(state, :rendered)
-          loop(state, terminal, runtime, opts)
+          loop(state, terminal, runtime, Keyword.put(opts, :coding_setup_resolved, coding))
         end
       after
         close_runtime_session(runtime, session)
         Terminal.close(terminal)
       end
-    end
-  end
-
-  defp extension_setup(agent, opts) do
-    spec =
-      cond do
-        is_atom(agent) and function_exported?(agent, :spec, 0) -> agent.spec()
-        match?(%Jidoka.Agent.Spec{}, agent) -> agent
-        true -> nil
-      end
-
-    case spec do
-      %Jidoka.Agent.Spec{} -> Extensions.resolve(spec.extensions, :interactive, opts)
-      nil -> {:ok, %{registry: %{}, projection: %{"status" => "not_requested"}}}
     end
   end
 
@@ -101,7 +90,25 @@ defmodule Jido.Cli.Tui do
   defp run_effects(_state, [:exit | _effects], _runtime, _opts), do: :exit
 
   defp run_effects(state, [{:start_turn, prompt} | effects], runtime, opts) do
+    run_effects(state, [{:start_turn, prompt, %{}} | effects], runtime, opts)
+  end
+
+  defp run_effects(state, [{:prepare_prompt, prompt} | effects], runtime, opts) do
+    coding = Keyword.fetch!(opts, :coding_setup_resolved)
+
+    event =
+      case CodingSetup.prepare_prompt(coding, prompt) do
+        {:ok, prompt, context} -> {:prompt_ready, prompt, context}
+        {:error, reason} -> {:prompt_error, reason}
+      end
+
+    {state, next_effects} = State.update(state, event)
+    run_effects(state, next_effects ++ effects, runtime, opts)
+  end
+
+  defp run_effects(state, [{:start_turn, prompt, context} | effects], runtime, opts) do
     turn_opts = Keyword.get(opts, :turn_opts, [])
+    turn_opts = Keyword.put(turn_opts, :context, context)
 
     event =
       case runtime.start_turn(state.session, prompt, self(), turn_opts) do

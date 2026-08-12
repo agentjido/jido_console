@@ -41,7 +41,8 @@ defmodule Jido.Cli.Runtime.Jidoka do
   @impl Jido.Cli.Runtime
   def start_session(agent, opts) do
     setup = Keyword.get(opts, :extension_setup, %{registry: %{}})
-    opts = Keyword.delete(opts, :extension_setup)
+    agent = Keyword.get(opts, :agent_spec_override, agent)
+    opts = Keyword.drop(opts, [:extension_setup, :agent_spec_override])
 
     with {:ok, session} <- Jidoka.session(agent, opts),
          {:ok, extension_runtime} <-

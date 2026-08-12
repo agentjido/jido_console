@@ -62,9 +62,10 @@ defmodule Jido.Cli.TuiTest do
     end
 
     @impl true
-    def start_turn(:session, "hello", owner, opts) do
+    def start_turn(:session, prompt, owner, opts) do
       test_pid = Keyword.fetch!(opts, :test_pid)
       send(test_pid, :turn_started)
+      send(test_pid, {:turn_prompt, prompt, Keyword.get(opts, :context)})
       request = %{request_id: "request-1", test_pid: test_pid}
 
       delta =
@@ -183,6 +184,7 @@ defmodule Jido.Cli.TuiTest do
     send(owner, {:jido_terminal, ref, {:text, "hello"}})
     send(owner, {:jido_terminal, ref, {:key, :enter}})
     assert_receive :turn_started
+    assert_receive {:turn_prompt, "hello", %{"coding" => %{"pack_id" => "jido.coding_pack"}}}
     assert_receive {:turn_awaited, await_opts}
     assert await_opts[:timeout] == 30_000
     assert await_opts[:cancel_on_timeout] == false
@@ -192,6 +194,44 @@ defmodule Jido.Cli.TuiTest do
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)
     assert_receive :terminal_closed
+  end
+
+  test "shows instruction provenance and attaches resolved file context" do
+    root = Path.join(System.tmp_dir!(), "jido-tui-coding-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    File.write!(Path.join(root, "AGENTS.md"), "project rules")
+    File.write!(Path.join(root, "value.ex"), "defmodule Value do\nend\n")
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          project_root: root,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive :session_started
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, frame}
+    assert frame =~ "Loaded AGENTS.md"
+
+    send(owner, {:jido_terminal, ref, {:text, "Review @value.ex"}})
+    send(owner, {:jido_terminal, ref, {:key, :enter}})
+    assert_receive :turn_started
+
+    assert_receive {:turn_prompt, "Review value.ex",
+                    %{"coding" => %{"files" => [%{"path" => "value.ex", "content" => content}]}}}
+
+    assert content =~ "defmodule Value"
+    assert_receive {:turn_awaited, _opts}
+    send(owner, {:jido_terminal, ref, {:key, :escape}})
+    assert :ok = Task.await(task)
+    File.rm_rf!(root)
   end
 
   test "closes the terminal when the first draw fails" do

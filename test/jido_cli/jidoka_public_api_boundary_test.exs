@@ -13,6 +13,7 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
     @public_contract_prefixes [
       "Jidoka.Agent.Spec",
       "Jidoka.Cancellation",
+      "Jidoka.CodingPack",
       "Jidoka.Effect",
       "Jidoka.Event",
       "Jidoka.ExecutionEnvironment",
