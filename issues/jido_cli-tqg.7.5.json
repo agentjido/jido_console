@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.2"
+  ],
   "blocks": [],
   "created": "2026-08-12T22:09:58Z",
   "description": "## Outcome\n\nA reviewed wire protocol v1 defines message schemas, framing, authentication exchange, version negotiation, event streaming, limits, and portable errors before transport code starts.\n\n## Why now\n\nThe release plan selects loopback TCP and length-delimited data, but it does not define concrete operations, frame limits, or message state.\n\n## Work\n\n1. Define one protocol version source and the version fields in discovery and handshake data.\n2. Specify a fixed-width length prefix, JSON payload limits, request IDs, response IDs, event order, terminal events, and connection close behavior.\n3. Define v1 operations for status, health, and one normal Jidoka-backed request with streamed events.\n4. Define authentication and incompatible-version failures before request dispatch.\n5. Define stable portable errors for malformed frames, unknown operations, timeouts, overflow, and connection loss.\n6. Define bounded buffering, backpressure, and client disconnect semantics at the wire boundary.\n7. Record the contract in a daemon protocol guide and executable schema tests.\n\n## Acceptance criteria\n\n- [ ] Every message direction and terminal state has a versioned data schema.\n- [ ] Frame and message size limits are explicit.\n- [ ] Authentication data cannot appear in arguments, process titles, events, or logs.\n- [ ] An incompatible version fails closed with a stable reason.\n- [ ] The event stream has one ordered terminal message.\n- [ ] The contract has no platform-specific socket type.\n\n## Tests\n\nAdd encode, decode, schema, compatibility, redaction, and stream-state tests. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not implement TCP or daemon work lifecycle rules in this task. Do not add remote access, TLS, Unix sockets, named pipes, or automatic fallback.",
@@ -17,5 +19,5 @@
   "status": "open",
   "title": "Specify the framed daemon wire protocol v1",
   "type": "task",
-  "updated_at": "2026-08-12T22:11:25Z"
+  "updated_at": "2026-08-12T22:15:02Z"
 }
