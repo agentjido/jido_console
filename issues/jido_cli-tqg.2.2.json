@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-12T17:14:33Z",
+  "description": "The full researched story description is being attached.",
+  "id": "jido_cli-tqg.2.2",
+  "labels": [],
+  "parent": "jido_cli-tqg.2",
+  "priority": 0,
+  "status": "open",
+  "title": "Run automation cells through the public Jidoka sequence",
+  "type": "task",
+  "updated_at": "2026-08-12T17:14:33Z"
+}
