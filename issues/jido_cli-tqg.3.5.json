@@ -20,8 +20,8 @@
   ],
   "parent": "jido_cli-tqg.3",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "Persist portable execution bindings through recovery and fork",
   "type": "task",
-  "updated_at": "2026-08-12T17:19:41Z"
+  "updated_at": "2026-08-12T19:56:45Z"
 }
