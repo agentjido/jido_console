@@ -5,7 +5,12 @@
   "created": "2026-08-12T22:14:05Z",
   "description": "## Outcome\n\nThe exact draft assets for macOS ARM64, macOS x86-64, Linux x86-64, and Windows x86-64 pass the full non-interactive release contract on native runners.\n\n## Work\n\n1. Download the exact draft assets and verify their external checksums before extraction.\n2. Run `jido --version`, `--help`, `run --help`, `eval --help`, and `daemon --help` with no Erlang or Elixir on `PATH`.\n3. Run one provider-free local scenario and prove exit statuses `0`, `1`, and `64`.\n4. Run daemon start, health, request, clean stop, restart persistence, and no-daemon cases.\n5. Test installation under paths with spaces and non-ASCII user profiles.\n6. Validate metadata, notices, access controls, private runtime selection, JSONL, and artifact integrity.\n7. Store target-scoped acceptance evidence with the release candidate.\n\n## Acceptance criteria\n\n- [ ] All four targets pass the same required check list.\n- [ ] Tests use the final uploaded bytes, not a build directory.\n- [ ] No test can find `erl`, `elixir`, or `mix` through `PATH`.\n- [ ] No live provider credential or network model call is used.\n- [ ] Daemon restart and shutdown evidence matches protocol and lifecycle policy.\n- [ ] One required failure blocks later publication tasks.\n\n## Tests\n\nThis task is the native acceptance suite. Also test that one deliberately corrupt candidate blocks the matrix.\n\n## Non-goals\n\nDo not treat this automation as manual TUI acceptance.",
   "id": "jido_cli-tqg.7.19",
-  "labels": [],
+  "labels": [
+    "automation",
+    "daemon",
+    "packaging",
+    "release"
+  ],
   "parent": "jido_cli-tqg.7",
   "priority": 1,
   "status": "open",
