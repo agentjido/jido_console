@@ -1,6 +1,7 @@
 {
   "assignee": "",
   "blocked_by": [
+    "jido_cli-tqg.2.2",
     "jido_cli-tqg.3.3"
   ],
   "blocks": [],
@@ -19,5 +20,5 @@
   "status": "open",
   "title": "Add data-only execution-profile selection and precedence",
   "type": "task",
-  "updated_at": "2026-08-12T17:14:38Z"
+  "updated_at": "2026-08-12T17:14:39Z"
 }
