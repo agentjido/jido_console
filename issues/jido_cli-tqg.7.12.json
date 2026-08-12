@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-tqg.7.2"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-tqg.7.13"
+  ],
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nA versioned contract defines target names, archive names, directory layout, launcher behavior, bundled runtime rules, and `release.json` fields before a package builder is selected.\n\n## Work\n\n1. Define the first targets and exact archive names from `RELEASE_PLAN.md`.\n2. Define `bin/jido`, `libexec`, private OTP runtime, `LICENSE`, notices, and `release.json` layout rules.\n3. Define Windows launcher form and executable-bit rules for Unix archives.\n4. Require every launcher to use only the private runtime and to preserve all user arguments and exit statuses.\n5. Define metadata fields for product, package, version, target, build, Elixir, OTP, Jidoka, daemon protocol, files, and immutable release URL.\n6. Define the relationship between internal file digests and the external archive checksum without a recursive checksum.\n7. Add schema and archive-layout validators.\n\n## Acceptance criteria\n\n- [ ] Every supported target maps to exactly one target-specific archive.\n- [ ] The contract forbids use of OTP from `PATH`.\n- [ ] Metadata uses the single release version and protocol version sources.\n- [ ] The archive is relocatable and supports paths with spaces and Unicode.\n- [ ] Schema readers reject missing security and compatibility fields.\n- [ ] Later Linux ARM64 can use the same contract with a new target value.\n\n## Tests\n\nAdd metadata schema and synthetic archive-layout tests. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not select or implement Burrito or the fallback builder in this task. Do not change the local run-artifact JSONL contract.",
   "id": "jido_cli-tqg.7.12",
@@ -19,5 +21,5 @@
   "status": "open",
   "title": "Define the isolated artifact and release metadata contract",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:04Z"
+  "updated_at": "2026-08-12T22:15:05Z"
 }
