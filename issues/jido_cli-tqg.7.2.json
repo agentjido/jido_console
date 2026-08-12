@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.1"
+  ],
   "blocks": [],
   "created": "2026-08-12T22:09:58Z",
   "description": "## Outcome\n\nThe Mix application version is the only Jido release version source. CLI output, cache paths, run manifests, artifact names, tags, and release metadata read that value.\n\n## Why now\n\n`mix.exs` and `lib/jido_cli/cli.ex` each contain `0.1.0`. The duplicate value can make a tag, command, package, and manifest disagree.\n\n## Work\n\n1. Add a small release identity boundary that reads the compiled application version.\n2. Remove the CLI version constant and update `jido --version`, escript cache naming, and automation manifests.\n3. Make documentation source references and later package scripts use the same source.\n4. Add a tag validator for exact `v\u003capplication-version\u003e` agreement.\n5. Report the Jido version, Jidoka version, Elixir version, and OTP version through one tested runtime API.\n6. Add an architecture test that rejects a second product SemVer literal in production source.\n\n## Acceptance criteria\n\n- [ ] `mix.exs` owns the only Jido product version value.\n- [ ] `jido --version` and JSONL manifest version fields match the application version.\n- [ ] A mismatched release tag fails before build or publication.\n- [ ] Source, escript, and release builds report the same value.\n- [ ] Tests can inject version data without changing global application state.\n\n## Tests\n\nExtend CLI and automation plan tests. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not create a second version file. Do not infer the version from Git at runtime. Protocol schema versions remain separate integers.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "Make the Mix application version the only release version source",
   "type": "task",
-  "updated_at": "2026-08-12T22:09:58Z"
+  "updated_at": "2026-08-12T22:15:02Z"
 }
