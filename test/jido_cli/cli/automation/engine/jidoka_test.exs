@@ -4,6 +4,7 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
   alias Jido.Cli.Automation.Engine.Jidoka, as: Engine
   alias Jidoka.Agent.Spec
   alias Jidoka.Agent.Spec.Operation
+  alias Jidoka.Cancellation
   alias Jidoka.Effect
   alias Jidoka.Runtime.LocalOperations
 
@@ -322,6 +323,55 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
     assert Enum.map(result.turns, & &1.turn_id) == ["one", "two"]
   end
 
+  test "cancels through the public sequence handle and keeps completed turns" do
+    parent = self()
+    {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+    llm = fn _intent, _journal, context ->
+      case Agent.get_and_update(calls, &{&1, &1 + 1}) do
+        0 ->
+          {:ok, %{type: :final, content: "first complete"}}
+
+        1 ->
+          send(parent, {:engine_sequence_started, self()})
+          :ok = wait_for_cancellation(context, 1_000)
+          {:error, :cancelled}
+
+        _call ->
+          flunk("a later engine turn started after cancellation")
+      end
+    end
+
+    spec =
+      Spec.new!(
+        id: "cancel_engine_agent",
+        model: "openai:gpt-4o-mini",
+        instructions: "Answer."
+      )
+
+    cell =
+      cell(spec, [
+        %{id: "one", input: "First", context: %{}, assertions: %{}},
+        %{id: "two", input: "Block", context: %{}, assertions: %{}},
+        %{id: "three", input: "Never", context: %{}, assertions: %{}}
+      ])
+      |> Map.put(:runtime_opts, llm: llm)
+
+    assert {:ok, request} = Engine.start(cell, [])
+    assert_receive {:engine_sequence_started, capability_pid}, 1_000
+
+    assert {:ok, %Cancellation{} = cancellation} = Engine.cancel(request, grace_ms: 500)
+    result = Engine.await(request, automation_await_timeout: 100)
+
+    assert result.execution.status == :cancelled
+    assert Enum.map(result.turns, & &1.status) == [:ok, :cancelled]
+    assert Enum.map(result.turns, & &1.turn_id) == ["one", "two"]
+    assert result.turns |> hd() |> get_in([:response, :content]) == "first complete"
+    assert result.error.details["cause"]["request_id"] == cancellation.request_id
+    refute Process.alive?(capability_pid)
+    assert Agent.get(calls, & &1) == 2
+  end
+
   test "supports unscored turns and injected clocks" do
     llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "answer"}} end
 
@@ -395,6 +445,17 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
 
   defp get_key(map, key, default \\ nil) do
     Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+  end
+
+  defp wait_for_cancellation(_context, 0), do: {:error, :cancellation_not_received}
+
+  defp wait_for_cancellation(context, attempts_left) do
+    if Cancellation.requested?(context) do
+      :ok
+    else
+      Process.sleep(1)
+      wait_for_cancellation(context, attempts_left - 1)
+    end
   end
 
   defp sources do

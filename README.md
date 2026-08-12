@@ -150,8 +150,14 @@ model entry with `source: agent` to keep the model from each agent file.
 
 Automated commands write one `jido.case-result` JSON object per physical line
 to standard output. Diagnostics use standard error. A failed assertion or an
-execution error gives exit status 1. A command or configuration error gives
-exit status 64.
+execution error gives exit status 1. A cancelled run also gives exit status 1.
+A command or configuration error gives exit status 64.
+
+The executable changes `SIGTERM` into a cooperative cancellation request. The
+run stops the admission of new cells. Each started cell still writes one case
+result. A cancelled active cell has execution status `cancelled`. The summary
+lists the cell identifiers that did not start in `not_started`. This behavior
+also applies when a host injects another cancellation source.
 
 When `--output DIR` or `run.output` is set, the directory must be new or empty.
 The command writes:

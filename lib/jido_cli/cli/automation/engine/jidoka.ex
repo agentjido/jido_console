@@ -9,55 +9,98 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
   alias Jidoka.Eval.Case, as: EvalCase
   alias Jidoka.Session.Sequence
 
+  defmodule Request do
+    @moduledoc false
+
+    @enforce_keys [:cell, :sequence, :started_at, :started_ms]
+    defstruct [:cell, :sequence, :started_at, :started_ms]
+
+    @type t :: %__MODULE__{
+            cell: map(),
+            sequence: Jidoka.Session.Sequence.Request.t(),
+            started_at: DateTime.t(),
+            started_ms: integer()
+          }
+  end
+
   @impl true
   def run(cell, opts) do
+    case start(cell, opts) do
+      {:ok, %Request{} = request} -> await(request, opts)
+      {:error, reason} -> failed_result(cell, :error, [], reason, utc_now(opts), 0)
+    end
+  end
+
+  @impl true
+  def start(cell, opts) do
     started_at = utc_now(opts)
     started_ms = monotonic_ms(opts)
 
-    do_run(cell, opts, started_at, started_ms)
+    with {:ok, session} <- Jidoka.Session.start(cell.spec, session_id: session_id(cell)),
+         request_inputs = Enum.map(cell.scenario.turns, &request_input(&1, cell)),
+         runtime_opts = sequence_runtime_opts(cell, opts),
+         {:ok, sequence} <-
+           Jidoka.Session.run_sequence_async(session, request_inputs, runtime_opts) do
+      {:ok,
+       %Request{
+         cell: cell,
+         sequence: sequence,
+         started_at: started_at,
+         started_ms: started_ms
+       }}
+    end
+  rescue
+    exception -> {:error, exception}
+  catch
+    kind, reason -> {:error, {kind, reason}}
   end
 
-  defp do_run(cell, opts, started_at, started_ms) do
-    case Jidoka.Session.start(cell.spec, session_id: session_id(cell)) do
-      {:ok, session} ->
-        execute_turns(cell, session, opts, started_at, started_ms)
+  @impl true
+  def await(%Request{} = request, opts) do
+    await_opts = [timeout: Keyword.get(opts, :automation_await_timeout, :infinity)]
+
+    case Jidoka.await(request.sequence, await_opts) do
+      {:ok, %Sequence.Result{} = sequence} ->
+        map_sequence_result(request.cell, sequence, opts, request.started_at, request.started_ms)
+
+      {:cancelled, _cancellation, %Sequence.Result{} = sequence} ->
+        map_sequence_result(request.cell, sequence, opts, request.started_at, request.started_ms)
 
       {:error, reason} ->
-        failed_result(cell, :error, [], reason, started_at, elapsed_ms(started_ms, opts))
+        failed_result(
+          request.cell,
+          :error,
+          [],
+          reason,
+          request.started_at,
+          elapsed_ms(request.started_ms, opts)
+        )
     end
   rescue
     exception ->
       failed_result(
-        cell,
+        request.cell,
         :error,
         [],
         exception,
-        started_at,
-        elapsed_ms(started_ms, opts)
+        request.started_at,
+        elapsed_ms(request.started_ms, opts)
       )
   catch
     kind, reason ->
       failed_result(
-        cell,
+        request.cell,
         :error,
         [],
         {kind, reason},
-        started_at,
-        elapsed_ms(started_ms, opts)
+        request.started_at,
+        elapsed_ms(request.started_ms, opts)
       )
   end
 
-  defp execute_turns(cell, session, opts, started_at, started_ms) do
-    request_inputs = Enum.map(cell.scenario.turns, &request_input(&1, cell))
-    runtime_opts = Keyword.merge(cell.runtime_opts, Keyword.take(opts, [:id_generator]))
-
-    case Jidoka.Session.run_sequence(session, request_inputs, runtime_opts) do
-      {:ok, %Sequence.Result{} = sequence} ->
-        map_sequence_result(cell, sequence, opts, started_at, started_ms)
-
-      {:error, reason} ->
-        failed_result(cell, :error, [], reason, started_at, elapsed_ms(started_ms, opts))
-    end
+  @impl true
+  def cancel(%Request{} = request, opts) do
+    Jidoka.cancel(request.sequence, opts)
   end
 
   defp map_sequence_result(cell, sequence, opts, started_at, started_ms) do
@@ -235,6 +278,16 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
   defp operation_name(_operation), do: nil
 
   defp session_id(cell), do: "sess-" <> String.slice(cell.cell_id, 0, 32)
+
+  defp sequence_runtime_opts(cell, opts) do
+    cell.runtime_opts
+    |> Keyword.merge(Keyword.take(opts, [:id_generator]))
+    |> Keyword.put(:sequence_request_id, "cell-" <> cell.cell_id)
+    |> Keyword.put(:sequence_metadata, %{
+      "run_id" => cell.run_id,
+      "cell_id" => cell.cell_id
+    })
+  end
 
   defp utc_now(opts) do
     case Keyword.get(opts, :utc_now) do

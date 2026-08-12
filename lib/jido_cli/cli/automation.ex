@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation do
   @moduledoc "Runs file-based Jido scenarios and evaluation suites."
 
-  alias Jido.Cli.Automation.{Command, Contract, JSONL, Loader, Plan, Result}
+  alias Jido.Cli.Automation.{Command, Contract, Coordinator, Interrupt, JSONL, Loader, Plan}
 
   @doc "Parses and executes one automated CLI command."
   @spec execute([String.t()], keyword()) ::
@@ -68,82 +68,41 @@ defmodule Jido.Cli.Automation do
     jobs = if command.name == :eval, do: plan.suite.jobs, else: 1
     engine = Keyword.get(opts, :engine, Jido.Cli.Automation.Engine.Jidoka)
 
-    stream =
-      Task.async_stream(
-        plan.cells,
-        fn cell -> safe_engine_run(engine, cell, opts) end,
-        ordered: false,
-        max_concurrency: jobs,
-        timeout: :infinity
-      )
-
-    with {:ok, results} <- emit_results(stream, sink, []),
-         summary <- summary(plan, results, started_ms),
-         :ok <- JSONL.finish(sink, summary) do
-      {:ok, summary}
-    else
-      {:error, reason} -> {:error, :execution, reason}
-    end
-  end
-
-  defp safe_engine_run(engine, cell, opts) do
-    case engine.run(cell, opts) do
-      %{} = result ->
-        case Contract.validate_case_result(result) do
-          {:ok, result} -> result
-          {:error, reason} -> engine_error(cell, reason)
+    case Interrupt.start(self(), opts) do
+      {:ok, interrupt} ->
+        try do
+          with {:ok, outcome} <- Coordinator.run(plan.cells, sink, engine, jobs, opts),
+               summary <- summary(plan, outcome, started_ms),
+               :ok <- JSONL.finish(sink, summary) do
+            {:ok, summary}
+          else
+            {:error, reason} -> {:error, :execution, reason}
+          end
+        after
+          Interrupt.stop(interrupt)
         end
 
-      result ->
-        engine_error(cell, {:invalid_engine_result, result})
-    end
-  rescue
-    exception -> engine_error(cell, exception)
-  catch
-    kind, reason -> engine_error(cell, {kind, reason})
-  end
-
-  defp engine_error(cell, reason) do
-    Result.new(cell,
-      execution: %{
-        status: :error,
-        started_at: DateTime.utc_now() |> DateTime.to_iso8601(),
-        duration_ms: 0,
-        turn_count: 0
-      },
-      evaluation: Result.evaluation([], :error),
-      turns: [],
-      usage: %{},
-      error: Result.error(reason)
-    )
-  end
-
-  defp emit_results(stream, sink, results) do
-    Enum.reduce_while(stream, {:ok, results}, fn
-      {:ok, result}, {:ok, acc} ->
-        case JSONL.emit(sink, result) do
-          :ok -> {:cont, {:ok, [result | acc]}}
-          {:error, reason} -> {:halt, {:error, reason}}
-        end
-
-      {:exit, reason}, {:ok, _acc} ->
-        {:halt, {:error, {:automation_task_exit, reason}}}
-    end)
-    |> case do
-      {:ok, emitted} -> {:ok, Enum.reverse(emitted)}
-      {:error, reason} -> {:error, reason}
+      {:error, reason} ->
+        {:error, :execution, reason}
     end
   end
 
-  defp summary(plan, results, started_ms) do
+  defp summary(plan, outcome, started_ms) do
+    results = outcome.results
+
     counts =
       Enum.reduce(
         results,
-        %{passed: 0, failed: 0, errors: 0, unscored: 0},
+        %{passed: 0, failed: 0, errors: 0, unscored: 0, cancelled: 0},
         &count_result/2
       )
 
-    status = if counts.failed == 0 and counts.errors == 0, do: :passed, else: :failed
+    status =
+      cond do
+        outcome.cancelled? -> :cancelled
+        counts.failed == 0 and counts.errors == 0 -> :passed
+        true -> :failed
+      end
 
     Contract.summary!(%{
       schema: "jido.run-summary",
@@ -154,7 +113,8 @@ defmodule Jido.Cli.Automation do
       planned: length(plan.cells),
       completed: length(results),
       counts: counts,
-      duration_ms: max(System.monotonic_time(:millisecond) - started_ms, 0)
+      duration_ms: max(System.monotonic_time(:millisecond) - started_ms, 0),
+      not_started: Enum.map(outcome.not_started, & &1.cell_id)
     })
   end
 
@@ -163,6 +123,7 @@ defmodule Jido.Cli.Automation do
     evaluation = get_in(result, [:evaluation, :status])
 
     cond do
+      execution == :cancelled -> Map.update!(counts, :cancelled, &(&1 + 1))
       execution != :ok -> Map.update!(counts, :errors, &(&1 + 1))
       evaluation == :failed -> Map.update!(counts, :failed, &(&1 + 1))
       evaluation == :unscored -> Map.update!(counts, :unscored, &(&1 + 1))

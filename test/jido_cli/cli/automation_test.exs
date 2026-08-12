@@ -4,6 +4,7 @@ defmodule Jido.Cli.AutomationTest do
   import ExUnit.CaptureIO
 
   alias Jido.Cli.Automation
+  alias Jido.Cli.Automation.Interrupt
   alias Jido.Cli.Automation.Result
 
   defmodule FakeEngine do
@@ -81,6 +82,112 @@ defmodule Jido.Cli.AutomationTest do
     def run(cell, _opts) do
       FakeEngine.run(cell, [])
       |> put_in([:execution, :duration_ms], "not-an-integer")
+    end
+  end
+
+  defmodule ControlledCancellationSource do
+    @behaviour Jido.Cli.Automation.Interrupt
+
+    @impl true
+    def start(owner, opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      send(test_pid, {:cancellation_source_ready, owner})
+      {:ok, test_pid}
+    end
+
+    @impl true
+    def stop(test_pid) do
+      send(test_pid, :cancellation_source_stopped)
+      :ok
+    end
+  end
+
+  defmodule CancellableEngine do
+    @behaviour Jido.Cli.Automation.Engine
+
+    alias Jido.Cli.Automation.Result
+    alias Jidoka.Cancellation
+
+    @impl true
+    def run(_cell, _opts), do: raise("cancellable engine must use its public handle")
+
+    @impl true
+    def start(cell, opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      controller = spawn(fn -> loop(cell, []) end)
+      send(test_pid, {:automation_cell_started, cell.cell_id})
+      {:ok, %{cell: cell, controller: controller, test_pid: test_pid}}
+    end
+
+    @impl true
+    def await(%{controller: controller}, _opts) do
+      send(controller, {:await, self()})
+
+      receive do
+        {:engine_result, result} -> result
+      after
+        1_000 -> {:error, :fake_engine_await_timeout}
+      end
+    end
+
+    @impl true
+    def cancel(%{cell: cell, controller: controller, test_pid: test_pid}, _opts) do
+      cancellation =
+        Cancellation.new!(
+          request_id: "fake-#{cell.cell_id}",
+          cancelled_at_ms: 1
+        )
+
+      send(controller, {:cancel, self(), cancellation})
+      send(test_pid, {:automation_cell_cancelled, cell.cell_id})
+
+      receive do
+        {:engine_cancelled, ^cancellation} -> {:ok, cancellation}
+      after
+        1_000 -> {:error, :fake_engine_cancel_timeout}
+      end
+    end
+
+    defp loop(cell, awaiters) do
+      receive do
+        {:await, from} ->
+          loop(cell, [from | awaiters])
+
+        {:cancel, from, cancellation} ->
+          result = cancelled_result(cell, cancellation)
+          Enum.each(awaiters, &send(&1, {:engine_result, result}))
+          send(from, {:engine_cancelled, cancellation})
+          completed_loop(result)
+      end
+    end
+
+    defp completed_loop(result) do
+      receive do
+        {:await, from} ->
+          send(from, {:engine_result, result})
+          :ok
+
+        {:cancel, from, cancellation} ->
+          send(from, {:engine_cancelled, cancellation})
+          completed_loop(result)
+      after
+        1_000 -> :ok
+      end
+    end
+
+    defp cancelled_result(cell, cancellation) do
+      Result.new(cell,
+        execution: %{
+          status: :cancelled,
+          started_at: "2026-08-12T12:00:00Z",
+          duration_ms: 1,
+          turn_count: 0
+        },
+        evaluation: Result.evaluation([], :cancelled),
+        turns: [],
+        usage: %{},
+        error: Result.error(cancellation)
+      )
     end
   end
 
@@ -271,6 +378,81 @@ defmodule Jido.Cli.AutomationTest do
     assert [record] = decode_jsonl(output)
     assert record["execution"]["status"] == "error"
     assert record["error"]["message"] =~ "execution failed"
+  end
+
+  test "cancels active cells, stops admission, and records not-started cells", %{root: root} do
+    write_agent(Path.join(root, "agent.yml"), "agent")
+    write_scenario(Path.join(root, "scenario.yml"))
+    suite_path = Path.join(root, "suite.yml")
+    output = Path.join(root, "artifacts")
+
+    File.write!(suite_path, """
+    version: 1
+    suite:
+      id: cancelled
+      agents:
+        - key: agent
+          file: agent.yml
+      scenarios:
+        - scenario.yml
+      models:
+        - key: declared
+          source: agent
+      matrix:
+        repeats: 3
+      run:
+        jobs: 1
+    """)
+
+    {:ok, stdout} = StringIO.open("")
+    {:ok, stderr} = StringIO.open("")
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Automation.execute(
+          ["eval", suite_path, "--output", output],
+          engine: CancellableEngine,
+          cancellation_source: ControlledCancellationSource,
+          test_pid: test_pid,
+          output_device: stdout,
+          error_device: stderr,
+          run_id: "run-cancelled"
+        )
+      end)
+
+    assert_receive {:cancellation_source_ready, coordinator}, 1_000
+    assert_receive {:automation_cell_started, started_cell_id}, 1_000
+    :ok = Interrupt.request(coordinator, :test_interrupt)
+    assert_receive {:automation_cell_cancelled, ^started_cell_id}, 1_000
+
+    assert {:ok, summary} = Task.await(task, 1_000)
+    assert summary.status == :cancelled
+    assert summary.planned == 3
+    assert summary.completed == 1
+    assert summary.counts.cancelled == 1
+    assert length(summary.not_started) == 2
+    refute started_cell_id in summary.not_started
+    refute_receive {:automation_cell_started, _cell_id}
+    assert_receive :cancellation_source_stopped
+
+    {_input, stdout_text} = StringIO.contents(stdout)
+    assert [%{"execution" => %{"status" => "cancelled"}}] = decode_jsonl(stdout_text)
+
+    {_input, stderr_text} = StringIO.contents(stderr)
+    assert stderr_text =~ "automated run cancelled"
+    assert stderr_text =~ "test_interrupt"
+
+    summary_file = output |> Path.join("summary.json") |> File.read!() |> Jason.decode!()
+    assert summary_file["status"] == "cancelled"
+    assert length(summary_file["not_started"]) == 2
+    assert length(decode_jsonl(File.read!(Path.join(output, "results.jsonl")))) == 1
+  end
+
+  test "the signal handler forwards termination through the interrupt boundary" do
+    assert {:ok, owner} = Jido.Cli.Automation.Interrupt.Signal.init(self())
+    assert {:ok, ^owner} = Jido.Cli.Automation.Interrupt.Signal.handle_event(:sigterm, owner)
+    assert_receive {:jido_cli_automation_cancel, :sigterm}
   end
 
   test "tags command and configuration errors" do

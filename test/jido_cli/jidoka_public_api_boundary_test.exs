@@ -160,8 +160,11 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
   test "automation delegates continuation to the public sequence" do
     source = File.read!("lib/jido_cli/cli/automation/engine/jidoka.ex")
 
-    assert source =~ "Jidoka.Session.run_sequence"
+    assert source =~ "Jidoka.Session.run_sequence_async"
+    assert source =~ "Jidoka.await"
+    assert source =~ "Jidoka.cancel"
     refute source =~ "Jidoka.Session.run("
+    refute source =~ "Task.shutdown"
     refute source =~ "operation_count"
     refute source =~ ~r/Map\.put\([^\n]*:agent_state/
   end

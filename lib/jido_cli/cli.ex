@@ -102,12 +102,23 @@ defmodule Jido.Cli do
   defp run_automation(args, opts) do
     automation = Keyword.get(opts, :automation, Jido.Cli.Automation)
 
+    opts =
+      Keyword.put_new(
+        opts,
+        :cancellation_source,
+        Jido.Cli.Automation.Interrupt.Signal
+      )
+
     case automation.execute(args, opts) do
       {:ok, %{status: :passed}} ->
         :ok
 
       {:ok, %{status: :failed} = summary} ->
         IO.puts(:stderr, "jido: automated run failed: #{format_summary(summary)}")
+        {:error, 1}
+
+      {:ok, %{status: :cancelled} = summary} ->
+        IO.puts(:stderr, "jido: automated run cancelled: #{format_summary(summary)}")
         {:error, 1}
 
       {:error, kind, reason} when kind in [:usage, :configuration] ->
@@ -189,7 +200,10 @@ defmodule Jido.Cli do
 
   defp format_summary(summary) do
     counts = Map.get(summary, :counts, %{})
-    "#{Map.get(counts, :failed, 0)} failed, #{Map.get(counts, :errors, 0)} errors"
+
+    "#{Map.get(counts, :failed, 0)} failed, " <>
+      "#{Map.get(counts, :errors, 0)} errors, " <>
+      "#{Map.get(counts, :cancelled, 0)} cancelled"
   end
 
   defp usage_error do

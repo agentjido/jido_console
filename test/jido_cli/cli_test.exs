@@ -17,6 +17,7 @@ defmodule Jido.CliTest do
   defmodule FakeAutomation do
     def execute(args, opts) do
       send(Keyword.fetch!(opts, :test_pid), {:automation_started, args})
+      send(Keyword.fetch!(opts, :test_pid), {:automation_options, opts})
       Keyword.get(opts, :automation_result, {:ok, %{status: :passed}})
     end
   end
@@ -62,6 +63,8 @@ defmodule Jido.CliTest do
              )
 
     assert_received {:automation_started, ^args}
+    assert_received {:automation_options, options}
+    assert options[:cancellation_source] == Jido.Cli.Automation.Interrupt.Signal
   end
 
   test "sends eval commands to the automation boundary" do
@@ -97,6 +100,25 @@ defmodule Jido.CliTest do
       end)
 
     assert failed_output =~ "2 failed, 1 errors"
+
+    cancelled_output =
+      capture_io(:stderr, fn ->
+        assert {:error, 1} =
+                 Jido.Cli.run(
+                   ["eval", "suite.yml"],
+                   opts ++
+                     [
+                       automation_result:
+                         {:ok,
+                          %{
+                            status: :cancelled,
+                            counts: %{failed: 0, errors: 0, cancelled: 1}
+                          }}
+                     ]
+                 )
+      end)
+
+    assert cancelled_output =~ "automated run cancelled"
 
     usage_output =
       capture_io(:stderr, fn ->
