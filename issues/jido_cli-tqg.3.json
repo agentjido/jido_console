@@ -2,6 +2,8 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-12T20:49:25Z",
+  "close_reason": "Completed all nine Phase 2 stories: policy gating, constrained-execution contracts and lifecycle, durable bindings, trusted profile selection, automation integration, enforcement evidence, and the optional LitterBox decision.",
   "created": "2026-08-12T17:14:32Z",
   "description": "# Phase outcome\n\nConstrained execution. Entry: ordered sequence plus policy gate. Exit: profile IDs resolve through trusted host data, portable bindings recover/fork, cells use the lifecycle, and JSONL reports confirmed evidence.\n\n# Ranked child stories\n\n1. `jido_cli-tqg.3.1` — Gate every external effect with authoritative host policy (P0)\n2. `jido_cli-tqg.3.2` — Define portable constrained-execution contracts (P0)\n3. `jido_cli-tqg.3.3` — Resolve trusted security profiles and fail closed (P0)\n4. `jido_cli-tqg.3.4` — Implement the execution-environment lifecycle manager (P0)\n5. `jido_cli-tqg.3.5` — Persist portable execution bindings through recovery and fork (P0)\n6. `jido_cli-tqg.3.6` — Add data-only execution-profile selection and precedence (P1)\n7. `jido_cli-tqg.3.7` — Run each automation cell in one constrained environment (P1)\n8. `jido_cli-tqg.3.8` — Publish requested and confirmed enforcement evidence (P1)\n9. `jido_cli-tqg.3.9` — Assess and pin or fork the optional LitterBox adapter (P2)\n\n# Status rule\n\nAll child stories remain open. Story dependency links, not priority alone, control implementation order.",
   "id": "jido_cli-tqg.3",
@@ -12,8 +14,8 @@
   ],
   "parent": "jido_cli-tqg",
   "priority": 0,
-  "status": "open",
+  "status": "closed",
   "title": "Phase 2: Add constrained execution and security evidence",
   "type": "epic",
-  "updated_at": "2026-08-12T17:17:54Z"
+  "updated_at": "2026-08-12T20:49:25Z"
 }
