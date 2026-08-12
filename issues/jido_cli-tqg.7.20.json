@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.18"
+  ],
   "blocks": [],
   "created": "2026-08-12T22:14:05Z",
   "description": "## Outcome\n\nA release-candidate checklist records manual TUI results on modern macOS terminals, modern Linux terminals, and Windows Terminal with PowerShell and Command Prompt where applicable.\n\n## Work\n\n1. Test raw input startup and cleanup, cursor restoration, and alternate-screen restoration.\n2. Test resize, arrow keys, control keys, bracketed paste, and abnormal process termination.\n3. Test UTF-8 width, non-ASCII input, Braille display and fallback, and font limitations.\n4. Test ANSI 16-color, 256-color, and true-color modes.\n5. Run from the packaged artifact with no system OTP dependency.\n6. Record terminal application, OS, target, package checksum, steps, result, and known limitation.\n7. Block the stable candidate for an unresolved required failure.\n\n## Acceptance criteria\n\n- [ ] Each supported platform class has a completed record tied to an artifact checksum.\n- [ ] Cursor and alternate-screen state are restored after normal exit and tested abnormal exit.\n- [ ] Resize, keys, paste, Unicode, Braille fallback, and colors have explicit results.\n- [ ] Windows Terminal is tested; old Windows Console Host graphics are out of scope.\n- [ ] CI pseudo-terminals are not recorded as manual acceptance.\n- [ ] Known font-only limits are separate from product defects.\n\n## Tests\n\nUse the versioned manual checklist and attach the result records to the release candidate.\n\n## Non-goals\n\nDo not automate subjective terminal rendering claims in this task.",
@@ -16,5 +18,5 @@
   "status": "open",
   "title": "Complete manual TUI acceptance on the first target matrix",
   "type": "task",
-  "updated_at": "2026-08-12T22:14:05Z"
+  "updated_at": "2026-08-12T22:15:07Z"
 }
