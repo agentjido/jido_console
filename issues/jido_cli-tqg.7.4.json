@@ -3,7 +3,7 @@
   "blocked_by": [],
   "blocks": [],
   "created": "2026-08-12T22:09:58Z",
-  "description": "## Outcome\n\n`jido daemon` starts an optional daemon supervision tree in the foreground. The TUI, `run`, and `eval` do not start or require it.\n\n## Why now\n\nThe package spike must prove foreground daemon behavior. The application now has no OTP application module or daemon boundary.\n\n## Work\n\n1. Add `Jido.Cli.Application` and the named `Jido.Cli.Daemon`, `Supervisor`, `Server`, `Client`, and `Protocol` boundaries from `RELEASE_PLAN.md`.\n2. Keep the normal application tree small. Start daemon children only for the daemon command.\n3. Reserve and validate `jido daemon`, `jido daemon --help`, `status`, and `health` grammar. Transport-backed status and health come in a later task.\n4. Start without provider credentials and keep the process attached to the terminal.\n5. Add deterministic child-start, start-failure, and clean-stop tests.\n6. Keep exit statuses `0`, `1`, and `64` stable.\n\n## Acceptance criteria\n\n- [ ] `jido daemon` stays in the foreground until a supported shutdown request.\n- [ ] No daemon child starts for the TUI, `run`, `eval`, help, or version commands.\n- [ ] Missing provider credentials do not prevent daemon start.\n- [ ] A child-start failure is normalized and leaves no partial daemon tree.\n- [ ] Service managers can supervise the foreground process.\n\n## Tests\n\nAdd application, daemon supervision, and CLI routing tests with injected supervisors. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not implement backgrounding, service installation, transport, automatic discovery, or implicit daemon use.",
+  "description": "## Outcome\n\nThe OTP application contains an optional daemon supervision boundary. Normal application start does not start the daemon.\n\n## Why now\n\nThe package spike needs a supervised foreground process, but the application now has no OTP application module or daemon boundary.\n\n## Work\n\n1. Add `Jido.Cli.Application` and the named `Jido.Cli.Daemon`, `Supervisor`, `Server`, `Client`, and `Protocol` module boundaries from `RELEASE_PLAN.md`.\n2. Keep the normal application tree small and start daemon children only through an explicit daemon start API.\n3. Define start, already-started, stop, and child-start failure results.\n4. Let the daemon boundary start without provider credentials.\n5. Make child specifications and dependencies suitable for a foreground service manager.\n6. Add deterministic child-start, start-race, partial-start cleanup, and clean-stop tests.\n\n## Acceptance criteria\n\n- [ ] Starting `:jido_cli` does not start a daemon listener or daemon worker.\n- [ ] The explicit daemon start API returns one supervised tree.\n- [ ] Concurrent starts have one owner and a stable loser result.\n- [ ] Missing provider credentials do not prevent the daemon tree from starting.\n- [ ] A child-start failure leaves no partial daemon tree.\n- [ ] The boundary has no backgrounding or OS-service logic.\n\n## Tests\n\nAdd application and daemon supervisor tests with injected child modules. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not route CLI commands, implement transport, install a service, or make local CLI modes use the daemon in this task.",
   "id": "jido_cli-tqg.7.4",
   "labels": [
     "cli",
@@ -14,7 +14,7 @@
   "parent": "jido_cli-tqg.7",
   "priority": 0,
   "status": "open",
-  "title": "Add the optional foreground daemon supervision boundary",
+  "title": "Add the optional daemon application supervision boundary",
   "type": "task",
-  "updated_at": "2026-08-12T22:09:58Z"
+  "updated_at": "2026-08-12T22:11:25Z"
 }
