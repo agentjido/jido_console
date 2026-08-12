@@ -58,7 +58,7 @@ defmodule Jido.Cli.MixProject do
 
   defp package do
     [
-      files: ~w(lib mix.exs README.md LICENSE CHANGELOG.md CONTRIBUTING.md usage-rules.md),
+      files: ~w(lib guides mix.exs README.md LICENSE CHANGELOG.md CONTRIBUTING.md usage-rules.md),
       maintainers: ["Mike Hostetler"],
       licenses: ["Apache-2.0"],
       links: %{
@@ -78,6 +78,7 @@ defmodule Jido.Cli.MixProject do
       source_url: @source_url,
       extras: [
         "README.md",
+        "guides/extensions.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md"
       ]

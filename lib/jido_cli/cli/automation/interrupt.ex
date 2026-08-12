@@ -66,7 +66,8 @@ defmodule Jido.Cli.Automation.Interrupt do
   def message_tag, do: @message_tag
 
   defp start_module(module, owner, opts) do
-    if function_exported?(module, :start, 2) and function_exported?(module, :stop, 1) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :start, 2) and
+         function_exported?(module, :stop, 1) do
       case module.start(owner, opts) do
         {:ok, state} -> {:ok, {:module, module, state}}
         {:error, _reason} = error -> error

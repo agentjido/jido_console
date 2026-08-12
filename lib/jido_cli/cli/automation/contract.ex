@@ -435,7 +435,8 @@ defmodule Jido.Cli.Automation.Contract do
         cell_id: non_empty_string(),
         dimensions: dimensions_schema(keys),
         sources: sources_schema(keys),
-        execution_environment: execution_environment_schema(keys) |> Zoi.optional()
+        execution_environment: execution_environment_schema(keys) |> Zoi.optional(),
+        extensions: extensions_schema() |> Zoi.optional()
       },
       keys
     )

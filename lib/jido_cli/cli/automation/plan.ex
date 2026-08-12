@@ -2,6 +2,7 @@ defmodule Jido.Cli.Automation.Plan do
   @moduledoc "Builds the agent, scenario, model, and trial run matrix."
 
   alias Jido.Cli.Automation.{Contract, Loader}
+  alias Jido.Cli.Extensions
   alias Jidoka.Agent.Spec
   alias Jidoka.ExecutionEnvironment.PolicyRequest
   alias Jidoka.ExecutionEnvironment.ProfileResolver
@@ -118,7 +119,8 @@ defmodule Jido.Cli.Automation.Plan do
       trial: trial
     }
 
-    with {:ok, environment} <- execution_environment(suite, scenario, variant.spec, opts) do
+    with {:ok, environment} <- execution_environment(suite, scenario, variant.spec, opts),
+         {:ok, extensions} <- Extensions.resolve(variant.spec.extensions, :automation, opts) do
       {:ok,
        %{
          run_id: run_id,
@@ -129,6 +131,7 @@ defmodule Jido.Cli.Automation.Plan do
          spec: variant.spec,
          runtime_opts: variant.runtime_opts,
          execution_environment: environment,
+         extensions: extensions,
          sources: %{
            agent_file: variant.agent_path,
            scenario_file: scenario.path,
@@ -200,7 +203,8 @@ defmodule Jido.Cli.Automation.Plan do
             cell_id: cell.cell_id,
             dimensions: cell.dimensions,
             sources: cell.sources,
-            execution_environment: manifest_environment(cell.execution_environment)
+            execution_environment: manifest_environment(cell.execution_environment),
+            extensions: %{"jido.cli.trust" => cell.extensions.projection}
           }
         end)
     })

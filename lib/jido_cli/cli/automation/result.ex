@@ -42,8 +42,14 @@ defmodule Jido.Cli.Automation.Result do
       evaluation: Keyword.fetch!(attrs, :evaluation),
       turns: Keyword.get(attrs, :turns, []),
       usage: Keyword.get(attrs, :usage, %{}),
-      error: Keyword.get(attrs, :error)
+      error: Keyword.get(attrs, :error),
+      extensions: result_extensions(cell, Keyword.get(attrs, :extensions, %{}))
     })
+  end
+
+  defp result_extensions(cell, values) do
+    trust = get_in(cell, [:extensions, :projection]) || %{"status" => "not_requested"}
+    Map.put(values, "jido.cli.trust", trust)
   end
 
   @doc "Projects requested, resolved, and confirmed environment facts."

@@ -3,6 +3,7 @@ defmodule Jido.Cli.Tui do
 
   alias Jido.Cli.Tui.State
   alias Jido.Cli.Tui.View
+  alias Jido.Cli.Extensions
   alias Jido.Terminal
 
   @frame_interval_ms 33
@@ -13,7 +14,9 @@ defmodule Jido.Cli.Tui do
     agent = Keyword.get(opts, :agent, Jido.Cli.DefaultAgent)
     session_opts = Keyword.get(opts, :session_opts, [])
 
-    with {:ok, session} <- runtime.start_session(agent, session_opts),
+    with {:ok, setup} <- extension_setup(agent, opts),
+         session_opts = Keyword.put(session_opts, :extension_setup, setup),
+         {:ok, session} <- runtime.start_session(agent, session_opts),
          {:ok, terminal} <- open_terminal(opts) do
       try do
         state = State.new(session, terminal.size)
@@ -23,9 +26,28 @@ defmodule Jido.Cli.Tui do
           loop(state, terminal, runtime, opts)
         end
       after
+        close_runtime_session(runtime, session)
         Terminal.close(terminal)
       end
     end
+  end
+
+  defp extension_setup(agent, opts) do
+    spec =
+      cond do
+        is_atom(agent) and function_exported?(agent, :spec, 0) -> agent.spec()
+        match?(%Jidoka.Agent.Spec{}, agent) -> agent
+        true -> nil
+      end
+
+    case spec do
+      %Jidoka.Agent.Spec{} -> Extensions.resolve(spec.extensions, :interactive, opts)
+      nil -> {:ok, %{registry: %{}, projection: %{"status" => "not_requested"}}}
+    end
+  end
+
+  defp close_runtime_session(runtime, session) do
+    if function_exported?(runtime, :close_session, 1), do: runtime.close_session(session), else: :ok
   end
 
   defp open_terminal(opts) do

@@ -4,6 +4,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
   @behaviour Jido.Cli.Automation.Engine
 
   alias Jido.Cli.Automation.Result
+  alias Jido.Cli.Extensions
   alias Jidoka.Effect.OperationResult
   alias Jidoka.Eval
   alias Jidoka.Eval.Case, as: EvalCase
@@ -13,13 +14,14 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
     @moduledoc false
 
     @enforce_keys [:cell, :sequence, :started_at, :started_ms]
-    defstruct [:cell, :sequence, :started_at, :started_ms]
+    defstruct [:cell, :sequence, :started_at, :started_ms, :extension_host]
 
     @type t :: %__MODULE__{
             cell: map(),
             sequence: Jidoka.Session.Sequence.Request.t(),
             started_at: DateTime.t(),
-            started_ms: integer()
+            started_ms: integer(),
+            extension_host: Jidoka.Extension.Host.t() | nil
           }
   end
 
@@ -37,17 +39,37 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
     started_ms = monotonic_ms(opts)
 
     with {:ok, session} <- Jidoka.Session.start(cell.spec, session_id: session_id(cell)),
+         {:ok, extension_runtime} <-
+           Extensions.open(
+             session,
+             cell.spec.extensions,
+             Map.get(cell, :extensions, %{registry: %{}}),
+             :automation,
+             operations: Keyword.get(cell.runtime_opts, :operations)
+           ),
          request_inputs = Enum.map(cell.scenario.turns, &request_input(&1, cell)),
-         runtime_opts = sequence_runtime_opts(cell, opts),
-         {:ok, sequence} <-
-           Jidoka.Session.run_sequence_async(session, request_inputs, runtime_opts) do
-      {:ok,
-       %Request{
-         cell: cell,
-         sequence: sequence,
-         started_at: started_at,
-         started_ms: started_ms
-       }}
+         runtime_opts = Keyword.merge(sequence_runtime_opts(cell, opts), extension_runtime.runtime_opts) do
+      case Jidoka.Session.run_sequence_async(extension_runtime.session, request_inputs, runtime_opts) do
+        {:ok, sequence} ->
+          Jidoka.Extension.RuntimeEvents.emit(
+            "automation.cell.start",
+            %{session_ref: extension_runtime.session.session_id, data: %{cell_id: cell.cell_id}},
+            runtime_opts
+          )
+
+          {:ok,
+           %Request{
+             cell: cell,
+             sequence: sequence,
+             started_at: started_at,
+             started_ms: started_ms,
+             extension_host: extension_runtime.host
+           }}
+
+        {:error, reason} ->
+          Extensions.close(extension_runtime.host)
+          {:error, reason}
+      end
     end
   rescue
     exception -> {:error, exception}
@@ -59,26 +81,32 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
   def await(%Request{} = request, opts) do
     await_opts = [timeout: Keyword.get(opts, :automation_await_timeout, :infinity)]
 
-    case Jidoka.await(request.sequence, await_opts) do
-      {:ok, %Sequence.Result{} = sequence} ->
-        map_sequence_result(request.cell, sequence, opts, request.started_at, request.started_ms)
+    result =
+      case Jidoka.await(request.sequence, await_opts) do
+        {:ok, %Sequence.Result{} = sequence} ->
+          map_sequence_with_extensions(request, sequence, opts)
 
-      {:cancelled, _cancellation, %Sequence.Result{} = sequence} ->
-        map_sequence_result(request.cell, sequence, opts, request.started_at, request.started_ms)
+        {:cancelled, _cancellation, %Sequence.Result{} = sequence} ->
+          map_sequence_with_extensions(request, sequence, opts)
 
-      {:error, reason} ->
-        failed_result(
-          request.cell,
-          :error,
-          [],
-          reason,
-          request.started_at,
-          elapsed_ms(request.started_ms, opts),
-          nil
-        )
-    end
+        {:error, reason} ->
+          failed_result(
+            request.cell,
+            :error,
+            [],
+            reason,
+            request.started_at,
+            elapsed_ms(request.started_ms, opts),
+            nil
+          )
+      end
+
+    close_result = Extensions.close(request.extension_host)
+    apply_extension_close(result, close_result)
   rescue
     exception ->
+      Extensions.close(request.extension_host)
+
       failed_result(
         request.cell,
         :error,
@@ -90,6 +118,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       )
   catch
     kind, reason ->
+      Extensions.close(request.extension_host)
+
       failed_result(
         request.cell,
         :error,
@@ -101,12 +131,59 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       )
   end
 
+  defp map_sequence_with_extensions(request, sequence, opts) do
+    {sequence, extension_results} = checkpoint_extensions(sequence, request.extension_host)
+
+    Jidoka.Extension.RuntimeEvents.emit(
+      "automation.cell.end",
+      %{session_ref: sequence.session.session_id, data: %{cell_id: request.cell.cell_id, status: sequence.status}},
+      extension_event_opts(request.extension_host)
+    )
+
+    map_sequence_result(
+      request.cell,
+      sequence,
+      opts,
+      request.started_at,
+      request.started_ms,
+      extension_results
+    )
+  end
+
+  defp checkpoint_extensions(sequence, nil), do: {sequence, %{}}
+
+  defp checkpoint_extensions(sequence, host) do
+    session =
+      case Jidoka.Extension.Host.checkpoint(host, sequence.session) do
+        {:ok, checkpointed} -> checkpointed
+        {:error, _reason} -> sequence.session
+      end
+
+    {:ok, results} = Extensions.results(host)
+
+    {%{sequence | session: session}, results}
+  end
+
+  defp extension_event_opts(nil), do: []
+  defp extension_event_opts(host), do: [extension_dispatcher: host.dispatcher]
+
+  defp apply_extension_close(result, {:ok, evidence}) do
+    if Enum.any?(evidence, &(Map.get(&1, "status") == "close_failed")) do
+      result
+      |> put_in([:execution, :status], :error)
+      |> Map.put(:evaluation, Result.evaluation([], :error))
+      |> Map.put(:error, Result.error({:extension_close_failed, evidence}))
+    else
+      result
+    end
+  end
+
   @impl true
   def cancel(%Request{} = request, opts) do
     Jidoka.cancel(request.sequence, opts)
   end
 
-  defp map_sequence_result(cell, sequence, opts, started_at, started_ms) do
+  defp map_sequence_result(cell, sequence, opts, started_at, started_ms, extension_results) do
     turns =
       Enum.map(sequence.steps, fn step ->
         turn = Enum.at(cell.scenario.turns, step.index - 1)
@@ -117,7 +194,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
     case sequence.status do
       :completed ->
-        completed_result(cell, turns, sequence.session.environment, started_at, duration_ms)
+        completed_result(cell, turns, sequence.session.environment, started_at, duration_ms, extension_results)
 
       status when status in [:error, :hibernated, :cancelled] ->
         terminal = sequence.terminal
@@ -140,7 +217,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
           terminal_reason(terminal),
           started_at,
           duration_ms,
-          sequence.session.environment
+          sequence.session.environment,
+          extension_results
         )
     end
   end
@@ -245,7 +323,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
 
   defp terminal_reason(%Sequence.Terminal{reason: reason}), do: reason
 
-  defp completed_result(cell, turns, environment, started_at, duration_ms) do
+  defp completed_result(cell, turns, environment, started_at, duration_ms, extension_results) do
     evaluation = Result.evaluation(turns, :ok)
 
     Result.new(cell,
@@ -259,11 +337,12 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       evaluation: evaluation,
       turns: turns,
       usage: Result.usage(turns),
-      error: nil
+      error: nil,
+      extensions: extension_results
     )
   end
 
-  defp failed_result(cell, status, turns, reason, started_at, duration_ms, environment \\ nil) do
+  defp failed_result(cell, status, turns, reason, started_at, duration_ms, environment \\ nil, extension_results \\ %{}) do
     Result.new(cell,
       execution: %{
         status: status,
@@ -276,7 +355,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       evaluation: Result.evaluation(turns, status),
       turns: turns,
       usage: Result.usage(turns),
-      error: Result.error(reason)
+      error: Result.error(reason),
+      extensions: extension_results
     )
   end
 
