@@ -6,7 +6,8 @@
   ],
   "blocks": [
     "jido_cli-tqg.7.17",
-    "jido_cli-tqg.7.18"
+    "jido_cli-tqg.7.18",
+    "jido_cli-tqg.7.28"
   ],
   "created": "2026-08-12T22:12:34Z",
   "description": "## Outcome\n\nEvery bundled OTP, Elixir, Hex, and native dependency has an approved license record and required notice text before a release artifact is accepted.\n\n## Work\n\n1. Inventory the selected private runtime, application dependencies, runtime data, and native libraries per target.\n2. Record package name, version, source, license identifier, license file, and notice requirement.\n3. Generate the artifact notice bundle from reviewed source data.\n4. Fail the build for a missing, unknown, forbidden, or incompatible license record.\n5. Keep target-specific dependencies visible and review transient build tools separately from shipped files.\n6. Add the audit to quality or release CI without network-dependent nondeterminism.\n\n## Acceptance criteria\n\n- [ ] Every shipped component maps to one reviewed license record.\n- [ ] Each artifact contains `LICENSE` and the generated third-party notices.\n- [ ] OTP notices and licenses are present.\n- [ ] The audit detects a new dependency with no record.\n- [ ] Source links and versions match the lock and runtime build inputs.\n- [ ] The audit output is suitable for release review.\n\n## Tests\n\nTest complete, missing, duplicate, malformed, target-only, and changed-version inventories.\n\n## Non-goals\n\nDo not provide legal advice or silently approve an unknown license.",
@@ -22,5 +23,5 @@
   "status": "open",
   "title": "Audit bundled dependencies and prepare license notices",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:06Z"
+  "updated_at": "2026-08-12T22:15:10Z"
 }
