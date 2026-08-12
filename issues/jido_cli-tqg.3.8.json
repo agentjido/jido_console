@@ -6,7 +6,6 @@
   ],
   "blocks": [
     "jido_cli-tqg.4.7",
-    "jido_cli-tqg.6.1",
     "jido_cli-tqg.6.2",
     "jido_cli-tqg.6.4"
   ],
@@ -23,5 +22,5 @@
   "status": "open",
   "title": "Publish requested and confirmed enforcement evidence",
   "type": "task",
-  "updated_at": "2026-08-12T17:15:50Z"
+  "updated_at": "2026-08-12T17:16:21Z"
 }
