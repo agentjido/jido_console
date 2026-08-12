@@ -1,6 +1,7 @@
 {
   "assignee": "",
   "blocked_by": [
+    "jido_cli-tqg.2.3",
     "jido_cli-tqg.3.7"
   ],
   "blocks": [],
@@ -19,5 +20,5 @@
   "status": "open",
   "title": "Enforce bounded runtime limits and provider-aware admission",
   "type": "task",
-  "updated_at": "2026-08-12T17:14:42Z"
+  "updated_at": "2026-08-12T17:14:43Z"
 }
