@@ -7,7 +7,7 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
   alias Jidoka.Effect.OperationResult
   alias Jidoka.Eval
   alias Jidoka.Eval.Case, as: EvalCase
-  alias Jidoka.Turn
+  alias Jidoka.Session.Sequence
 
   @impl true
   def run(cell, opts) do
@@ -48,85 +48,58 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
   end
 
   defp execute_turns(cell, session, opts, started_at, started_ms) do
-    initial = %{session: session, agent_state: nil, operation_count: 0, turns: []}
+    request_inputs = Enum.map(cell.scenario.turns, &request_input(&1, cell))
+    runtime_opts = Keyword.merge(cell.runtime_opts, Keyword.take(opts, [:id_generator]))
 
-    result =
-      Enum.reduce_while(cell.scenario.turns, {:ok, initial}, fn turn, {:ok, state} ->
-        case execute_turn(cell, turn, state, opts) do
-          {:ok, next_state} -> {:cont, {:ok, next_state}}
-          {:halt, status, next_state, reason} -> {:halt, {:halt, status, next_state, reason}}
-        end
+    case Jidoka.Session.run_sequence(session, request_inputs, runtime_opts) do
+      {:ok, %Sequence.Result{} = sequence} ->
+        map_sequence_result(cell, sequence, opts, started_at, started_ms)
+
+      {:error, reason} ->
+        failed_result(cell, :error, [], reason, started_at, elapsed_ms(started_ms, opts))
+    end
+  end
+
+  defp map_sequence_result(cell, sequence, opts, started_at, started_ms) do
+    turns =
+      Enum.map(sequence.steps, fn step ->
+        turn = Enum.at(cell.scenario.turns, step.index - 1)
+        completed_turn(cell, turn, step, started_ms, opts)
       end)
 
     duration_ms = elapsed_ms(started_ms, opts)
 
-    case result do
-      {:ok, state} ->
-        completed_result(cell, state.turns, started_at, duration_ms)
+    case sequence.status do
+      :completed ->
+        completed_result(cell, turns, started_at, duration_ms)
 
-      {:halt, status, state, reason} ->
-        failed_result(cell, status, state.turns, reason, started_at, duration_ms)
+      status when status in [:error, :hibernated, :cancelled] ->
+        terminal = sequence.terminal
+        turn = Enum.at(cell.scenario.turns, terminal.index - 1)
+
+        interrupted =
+          interrupted_turn(
+            turn,
+            status,
+            terminal_reason(terminal),
+            started_ms,
+            opts,
+            terminal.request_id
+          )
+
+        failed_result(
+          cell,
+          status,
+          turns ++ [interrupted],
+          terminal_reason(terminal),
+          started_at,
+          duration_ms
+        )
     end
   end
 
-  defp execute_turn(cell, turn, state, opts) do
-    started_ms = monotonic_ms(opts)
-
-    with {:ok, request} <- request(turn, state.agent_state, cell, opts) do
-      case Jidoka.Session.run(state.session, request, cell.runtime_opts) do
-        {:ok, session, %Turn.Result{} = result} ->
-          current_operations =
-            Enum.drop(result.agent_state.operation_results, state.operation_count)
-
-          assertions = evaluate(cell, turn, request, result, current_operations)
-
-          turn_result = %{
-            turn_id: turn.id,
-            request_id: request.request_id,
-            input: turn.input,
-            status: :ok,
-            duration_ms: elapsed_ms(started_ms, opts),
-            response: %{
-              content: result.content,
-              value: Jidoka.project(result.value)
-            },
-            evaluation: turn_evaluation(assertions),
-            observations: %{
-              operation_calls: Enum.map(current_operations, &operation_name/1),
-              event_count: length(result.events),
-              journal_intents: map_size(result.journal.intents),
-              journal_results: map_size(result.journal.results)
-            },
-            usage: Jidoka.project(result.usage)
-          }
-
-          {:ok,
-           %{
-             state
-             | session: session,
-               agent_state: result.agent_state,
-               operation_count: length(result.agent_state.operation_results),
-               turns: state.turns ++ [turn_result]
-           }}
-
-        {:hibernate, session, snapshot} ->
-          turn_result = interrupted_turn(turn, :hibernated, snapshot, started_ms, opts)
-
-          {:halt, :hibernated, %{state | session: session, turns: state.turns ++ [turn_result]}, snapshot}
-
-        {:error, reason} ->
-          turn_result = interrupted_turn(turn, :error, reason, started_ms, opts)
-          {:halt, :error, %{state | turns: state.turns ++ [turn_result]}, reason}
-      end
-    else
-      {:error, reason} ->
-        turn_result = interrupted_turn(turn, :error, reason, started_ms, opts)
-        {:halt, :error, %{state | turns: state.turns ++ [turn_result]}, reason}
-    end
-  end
-
-  defp request(turn, agent_state, cell, opts) do
-    attrs = %{
+  defp request_input(turn, cell) do
+    %{
       input: turn.input,
       context: turn.context,
       metadata: %{
@@ -138,9 +111,30 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
         }
       }
     }
+  end
 
-    attrs = if agent_state, do: Map.put(attrs, :agent_state, agent_state), else: attrs
-    Turn.Request.new(attrs, Keyword.take(opts, [:id_generator]))
+  defp completed_turn(cell, turn, step, started_ms, opts) do
+    assertions = evaluate(cell, turn, step.request, step.result, step.operation_results)
+
+    %{
+      turn_id: turn.id,
+      request_id: step.request.request_id,
+      input: turn.input,
+      status: :ok,
+      duration_ms: elapsed_ms(started_ms, opts),
+      response: %{
+        content: step.result.content,
+        value: Jidoka.project(step.result.value)
+      },
+      evaluation: turn_evaluation(assertions),
+      observations: %{
+        operation_calls: Enum.map(step.operation_results, &operation_name/1),
+        event_count: length(step.result.events),
+        journal_intents: map_size(step.result.journal.intents),
+        journal_results: map_size(step.result.journal.results)
+      },
+      usage: Jidoka.project(step.result.usage)
+    }
   end
 
   defp evaluate(cell, turn, request, result, current_operations) do
@@ -179,8 +173,8 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
     %{status: status, assertions: Jidoka.project(assertions)}
   end
 
-  defp interrupted_turn(turn, status, reason, started_ms, opts) do
-    %{
+  defp interrupted_turn(turn, status, reason, started_ms, opts, request_id) do
+    turn_result = %{
       turn_id: turn.id,
       input: turn.input,
       status: status,
@@ -191,7 +185,18 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
       usage: %{},
       error: Result.error(reason)
     }
+
+    if is_binary(request_id), do: Map.put(turn_result, :request_id, request_id), else: turn_result
   end
+
+  defp terminal_reason(%Sequence.Terminal{snapshot: snapshot}) when not is_nil(snapshot),
+    do: snapshot
+
+  defp terminal_reason(%Sequence.Terminal{cancellation: cancellation})
+       when not is_nil(cancellation),
+       do: cancellation
+
+  defp terminal_reason(%Sequence.Terminal{reason: reason}), do: reason
 
   defp completed_result(cell, turns, started_at, duration_ms) do
     evaluation = Result.evaluation(turns, :ok)

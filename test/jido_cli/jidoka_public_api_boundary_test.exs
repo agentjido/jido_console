@@ -18,6 +18,7 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
       "Jidoka.Operation.Source",
       "Jidoka.Review",
       "Jidoka.Session.Data",
+      "Jidoka.Session.Sequence",
       "Jidoka.Session.Store",
       "Jidoka.Snapshot",
       "Jidoka.Stream",
@@ -154,6 +155,15 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
       |> Enum.flat_map(&BoundaryScanner.audit_file/1)
 
     assert violations == [], format_violations(violations)
+  end
+
+  test "automation delegates continuation to the public sequence" do
+    source = File.read!("lib/jido_cli/cli/automation/engine/jidoka.ex")
+
+    assert source =~ "Jidoka.Session.run_sequence"
+    refute source =~ "Jidoka.Session.run("
+    refute source =~ "operation_count"
+    refute source =~ ~r/Map\.put\([^\n]*:agent_state/
   end
 
   test "rejects forbidden aliases and remote calls" do
