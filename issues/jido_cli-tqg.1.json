@@ -2,6 +2,7 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-12T17:36:09Z",
   "created": "2026-08-12T17:14:32Z",
   "description": "# Phase outcome\n\nStrict public client. Entry: none. Exit: sibling Jidoka is active, private dependencies are guarded, and cancellation uses `Jidoka.cancel/2`.\n\n# Ranked child stories\n\n1. `jido_cli-tqg.1.1` — Use the sibling Jidoka checkout as the CLI development contract (P0)\n2. `jido_cli-tqg.1.2` — Cancel interactive turns through Jidoka.cancel/2 (P0)\n\n# Status rule\n\nAll child stories remain open. Story dependency links, not priority alone, control implementation order.",
   "id": "jido_cli-tqg.1",
@@ -11,8 +12,8 @@
   ],
   "parent": "jido_cli-tqg",
   "priority": 0,
-  "status": "open",
+  "status": "closed",
   "title": "Phase 0: Establish the strict public Jidoka client",
   "type": "epic",
-  "updated_at": "2026-08-12T17:17:54Z"
+  "updated_at": "2026-08-12T17:36:09Z"
 }
