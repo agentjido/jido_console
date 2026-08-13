@@ -1,7 +1,6 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-tqg.7.17",
     "jido_cli-tqg.7.19",
     "jido_cli-tqg.7.20",
     "jido_cli-tqg.7.24",
@@ -27,5 +26,5 @@
   "status": "open",
   "title": "Publish the accepted macOS ARM64 artifact to GitHub",
   "type": "task",
-  "updated_at": "2026-08-13T13:05:01Z"
+  "updated_at": "2026-08-13T13:05:02Z"
 }
