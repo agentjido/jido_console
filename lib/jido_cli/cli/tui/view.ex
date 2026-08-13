@@ -3,6 +3,7 @@ defmodule Jido.Cli.Tui.View do
 
   alias Jido.Cli.Tui.Editor
   alias Jido.Cli.Tui.State
+  alias Jido.Cli.Tui.Turn.Tool
   alias Jido.Cli.Terminal.Frame
 
   @spec render(State.t()) :: Frame.t()
@@ -25,23 +26,115 @@ defmodule Jido.Cli.Tui.View do
   end
 
   defp transcript_rows(state, width) do
-    instructions =
-      Enum.map(state.project_instructions, fn instruction ->
-        %{role: :project, content: "Loaded #{instruction["path"]} (scope #{instruction["scope"]})"}
-      end)
+    instructions = instruction_rows(state.project_instructions, width)
 
+    if state.turns == [] and is_nil(state.active_turn) do
+      instructions ++ legacy_transcript_rows(state, width)
+    else
+      turns = state.turns ++ if(state.active_turn, do: [state.active_turn], else: [])
+      instructions ++ Enum.flat_map(turns, &turn_rows(&1, width))
+    end
+  end
+
+  defp instruction_rows(instructions, width) do
+    instructions
+    |> Enum.map(fn instruction ->
+      %{role: :project, content: "Loaded #{instruction["path"]} (scope #{instruction["scope"]})"}
+    end)
+    |> message_rows(width)
+  end
+
+  defp legacy_transcript_rows(state, width) do
     messages =
       if state.streaming == "" do
-        instructions ++ state.messages
+        state.messages
       else
-        instructions ++ state.messages ++ [%{role: :assistant, content: state.streaming}]
+        state.messages ++ [%{role: :assistant, content: state.streaming}]
       end
 
+    message_rows(messages, width)
+  end
+
+  defp message_rows(messages, width) do
     Enum.flat_map(messages, fn message ->
       role = role(message.role)
       [role | Frame.wrap(message.content, width)] ++ [""]
     end)
   end
+
+  defp turn_rows(turn, width) do
+    user = content_rows("User", turn.prompt, width)
+
+    attachments =
+      Enum.map(turn.attachments, fn attachment ->
+        Frame.fit("  @#{attachment["path"]} · #{attachment["size"] || 0} bytes", width)
+      end)
+
+    tools = Enum.flat_map(turn.tool_order, &tool_rows(Map.fetch!(turn.tools, &1), width))
+    assistant = content_rows("Assistant", turn.assistant, width)
+    reviews = Enum.flat_map(turn.reviews, &approval_rows(&1, width))
+    user ++ attachments ++ tools ++ assistant ++ reviews
+  end
+
+  defp content_rows(_role, "", _width), do: []
+  defp content_rows(role, content, width), do: [role | Frame.wrap(content, width)] ++ [""]
+
+  defp tool_rows(%Tool{} = tool, width) do
+    operation = tool.operation || "tool"
+    header = "#{tool_marker(tool.status)} #{operation}"
+
+    detail =
+      if tool.summary in [nil, "", operation] do
+        []
+      else
+        ["  #{tool.summary}"]
+      end
+
+    Enum.map([header | detail], &Frame.fit(&1, width))
+  end
+
+  defp approval_rows(review, width) do
+    operation = Map.get(review, :operation) || Map.get(review, "operation") || "tool"
+    arguments = Map.get(review, :arguments_summary, "")
+    status = Map.get(review, :status, :pending)
+    decision = Map.get(review, :decision)
+
+    rows =
+      case status do
+        :pending ->
+          ["Review required", "  #{operation}#{arguments_suffix(arguments)}", "  A approve · D deny"]
+
+        :approved ->
+          ["[approved] #{operation}#{arguments_suffix(arguments)}"]
+
+        :denied ->
+          ["[denied] #{operation}#{arguments_suffix(arguments)}"]
+
+        :expired ->
+          ["[expired] #{operation} · #{Map.get(review, :error)}"]
+
+        :failed ->
+          ["[review failed] #{operation} · #{Map.get(review, :error)}"]
+
+        _other when decision in [:approve, :deny] ->
+          ["[#{decision}] #{operation}#{arguments_suffix(arguments)}"]
+
+        _other ->
+          ["[review #{status}] #{operation}#{arguments_suffix(arguments)}"]
+      end
+
+    Enum.map(rows, &Frame.fit(&1, width))
+  end
+
+  defp arguments_suffix(arguments) when arguments in [nil, "", "%{}"], do: ""
+  defp arguments_suffix(arguments), do: " · #{arguments}"
+
+  defp tool_marker(:planned), do: "[planned]"
+  defp tool_marker(:running), do: "[running]"
+  defp tool_marker(:completed), do: "[done]"
+  defp tool_marker(:failed), do: "[failed]"
+  defp tool_marker(:retried), do: "[retried]"
+  defp tool_marker(status), do: "[#{status}]"
 
   defp role(:user), do: "User"
   defp role(:project), do: "Project"
@@ -128,6 +221,8 @@ defmodule Jido.Cli.Tui.View do
   defp status_row(%State{status: :running}), do: "running · Ctrl-C cancels"
   defp status_row(%State{status: :resolving}), do: "resolving file mentions"
   defp status_row(%State{status: :cancelling}), do: "cancelling"
+  defp status_row(%State{status: :review}), do: "review required · A approves · D denies"
+  defp status_row(%State{status: :responding_review}), do: "sending review decision"
   defp status_row(%State{status: :interrupted, error: error}), do: error || "paused"
   defp status_row(%State{status: :error, error: error}), do: "error · #{error}"
   defp status_row(%State{status: status}), do: Atom.to_string(status)

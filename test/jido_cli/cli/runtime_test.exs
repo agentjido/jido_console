@@ -236,13 +236,21 @@ defmodule Jido.Cli.Runtime.JidokaTest do
     assert paused.extension_host == session.extension_host
     assert paused.local_resources == session.local_resources
 
+    test_pid = self()
+    stream_probe = spawn(fn -> stream_probe(test_pid) end)
+
     assert %Runtime.Result{
              request_id: ^request_id,
              status: :ok,
              session: %Runtime.Session{},
              content: "approved change complete",
              approval: :approved
-           } = approved = Runtime.approve(paused, review, [])
+           } = approved = Runtime.approve(paused, review, stream_to: stream_probe)
+
+    assert_receive {:review_stream, {:jidoka_turn_event, %Event{event: :turn_finished, request_id: ^request_id}}},
+                   1_000
+
+    send(stream_probe, :stop)
 
     assert approved.runtime_opts == request.runtime_opts
 
@@ -275,6 +283,17 @@ defmodule Jido.Cli.Runtime.JidokaTest do
     else
       Process.sleep(1)
       wait_for_cancellation(context, attempts_left - 1)
+    end
+  end
+
+  defp stream_probe(test_pid) do
+    receive do
+      :stop ->
+        :ok
+
+      message ->
+        send(test_pid, {:review_stream, message})
+        stream_probe(test_pid)
     end
   end
 end

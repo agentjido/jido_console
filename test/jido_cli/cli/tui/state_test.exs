@@ -124,6 +124,75 @@ defmodule Jido.Cli.Tui.StateTest do
     assert turn.outcome.status == :completed
   end
 
+  test "keeps one wrapped turn through repeated approval and denial pauses" do
+    request = %{request_id: "request-1"}
+    first_review = review("review-1", "write_file", %{"path" => "\e[31mlib/a.ex\e[0m"})
+    second_review = review("review-2", "shell", %{"command" => "mix test\e[2J"})
+
+    state = State.new(:session, {80, 24})
+    {state, []} = State.update(state, {:terminal, {:text, "change it"}})
+    {state, [{:start_turn, "change it"}]} = State.update(state, {:terminal, {:key, :enter}})
+    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+
+    first_pause = runtime_result(:pending_review, request, :wrapped_session_1, pending_reviews: [first_review])
+    {state, []} = State.update(state, {:turn_result, request, first_pause})
+
+    assert state.status == :review
+    assert state.session == :wrapped_session_1
+    assert state.turns == []
+    assert state.active_turn.reviews |> hd() |> Map.fetch!(:arguments_summary) == "%{\"path\" => \"lib/a.ex\"}"
+
+    assert {state, [{:respond_review, :approve, ^first_pause, ^first_review}]} =
+             State.update(state, {:terminal, {:text, "a"}})
+
+    assert state.status == :responding_review
+    assert {^state, []} = State.update(state, {:terminal, {:text, "d"}})
+
+    second_pause = runtime_result(:pending_review, request, :wrapped_session_2, pending_reviews: [second_review])
+    {state, []} = State.update(state, {:turn_result, second_pause})
+    assert state.session == :wrapped_session_2
+    assert state.status == :review
+
+    assert {state, [{:respond_review, :deny, ^second_pause, ^second_review}]} =
+             State.update(state, {:terminal, {:text, "d"}})
+
+    denied =
+      runtime_result(:error, request, :wrapped_session_3,
+        error: :review_denied,
+        approval: :denied
+      )
+
+    {state, []} = State.update(state, {:turn_result, denied})
+
+    assert state.session == :wrapped_session_3
+    assert state.active_turn == nil
+    assert [turn] = state.turns
+    assert Enum.map(turn.reviews, & &1.decision) == [:approve, :deny]
+    assert Enum.map(turn.reviews, & &1.status) == [:approved, :denied]
+    assert turn.outcome.status == :failed
+  end
+
+  test "records an expired approval without losing its decision" do
+    request = %{request_id: "request-1"}
+
+    pending =
+      runtime_result(:pending_review, request, :wrapped_session,
+        pending_reviews: [review("review-1", "write_file", %{})]
+      )
+
+    state = State.new(:session, {80, 24})
+    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+    {state, []} = State.update(state, {:turn_result, request, pending})
+    {state, [_effect]} = State.update(state, {:terminal, {:text, "a"}})
+
+    expired = runtime_result(:error, request, :wrapped_session, error: :review_expired)
+    {state, []} = State.update(state, {:turn_result, expired})
+
+    assert [turn] = state.turns
+    assert [%{decision: :approve, status: :expired, error: error}] = turn.reviews
+    assert error =~ "expired"
+  end
+
   test "queues the current prompt until the runtime is ready" do
     state = State.new(nil, {80, 24}, runtime_status: :starting, prepare_prompt: true)
     {state, []} = State.update(state, {:terminal, {:text, "Review @value.ex"}})
@@ -363,5 +432,34 @@ defmodule Jido.Cli.Tui.StateTest do
       State.update(state, {:coding_review, [%{"kind" => "mutation_state", "status" => "cancelled"}]})
 
     assert [%{"status" => "cancelled"}] = state.coding_reviews
+  end
+
+  defp runtime_result(status, request, session, attrs) do
+    struct!(
+      Runtime.Result,
+      Keyword.merge(
+        [
+          request_id: request.request_id,
+          status: status,
+          session: session,
+          runtime_opts: [],
+          extension_host: :extension_host,
+          local_resources: :local_resources,
+          handle: request
+        ],
+        attrs
+      )
+    )
+  end
+
+  defp review(id, operation, arguments) do
+    %{
+      interrupt_id: id,
+      operation: operation,
+      arguments: arguments,
+      reason: :manual,
+      created_at_ms: 0,
+      expires_at_ms: 30_000
+    }
   end
 end

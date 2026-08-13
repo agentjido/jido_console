@@ -256,7 +256,7 @@ defmodule Jido.Cli.Runtime.Jidoka do
   end
 
   defp respond_to_review(%Result{} = result, review, opts, approval) do
-    runtime_opts = opts |> Keyword.merge(result.runtime_opts) |> Keyword.delete(:request_id)
+    runtime_opts = result.runtime_opts |> Keyword.merge(opts) |> Keyword.delete(:request_id)
 
     raw =
       case approval do

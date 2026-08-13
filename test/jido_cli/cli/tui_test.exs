@@ -2,6 +2,7 @@ defmodule Jido.Cli.TuiTest do
   use ExUnit.Case, async: true
 
   alias Jido.Cli.Tui
+  alias Jido.Cli.Runtime.Jidoka, as: Runtime
   alias Jidoka.Cancellation
   alias Jidoka.Event
 
@@ -291,6 +292,106 @@ defmodule Jido.Cli.TuiTest do
     end
   end
 
+  defmodule ApprovalRuntime do
+    @behaviour Jido.Cli.Runtime
+
+    @impl true
+    def start_session(Jido.Cli.DefaultAgent, opts) do
+      send(Keyword.fetch!(opts, :test_pid), :approval_session_started)
+      {:ok, :approval_session}
+    end
+
+    @impl true
+    def start_turn(:approval_session, prompt, _owner, opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      send(test_pid, :approval_turn_started)
+      {:ok, %{request_id: "approval-request", prompt: prompt, test_pid: test_pid}}
+    end
+
+    @impl true
+    def await(request, _opts) do
+      review = %{
+        interrupt_id: "review-1",
+        operation: "write_file",
+        arguments: %{"path" => "\e[31mlib/value.ex\e[0m"},
+        reason: :manual,
+        expires_at_ms: 30_000
+      }
+
+      result(request, :pending_review,
+        session: :approval_session,
+        pending_reviews: [review]
+      )
+    end
+
+    @impl true
+    def approve(%Runtime.Result{} = result, review, opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:approval_called, review.interrupt_id})
+      emit_tool_timeline(Keyword.fetch!(opts, :stream_to), result.request_id)
+
+      %Runtime.Result{
+        result
+        | status: :ok,
+          session: :approved_session,
+          content: "Approved change complete.",
+          approval: :approved,
+          pending_reviews: []
+      }
+    end
+
+    @impl true
+    def deny(%Runtime.Result{} = result, _review, _opts) do
+      %Runtime.Result{result | status: :error, error: :review_denied, approval: :denied}
+    end
+
+    @impl true
+    def cancel(request, _opts), do: {:ok, Cancellation.new!(request_id: request.request_id, cancelled_at_ms: 0)}
+
+    defp result(request, status, attrs) do
+      struct!(
+        Runtime.Result,
+        Keyword.merge(
+          [
+            request_id: request.request_id,
+            status: status,
+            session: :approval_session,
+            runtime_opts: [],
+            extension_host: nil,
+            local_resources: nil,
+            handle: request
+          ],
+          attrs
+        )
+      )
+    end
+
+    defp emit_tool_timeline(stream_to, request_id) do
+      planned =
+        Event.build(:effect_planned, [],
+          request_id: request_id,
+          seq: 0,
+          effect_id: "write-1",
+          effect_kind: :operation,
+          operation: "write_file"
+        )
+
+      completed =
+        Event.build(:effect_completed, [],
+          request_id: request_id,
+          seq: 1,
+          effect_id: "write-1",
+          effect_kind: :operation,
+          operation: "write_file"
+        )
+
+      terminal = Event.build(:turn_finished, [], request_id: request_id, seq: 2)
+
+      for event <- [planned, completed, terminal] do
+        send(stream_to, {:jidoka_turn_event, event})
+      end
+    end
+  end
+
   test "runs one complete streamed turn through injected boundaries" do
     test_pid = self()
 
@@ -476,6 +577,41 @@ defmodule Jido.Cli.TuiTest do
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)
     assert_receive :terminal_closed
+  end
+
+  test "approves a pending review and keeps its decision in the transcript" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: ApprovalRuntime,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid],
+          review_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive :approval_session_started, 500
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+    send_prompt(owner, ref)
+    assert_receive :approval_turn_started
+
+    review_frame = assert_frame_contains("Review required")
+    assert review_frame =~ "A approve · D deny"
+    refute review_frame =~ "\e[31m"
+
+    send(owner, {:jido_terminal, ref, {:text, "a"}})
+    assert_receive {:approval_called, "review-1"}
+
+    result_frame = assert_frame_contains("Approved change complete.")
+    assert result_frame =~ "[approved] write_file"
+    assert result_frame =~ "idle ·"
+
+    stop_tui(task, owner, ref)
   end
 
   test "shows instruction provenance and attaches resolved file context" do

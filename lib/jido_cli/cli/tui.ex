@@ -355,6 +355,10 @@ defmodule Jido.Cli.Tui do
         workers = Workers.stop(workers, relay_pid)
         continue(state, event, terminal, runtime, opts, startup, workers)
 
+      {:review_result, relay_pid, result} ->
+        workers = Workers.stop(workers, relay_pid)
+        continue(state, {:turn_result, result}, terminal, runtime, opts, startup, workers)
+
       {:request_result, request, result} ->
         finish_request_effect(
           state,

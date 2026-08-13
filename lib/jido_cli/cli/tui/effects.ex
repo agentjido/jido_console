@@ -8,6 +8,7 @@ defmodule Jido.Cli.Tui.Effects do
   @type completion ::
           {:event, term()}
           | {:start_turn, pid(), term()}
+          | {:review_result, pid(), term()}
           | {:request_result, term(), term()}
           | :ignore
 
@@ -53,8 +54,8 @@ defmodule Jido.Cli.Tui.Effects do
       {:respond_review, decision, result, review}, {:continue, workers}
       when decision in [:approve, :deny] ->
         workers =
-          Workers.start(workers, {:respond_review, decision}, result, fn ->
-            respond_to_review(runtime, decision, result, review, opts)
+          Workers.start_review(workers, decision, result, fn relay_pid ->
+            respond_to_review(runtime, decision, result, review, opts, relay_pid)
           end)
 
         {:cont, {:continue, workers}}
@@ -101,8 +102,8 @@ defmodule Jido.Cli.Tui.Effects do
     end
   end
 
-  def complete(%Worker{kind: {:respond_review, _decision}}, outcome) do
-    {:event, {:turn_result, unwrap(outcome)}}
+  def complete(%Worker{kind: {:respond_review, _decision, relay_pid}}, outcome) do
+    {:review_result, relay_pid, unwrap(outcome)}
   end
 
   defp start_turn(workers, runtime, session, opts, prompt, context) do
@@ -124,9 +125,14 @@ defmodule Jido.Cli.Tui.Effects do
     end
   end
 
-  defp respond_to_review(runtime, decision, result, review, opts) do
+  defp respond_to_review(runtime, decision, result, review, opts, relay_pid) do
     callback = if decision == :approve, do: :approve, else: :deny
-    review_opts = Keyword.get(opts, :review_opts, [])
+
+    review_opts =
+      opts
+      |> Keyword.get(:review_opts, [])
+      |> Keyword.put(:stream, true)
+      |> Keyword.put(:stream_to, relay_pid)
 
     if function_exported?(runtime, callback, 3) do
       apply(runtime, callback, [result, review, review_opts])

@@ -80,6 +80,47 @@ defmodule Jido.Cli.Tui.Turn do
     %{turn | changes: normalize_records(changes)}
   end
 
+  @spec put_reviews(t(), [term()]) :: t()
+  def put_reviews(%__MODULE__{} = turn, reviews) when is_list(reviews) do
+    reviews = Enum.reduce(reviews, turn.reviews, &put_record(&2, normalize_review(&1)))
+    %{turn | reviews: reviews, status: :review}
+  end
+
+  @spec decide_review(t(), term(), :approve | :deny) :: t()
+  def decide_review(%__MODULE__{} = turn, review, decision) when decision in [:approve, :deny] do
+    id = review_id(review)
+
+    reviews =
+      Enum.map(turn.reviews, fn record ->
+        if Map.get(record, :id) == id do
+          record
+          |> Map.put(:decision, decision)
+          |> Map.put(:status, if(decision == :approve, do: :approved, else: :denied))
+        else
+          record
+        end
+      end)
+
+    %{turn | reviews: reviews, outcome: nil, status: :running}
+  end
+
+  @spec resume(t()) :: t()
+  def resume(%__MODULE__{} = turn), do: %{turn | outcome: nil, status: :running}
+
+  @spec fail_review(t(), term()) :: t()
+  def fail_review(%__MODULE__{} = turn, error) do
+    summary = SafeText.summary(error)
+    status = if String.contains?(String.downcase(summary), "expired"), do: :expired, else: :failed
+
+    reviews =
+      turn.reviews
+      |> Enum.reverse()
+      |> update_decided_review(status, summary)
+      |> Enum.reverse()
+
+    %{turn | reviews: reviews}
+  end
+
   @spec apply_event(t(), EventProjection.t()) :: {:ok, t()} | {:ignore, atom()}
   def apply_event(%__MODULE__{request_id: request_id}, %EventProjection{request_id: other})
       when request_id != other,
@@ -221,6 +262,34 @@ defmodule Jido.Cli.Tui.Turn do
 
   defp normalize_record(value), do: %{summary: SafeText.summary(value)}
 
+  defp normalize_review(%_{} = review), do: review |> Map.from_struct() |> normalize_review()
+
+  defp normalize_review(review) when is_map(review) do
+    id = review_id(review)
+    arguments = Map.get(review, :arguments, Map.get(review, "arguments")) || %{}
+    arguments_summary = arguments |> normalize_value() |> SafeText.summary()
+
+    review
+    |> Map.take([
+      :interrupt_id,
+      :operation,
+      :reason,
+      :created_at_ms,
+      :expires_at_ms,
+      "interrupt_id",
+      "operation",
+      "reason",
+      "created_at_ms",
+      "expires_at_ms"
+    ])
+    |> normalize_record()
+    |> Map.put(:id, id)
+    |> Map.put(:arguments_summary, arguments_summary)
+    |> Map.put(:status, :pending)
+  end
+
+  defp normalize_review(review), do: %{id: review_id(review), summary: SafeText.summary(review), status: :pending}
+
   defp normalize_value(value) when is_binary(value), do: SafeText.clean(value)
   defp normalize_value(value) when is_map(value), do: normalize_record(value)
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
@@ -234,6 +303,22 @@ defmodule Jido.Cli.Tui.Turn do
   end
 
   defp put_record(records, record), do: records ++ [record]
+
+  defp review_id(%{interrupt_id: id}), do: id
+  defp review_id(%{"interrupt_id" => id}), do: id
+  defp review_id(%{id: id}), do: id
+  defp review_id(%{"id" => id}), do: id
+  defp review_id(review), do: {:review, SafeText.summary(review)}
+
+  defp update_decided_review([%{status: status} = review | reviews], failed_status, summary)
+       when status in [:approved, :denied] do
+    [review |> Map.put(:status, failed_status) |> Map.put(:error, summary) | reviews]
+  end
+
+  defp update_decided_review([review | reviews], failed_status, summary),
+    do: [review | update_decided_review(reviews, failed_status, summary)]
+
+  defp update_decided_review([], _failed_status, _summary), do: []
 
   defp safe_optional(nil), do: nil
   defp safe_optional(value), do: SafeText.summary(value)

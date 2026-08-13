@@ -23,6 +23,7 @@ defmodule Jido.Cli.Tui.State do
             turns: [],
             active_turn: nil,
             next_turn_id: 0,
+            pending_review: nil,
             dirty?: true,
             render_scheduled?: false
 
@@ -49,6 +50,22 @@ defmodule Jido.Cli.Tui.State do
   end
 
   @spec update(t(), term()) :: {t(), [effect()]}
+  def update(%__MODULE__{status: :review} = state, {:terminal, {:text, text}})
+      when text in ["a", "A", "y", "Y"],
+      do: respond_to_review(state, :approve)
+
+  def update(%__MODULE__{status: :review} = state, {:terminal, {:text, text}})
+      when text in ["d", "D", "n", "N"],
+      do: respond_to_review(state, :deny)
+
+  def update(%__MODULE__{status: status} = state, {:terminal, {:text, _text}})
+      when status in [:review, :responding_review],
+      do: {state, []}
+
+  def update(%__MODULE__{status: status} = state, {:terminal, {:paste, _text}})
+      when status in [:review, :responding_review],
+      do: {state, []}
+
   def update(%__MODULE__{} = state, {:terminal, {:text, text}}) do
     changed(state, editor: Editor.insert(state.editor, text))
   end
@@ -185,8 +202,6 @@ defmodule Jido.Cli.Tui.State do
     {state, [{:await_turn, request}]}
   end
 
-  def update(%__MODULE__{request: nil} = state, {:jidoka, _event}), do: {state, []}
-
   def update(%__MODULE__{active_turn: %Turn{} = turn} = state, {:jidoka, event}) do
     with {:ok, projection} <- EventProjection.project(event),
          {:ok, turn} <- Turn.apply_event(turn, projection) do
@@ -217,17 +232,12 @@ defmodule Jido.Cli.Tui.State do
     finish(state, result.session, result.content, :idle, nil, outcome: :completed, changes: changes)
   end
 
-  def update(
-        %__MODULE__{} = state,
-        {:turn_result, %RuntimeResult{status: status} = result}
-      )
-      when status in [:hibernated, :pending_review] do
-    message = if status == :pending_review, do: "Agent paused for review.", else: "Agent paused."
+  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :pending_review} = result}) do
+    pause_for_review(state, result)
+  end
 
-    finish(state, result.session, state.streaming, :interrupted, message,
-      outcome: status,
-      reviews: result.pending_reviews
-    )
+  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :hibernated} = result}) do
+    finish(state, result.session, state.streaming, :interrupted, "Agent paused.", outcome: :hibernated)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :cancelled} = result}) do
@@ -236,6 +246,7 @@ defmodule Jido.Cli.Tui.State do
 
   def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :error} = result}) do
     error = format_error(result.error)
+    state = if result.approval == :denied, do: state, else: put_review_failure(state, result.error)
     finish(state, result.session, state.streaming, :error, error, outcome: :failed)
   end
 
@@ -343,6 +354,7 @@ defmodule Jido.Cli.Tui.State do
          turns: state.turns ++ [turn],
          active_turn: nil,
          next_turn_id: next_turn_id,
+         pending_review: nil,
          finishing?: false,
          dirty?: true
      }, []}
@@ -358,6 +370,54 @@ defmodule Jido.Cli.Tui.State do
     do: %{state | active_turn: Turn.put_changes(turn, changes)}
 
   defp put_active_changes(state, _changes), do: state
+
+  defp put_review_failure(
+         %__MODULE__{status: :responding_review, active_turn: %Turn{} = turn} = state,
+         error
+       ),
+       do: %{state | active_turn: Turn.fail_review(turn, error)}
+
+  defp put_review_failure(state, _error), do: state
+
+  defp pause_for_review(state, %RuntimeResult{} = result) do
+    {turn, next_turn_id} = ensure_turn(state)
+    turn = Turn.put_reviews(turn, result.pending_reviews)
+
+    {%{
+       state
+       | session: result.session,
+         request: nil,
+         active_turn: turn,
+         next_turn_id: next_turn_id,
+         pending_review: result,
+         streaming: turn.assistant,
+         status: :review,
+         error: nil,
+         finishing?: false,
+         dirty?: true
+     }, []}
+  end
+
+  defp respond_to_review(
+         %__MODULE__{
+           pending_review: %RuntimeResult{pending_reviews: [review | _]} = result,
+           active_turn: %Turn{} = turn
+         } = state,
+         decision
+       ) do
+    turn = turn |> Turn.decide_review(review, decision) |> Turn.resume()
+
+    {%{
+       state
+       | active_turn: turn,
+         pending_review: nil,
+         status: :responding_review,
+         error: nil,
+         dirty?: true
+     }, [{:respond_review, decision, result, review}]}
+  end
+
+  defp respond_to_review(state, _decision), do: {state, []}
 
   defp format_error(%{__exception__: true} = error), do: Exception.message(error)
   defp format_error(reason) when is_binary(reason), do: reason

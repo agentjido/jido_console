@@ -1,6 +1,8 @@
 defmodule Jido.Cli.Tui.Workers do
   @moduledoc false
 
+  @relay_flush_timeout_ms 1_000
+
   defmodule Worker do
     @moduledoc false
     @enforce_keys [:pid, :ref, :kind, :subject]
@@ -30,12 +32,27 @@ defmodule Jido.Cli.Tui.Workers do
 
   @spec start_turn(t(), (pid() -> term())) :: t()
   def start_turn(workers, fun) when is_map(workers) and is_function(fun, 1) do
-    owner = self()
-    {relay_pid, relay_ref} = spawn_monitor(fn -> stream_relay(owner) end)
+    {workers, relay_pid} = start_relay(workers, nil, true)
 
     workers
-    |> put(relay_pid, relay_ref, :stream_relay, nil)
     |> start({:start_turn, relay_pid}, nil, fn -> fun.(relay_pid) end)
+  end
+
+  @spec start_review(t(), :approve | :deny, term(), (pid() -> term())) :: t()
+  def start_review(workers, decision, subject, fun)
+      when is_map(workers) and decision in [:approve, :deny] and is_function(fun, 1) do
+    {workers, relay_pid} = start_relay(workers, subject, false)
+    workers = activate_relay(workers, relay_pid, subject)
+    owner = self()
+
+    {pid, ref} =
+      spawn_monitor(fn ->
+        outcome = safe_effect(fn -> fun.(relay_pid) end)
+        flush_relay(relay_pid)
+        send(owner, {:jido_tui_effect_result, self(), outcome})
+      end)
+
+    put(workers, pid, ref, {:respond_review, decision, relay_pid}, subject)
   end
 
   @spec pop(t(), pid()) :: {:ok, Worker.t(), t()} | :error
@@ -104,6 +121,12 @@ defmodule Jido.Cli.Tui.Workers do
     Map.put(workers, pid, %Worker{pid: pid, ref: ref, kind: kind, subject: subject})
   end
 
+  defp start_relay(workers, subject, stop_on_terminal?) do
+    owner = self()
+    {relay_pid, relay_ref} = spawn_monitor(fn -> stream_relay(owner, stop_on_terminal?) end)
+    {put(workers, relay_pid, relay_ref, :stream_relay, subject), relay_pid}
+  end
+
   defp safe_effect(fun) do
     {:ok, fun.()}
   rescue
@@ -112,25 +135,39 @@ defmodule Jido.Cli.Tui.Workers do
     kind, reason -> {:crash, {kind, reason}}
   end
 
-  defp stream_relay(owner) do
-    owner_ref = Process.monitor(owner)
-    stream_relay(owner, owner_ref, :buffering, [])
+  defp flush_relay(relay_pid) do
+    send(relay_pid, {:flush, self()})
+
+    receive do
+      {:relay_flushed, ^relay_pid} -> :ok
+    after
+      @relay_flush_timeout_ms -> :ok
+    end
   end
 
-  defp stream_relay(owner, owner_ref, :buffering, buffered) do
+  defp stream_relay(owner, stop_on_terminal?) do
+    owner_ref = Process.monitor(owner)
+    stream_relay(owner, owner_ref, stop_on_terminal?, :buffering, [])
+  end
+
+  defp stream_relay(owner, owner_ref, stop_on_terminal?, :buffering, buffered) do
     receive do
       {:jidoka_turn_event, event} ->
-        stream_relay(owner, owner_ref, :buffering, [event | buffered])
+        stream_relay(owner, owner_ref, stop_on_terminal?, :buffering, [event | buffered])
 
       :activate ->
         events = Enum.reverse(buffered)
         Enum.each(events, &send(owner, {:jidoka_turn_event, &1}))
 
-        if Enum.any?(events, &terminal_event?/1) do
+        if stop_on_terminal? and Enum.any?(events, &terminal_event?/1) do
           :ok
         else
-          stream_relay(owner, owner_ref, :active, [])
+          stream_relay(owner, owner_ref, stop_on_terminal?, :active, [])
         end
+
+      {:flush, caller} ->
+        send(caller, {:relay_flushed, self()})
+        stream_relay(owner, owner_ref, stop_on_terminal?, :buffering, buffered)
 
       :stop ->
         :ok
@@ -139,15 +176,22 @@ defmodule Jido.Cli.Tui.Workers do
         :ok
 
       _message ->
-        stream_relay(owner, owner_ref, :buffering, buffered)
+        stream_relay(owner, owner_ref, stop_on_terminal?, :buffering, buffered)
     end
   end
 
-  defp stream_relay(owner, owner_ref, :active, []) do
+  defp stream_relay(owner, owner_ref, stop_on_terminal?, :active, []) do
     receive do
       {:jidoka_turn_event, event} ->
         send(owner, {:jidoka_turn_event, event})
-        if terminal_event?(event), do: :ok, else: stream_relay(owner, owner_ref, :active, [])
+
+        if stop_on_terminal? and terminal_event?(event),
+          do: :ok,
+          else: stream_relay(owner, owner_ref, stop_on_terminal?, :active, [])
+
+      {:flush, caller} ->
+        send(caller, {:relay_flushed, self()})
+        stream_relay(owner, owner_ref, stop_on_terminal?, :active, [])
 
       :stop ->
         :ok
@@ -156,7 +200,7 @@ defmodule Jido.Cli.Tui.Workers do
         :ok
 
       _message ->
-        stream_relay(owner, owner_ref, :active, [])
+        stream_relay(owner, owner_ref, stop_on_terminal?, :active, [])
     end
   end
 
