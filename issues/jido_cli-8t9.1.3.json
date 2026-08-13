@@ -6,14 +6,16 @@
   "blocks": [
     "jido_cli-8t9.5.5"
   ],
+  "closed_at": "2026-08-13T20:56:43Z",
+  "close_reason": "Completed in Jidoka commit f19ce72e and jido_cli commit 1668c32. Both repositories constrain and test ReqLLM ~\u003e 1.20.0; Jidoka handles decoded object parts; default Git and local path CLI workflows pass. Validation: Jidoka 634 tests and quality; CLI 240 tests and quality.",
   "created": "2026-08-13T20:14:25Z",
   "description": "Repositories: Jidoka and jido_cli. Reconcile the ReqLLM 1.19 and 1.20 lock state and define the supported version range. Acceptance: both repositories test the same adapter contract; the CLI pin and local path workflow resolve the intended ReqLLM version; upgrade behavior is documented.",
   "id": "jido_cli-8t9.1.3",
   "labels": [],
   "parent": "jido_cli-8t9.1",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Select and test one ReqLLM dependency contract",
   "type": "task",
-  "updated_at": "2026-08-13T20:39:16Z"
+  "updated_at": "2026-08-13T20:56:43Z"
 }
