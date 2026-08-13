@@ -6,6 +6,8 @@
   "blocks": [
     "jido_cli-8t9.5.5"
   ],
+  "closed_at": "2026-08-13T21:32:56Z",
+  "close_reason": "Implemented and validated in Jidoka commit 6a0337d6",
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Keep stable completed conversation separate from an active snapshot and promote resumed work only after success. Acceptance: resume and recovery continue the correct turn; cancelled work does not leak; source and fork conversations remain isolated.",
   "id": "jido_cli-8t9.2.6",
@@ -18,7 +20,7 @@
     }
   ],
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Reconcile hibernate, resume, recovery, and fork continuation",
   "type": "task",
   "updated_at": "2026-08-13T21:32:56Z"
