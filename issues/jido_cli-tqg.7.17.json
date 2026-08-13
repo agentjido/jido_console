@@ -10,6 +10,8 @@
     "jido_cli-tqg.7.18",
     "jido_cli-tqg.7.28"
   ],
+  "closed_at": "2026-08-13T14:06:08Z",
+  "close_reason": "Generated validated release metadata, internal file digests, exact external checksum, CycloneDX 1.5 SBOM, local provenance, dirty and unsigned trust state, and future Homebrew inputs.",
   "created": "2026-08-12T22:12:34Z",
   "description": "## Outcome\n\nLocal release tooling generates validated `release.json`, `checksums.txt`, an SBOM when supported, and `provenance.json` for the final macOS ARM64 candidate.\n\n## Work\n\n1. Generate metadata from the single version, target, runtime, builder, source commit, and dependency inputs.\n2. Generate stable file digests inside the package.\n3. Generate the external SHA-256 checksum after the final archive change.\n4. Produce an SBOM in a standard machine-readable form when supported.\n5. Record the local build tool, host target, compiler, OTP, Elixir, source commit, and dirty state.\n6. Mark signing, notarization, upload, and Homebrew state explicitly.\n7. Keep credentials, provider values, and private host paths out of public data.\n8. Print the artifact name, version, target, SHA-256 value, and `bin/jido` location for later Homebrew work.\n\n## Acceptance criteria\n\n- [ ] `checksums.txt` verifies the exact final archive.\n- [ ] `release.json` passes the artifact schema.\n- [ ] Metadata versions and targets match the archive and command output.\n- [ ] Checksums follow the last content-changing step.\n- [ ] Provenance links the candidate to its source commit and local build inputs.\n- [ ] Dirty and unsigned output cannot claim publishable status.\n- [ ] Output has all future Homebrew inputs except an immutable URL.\n\n## Tests\n\nTest deterministic metadata, checksum verification, tampering, wrong target, dirty source, stale version, missing notice, and secret redaction.\n\n## Non-goals\n\nDo not sign, upload, publish, or edit a Homebrew repository.",
   "id": "jido_cli-tqg.7.17",
@@ -22,7 +24,7 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Generate local release metadata, checksums, SBOM, and provenance",
   "type": "task",
   "updated_at": "2026-08-13T14:06:08Z"
