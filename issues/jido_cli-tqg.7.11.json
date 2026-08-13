@@ -5,7 +5,7 @@
     "jido_cli-tqg.7.13"
   ],
   "created": "2026-08-12T22:12:33Z",
-  "description": "## Outcome\n\nThe CLI and daemon have explicit cross-platform boundaries for shutdown, file access, process launch, and path handling. Windows does not depend on Unix signals, modes, or shell syntax.\n\n## Work\n\n1. Audit production code and package scripts for Unix-only permissions, signals, executable bits, path separators, quoting, and shell commands.\n2. Add a shutdown source for Windows console and service-manager stop events. Keep the Unix signal adapter for Unix.\n3. Route file privacy through the platform access-control capability.\n4. Use argument-vector process launch and platform launchers. Do not build command strings with user paths.\n5. Add tests for drive paths, UNC-like invalid cases, spaces, non-ASCII profiles, reserved names, and long paths where supported.\n6. Document any supported Windows Terminal requirement and old Console Host non-goal.\n\n## Acceptance criteria\n\n- [ ] Windows shutdown does not call the Unix `SIGTERM` implementation.\n- [ ] No supported Windows path passes through a POSIX shell.\n- [ ] Token and state privacy use Windows access control, not ignored Unix modes.\n- [ ] Launchers preserve arguments that contain spaces and Unicode.\n- [ ] The audit has no unexplained Unix-only production operation.\n- [ ] Windows-specific tests run on a native Windows runner.\n\n## Tests\n\nAdd platform capability tests and native Windows integration checks. Run the normal quality, coverage, and docs commands on Unix and the selected checks on Windows.\n\n## Non-goals\n\nDo not register a Windows service or support old Windows Console Host graphics in this task.",
+  "description": "## Outcome\n\nThe launcher, archive, file, process, and path boundaries can support a later native Windows package without changing the public Jido command contract.\n\n## Work\n\n1. Audit production code and package scripts for Unix-only permissions, executable bits, path separators, quoting, and shell commands.\n2. Keep process launch on argument vectors. Do not build command strings from user paths.\n3. Define the later Windows launcher and ZIP permission contract.\n4. Add deterministic tests for drive paths, spaces, non-ASCII profiles, reserved names, and long paths where supported.\n5. Record work that requires a native Windows runner.\n\n## Acceptance criteria\n\n- [ ] No future Windows path needs a POSIX shell.\n- [ ] Launchers preserve arguments that contain spaces and Unicode.\n- [ ] The artifact contract has one explicit Windows target extension.\n- [ ] Native-only checks are listed and do not block the macOS ARM64 local release.\n\n## Tests\n\nAdd target-neutral path and launcher contract tests. Run native Windows integration only when Windows artifact work starts.\n\n## Non-goals\n\nDo not build a Windows artifact, add a service, or block the current local macOS release.",
   "id": "jido_cli-tqg.7.11",
   "labels": [
     "cli",
@@ -15,9 +15,9 @@
     "security"
   ],
   "parent": "jido_cli-tqg.7",
-  "priority": 0,
+  "priority": 2,
   "status": "open",
-  "title": "Make file, signal, and shell boundaries portable to Windows",
+  "title": "Prepare launcher and package boundaries for Windows",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:09Z"
+  "updated_at": "2026-08-13T13:04:22Z"
 }
