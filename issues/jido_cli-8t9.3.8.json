@@ -5,7 +5,8 @@
     "jido_cli-8t9.3.7"
   ],
   "blocks": [
-    "jido_cli-8t9.5.2"
+    "jido_cli-8t9.5.2",
+    "jido_cli-8t9.5.3"
   ],
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Add one provider-attempt budget plus limits for calls per group, calls per turn, recovery steps, observation size, repairs, tokens, cost, and elapsed time. Acceptance: retry layers do not multiply; unsafe calls never retry; oversized groups fail before execution; exhaustion prevents the next model step.",
