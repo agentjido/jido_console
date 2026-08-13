@@ -2,6 +2,8 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-13T02:46:30Z",
+  "close_reason": "All seven coding-pack stories are implemented. Focused Jidoka and CLI verification passed: 66 Jidoka tests and 46 CLI phase tests.",
   "created": "2026-08-12T17:14:32Z",
   "description": "# Phase outcome\n\nDefault coding pack. Entry: built-in host and constrained execution. Exit: removable read, search, write, edit, shell, Git, verification, project context, and review form one safe default coding path.\n\n# Ranked child stories\n\n1. `jido_cli-tqg.5.1` — Define the removable coding pack and workspace boundary (P1)\n2. `jido_cli-tqg.5.2` — Add removable read and search coding tools (P1)\n3. `jido_cli-tqg.5.3` — Add reviewed write and exact-edit coding tools (P1)\n4. `jido_cli-tqg.5.4` — Add a bounded constrained shell tool (P1)\n5. `jido_cli-tqg.5.5` — Add Git review tools and named verification helpers (P2)\n6. `jido_cli-tqg.5.6` — Make the default coding setup selectable and context-aware (P2)\n7. `jido_cli-tqg.5.7` — Show edit records and bounded diffs in the TUI (P2)\n\n# Status rule\n\nAll child stories remain open. Story dependency links, not priority alone, control implementation order.",
   "id": "jido_cli-tqg.5",
@@ -12,8 +14,8 @@
   ],
   "parent": "jido_cli-tqg",
   "priority": 1,
-  "status": "open",
+  "status": "closed",
   "title": "Phase 4: Ship a removable default coding pack",
   "type": "epic",
-  "updated_at": "2026-08-12T17:17:54Z"
+  "updated_at": "2026-08-13T02:46:30Z"
 }
