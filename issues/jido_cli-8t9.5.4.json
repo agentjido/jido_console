@@ -6,7 +6,9 @@
     "jido_cli-8t9.4.6",
     "jido_cli-8t9.5.1"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.5.5"
+  ],
   "created": "2026-08-13T20:14:29Z",
   "description": "Repository: jido_cli. Drive two or more prompts through the coding TUI and compiled executable with provider-free fixtures. Acceptance: tool activity, approval, retry, cancellation, resize, Unicode, bracketed paste, review display, clean exit, and final repository state pass.",
   "id": "jido_cli-8t9.5.4",
@@ -16,5 +18,5 @@
   "status": "open",
   "title": "Add deterministic TUI and PTY coding tests",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:57Z"
+  "updated_at": "2026-08-13T20:14:58Z"
 }
