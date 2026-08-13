@@ -1,8 +1,6 @@
 {
   "assignee": "",
-  "blocked_by": [
-    "jido_cli-tqg.7.4"
-  ],
+  "blocked_by": [],
   "blocks": [
     "jido_cli-tqg.7.10",
     "jido_cli-tqg.7.6",
@@ -23,5 +21,5 @@
   "status": "open",
   "title": "Specify the framed daemon wire protocol v1",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:03Z"
+  "updated_at": "2026-08-13T13:02:04Z"
 }

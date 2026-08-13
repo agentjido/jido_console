@@ -3,7 +3,6 @@
   "blocked_by": [],
   "blocks": [
     "jido_cli-tqg.7.10",
-    "jido_cli-tqg.7.5",
     "jido_cli-tqg.7.6",
     "jido_cli-tqg.7.7",
     "jido_cli-tqg.7.8",
@@ -23,5 +22,5 @@
   "status": "open",
   "title": "Add the optional daemon application supervision boundary",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:03Z"
+  "updated_at": "2026-08-13T13:02:04Z"
 }
