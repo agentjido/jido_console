@@ -1,6 +1,7 @@
 {
   "assignee": "",
   "blocked_by": [
+    "jido_cli-tqg.7.21",
     "jido_cli-tqg.7.26",
     "jido_cli-tqg.7.27",
     "jido_cli-tqg.7.28"
@@ -19,5 +20,5 @@
   "status": "open",
   "title": "Evaluate later Winget and homebrew-core publication",
   "type": "task",
-  "updated_at": "2026-08-13T13:04:25Z"
+  "updated_at": "2026-08-13T13:05:03Z"
 }

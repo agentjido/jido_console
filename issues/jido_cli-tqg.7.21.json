@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-tqg.7.26"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-tqg.7.29"
+  ],
   "created": "2026-08-12T22:14:06Z",
   "description": "## Outcome\n\nAfter the local release and GitHub publication work is complete, `mikehostetler/homebrew-tap` contains a `jido-cli` formula that installs the accepted macOS ARM64 archive and tests `jido --version`.\n\n## Work\n\n1. Use the immutable GitHub release URL and exact SHA-256 value from the accepted artifact.\n2. Install the packaged `bin/jido` without a Homebrew Erlang or Elixir dependency.\n3. Add non-interactive formula tests for version and basic help.\n4. Add update automation that changes version, URL, and checksum in a reviewable pull request.\n5. Document install, upgrade, uninstall, and artifact support.\n6. Add other target selectors only after those artifacts pass their native release flow.\n\n## Acceptance criteria\n\n- [ ] `brew install mikehostetler/tap/jido-cli` selects the accepted artifact.\n- [ ] `brew deps jido-cli` does not add Erlang or Elixir.\n- [ ] A bad checksum fails installation.\n- [ ] The formula has no service definition.\n- [ ] Update automation does not push directly to the tap default branch.\n\n## Tests\n\nRun formula audit, install, help, version, bad-checksum, and upgrade tests.\n\n## Non-goals\n\nDo not start this task before the local release and GitHub artifact exist. Do not add a daemon, service, or `homebrew/core` submission.",
   "id": "jido_cli-tqg.7.21",
