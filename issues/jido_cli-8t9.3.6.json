@@ -4,7 +4,9 @@
     "jido_cli-8t9.3.1",
     "jido_cli-8t9.3.5"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.3.7"
+  ],
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Validate the complete group and complete review or policy checks before any call starts, then schedule safe calls serially or in parallel. Acceptance: checkpoint policy does not change safety; zero calls start before approval; observations return in original call order.",
   "id": "jido_cli-8t9.3.6",
