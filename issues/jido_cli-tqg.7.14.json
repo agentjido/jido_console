@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.12"
+  ],
   "blocks": [
     "jido_cli-tqg.7.15"
   ],
@@ -18,5 +20,5 @@
   "status": "open",
   "title": "Confirm Mix release packaging on the first target matrix",
   "type": "task",
-  "updated_at": "2026-08-13T12:55:44Z"
+  "updated_at": "2026-08-13T12:55:45Z"
 }
