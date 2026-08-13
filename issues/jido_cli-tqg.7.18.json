@@ -8,7 +8,6 @@
   ],
   "blocks": [
     "jido_cli-tqg.7.19",
-    "jido_cli-tqg.7.20",
     "jido_cli-tqg.7.21",
     "jido_cli-tqg.7.24",
     "jido_cli-tqg.7.25"
@@ -27,5 +26,5 @@
   "status": "open",
   "title": "Implement one-command local release candidate flow",
   "type": "task",
-  "updated_at": "2026-08-13T13:04:24Z"
+  "updated_at": "2026-08-13T13:05:00Z"
 }
