@@ -3,7 +3,6 @@
   "blocked_by": [],
   "blocks": [
     "jido_cli-tqg.7.24",
-    "jido_cli-tqg.7.25",
     "jido_cli-tqg.7.26"
   ],
   "created": "2026-08-12T22:14:05Z",
@@ -20,5 +19,5 @@
   "status": "open",
   "title": "Complete manual TUI acceptance on the local release candidate",
   "type": "task",
-  "updated_at": "2026-08-13T13:05:00Z"
+  "updated_at": "2026-08-13T13:05:02Z"
 }
