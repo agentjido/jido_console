@@ -7,14 +7,16 @@
     "jido_cli-8t9.4.3",
     "jido_cli-8t9.4.6"
   ],
+  "closed_at": "2026-08-13T23:30:13Z",
+  "close_reason": "Moved prompt preparation, turn start, await, cancel, review response, stream relay, and runtime close work into monitored workers. Added paint-first frames, early-event buffering, immediate await, and idempotent race handling. Commit: 18375c2. Evidence: 250 tests passed; Credo, Dialyzer, Doctor, docs, coverage, production escript smoke, and diff checks passed.",
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: jido_cli. Run prompt preparation, turn start, await, cancel, review response, and close work in monitored workers. Acceptance: resolving and cancelling frames paint immediately; a lost terminal stream event cannot leave the TUI running; completion and cancellation races are idempotent.",
   "id": "jido_cli-8t9.4.2",
   "labels": [],
   "parent": "jido_cli-8t9.4",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Move TUI effects outside the render loop",
   "type": "task",
-  "updated_at": "2026-08-13T23:15:27Z"
+  "updated_at": "2026-08-13T23:30:13Z"
 }
