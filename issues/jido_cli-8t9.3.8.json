@@ -8,14 +8,16 @@
     "jido_cli-8t9.5.2",
     "jido_cli-8t9.5.3"
   ],
+  "closed_at": "2026-08-13T23:04:34Z",
+  "close_reason": "Implemented in Jidoka commit 562687d0. Added one durable per-turn limits ledger, aggregate provider-attempt cap across retries and fallbacks, preflight call-group and turn-call bounds, recovery and observation bounds, repair bounds, exact token/cost next-step enforcement, and hard elapsed-time boundaries. Validation: 713 deterministic tests passed; 748 tests passed with parity included (6 excluded live/contract tests); mix quality passed with no cycles, Credo issues, Dialyzer errors, or Doctor failures.",
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Add one provider-attempt budget plus limits for calls per group, calls per turn, recovery steps, observation size, repairs, tokens, cost, and elapsed time. Acceptance: retry layers do not multiply; unsafe calls never retry; oversized groups fail before execution; exhaustion prevents the next model step.",
   "id": "jido_cli-8t9.3.8",
   "labels": [],
   "parent": "jido_cli-8t9.3",
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Unify retries, timeouts, idempotency, and hard limits",
   "type": "task",
-  "updated_at": "2026-08-13T22:48:14Z"
+  "updated_at": "2026-08-13T23:04:34Z"
 }
