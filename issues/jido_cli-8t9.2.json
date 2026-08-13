@@ -2,14 +2,16 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-13T21:47:13Z",
+  "close_reason": "All Phase 1 durable session conversation tasks are complete and validated",
   "created": "2026-08-13T20:13:43Z",
   "description": "Store a complete semantic transcript and make normal Session calls continue it safely across stores, recovery, forks, context limits, and memory capture.",
   "id": "jido_cli-8t9.2",
   "labels": [],
   "parent": "jido_cli-8t9",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Phase 1: Make Session own durable conversation state",
   "type": "epic",
-  "updated_at": "2026-08-13T20:57:19Z"
+  "updated_at": "2026-08-13T21:47:13Z"
 }
