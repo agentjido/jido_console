@@ -8,6 +8,8 @@
     "jido_cli-tqg.7.18",
     "jido_cli-tqg.7.28"
   ],
+  "closed_at": "2026-08-13T14:06:17Z",
+  "close_reason": "Implemented an exact-final-archive harness with safe extraction, isolated empty environment, private runtime and integrity gates, 20 warm startup runs plus cold and p95 evidence, read-only relocation tests, provider-free replay, native load, queued input, startup failure, and machine-readable acceptance.",
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nOne local harness unpacks the exact final archive into an isolated test root and verifies the packaged product without Erlang or Elixir on `PATH`. It writes machine-readable acceptance and startup evidence.\n\n## Work\n\n1. Accept an archive, expected target, and expected version as explicit inputs.\n2. Unpack under paths with spaces and non-ASCII text.\n3. Make the extracted package read-only for the relevant test.\n4. Build a minimal `PATH` with no system `erl`, `elixir`, or `mix`.\n5. Check version and help commands, one provider-free local scenario, and exit statuses `0`, `1`, and `64`.\n6. Measure 20 warm runs and one cold run for help, version, first TUI frame, and runtime-ready state.\n7. Gate warm medians at 0.50 seconds for help and version, 0.50 seconds for the first frame, and 1.25 seconds for runtime ready.\n8. Prove that the first frame appears before runtime-ready state. Send input during startup and prove one queued submission runs exactly once.\n9. Validate layout, metadata, notices, checksum, permissions, private runtime, packaged `priv` data, and native libraries.\n10. Reject host paths, secrets, partial output, changed files, and ambiguous candidate state.\n11. Write `acceptance.json`.\n\n## Acceptance criteria\n\n- [ ] The harness tests the final archive bytes, not the build directory.\n- [ ] It fails if the launcher finds system OTP or misses packaged runtime data.\n- [ ] It fails when a warm startup median exceeds a release limit.\n- [ ] It records the cold result and 95th percentile.\n- [ ] It proves the package works from a read-only installation directory.\n- [ ] It never calls a live model provider.\n- [ ] Each failure identifies the exact gate.\n\n## Tests\n\nUse known-good synthetic packages and packages with removed runtime, bad metadata, bad permissions, wrong checksum, delayed paint, delayed readiness, and duplicate queued submission.\n\n## Non-goals\n\nDo not claim that pseudo-terminal checks replace manual TUI acceptance.",
   "id": "jido_cli-tqg.7.13",
@@ -19,7 +21,7 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Build the final-archive acceptance harness",
   "type": "task",
   "updated_at": "2026-08-13T14:06:17Z"
