@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-8t9.2.4"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.5.5"
+  ],
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Give memory capture a session, request, and capture-kind idempotency key or transactional outbox. Acceptance: recovery after a forced crash creates one memory record; a failed session commit creates no visible capture; memory remains supplemental to exact conversation state.",
   "id": "jido_cli-8t9.2.8",
@@ -13,5 +15,5 @@
   "status": "open",
   "title": "Make memory capture idempotent and commit-ordered",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:53Z"
+  "updated_at": "2026-08-13T20:14:58Z"
 }
