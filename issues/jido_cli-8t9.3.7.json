@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:14:27Z",
+  "description": "Repository: Jidoka. Store a group manifest, each intent before launch, and each result on completion. Acceptance: crash tests at each call boundary do not repeat completed unsafe calls; mixed groups restore completed and incomplete calls correctly; replay stays idempotent.",
+  "id": "jido_cli-8t9.3.7",
+  "labels": [],
+  "parent": "jido_cli-8t9.3",
+  "priority": 1,
+  "status": "open",
+  "title": "Add per-call durable checkpoints and batch recovery",
+  "type": "task",
+  "updated_at": "2026-08-13T20:14:27Z"
+}
