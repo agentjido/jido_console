@@ -9,7 +9,7 @@
     "jido_cli-tqg.7.27"
   ],
   "created": "2026-08-12T22:14:07Z",
-  "description": "## Outcome\n\nEvery executable binary distributed for Windows, including a selected service wrapper, has a verifiable Authenticode signature before the final ZIP checksum is generated.\n\n## Work\n\n1. Inventory packaged EXE, DLL, and service-wrapper files that require signing.\n2. Use an approved timestamped code-signing process and protected CI identity.\n3. Sign binaries before ZIP creation and external checksum generation.\n4. Verify the certificate chain, timestamp, file identity, and trust result after extraction.\n5. Record signing evidence in release provenance.\n6. Fail stable publication for an unsigned or modified required binary.\n7. Document the trust state of unsigned development artifacts.\n\n## Acceptance criteria\n\n- [ ] All required Windows binaries verify after ZIP extraction.\n- [ ] The signature survives installation under spaces and non-ASCII paths.\n- [ ] A modified binary fails verification and blocks publication.\n- [ ] Signing keys and tokens do not appear in logs or artifacts.\n- [ ] The service wrapper, when present, is covered by the same trust policy.\n- [ ] Final checksums describe the signed ZIP bytes.\n\n## Tests\n\nRun native signature, timestamp, tamper, extraction, service-wrapper, and packaged-artifact checks.\n\n## Non-goals\n\nDo not add a Scoop, Winget, or MSI manifest in this task.",
+  "description": "## Outcome\n\nA future Windows package signs each required executable and DLL before the final ZIP checksum.\n\n## Work\n\n1. Inventory packaged EXE and DLL files that require signing.\n2. Use an approved timestamped signing process.\n3. Sign before ZIP creation and external checksum generation.\n4. Verify certificate chain, timestamp, file identity, and trust after extraction.\n5. Record signing evidence in release provenance.\n6. Fail publication for an unsigned or changed required binary.\n\n## Acceptance criteria\n\n- [ ] All required Windows binaries verify after extraction.\n- [ ] Signatures survive installation under spaces and non-ASCII paths.\n- [ ] A changed binary fails verification.\n- [ ] Final checksums describe the signed ZIP bytes.\n\n## Tests\n\nRun native Windows signature, timestamp, tamper, extraction, and artifact checks.\n\n## Non-goals\n\nDo not add a daemon, service wrapper, Scoop, Winget, or MSI.",
   "id": "jido_cli-tqg.7.25",
   "labels": [
     "packaging",
@@ -19,7 +19,7 @@
   "parent": "jido_cli-tqg.7",
   "priority": 2,
   "status": "open",
-  "title": "Sign Windows release executables",
+  "title": "Sign future Windows release executables",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:10Z"
+  "updated_at": "2026-08-13T13:04:25Z"
 }
