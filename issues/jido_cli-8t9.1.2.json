@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-8t9.1.1"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.3.1"
+  ],
   "created": "2026-08-13T20:14:25Z",
   "description": "Repository: Jidoka. Finish the current schema work for every coding tool and make each schema match its handler, including all supported coding.read fields. Acceptance: every coding tool has a valid closed JSON schema; valid handler inputs pass; invalid arguments fail before handler execution.",
   "id": "jido_cli-8t9.1.2",
@@ -13,5 +15,5 @@
   "status": "open",
   "title": "Complete and validate all coding-tool parameter schemas",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:52Z"
+  "updated_at": "2026-08-13T20:14:53Z"
 }
