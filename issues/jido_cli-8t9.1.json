@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:13:43Z",
+  "description": "Define shared loop terms, finish coding-tool schemas, and select one tested ReqLLM dependency contract before runtime changes.",
+  "id": "jido_cli-8t9.1",
+  "labels": [],
+  "parent": "jido_cli-8t9",
+  "priority": 0,
+  "status": "open",
+  "title": "Phase 0: Stabilize contracts and dependency baseline",
+  "type": "epic",
+  "updated_at": "2026-08-13T20:13:43Z"
+}
