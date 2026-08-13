@@ -1,7 +1,6 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-tqg.7.21",
     "jido_cli-tqg.7.8",
     "jido_cli-tqg.7.9"
   ],
@@ -23,5 +22,5 @@
   "status": "open",
   "title": "Add the Homebrew per-user daemon service",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:08Z"
+  "updated_at": "2026-08-13T13:02:09Z"
 }

@@ -5,7 +5,6 @@
     "jido_cli-tqg.7.19"
   ],
   "blocks": [
-    "jido_cli-tqg.7.22",
     "jido_cli-tqg.7.26"
   ],
   "created": "2026-08-12T22:14:06Z",
@@ -22,5 +21,5 @@
   "status": "open",
   "title": "Add Homebrew installation and tap update automation without a service",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:09Z"
+  "updated_at": "2026-08-13T13:02:09Z"
 }
