@@ -9,6 +9,8 @@
     "jido_cli-tqg.7.18",
     "jido_cli-tqg.7.28"
   ],
+  "closed_at": "2026-08-13T14:06:08Z",
+  "close_reason": "Added a reviewed exact-version policy for all 78 shipped applications, lock-source identities, license validation, native inventory, deterministic notices, and new-component rejection.",
   "created": "2026-08-12T22:12:34Z",
   "description": "## Outcome\n\nEvery OTP, Elixir, Hex, Git, and native component shipped in the macOS ARM64 archive has a reviewed license record and required notice text.\n\n## Work\n\n1. Inventory the private runtime, application dependencies, runtime data, and native libraries.\n2. Record component name, version, source, license identifier, license file, and notice requirement.\n3. Generate `THIRD_PARTY_NOTICES` from reviewed source data.\n4. Fail the local release for a missing, unknown, forbidden, or incompatible record.\n5. Keep build-only tools separate from shipped files.\n6. Make the audit deterministic and usable without a network call after dependencies resolve.\n\n## Acceptance criteria\n\n- [ ] Every shipped component maps to one reviewed license record.\n- [ ] The package contains project, OTP, and third-party notices.\n- [ ] The audit detects a new or changed component with no matching record.\n- [ ] Source identities match the lock and build inputs.\n- [ ] The local release command can run and verify the audit.\n\n## Tests\n\nTest complete, missing, duplicate, malformed, native-only, and changed-version inventories.\n\n## Non-goals\n\nDo not provide legal advice, publish, or sign the artifact.",
   "id": "jido_cli-tqg.7.16",
@@ -20,7 +22,7 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Audit shipped dependencies and generate license notices",
   "type": "task",
   "updated_at": "2026-08-13T14:06:08Z"
