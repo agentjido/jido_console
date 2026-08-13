@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:13:43Z",
+  "description": "Create one provider-neutral tool exchange, use native ReqLLM tools where supported, retain the JSON fallback, and harden errors, batches, checkpoints, streams, retries, and limits.",
+  "id": "jido_cli-8t9.3",
+  "labels": [],
+  "parent": "jido_cli-8t9",
+  "priority": 0,
+  "status": "open",
+  "title": "Phase 2: Implement native and fallback multi-tool loops",
+  "type": "epic",
+  "updated_at": "2026-08-13T20:13:43Z"
+}
