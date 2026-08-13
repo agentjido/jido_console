@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Automation.Replay do
   @moduledoc "Trusted host-profile loading and runtime evidence for offline capability replay."
 
-  alias Jido.Cli.Automation.{Contract, Result}
+  alias Jido.Cli.Automation.{Contract, ReplayProjection, ResultValue}
   alias Jidoka.ExecutionEnvironment.Contract, as: EnvironmentContract
   alias Jidoka.Replay.Capabilities, as: ReplayCapabilities
   alias Jidoka.Replay.Fixture
@@ -45,27 +45,7 @@ defmodule Jido.Cli.Automation.Replay do
 
   @doc "Returns safe planning provenance."
   @spec projection(config()) :: map()
-  def projection(%{mode: :live}) do
-    %{
-      mode: :live,
-      status: :not_replayed,
-      recorded_evidence: false,
-      matched_calls: 0,
-      total_calls: 0
-    }
-  end
-
-  def projection(%{mode: :replay} = replay) do
-    %{
-      mode: :replay,
-      status: :configured,
-      fixture_schema: replay.fixture.version,
-      fixture_digest: replay.fixture.digest,
-      recorded_evidence: true,
-      matched_calls: 0,
-      total_calls: length(replay.fixture.entries)
-    }
-  end
+  defdelegate projection(config), to: ReplayProjection
 
   @doc "Checks call consumption, updates replay evidence, and makes mismatches fail the cell."
   @spec finalize(map(), config(), Recorder.controller() | nil) :: map()
@@ -248,8 +228,8 @@ defmodule Jido.Cli.Automation.Replay do
   defp fail_result(result, mismatch) do
     result
     |> put_in([:execution, :status], :error)
-    |> Map.put(:evaluation, Result.evaluation([], :error))
-    |> Map.put(:error, Result.error({:capability_replay_failed, mismatch}))
+    |> Map.put(:evaluation, ResultValue.evaluation([], :error))
+    |> Map.put(:error, ResultValue.error({:capability_replay_failed, mismatch}))
   end
 
   defp replay_status(_mismatch, true), do: :cancelled

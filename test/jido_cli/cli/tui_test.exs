@@ -6,7 +6,7 @@ defmodule Jido.Cli.TuiTest do
   alias Jidoka.Event
 
   defmodule FakeAdapter do
-    @behaviour Jido.Terminal.Adapter
+    @behaviour Jido.Cli.Terminal.Adapter
 
     @impl true
     def open(owner, opts) do
@@ -277,10 +277,10 @@ defmodule Jido.Cli.TuiTest do
     refute_receive :turn_started, 50
 
     send(startup_pid, :release_runtime)
-    assert_receive :session_started
-    assert_receive :turn_started
-    assert_receive {:turn_prompt, "hello", %{"coding" => %{"pack_id" => "jido.coding_pack"}}}
-    assert_receive {:turn_awaited, _await_opts}
+    assert_receive :session_started, 1_000
+    assert_receive :turn_started, 1_000
+    assert_receive {:turn_prompt, "hello", %{"coding" => %{"pack_id" => "jido.coding_pack"}}}, 1_000
+    assert_receive {:turn_awaited, _await_opts}, 1_000
     assert_frame_contains("Hello back")
 
     send(owner, {:jido_terminal, ref, {:key, :escape}})

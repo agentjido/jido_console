@@ -1,4 +1,4 @@
-defmodule Jido.Terminal.Adapter do
+defmodule Jido.Cli.Terminal.Adapter do
   @moduledoc "Adapter contract for terminal effects."
 
   @type handle :: term()

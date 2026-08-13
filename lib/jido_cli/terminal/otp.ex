@@ -1,11 +1,11 @@
-defmodule Jido.Terminal.OTP do
+defmodule Jido.Cli.Terminal.OTP do
   @moduledoc "OTP 28+ terminal adapter for an escript."
 
-  @behaviour Jido.Terminal.Adapter
+  @behaviour Jido.Cli.Terminal.Adapter
 
   use GenServer
 
-  alias Jido.Terminal.Input
+  alias Jido.Cli.Terminal.Input
 
   @enter "\e[?1049h\e[?25l\e[?2004h\e[2J\e[H"
   @leave "\e[?2004l\e[0m\e[?25h\e[?1049l"
@@ -16,13 +16,19 @@ defmodule Jido.Terminal.OTP do
     @moduledoc false
     @enforce_keys [:pid]
     defstruct [:pid]
+
+    @type t :: %__MODULE__{pid: pid()}
   end
 
   defmodule Reader do
     @moduledoc false
 
+    @doc false
+    @spec start_link(pid(), (-> term())) :: {:ok, pid()}
     def start_link(parent, read), do: Task.start_link(fn -> loop(parent, read) end)
 
+    @doc false
+    @spec start_link(pid(), (-> :ok | {:error, term()}), (-> term())) :: {:ok, pid()}
     def start_link(parent, start_raw, read) do
       Task.start_link(fn ->
         case start_raw.() do
@@ -58,7 +64,7 @@ defmodule Jido.Terminal.OTP do
     end
   end
 
-  @impl Jido.Terminal.Adapter
+  @impl Jido.Cli.Terminal.Adapter
   def open(owner, opts) when is_pid(owner) and is_list(opts) do
     case GenServer.start(__MODULE__, {owner, opts}) do
       {:ok, pid} ->
@@ -70,17 +76,17 @@ defmodule Jido.Terminal.OTP do
     end
   end
 
-  @impl Jido.Terminal.Adapter
+  @impl Jido.Cli.Terminal.Adapter
   def write(%Handle{pid: pid}, output) do
     if Process.alive?(pid), do: GenServer.call(pid, {:write, output}), else: {:error, :closed}
   end
 
-  @impl Jido.Terminal.Adapter
+  @impl Jido.Cli.Terminal.Adapter
   def size(%Handle{pid: pid}) do
     if Process.alive?(pid), do: GenServer.call(pid, :size), else: {:error, :closed}
   end
 
-  @impl Jido.Terminal.Adapter
+  @impl Jido.Cli.Terminal.Adapter
   def close(%Handle{pid: pid}) do
     if Process.alive?(pid), do: GenServer.stop(pid, :normal)
     :ok

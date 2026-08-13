@@ -220,18 +220,7 @@ defmodule Jido.Cli.Automation.ArtifactIntegrityTest do
   defp failing_io(faults) when is_list(faults) do
     {:ok, remaining} = Agent.start_link(fn -> Map.new(faults, &{&1, 1}) end)
 
-    failure = fn current_operation, path ->
-      Enum.find_value(faults, fn {operation, suffix, reason} = fault ->
-        if current_operation == operation and String.ends_with?(path, suffix) do
-          Agent.get_and_update(remaining, fn values ->
-            case Map.fetch!(values, fault) do
-              value when value > 0 -> {reason, Map.put(values, fault, value - 1)}
-              _value -> {nil, values}
-            end
-          end)
-        end
-      end)
-    end
+    failure = fn current_operation, path -> injected_failure(remaining, faults, current_operation, path) end
 
     %{
       write: fn path, data, modes ->
@@ -253,6 +242,22 @@ defmodule Jido.Cli.Automation.ArtifactIntegrityTest do
         end
       end
     }
+  end
+
+  defp injected_failure(remaining, faults, current_operation, path) do
+    Enum.find_value(faults, fn {operation, suffix, _reason} = fault ->
+      if current_operation == operation and String.ends_with?(path, suffix),
+        do: consume_failure(remaining, fault)
+    end)
+  end
+
+  defp consume_failure(remaining, {_operation, _suffix, reason} = fault) do
+    Agent.get_and_update(remaining, fn values ->
+      case Map.fetch!(values, fault) do
+        value when value > 0 -> {reason, Map.put(values, fault, value - 1)}
+        _value -> {nil, values}
+      end
+    end)
   end
 
   defp lifecycle(output) do

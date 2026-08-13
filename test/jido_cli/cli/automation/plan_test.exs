@@ -84,6 +84,24 @@ defmodule Jido.Cli.Automation.PlanTest do
     refute Map.has_key?(manifest_cell.execution_environment, :confirmed)
   end
 
+  test "loads a configured resolver module before Jidoka inspects it", %{root: root} do
+    resolver = Jido.Cli.Release.OfflineProfile
+    write_agent(Path.join(root, "a.yml"), "agent_a", "offline-example")
+    write_scenario(Path.join(root, "one.yml"), "one")
+
+    :code.purge(resolver)
+    :code.delete(resolver)
+    refute function_exported?(resolver, :resolve, 2)
+
+    assert {:ok, %{cells: [%{execution_environment: environment}]}} =
+             Plan.build(suite(root, nil),
+               run_id: "run-fixed",
+               execution_profile_resolver: resolver
+             )
+
+    assert environment.registration.profile.profile_id == "offline-example"
+  end
+
   test "uses command, scenario, agent, suite, and none precedence", %{root: root} do
     write_agent(Path.join(root, "a.yml"), "agent_a", "agent-profile")
     write_scenario(Path.join(root, "one.yml"), "one", "scenario-profile")

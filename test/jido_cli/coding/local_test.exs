@@ -1,7 +1,7 @@
-defmodule Jido.Cli.LocalCodingTest do
+defmodule Jido.Cli.Coding.LocalTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Cli.{CodingSetup, LocalCoding}
+  alias Jido.Cli.Coding.{Local, Setup}
   alias Jidoka.CodingPack.{Edit, Verify, Workspace}
 
   setup do
@@ -28,9 +28,9 @@ defmodule Jido.Cli.LocalCodingTest do
 
   test "requires an explicit root and keeps the default profile read-only", %{root: root} do
     assert {:error, :local_coding_root_required} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent, coding_profile: LocalCoding.profile_id())
+             Setup.prepare(Jido.Cli.DefaultAgent, coding_profile: Local.profile_id())
 
-    assert {:ok, setup} = CodingSetup.prepare(Jido.Cli.DefaultAgent, project_root: root)
+    assert {:ok, setup} = Setup.prepare(Jido.Cli.DefaultAgent, project_root: root)
     assert setup.workspace.access == [:read]
     assert setup.local_resources == nil
   end
@@ -41,11 +41,11 @@ defmodule Jido.Cli.LocalCodingTest do
         root: root,
         access: [:read, :write, :shell, :git, :verify],
         limits: %{max_shell_timeout_ms: 120_000},
-        execution_profile: LocalCoding.profile_id()
+        execution_profile: Local.profile_id()
       )
 
-    assert {:ok, local} = LocalCoding.prepare(workspace)
-    on_exit(fn -> LocalCoding.close(local.resources) end)
+    assert {:ok, local} = Local.prepare(workspace)
+    on_exit(fn -> Local.close(local.resources) end)
 
     assert {:ok, edit} =
              Edit.run(workspace, local.mutation, %{
@@ -66,12 +66,12 @@ defmodule Jido.Cli.LocalCodingTest do
 
   test "does not expose the general shell tool", %{root: root} do
     assert {:ok, setup} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent,
-               coding_profile: LocalCoding.profile_id(),
+             Setup.prepare(Jido.Cli.DefaultAgent,
+               coding_profile: Local.profile_id(),
                project_root: root
              )
 
-    on_exit(fn -> CodingSetup.close(setup) end)
+    on_exit(fn -> Setup.close(setup) end)
     {:ok, session} = Jidoka.Session.Data.start(setup.spec, session_id: "local-tool-list")
     request = Enum.find(setup.spec.extensions, &(&1.id == "jido.coding_pack"))
     {:ok, host} = Jidoka.Extension.Host.open(session, [request], setup.extension_setup.registry, :interactive)
@@ -88,8 +88,8 @@ defmodule Jido.Cli.LocalCodingTest do
     {:links, before_links} = Process.info(self(), :links)
 
     assert {:error, %Jidoka.CodingPack.Error{code: :coding_tool_entries_invalid}} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent,
-               coding_profile: LocalCoding.profile_id(),
+             Setup.prepare(Jido.Cli.DefaultAgent,
+               coding_profile: Local.profile_id(),
                project_root: root,
                coding_replace_tools: "invalid"
              )
@@ -103,7 +103,7 @@ defmodule Jido.Cli.LocalCodingTest do
       Workspace.new!(
         root: root,
         access: [:shell],
-        execution_profile: LocalCoding.profile_id()
+        execution_profile: Local.profile_id()
       )
 
     request = %{
@@ -119,9 +119,12 @@ defmodule Jido.Cli.LocalCodingTest do
     }
 
     assert {:ok, result, _evidence} =
-             Jido.Cli.LocalCoding.Adapter.execute(nil, request,
+             Jido.Cli.Coding.Local.Adapter.execute(nil, request,
                workspace: workspace,
-               executables: %{"git" => System.find_executable("yes")}
+               executables: %{
+                 "git" => System.find_executable("yes"),
+                 "sandbox-exec" => System.find_executable("sandbox-exec")
+               }
              )
 
     assert result["status"] == "error"
@@ -159,15 +162,48 @@ defmodule Jido.Cli.LocalCodingTest do
     }
 
     assert {:ok, %{"status" => "timeout"}, _evidence} =
-             Jido.Cli.LocalCoding.Adapter.execute(nil, request,
+             Jido.Cli.Coding.Local.Adapter.execute(nil, request,
                workspace: workspace,
-               executables: %{"git" => executable}
+               executables: %{
+                 "git" => executable,
+                 "sandbox-exec" => System.find_executable("sandbox-exec")
+               }
              )
 
     command_pid = pid_file |> File.read!() |> String.trim()
     Process.sleep(20)
     {_output, status} = System.cmd("/bin/kill", ["-0", command_pid], stderr_to_stdout: true)
     refute status == 0
+  end
+
+  test "the operating-system sandbox denies non-local network access", %{root: root} do
+    workspace = Workspace.new!(root: root, access: [:shell])
+    args = ["-u", "-w", "1", "-z", "192.0.2.1", "9"]
+    {_output, control_status} = System.cmd("/usr/bin/nc", args, stderr_to_stdout: true)
+    assert control_status == 0
+
+    request = %{
+      "command" => "git",
+      "args" => args,
+      "stdin" => "",
+      "cwd" => ".",
+      "timeout_ms" => 2_000,
+      "max_output_bytes" => 1_024,
+      "network" => false,
+      "command_class" => "git",
+      "mutation" => "read"
+    }
+
+    assert {:ok, %{"status" => "nonzero", "exit_status" => 1}, evidence} =
+             Jido.Cli.Coding.Local.Adapter.execute(nil, request,
+               workspace: workspace,
+               executables: %{
+                 "git" => "/usr/bin/nc",
+                 "sandbox-exec" => "/usr/bin/sandbox-exec"
+               }
+             )
+
+    assert evidence.network == :disabled
   end
 
   test "rejects an unbounded workspace checkpoint", %{root: root} do
@@ -179,21 +215,69 @@ defmodule Jido.Cli.LocalCodingTest do
     on_exit(fn -> if Process.alive?(state), do: Agent.stop(state) end)
 
     assert {:error, :checkpoint_size_limit_exceeded} =
-             Jido.Cli.LocalCoding.MutationBackend.checkpoint(workspace,
+             Jido.Cli.Coding.Local.MutationBackend.checkpoint(workspace,
                state: state,
                profile_digest: "sha256:test"
              )
   end
 
+  test "checks file size before reading", %{root: root} do
+    File.write!(Path.join(root, "large.txt"), "too large")
+    workspace = Workspace.new!(root: root, access: [:read], limits: %{max_file_bytes: 4})
+
+    assert {:error, :file_too_large} =
+             Jido.Cli.Coding.Local.MutationBackend.inspect_file(workspace, "large.txt", [])
+  end
+
+  test "atomic replacement preserves file mode and removes its temporary file", %{root: root} do
+    path = Path.join(root, "script")
+    File.write!(path, "old")
+    File.chmod!(path, 0o751)
+    workspace = Workspace.new!(root: root, access: [:read, :write])
+
+    assert {:ok, %{method: :atomic_replace}, _evidence} =
+             Jido.Cli.Coding.Local.MutationBackend.replace_file(workspace, "script", "new", [])
+
+    assert File.read!(path) == "new"
+    assert {:ok, %{mode: mode}} = File.stat(path)
+    assert Bitwise.band(mode, 0o777) == 0o751
+    assert Path.wildcard(path <> ".jido-*") == []
+  end
+
+  test "checkpoint restore replaces content, restores mode, and removes created files", %{root: root} do
+    path = Path.join(root, "lib/value.ex")
+    File.chmod!(path, 0o640)
+    workspace = Workspace.new!(root: root, access: [:read, :write])
+    {:ok, state} = Agent.start_link(fn -> %{snapshots: %{}, snapshot_bytes: 0} end)
+    on_exit(fn -> if Process.alive?(state), do: Agent.stop(state) end)
+    opts = [state: state, profile_digest: "sha256:" <> String.duplicate("a", 64)]
+
+    assert {:ok, checkpoint, _evidence} =
+             Jido.Cli.Coding.Local.MutationBackend.checkpoint(workspace, opts)
+
+    File.write!(path, "changed")
+    File.chmod!(path, 0o777)
+    created = Path.join(root, "created.txt")
+    File.write!(created, "created")
+
+    assert {:ok, _evidence} =
+             Jido.Cli.Coding.Local.MutationBackend.restore(workspace, checkpoint, opts)
+
+    assert File.read!(path) =~ "defmodule Value"
+    refute File.exists?(created)
+    assert {:ok, %{mode: mode}} = File.stat(path)
+    assert Bitwise.band(mode, 0o777) == 0o640
+  end
+
   test "constrains OpenAI decisions to one JSON object", %{root: root} do
     assert {:ok, setup} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent,
-               coding_profile: LocalCoding.profile_id(),
+             Setup.prepare(Jido.Cli.DefaultAgent,
+               coding_profile: Local.profile_id(),
                project_root: root,
                model: "openai:gpt-4.1-mini"
              )
 
-    on_exit(fn -> CodingSetup.close(setup) end)
+    on_exit(fn -> Setup.close(setup) end)
     opts = Jidoka.Agent.Spec.Generation.to_req_llm_opts(setup.spec.generation)
 
     assert opts[:temperature] == 0.0

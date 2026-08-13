@@ -1,7 +1,7 @@
-defmodule Jido.Terminal.FrameTest do
+defmodule Jido.Cli.Terminal.FrameTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Terminal.Frame
+  alias Jido.Cli.Terminal.Frame
 
   test "normalizes row count and display width" do
     frame = Frame.new(4, 2, ["😀x", "abcdef", "ignored"])

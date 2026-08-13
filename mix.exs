@@ -99,7 +99,7 @@ defmodule Jido.Cli.MixProject do
       quality: [
         "format --check-formatted",
         "compile --warnings-as-errors",
-        "credo --min-priority higher",
+        "credo",
         "dialyzer",
         "doctor --raise"
       ]

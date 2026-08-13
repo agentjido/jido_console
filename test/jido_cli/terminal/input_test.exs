@@ -1,7 +1,7 @@
-defmodule Jido.Terminal.InputTest do
+defmodule Jido.Cli.Terminal.InputTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Terminal.Input
+  alias Jido.Cli.Terminal.Input
 
   test "decodes text, control keys, and arrow sequences" do
     {_state, events} = Input.feed(%Input{}, "a\r\x7f\x03\e[D\e[C")

@@ -22,5 +22,5 @@ jobs:
     secrets: inherit
     with:
       docs_command: mix docs
-      test_command: mix test --cover
-      credo_command: mix credo --min-priority higher
+      test_command: mix coveralls
+      credo_command: mix credo

@@ -1,12 +1,12 @@
-defmodule Jido.Terminal do
+defmodule Jido.Cli.Terminal do
   @moduledoc """
   Small, injectable terminal boundary for Jido applications.
 
-  The adapter owns all terminal effects. `Jido.Terminal.Input` and
-  `Jido.Terminal.Frame` are pure and can be tested without a TTY.
+  The adapter owns all terminal effects. `Jido.Cli.Terminal.Input` and
+  `Jido.Cli.Terminal.Frame` are pure and can be tested without a TTY.
   """
 
-  alias Jido.Terminal.Frame
+  alias Jido.Cli.Terminal.Frame
 
   @enforce_keys [:adapter, :handle, :ref, :size]
   defstruct [:adapter, :handle, :ref, :size]
@@ -21,7 +21,7 @@ defmodule Jido.Terminal do
   @doc "Opens a terminal with an injectable adapter."
   @spec open(keyword()) :: {:ok, t()} | {:error, term()}
   def open(opts \\ []) do
-    adapter = Keyword.get(opts, :adapter, Jido.Terminal.OTP)
+    adapter = Keyword.get(opts, :adapter, Jido.Cli.Terminal.OTP)
     owner = Keyword.get(opts, :owner, self())
     adapter_opts = Keyword.get(opts, :adapter_opts, [])
 

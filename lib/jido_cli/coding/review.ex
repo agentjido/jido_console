@@ -1,4 +1,4 @@
-defmodule Jido.Cli.CodingReview do
+defmodule Jido.Cli.Coding.Review do
   @moduledoc "Bounded read-only TUI review projections for portable coding results."
 
   @max_records 50

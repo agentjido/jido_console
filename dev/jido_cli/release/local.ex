@@ -76,7 +76,7 @@ defmodule Jido.Cli.Release.Local do
       {"locked dependencies", "mix", ["deps.get", "--check-locked"], []},
       {"format", "mix", ["format", "--check-formatted"], []},
       {"compile", "mix", ["compile", "--warnings-as-errors"], []},
-      {"credo", "mix", ["credo", "--min-priority", "higher"], []},
+      {"credo", "mix", ["credo"], []},
       {"dialyzer", "mix", ["dialyzer"], []},
       {"doctor", "mix", ["doctor", "--raise"], []},
       {"coverage", "mix", ["coveralls"], [{"MIX_ENV", "test"}]}

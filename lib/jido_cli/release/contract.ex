@@ -18,6 +18,92 @@ defmodule Jido.Cli.Release.Contract do
     "linux-arm64" => %{archive_extension: ".tar.gz", os: "linux", arch: "arm64"},
     "windows-x64" => %{archive_extension: ".zip", os: "windows", arch: "x86_64"}
   }
+  @non_empty_string Zoi.string() |> Zoi.regex(~r/\S/)
+  @version_string Zoi.string() |> Zoi.regex(~r/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
+  @digest_string Zoi.string() |> Zoi.regex(~r/^[0-9a-f]{64}$/)
+  @file_schema Zoi.map(
+                 %{
+                   "path" => @non_empty_string,
+                   "sha256" => @digest_string,
+                   "size" => Zoi.integer() |> Zoi.gte(0)
+                 },
+                 unrecognized_keys: :error
+               )
+  @component_schema Zoi.map(
+                      %{
+                        "kind" => Zoi.enum(["dependency", "elixir", "otp", "project"]),
+                        "license_file" => @non_empty_string |> Zoi.nullish(),
+                        "licenses" => Zoi.array(@non_empty_string),
+                        "name" => @non_empty_string,
+                        "native_files" => Zoi.array(@non_empty_string),
+                        "source" => @non_empty_string,
+                        "version" => @non_empty_string
+                      },
+                      unrecognized_keys: :error
+                    )
+  @metadata_schema Zoi.map(
+                     %{
+                       "archive_checksum" => Zoi.enum(["checksums.txt"]) |> Zoi.optional(),
+                       "artifact" => @non_empty_string,
+                       "build" =>
+                         Zoi.map(
+                           %{
+                             "build_time_utc" => @non_empty_string |> Zoi.optional(),
+                             "launcher_version" => Zoi.enum([1]),
+                             "package_method" => Zoi.enum(["mix_release"]),
+                             "reproducible" => Zoi.boolean() |> Zoi.optional(),
+                             "source_date_epoch" => Zoi.integer() |> Zoi.gte(0),
+                             "toolchain_file" => Zoi.enum([".tool-versions"]) |> Zoi.optional()
+                           },
+                           unrecognized_keys: :error
+                         ),
+                       "components" => Zoi.array(@component_schema) |> Zoi.optional(),
+                       "digest_scope" => Zoi.enum(["all package files except release.json"]),
+                       "distribution" =>
+                         Zoi.map(
+                           %{"github" => Zoi.boolean(), "homebrew" => Zoi.boolean()},
+                           unrecognized_keys: :error
+                         ),
+                       "executable" => Zoi.enum([@executable]),
+                       "files" => Zoi.array(@file_schema),
+                       "native_files" => Zoi.array(@non_empty_string) |> Zoi.optional(),
+                       "package" => Zoi.enum(["jido_cli"]),
+                       "product" => Zoi.enum(["jido"]),
+                       "root" => @non_empty_string,
+                       "runtime" =>
+                         Zoi.map(
+                           %{
+                             "elixir" => @non_empty_string,
+                             "jidoka" => @non_empty_string,
+                             "otp" => @non_empty_string
+                           },
+                           unrecognized_keys: :error
+                         ),
+                       "runtime_data" => Zoi.array(@non_empty_string),
+                       "schema" => Zoi.enum([@schema]),
+                       "schema_version" => Zoi.enum([@schema_version]),
+                       "source" =>
+                         Zoi.map(
+                           %{
+                             "commit" => Zoi.string() |> Zoi.min(7),
+                             "dirty" => Zoi.boolean()
+                           },
+                           unrecognized_keys: :error
+                         ),
+                       "target" => Zoi.enum(Map.keys(@targets)),
+                       "trust" =>
+                         Zoi.map(
+                           %{
+                             "notarized" => Zoi.boolean(),
+                             "publishable" => Zoi.boolean(),
+                             "signed" => Zoi.boolean()
+                           },
+                           unrecognized_keys: :error
+                         ),
+                       "version" => @version_string
+                     },
+                     unrecognized_keys: :error
+                   )
 
   @type target :: String.t()
 
@@ -104,26 +190,12 @@ defmodule Jido.Cli.Release.Contract do
   @doc "Validates release metadata without changing it."
   @spec validate_metadata(term()) :: :ok | {:error, term()}
   def validate_metadata(%{} = metadata) do
-    with :ok <- equal(metadata, "schema", @schema),
-         :ok <- equal(metadata, "schema_version", @schema_version),
-         :ok <- equal(metadata, "product", "jido"),
-         :ok <- equal(metadata, "package", "jido_cli"),
-         {:ok, version} <- fetch_string(metadata, "version"),
-         :ok <- validate_version(version),
-         {:ok, target} <- fetch_string(metadata, "target"),
-         {:ok, _target_spec} <- target_spec(target),
+    with {:ok, metadata} <- Jido.Cli.Document.validate(@metadata_schema, metadata, :release_metadata),
+         version = metadata["version"],
+         target = metadata["target"],
          :ok <- equal(metadata, "root", root_name(version, target)),
          :ok <- equal(metadata, "artifact", archive_name(version, target)),
-         :ok <- equal(metadata, "executable", @executable),
-         :ok <- validate_runtime(metadata["runtime"]),
-         :ok <- validate_source(metadata["source"]),
-         :ok <- validate_build(metadata["build"]),
-         :ok <- validate_file_list(metadata["files"]),
-         :ok <- validate_string_list(metadata["runtime_data"]),
-         :ok <- validate_trust(metadata["trust"]),
-         :ok <- validate_distribution(metadata["distribution"]) do
-      :ok
-    end
+         do: validate_file_list(metadata["files"])
   end
 
   def validate_metadata(other), do: {:error, {:metadata_not_a_map, other}}
@@ -134,9 +206,8 @@ defmodule Jido.Cli.Release.Contract do
     with :ok <- validate_metadata(metadata),
          :ok <- validate_root_name(root, metadata),
          :ok <- validate_required_paths(root),
-         :ok <- validate_executable(root),
-         :ok <- validate_launcher(root) do
-      :ok
+         :ok <- validate_executable(root) do
+      validate_launcher(root)
     end
   end
 
@@ -180,32 +251,6 @@ defmodule Jido.Cli.Release.Contract do
 
   defp validate_version(version), do: {:error, {:invalid_version, version}}
 
-  defp validate_runtime(%{} = runtime) do
-    with {:ok, _elixir} <- fetch_string(runtime, "elixir"),
-         {:ok, _otp} <- fetch_string(runtime, "otp"),
-         {:ok, _jidoka} <- fetch_string(runtime, "jidoka") do
-      :ok
-    end
-  end
-
-  defp validate_runtime(value), do: {:error, {:invalid_runtime, value}}
-
-  defp validate_source(%{"commit" => commit, "dirty" => dirty})
-       when is_binary(commit) and byte_size(commit) >= 7 and is_boolean(dirty),
-       do: :ok
-
-  defp validate_source(value), do: {:error, {:invalid_source, value}}
-
-  defp validate_build(%{
-         "package_method" => "mix_release",
-         "launcher_version" => 1,
-         "source_date_epoch" => epoch
-       })
-       when is_integer(epoch) and epoch >= 0,
-       do: :ok
-
-  defp validate_build(value), do: {:error, {:invalid_build, value}}
-
   defp validate_file_list(files) when is_list(files) do
     if Enum.all?(files, fn
          %{"path" => path, "sha256" => digest, "size" => size}
@@ -220,30 +265,6 @@ defmodule Jido.Cli.Release.Contract do
   end
 
   defp validate_file_list(value), do: {:error, {:invalid_file_inventory, value}}
-
-  defp validate_string_list(values) when is_list(values) do
-    if Enum.all?(values, &(is_binary(&1) and &1 != "")),
-      do: :ok,
-      else: {:error, :invalid_runtime_data}
-  end
-
-  defp validate_string_list(value), do: {:error, {:invalid_runtime_data, value}}
-
-  defp validate_trust(%{
-         "signed" => signed,
-         "notarized" => notarized,
-         "publishable" => publishable
-       })
-       when is_boolean(signed) and is_boolean(notarized) and is_boolean(publishable),
-       do: :ok
-
-  defp validate_trust(value), do: {:error, {:invalid_trust, value}}
-
-  defp validate_distribution(%{"github" => github, "homebrew" => homebrew})
-       when is_boolean(github) and is_boolean(homebrew),
-       do: :ok
-
-  defp validate_distribution(value), do: {:error, {:invalid_distribution, value}}
 
   defp validate_root_name(root, metadata) do
     if Path.basename(root) == metadata["root"],
@@ -296,14 +317,6 @@ defmodule Jido.Cli.Release.Contract do
     case Map.fetch(map, key) do
       {:ok, ^expected} -> :ok
       {:ok, actual} -> {:error, {:invalid_field, key, actual, expected}}
-      :error -> {:error, {:missing_field, key}}
-    end
-  end
-
-  defp fetch_string(map, key) do
-    case Map.fetch(map, key) do
-      {:ok, value} when is_binary(value) and value != "" -> {:ok, value}
-      {:ok, value} -> {:error, {:invalid_string, key, value}}
       :error -> {:error, {:missing_field, key}}
     end
   end

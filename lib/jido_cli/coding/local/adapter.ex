@@ -1,4 +1,4 @@
-defmodule Jido.Cli.LocalCoding.Adapter do
+defmodule Jido.Cli.Coding.Local.Adapter do
   @moduledoc false
 
   @behaviour Jidoka.ExecutionEnvironment.Adapter
@@ -13,8 +13,32 @@ defmodule Jido.Cli.LocalCoding.Adapter do
   @head "/usr/bin/head"
   @mkfifo "/usr/bin/mkfifo"
   @kill "/bin/kill"
+  # Mix uses loopback TCP for local process coordination. Permit loopback only;
+  # all non-local network traffic remains denied by the operating-system sandbox.
+  @sandbox_profile """
+  (version 1)
+  (allow default)
+  (deny network*)
+  (allow network-bind)
+  (allow network-inbound)
+  (allow network-outbound (remote ip "localhost:*"))
+  """
   @poll_interval_ms 50
   @termination_grace_ms 500
+  @request_schema Zoi.map(
+                    %{
+                      "args" => Zoi.array(Zoi.string()),
+                      "command" => Zoi.enum(["git", "mix"]),
+                      "command_class" => Zoi.string() |> Zoi.regex(~r/\S/),
+                      "cwd" => Zoi.string() |> Zoi.regex(~r/\S/),
+                      "max_output_bytes" => Zoi.integer() |> Zoi.positive(),
+                      "mutation" => Zoi.enum(["read"]),
+                      "network" => Zoi.enum([false]),
+                      "stdin" => Zoi.enum([""]),
+                      "timeout_ms" => Zoi.integer() |> Zoi.positive()
+                    },
+                    unrecognized_keys: :error
+                  )
 
   @impl true
   def open(profile, _request, opts) do
@@ -69,16 +93,18 @@ defmodule Jido.Cli.LocalCoding.Adapter do
   def cleanup(_binding, opts), do: {:ok, evidence(opts)}
 
   defp validate_request(request) do
-    cond do
-      request["command"] not in ["git", "mix"] -> {:error, :command_denied}
-      request["network"] != false -> {:error, :network_denied}
-      request["mutation"] != "read" -> {:error, :mutation_denied}
-      request["stdin"] != "" -> {:error, :stdin_denied}
-      not string_list?(request["args"]) -> {:error, :arguments_invalid}
-      not valid_limit?(request["timeout_ms"]) -> {:error, :timeout_invalid}
-      not valid_limit?(request["max_output_bytes"]) -> {:error, :output_limit_invalid}
-      true -> :ok
+    case Zoi.parse(@request_schema, request) do
+      {:ok, request} -> validate_request_text(request)
+      {:error, errors} -> {:error, {:local_coding_request_invalid, Zoi.treefy_errors(errors)}}
     end
+  end
+
+  defp validate_request_text(request) do
+    values = [request["command_class"], request["cwd"] | request["args"]]
+
+    if Enum.all?(values, &(String.valid?(&1) and not String.contains?(&1, <<0>>))),
+      do: :ok,
+      else: {:error, :local_coding_request_text_invalid}
   end
 
   defp executable(command, opts) do
@@ -96,8 +122,10 @@ defmodule Jido.Cli.LocalCoding.Adapter do
     File.mkdir!(temporary)
 
     try do
-      with {:ok, port} <-
+      with {:ok, sandbox} <- sandbox_executable(opts),
+           {:ok, port} <-
              open_port(
+               sandbox,
                executable,
                args,
                cwd,
@@ -115,7 +143,7 @@ defmodule Jido.Cli.LocalCoding.Adapter do
     end
   end
 
-  defp open_port(executable, args, cwd, fifo, output_path, capture_limit) do
+  defp open_port(sandbox, executable, args, cwd, fifo, output_path, capture_limit) do
     script = ~S"""
     reader_pid=
     command_pid=
@@ -145,6 +173,9 @@ defmodule Jido.Cli.LocalCoding.Adapter do
       @head,
       Integer.to_string(capture_limit),
       output_path,
+      sandbox,
+      "-p",
+      @sandbox_profile,
       executable | args
     ]
 
@@ -157,6 +188,13 @@ defmodule Jido.Cli.LocalCoding.Adapter do
     {:ok, port}
   rescue
     exception -> {:error, {:local_command_start_failed, exception.__struct__}}
+  end
+
+  defp sandbox_executable(opts) do
+    case opts |> Keyword.fetch!(:executables) |> Map.fetch("sandbox-exec") do
+      {:ok, path} when is_binary(path) -> {:ok, path}
+      _missing -> {:error, :local_coding_sandbox_unavailable}
+    end
   end
 
   defp await(port, timeout_ms, output_limit, opts) do
@@ -358,11 +396,4 @@ defmodule Jido.Cli.LocalCoding.Adapter do
     candidate = binary_part(value, 0, limit)
     if String.valid?(candidate), do: candidate, else: utf8_prefix(value, limit - 1)
   end
-
-  defp string_list?(values) do
-    is_list(values) and
-      Enum.all?(values, &(is_binary(&1) and String.valid?(&1) and not String.contains?(&1, <<0>>)))
-  end
-
-  defp valid_limit?(value), do: is_integer(value) and value > 0
 end

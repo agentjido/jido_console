@@ -17,7 +17,7 @@ defmodule Mix.Tasks.Jido.Check do
     run!("mix", ["escript.build"], root, [{"MIX_ENV", "prod"}])
 
     executable = Path.join(root, "jido")
-    expect!(executable, ["--version"], "jido #{Jido.Cli.ReleaseIdentity.version()}", root)
+    expect!(executable, ["--version"], "jido #{Jido.Cli.Release.Identity.version()}", root)
     expect!(executable, ["--help"], "Usage:", root)
 
     Mix.shell().info("Jido source checks and production escript smoke tests passed.")

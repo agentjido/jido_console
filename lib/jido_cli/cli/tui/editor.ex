@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Tui.Editor do
   @moduledoc "Pure one-line prompt editor."
 
-  alias Jido.Terminal.Frame
+  alias Jido.Cli.Terminal.Frame
 
   defstruct text: "", cursor: 0
 

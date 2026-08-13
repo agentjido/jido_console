@@ -1,4 +1,4 @@
-defmodule Jido.Cli.FileMentions do
+defmodule Jido.Cli.Coding.FileMentions do
   @moduledoc "Deterministic `@file` parsing through Jidoka workspace read and search services."
 
   alias Jidoka.CodingPack.{Error, Read, Search, Workspace}

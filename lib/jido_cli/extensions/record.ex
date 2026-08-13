@@ -4,7 +4,23 @@ defmodule Jido.Cli.Extensions.Record do
   alias Jidoka.Extension.{CapabilitySet, Identity, PermissionSet, Registration}
 
   @version 1
-  @keys ~w(id source source_ref release sha256 permissions capabilities modes scope enabled command)
+  @non_empty_string Zoi.string() |> Zoi.regex(~r/\S/)
+  @schema Zoi.map(
+            %{
+              "capabilities" => Zoi.array(@non_empty_string) |> Zoi.optional(),
+              "command" => Zoi.array(@non_empty_string) |> Zoi.nullish() |> Zoi.optional(),
+              "enabled" => Zoi.boolean() |> Zoi.optional(),
+              "id" => @non_empty_string,
+              "modes" => Zoi.array(Zoi.enum(~w(interactive automation))) |> Zoi.optional(),
+              "permissions" => Zoi.array(@non_empty_string) |> Zoi.optional(),
+              "release" => @non_empty_string,
+              "scope" => Zoi.enum(~w(user project)) |> Zoi.optional(),
+              "sha256" => Zoi.string() |> Zoi.regex(~r/^sha256:[0-9a-f]{64}$/),
+              "source" => Zoi.enum(~w(built_in process)),
+              "source_ref" => @non_empty_string
+            },
+            unrecognized_keys: :error
+          )
   @enforce_keys [:id, :source, :source_ref, :release, :sha256, :permissions, :capabilities, :modes, :scope]
   defstruct version: @version,
             id: nil,
@@ -25,16 +41,13 @@ defmodule Jido.Cli.Extensions.Record do
   @doc "Builds one trusted record from decoded host configuration."
   @spec new(map(), String.t()) :: {:ok, t()} | {:error, term()}
   def new(attrs, record_path) when is_map(attrs) and is_binary(record_path) do
-    unknown = Map.keys(attrs) -- @keys
-
-    with [] <- unknown,
+    with {:ok, attrs} <- Jido.Cli.Document.validate(@schema, attrs, record_path),
          id when is_binary(id) <- Map.get(attrs, "id"),
          true <- Identity.valid_id?(id),
          {:ok, source} <- enum(Map.get(attrs, "source"), ~w(built_in process)),
          source_ref when is_binary(source_ref) <- Map.get(attrs, "source_ref"),
          release when is_binary(release) <- Map.get(attrs, "release"),
          sha256 when is_binary(sha256) <- Map.get(attrs, "sha256"),
-         true <- valid_digest?(sha256),
          {:ok, permissions} <- PermissionSet.new(Map.get(attrs, "permissions", [])),
          {:ok, capabilities} <- CapabilitySet.new(Map.get(attrs, "capabilities", [])),
          {:ok, modes} <- modes(Map.get(attrs, "modes", ["interactive", "automation"])),
@@ -137,9 +150,4 @@ defmodule Jido.Cli.Extensions.Record do
   end
 
   defp command(:process, _command, _record_path), do: {:error, :process_command_required}
-
-  defp valid_digest?("sha256:" <> digest),
-    do: byte_size(digest) == 64 and String.match?(digest, ~r/\A[0-9a-f]{64}\z/)
-
-  defp valid_digest?(_value), do: false
 end

@@ -29,5 +29,5 @@ exec "$RELEASE_ROOT/erts-$ERTS_VSN/bin/erl" \
   -boot_var RELEASE_LIB "$RELEASE_ROOT/lib" \
   -config "$RELEASE_ROOT/releases/$RELEASE_VSN/sys" \
   -args_file "$RELEASE_ROOT/releases/$RELEASE_VSN/vm.args" \
-  -s Elixir.Jido.Cli.ReleaseEntry main \
+  -s Elixir.Jido.Cli.Release.Entry main \
   -extra "$@"

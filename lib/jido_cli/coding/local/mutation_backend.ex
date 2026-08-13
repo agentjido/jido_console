@@ -1,4 +1,4 @@
-defmodule Jido.Cli.LocalCoding.MutationBackend do
+defmodule Jido.Cli.Coding.Local.MutationBackend do
   @moduledoc false
 
   @behaviour Jidoka.CodingPack.MutationBackend
@@ -35,21 +35,21 @@ defmodule Jido.Cli.LocalCoding.MutationBackend do
   @impl true
   def inspect_file(workspace, relative, _opts) do
     with {:ok, resolved} <- Workspace.resolve(workspace, relative, allow_missing: true) do
-      case File.read(resolved.absolute) do
-        {:ok, content} ->
-          {:ok,
-           %{
-             exists?: true,
-             content: content,
-             sha256: digest(content),
-             size: byte_size(content)
-           }, evidence(:read)}
-
-        {:error, :enoent} ->
-          {:ok, %{exists?: false, content: nil, sha256: nil, size: 0}, evidence(:read)}
-
-        {:error, reason} ->
-          {:error, reason}
+      with {:ok, stat} <- File.stat(resolved.absolute),
+           :ok <- regular_file(stat),
+           :ok <- file_size(stat.size, workspace),
+           {:ok, content} <- File.read(resolved.absolute),
+           :ok <- file_size(byte_size(content), workspace) do
+        {:ok,
+         %{
+           exists?: true,
+           content: content,
+           sha256: digest(content),
+           size: byte_size(content)
+         }, evidence(:read)}
+      else
+        {:error, :enoent} -> {:ok, %{exists?: false, content: nil, sha256: nil, size: 0}, evidence(:read)}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
@@ -57,10 +57,10 @@ defmodule Jido.Cli.LocalCoding.MutationBackend do
   @impl true
   def replace_file(workspace, relative, content, _opts) do
     with {:ok, resolved} <- Workspace.resolve(workspace, relative, allow_missing: true),
+         :ok <- file_size(byte_size(content), workspace),
          :ok <- File.mkdir_p(Path.dirname(resolved.absolute)),
-         temporary = resolved.absolute <> ".jido-#{System.unique_integer([:positive, :monotonic])}",
-         :ok <- File.write(temporary, content, [:binary, :exclusive]),
-         :ok <- File.rename(temporary, resolved.absolute) do
+         {:ok, mode} <- existing_mode(resolved.absolute),
+         :ok <- atomic_replace(resolved.absolute, content, mode) do
       final_state = %{
         exists?: true,
         content: content,
@@ -110,25 +110,27 @@ defmodule Jido.Cli.LocalCoding.MutationBackend do
   defp snapshot_entry(workspace, relative, files, file_count, total_bytes) do
     with {:ok, %{ignored?: false}} <- Ignore.decision(workspace, relative),
          {:ok, stat} <- File.lstat(Path.join(workspace.root, relative)) do
-      snapshot_type(stat.type, workspace, relative, files, file_count, total_bytes)
+      snapshot_type(stat, workspace, relative, files, file_count, total_bytes)
     else
       {:ok, %{ignored?: true}} -> {:ok, files, file_count, total_bytes}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp snapshot_type(:directory, workspace, relative, files, file_count, total_bytes),
+  defp snapshot_type(%{type: :directory}, workspace, relative, files, file_count, total_bytes),
     do: walk_directory(workspace, relative, files, file_count, total_bytes)
 
-  defp snapshot_type(:regular, workspace, relative, files, file_count, total_bytes) do
+  defp snapshot_type(%{type: :regular} = stat, workspace, relative, files, file_count, total_bytes) do
     with :ok <- checkpoint_file_count(file_count + 1, workspace),
+         :ok <- checkpoint_size(total_bytes + stat.size),
          {:ok, content} <- File.read(Path.join(workspace.root, relative)),
          :ok <- checkpoint_size(total_bytes + byte_size(content)) do
-      {:ok, Map.put(files, relative, content), file_count + 1, total_bytes + byte_size(content)}
+      snapshot = %{content: content, mode: Bitwise.band(stat.mode, 0o7777)}
+      {:ok, Map.put(files, relative, snapshot), file_count + 1, total_bytes + byte_size(content)}
     end
   end
 
-  defp snapshot_type(_type, _workspace, _relative, files, file_count, total_bytes),
+  defp snapshot_type(_stat, _workspace, _relative, files, file_count, total_bytes),
     do: {:ok, files, file_count, total_bytes}
 
   defp checkpoint_file_count(count, workspace) do
@@ -187,10 +189,10 @@ defmodule Jido.Cli.LocalCoding.MutationBackend do
   end
 
   defp write_snapshot(workspace, snapshot) do
-    Enum.reduce_while(snapshot, :ok, fn {relative, content}, :ok ->
+    Enum.reduce_while(snapshot, :ok, fn {relative, file}, :ok ->
       with {:ok, resolved} <- Workspace.resolve(workspace, relative, allow_missing: true),
            :ok <- File.mkdir_p(Path.dirname(resolved.absolute)),
-           :ok <- File.write(resolved.absolute, content, [:binary]) do
+           :ok <- atomic_replace(resolved.absolute, file.content, file.mode) do
         {:cont, :ok}
       else
         {:error, reason} -> {:halt, {:error, reason}}
@@ -219,6 +221,40 @@ defmodule Jido.Cli.LocalCoding.MutationBackend do
   end
 
   defp state(opts), do: Keyword.fetch!(opts, :state)
+
+  defp regular_file(%{type: :regular}), do: :ok
+  defp regular_file(_stat), do: {:error, :not_regular_file}
+
+  defp file_size(size, workspace) do
+    if size <= workspace.limits.max_file_bytes,
+      do: :ok,
+      else: {:error, :file_too_large}
+  end
+
+  defp existing_mode(path) do
+    case File.stat(path) do
+      {:ok, %{type: :regular, mode: mode}} -> {:ok, Bitwise.band(mode, 0o7777)}
+      {:ok, _stat} -> {:error, :not_regular_file}
+      {:error, :enoent} -> {:ok, nil}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp atomic_replace(path, content, mode) do
+    temporary = path <> ".jido-#{System.unique_integer([:positive, :monotonic])}"
+
+    try do
+      with :ok <- File.write(temporary, content, [:binary, :exclusive]),
+           :ok <- maybe_chmod(temporary, mode) do
+        File.rename(temporary, path)
+      end
+    after
+      _result = File.rm(temporary)
+    end
+  end
+
+  defp maybe_chmod(_path, nil), do: :ok
+  defp maybe_chmod(path, mode), do: File.chmod(path, mode)
 
   defp digest(value) when is_binary(value),
     do: "sha256:" <> (:crypto.hash(:sha256, value) |> Base.encode16(case: :lower))

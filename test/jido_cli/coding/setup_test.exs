@@ -1,7 +1,7 @@
-defmodule Jido.Cli.CodingSetupTest do
+defmodule Jido.Cli.Coding.SetupTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Cli.CodingSetup
+  alias Jido.Cli.Coding.Setup
   alias Jidoka.Agent.Spec.Operation
 
   setup do
@@ -16,7 +16,7 @@ defmodule Jido.Cli.CodingSetupTest do
   end
 
   test "enables the built-in pack and named profile without module names", %{root: root} do
-    assert {:ok, setup} = CodingSetup.prepare(Jido.Cli.DefaultAgent, project_root: root)
+    assert {:ok, setup} = Setup.prepare(Jido.Cli.DefaultAgent, project_root: root)
 
     assert setup.pack_id == "jido.coding_pack"
     assert setup.profile_id == "coding.default"
@@ -29,7 +29,7 @@ defmodule Jido.Cli.CodingSetupTest do
 
   test "can disable the full pack or replace it by a trusted ID", %{root: root} do
     assert {:ok, disabled} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent, project_root: root, coding_pack: :disabled)
+             Setup.prepare(Jido.Cli.DefaultAgent, project_root: root, coding_pack: :disabled)
 
     assert disabled.pack_id == nil
     assert disabled.extension_setup.projection["status"] == "disabled"
@@ -38,7 +38,7 @@ defmodule Jido.Cli.CodingSetupTest do
     resolver = fn "acme.coding_pack", _context -> {:ok, fn _, _, _ -> {:error, :fixture} end} end
 
     assert {:ok, replacement} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent,
+             Setup.prepare(Jido.Cli.DefaultAgent,
                project_root: root,
                coding_pack: "acme.coding_pack",
                extension_record_files: [record],
@@ -56,7 +56,7 @@ defmodule Jido.Cli.CodingSetupTest do
     }
 
     assert {:ok, setup} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent,
+             Setup.prepare(Jido.Cli.DefaultAgent,
                project_root: root,
                coding_disable_tools: ["coding.search"],
                coding_replace_tools: %{"coding.read" => changed}
@@ -74,7 +74,7 @@ defmodule Jido.Cli.CodingSetupTest do
   end
 
   test "loads nested instructions in order when the working scope is selected", %{root: root} do
-    assert {:ok, setup} = CodingSetup.prepare(Jido.Cli.DefaultAgent, project_root: root)
+    assert {:ok, setup} = Setup.prepare(Jido.Cli.DefaultAgent, project_root: root)
 
     assert {:ok, instructions} = Jidoka.CodingPack.Instructions.discover(setup.workspace, "lib/nested")
     assert Enum.map(instructions, & &1["path"]) == ["AGENTS.md", "lib/AGENTS.md"]
@@ -82,15 +82,15 @@ defmodule Jido.Cli.CodingSetupTest do
 
   test "rejects raw module names, malformed config, and unknown profiles", %{root: root} do
     assert {:error, :coding_module_name_forbidden} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent, project_root: root, coding_pack: "Elixir.Raw.Module")
+             Setup.prepare(Jido.Cli.DefaultAgent, project_root: root, coding_pack: "Elixir.Raw.Module")
 
     assert {:error, {:invalid_coding_pack, 42}} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent, project_root: root, coding_pack: 42)
+             Setup.prepare(Jido.Cli.DefaultAgent, project_root: root, coding_pack: 42)
 
     resolver = fn _id -> {:error, :missing} end
 
     assert {:error, {:unknown_runtime_profile, "missing", :missing}} =
-             CodingSetup.prepare(Jido.Cli.DefaultAgent,
+             Setup.prepare(Jido.Cli.DefaultAgent,
                project_root: root,
                coding_profile: "missing",
                coding_profile_resolver: resolver
@@ -98,15 +98,15 @@ defmodule Jido.Cli.CodingSetupTest do
   end
 
   test "resolves exact and unique file mentions and keeps escaped literals", %{root: root} do
-    assert {:ok, setup} = CodingSetup.prepare(Jido.Cli.DefaultAgent, project_root: root)
+    assert {:ok, setup} = Setup.prepare(Jido.Cli.DefaultAgent, project_root: root)
 
     assert {:ok, "Review lib/value.ex and @literal", context} =
-             CodingSetup.prepare_prompt(setup, "Review @lib/value.ex and \\@literal")
+             Setup.prepare_prompt(setup, "Review @lib/value.ex and \\@literal")
 
     assert [%{"path" => "lib/value.ex", "content" => content}] = context["coding"]["files"]
     assert content =~ "defmodule Value"
 
-    assert {:ok, "Review value.ex", unique_context} = CodingSetup.prepare_prompt(setup, "Review @value.ex")
+    assert {:ok, "Review value.ex", unique_context} = Setup.prepare_prompt(setup, "Review @value.ex")
     assert [%{"path" => "lib/value.ex"}] = unique_context["coding"]["files"]
   end
 
@@ -114,7 +114,7 @@ defmodule Jido.Cli.CodingSetupTest do
     File.write!(Path.join(root, "lib/nested/value.ex"), "duplicate")
     File.write!(Path.join(root, "binary"), <<0, 1>>)
     File.write!(Path.join(root, "large"), String.duplicate("x", 1_048_577))
-    assert {:ok, setup} = CodingSetup.prepare(Jido.Cli.DefaultAgent, project_root: root)
+    assert {:ok, setup} = Setup.prepare(Jido.Cli.DefaultAgent, project_root: root)
 
     cases = [
       {"@missing.ex", :coding_file_mention_missing},
@@ -127,7 +127,7 @@ defmodule Jido.Cli.CodingSetupTest do
 
     for {prompt, code} <- cases do
       assert {:error, {:file_mention_failed, _mention, %Jidoka.CodingPack.Error{code: ^code}}} =
-               CodingSetup.prepare_prompt(setup, prompt)
+               Setup.prepare_prompt(setup, prompt)
     end
   end
 

@@ -184,12 +184,12 @@ defmodule Jido.Cli.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content, reviews}}) do
-    state = %{state | coding_reviews: Jido.Cli.CodingReview.normalize(reviews)}
+    state = %{state | coding_reviews: Jido.Cli.Coding.Review.normalize(reviews)}
     finish(state, session, content, :idle, nil)
   end
 
   def update(%__MODULE__{} = state, {:coding_review, reviews}) do
-    changed(state, coding_reviews: Jido.Cli.CodingReview.normalize(reviews))
+    changed(state, coding_reviews: Jido.Cli.Coding.Review.normalize(reviews))
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:ok, content}}) do

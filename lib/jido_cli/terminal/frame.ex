@@ -1,4 +1,4 @@
-defmodule Jido.Terminal.Frame do
+defmodule Jido.Cli.Terminal.Frame do
   @moduledoc "Pure full-screen frame data and rendering helpers."
 
   @enforce_keys [:width, :height, :rows]

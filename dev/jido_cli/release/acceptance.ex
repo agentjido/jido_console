@@ -484,7 +484,11 @@ defmodule Jido.Cli.Release.Acceptance do
     IO.puts("release acceptance: #{name} passed")
     result
   rescue
-    exception -> raise "release acceptance gate #{inspect(name)} failed: #{Exception.message(exception)}"
+    exception ->
+      reraise RuntimeError.exception(
+                "release acceptance gate #{inspect(name)} failed: #{Exception.message(exception)}"
+              ),
+              __STACKTRACE__
   end
 
   defp safe_archive_entry?(entry, root_name) do

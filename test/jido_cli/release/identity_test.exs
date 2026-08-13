@@ -1,18 +1,18 @@
-defmodule Jido.Cli.ReleaseIdentityTest do
+defmodule Jido.Cli.Release.IdentityTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Cli.ReleaseIdentity
+  alias Jido.Cli.Release.Identity
 
   test "embeds the Mix project version for startup before the application loads" do
-    assert ReleaseIdentity.version() == to_string(Application.spec(:jido_cli, :vsn))
+    assert Identity.version() == to_string(Application.spec(:jido_cli, :vsn))
   end
 
   test "reports the product and runtime identity" do
-    identity = ReleaseIdentity.current()
+    identity = Identity.current()
 
     assert identity.product == "jido"
     assert identity.package == "jido_cli"
-    assert identity.version == ReleaseIdentity.version()
+    assert identity.version == Identity.version()
     assert identity.jidoka == to_string(Application.spec(:jidoka, :vsn))
     assert identity.elixir == System.version()
     assert identity.otp == List.to_string(:erlang.system_info(:otp_release))
@@ -24,10 +24,10 @@ defmodule Jido.Cli.ReleaseIdentityTest do
       :jidoka, :vsn -> ~c"6.5.4"
     end
 
-    assert ReleaseIdentity.version(application_get_key: get_key) == "9.8.7"
+    assert Identity.version(application_get_key: get_key) == "9.8.7"
 
     assert %{version: "9.8.7", jidoka: "6.5.4"} =
-             ReleaseIdentity.current(application_get_key: get_key)
+             Identity.current(application_get_key: get_key)
   end
 
   test "production source has no second product version literal" do

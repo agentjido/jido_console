@@ -1,7 +1,7 @@
-defmodule Jido.Cli.CodingReviewTest do
+defmodule Jido.Cli.Coding.ReviewTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Cli.CodingReview
+  alias Jido.Cli.Coding.Review
   alias Jidoka.Agent
   alias Jidoka.Effect
   alias Jidoka.Session.Data, as: Session
@@ -10,7 +10,7 @@ defmodule Jido.Cli.CodingReviewTest do
   @digest "sha256:" <> String.duplicate("a", 64)
 
   test "normalizes one edit without file content" do
-    assert [review] = CodingReview.normalize([edit("lib/value.ex", "edit-1")])
+    assert [review] = Review.normalize([edit("lib/value.ex", "edit-1")])
     assert review["path"] == "lib/value.ex"
     assert review["operation"] == "edit"
     assert review["before_sha256"] == "sha256:aaaaaaaaaaaa"
@@ -28,19 +28,19 @@ defmodule Jido.Cli.CodingReviewTest do
       edit("lib/a.ex", "2")
     ]
 
-    reviews = CodingReview.normalize(states)
+    reviews = Review.normalize(states)
     assert Enum.map(reviews, & &1["path"]) == ["lib/a.ex", "lib/x.ex", "lib/y.ex", "lib/z.ex"]
     assert Enum.map(reviews, & &1["status"]) == ["changed", "interrupted", "restored", "conflict"]
   end
 
   test "normalizes no-change, binary, and truncated Git diffs" do
     assert [%{"status" => "no_change", "files" => []}] =
-             CodingReview.normalize([%{"kind" => "git_diff", "status" => "ok", "files" => [], "patch" => ""}])
+             Review.normalize([%{"kind" => "git_diff", "status" => "ok", "files" => [], "patch" => ""}])
 
     patch = String.duplicate("x", 9_000)
 
     assert [review] =
-             CodingReview.normalize([
+             Review.normalize([
                %{
                  "kind" => "git_diff",
                  "status" => "changed",
@@ -54,7 +54,7 @@ defmodule Jido.Cli.CodingReviewTest do
     assert byte_size(review["patch"]) == 8_192
 
     assert [%{"status" => "changed"} = changed] =
-             CodingReview.normalize([
+             Review.normalize([
                %{
                  "kind" => "git_diff",
                  "status" => "ok",
@@ -67,12 +67,12 @@ defmodule Jido.Cli.CodingReviewTest do
   end
 
   test "redacts sensitive paths and rejects malformed or unsafe records" do
-    assert [review] = CodingReview.normalize([edit("config/.env", "edit-1")])
+    assert [review] = Review.normalize([edit("config/.env", "edit-1")])
     assert review["path"] == "[redacted]"
     assert review["diff"] == %{"redacted" => true}
 
     assert [%{"patch" => "[redacted sensitive diff]"}] =
-             CodingReview.normalize([
+             Review.normalize([
                %{
                  "kind" => "git_diff",
                  "status" => "changed",
@@ -81,7 +81,7 @@ defmodule Jido.Cli.CodingReviewTest do
                }
              ])
 
-    assert CodingReview.normalize([
+    assert Review.normalize([
              %{"kind" => "unknown"},
              edit("../outside", "bad"),
              edit("C:\\outside", "bad"),
@@ -105,12 +105,12 @@ defmodule Jido.Cli.CodingReviewTest do
     {:ok, session} = Jidoka.session(Jido.Cli.DefaultAgent)
     session = Session.put_result(session, result)
 
-    assert [%{"path" => "lib/current.ex"}] = CodingReview.from_session(session)
+    assert [%{"path" => "lib/current.ex"}] = Review.from_session(session)
   end
 
   test "caps record count" do
     records = Enum.map(1..60, &edit("lib/#{&1}.ex", Integer.to_string(&1)))
-    assert length(CodingReview.normalize(records)) == 50
+    assert length(Review.normalize(records)) == 50
   end
 
   defp edit(path, operation_id) do

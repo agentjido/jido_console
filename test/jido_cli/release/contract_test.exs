@@ -34,6 +34,33 @@ defmodule Jido.Cli.Release.ContractTest do
              Contract.validate_metadata(metadata)
   end
 
+  test "accepts the complete local package evidence shape" do
+    complete =
+      metadata()
+      |> Map.put("archive_checksum", "checksums.txt")
+      |> Map.put("native_files", ["libexec/lib/native.so"])
+      |> Map.put("components", [
+        %{
+          "kind" => "dependency",
+          "license_file" => "deps/sample/LICENSE",
+          "licenses" => ["MIT"],
+          "name" => "sample",
+          "native_files" => [],
+          "source" => "hex://hexpm/sample@1.0.0",
+          "version" => "1.0.0"
+        }
+      ])
+      |> Map.update!("build", fn build ->
+        Map.merge(build, %{
+          "build_time_utc" => "2023-11-14T22:13:20Z",
+          "reproducible" => true,
+          "toolchain_file" => ".tool-versions"
+        })
+      end)
+
+    assert :ok = Contract.validate_metadata(complete)
+  end
+
   test "validates a relocatable package layout and launcher entry" do
     root = package_fixture()
 

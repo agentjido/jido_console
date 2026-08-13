@@ -3,7 +3,7 @@ defmodule Jido.Cli.Tui.View do
 
   alias Jido.Cli.Tui.Editor
   alias Jido.Cli.Tui.State
-  alias Jido.Terminal.Frame
+  alias Jido.Cli.Terminal.Frame
 
   @spec render(State.t()) :: Frame.t()
   def render(%State{size: {width, height}}) when width < 12 or height < 5 do

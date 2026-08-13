@@ -330,15 +330,15 @@ defmodule Jido.Cli.Automation.Engine.Jidoka do
     scoped_agent_state = %{result.agent_state | operation_results: current_operations}
     scoped_result = %{result | agent_state: scoped_agent_state}
 
-    with {:ok, eval_case} <-
-           EvalCase.new(%{
-             id: "#{cell.cell_id}:#{turn.id}",
-             agent: cell.spec,
-             request: request,
-             assertions: turn.assertions
-           }) do
-      Eval.evaluate(eval_case, scoped_result)
-    else
+    case EvalCase.new(%{
+           id: "#{cell.cell_id}:#{turn.id}",
+           agent: cell.spec,
+           request: request,
+           assertions: turn.assertions
+         }) do
+      {:ok, eval_case} ->
+        Eval.evaluate(eval_case, scoped_result)
+
       {:error, reason} ->
         [
           %{

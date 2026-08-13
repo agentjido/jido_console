@@ -7,7 +7,7 @@ maintain a Burrito path at this time.
 
 The source release configuration sets `jido_cli` and `llm_db` to load mode.
 This resolves the transitive `llm_db` ownership conflict without an edit to a
-compiled dependency. The public launcher enters `Jido.Cli.ReleaseEntry` from
+compiled dependency. The public launcher enters `Jido.Cli.Release.Entry` from
 the `start_clean` boot file. It does not contain a release `eval` expression.
 
 The exact local candidate had these results:

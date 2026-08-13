@@ -1,4 +1,4 @@
-defmodule Jido.Cli.ReleaseIdentity do
+defmodule Jido.Cli.Release.Identity do
   @moduledoc "Provides the compiled product and runtime release identity."
 
   @app :jido_cli

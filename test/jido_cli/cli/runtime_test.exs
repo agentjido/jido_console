@@ -2,6 +2,7 @@ defmodule Jido.Cli.Runtime.JidokaTest do
   use ExUnit.Case, async: true
 
   alias Jido.Cli.Runtime.Jidoka, as: Runtime
+  alias Jido.Cli.Coding.Setup
   alias Jidoka.Cancellation
   alias Jidoka.Event
   alias Jidoka.Session.Data, as: Session
@@ -64,6 +65,34 @@ defmodule Jido.Cli.Runtime.JidokaTest do
              Runtime.cancel(request, grace_ms: 500)
 
     assert {:cancelled, ^cancellation} = Runtime.await(request, timeout: 100)
+  end
+
+  test "opens, uses, and closes an extension-backed interactive session" do
+    root = Path.join(System.tmp_dir!(), "jido-runtime-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    File.write!(Path.join(root, "AGENTS.md"), "Use the coding operations.")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, setup} = Setup.prepare(Jido.Cli.DefaultAgent, project_root: root)
+    on_exit(fn -> Setup.close(setup) end)
+
+    assert {:ok, %Runtime.Session{} = session} =
+             Runtime.start_session(Jido.Cli.DefaultAgent,
+               agent_spec_override: setup.spec,
+               extension_setup: setup.extension_setup
+             )
+
+    llm = fn _intent, _journal, _context ->
+      {:ok, %{type: :final, content: "extension answer"}}
+    end
+
+    assert {:ok, %Runtime.Request{} = request} = Runtime.start_turn(session, "hello", self(), llm: llm)
+
+    assert {:ok, %Runtime.Session{} = next_session, "extension answer", []} =
+             Runtime.await(request, timeout: 30_000, cancel_on_timeout: false)
+
+    assert :ok = Runtime.close_session(next_session)
+    assert :ok = Runtime.close_session(:plain_session)
   end
 
   defp wait_for_cancellation(_context, 0), do: :ok

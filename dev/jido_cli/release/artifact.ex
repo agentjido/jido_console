@@ -24,10 +24,10 @@ defmodule Jido.Cli.Release.Artifact do
   @spec assemble!(Path.t(), Path.t(), keyword()) :: map()
   def assemble!(release_root, candidate_dir, opts \\ []) do
     project_root = Keyword.get(opts, :project_root, File.cwd!()) |> Path.expand()
-    version = Jido.Cli.ReleaseIdentity.version()
+    version = Jido.Cli.Release.Identity.version()
     source = Keyword.get_lazy(opts, :source, fn -> source_identity!(project_root) end)
     source_date_epoch = Keyword.get_lazy(opts, :source_date_epoch, fn -> source_epoch!(project_root) end)
-    identity = Jido.Cli.ReleaseIdentity.current()
+    identity = Jido.Cli.Release.Identity.current()
     root_name = Contract.root_name(version, @target)
     package_root = Path.join(candidate_dir, root_name)
 
@@ -163,7 +163,7 @@ defmodule Jido.Cli.Release.Artifact do
   end
 
   defp provenance(outputs) do
-    identity = Jido.Cli.ReleaseIdentity.current()
+    identity = Jido.Cli.Release.Identity.current()
 
     %{
       "schema" => "jido.provenance",

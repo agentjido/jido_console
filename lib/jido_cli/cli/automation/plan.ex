@@ -1,8 +1,9 @@
 defmodule Jido.Cli.Automation.Plan do
   @moduledoc "Builds the agent, scenario, model, and trial run matrix."
 
-  alias Jido.Cli.Automation.{Contract, Limits, Loader, Replay}
+  alias Jido.Cli.Automation.{Contract, EnvironmentProjection, Limits, Loader, Replay}
   alias Jido.Cli.Extensions
+  alias Jido.Cli.Release.Identity
   alias Jidoka.Agent.Spec
   alias Jidoka.ExecutionEnvironment.PolicyRequest
   alias Jidoka.ExecutionEnvironment.ProfileResolver
@@ -31,15 +32,17 @@ defmodule Jido.Cli.Automation.Plan do
   defp load_agents(agent_entries, opts) do
     agent_entries
     |> Enum.reduce_while({:ok, []}, fn entry, {:ok, acc} ->
-      with {:ok, loaded} <- Loader.load_agent(entry.file, Keyword.get(opts, :import_opts, [])) do
-        agent =
-          entry
-          |> Map.merge(loaded)
-          |> Map.put(:runtime_opts, Keyword.get(opts, :runtime_opts, []))
+      case Loader.load_agent(entry.file, Keyword.get(opts, :import_opts, [])) do
+        {:ok, loaded} ->
+          agent =
+            entry
+            |> Map.merge(loaded)
+            |> Map.put(:runtime_opts, Keyword.get(opts, :runtime_opts, []))
 
-        {:cont, {:ok, [agent | acc]}}
-      else
-        {:error, reason} -> {:halt, {:error, reason}}
+          {:cont, {:ok, [agent | acc]}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
       end
     end)
     |> reverse_result()
@@ -168,7 +171,8 @@ defmodule Jido.Cli.Automation.Plan do
     if is_nil(resolver) do
       {:error, {:missing_execution_profile_resolver, profile_id}}
     else
-      with {:ok, request} <- PolicyRequest.new(profile_id: profile_id),
+      with :ok <- ensure_resolver_loaded(resolver),
+           {:ok, request} <- PolicyRequest.new(profile_id: profile_id),
            {:ok, registration} <-
              ProfileResolver.resolve(
                request,
@@ -180,6 +184,16 @@ defmodule Jido.Cli.Automation.Plan do
     end
   end
 
+  defp ensure_resolver_loaded(resolver) when is_atom(resolver) do
+    case Code.ensure_loaded(resolver) do
+      {:module, ^resolver} -> :ok
+      {:error, reason} -> {:error, {:profile_resolver_load_failed, resolver, reason}}
+    end
+  end
+
+  defp ensure_resolver_loaded(resolver) when is_function(resolver, 2), do: :ok
+  defp ensure_resolver_loaded(_resolver), do: :ok
+
   defp manifest(suite, variants, cells, run_id, limits) do
     Contract.manifest!(%{
       schema: "jido.run-manifest",
@@ -189,7 +203,7 @@ defmodule Jido.Cli.Automation.Plan do
       suite_file: suite.path,
       suite_sha256: suite.digest,
       versions: %{
-        jido_cli: Jido.Cli.version(),
+        jido_cli: Identity.version(),
         jidoka: application_version(:jidoka),
         elixir: System.version(),
         otp: List.to_string(:erlang.system_info(:otp_release))
@@ -220,7 +234,7 @@ defmodule Jido.Cli.Automation.Plan do
   defp manifest_environment(nil), do: %{status: :not_requested}
 
   defp manifest_environment(environment) do
-    Jido.Cli.Automation.Result.execution_environment(
+    EnvironmentProjection.project(
       %{execution_environment: environment},
       nil,
       nil

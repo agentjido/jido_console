@@ -1,11 +1,11 @@
-defmodule Jido.TerminalTest do
+defmodule Jido.Cli.TerminalTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Terminal
-  alias Jido.Terminal.Frame
+  alias Jido.Cli.Terminal
+  alias Jido.Cli.Terminal.Frame
 
   defmodule FakeAdapter do
-    @behaviour Jido.Terminal.Adapter
+    @behaviour Jido.Cli.Terminal.Adapter
 
     @impl true
     def open(owner, opts) do

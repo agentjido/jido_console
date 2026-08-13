@@ -3,8 +3,8 @@ defmodule Jido.Cli.Tui do
 
   alias Jido.Cli.Tui.State
   alias Jido.Cli.Tui.View
-  alias Jido.Cli.CodingSetup
-  alias Jido.Terminal
+  alias Jido.Cli.Coding.Setup
+  alias Jido.Cli.Terminal
 
   @frame_interval_ms 33
 
@@ -72,7 +72,7 @@ defmodule Jido.Cli.Tui do
 
     if is_function(startup, 0) do
       with :ok <- startup.(),
-           {:ok, coding} <- CodingSetup.prepare(agent, opts) do
+           {:ok, coding} <- Setup.prepare(agent, opts) do
         start_runtime_session(runtime, agent, coding, opts)
       end
     else
@@ -101,16 +101,16 @@ defmodule Jido.Cli.Tui do
          }}
 
       {:error, reason} ->
-        CodingSetup.close(coding)
+        Setup.close(coding)
         {:error, reason}
     end
   rescue
     exception ->
-      CodingSetup.close(coding)
+      Setup.close(coding)
       reraise exception, __STACKTRACE__
   catch
     kind, reason ->
-      CodingSetup.close(coding)
+      Setup.close(coding)
       :erlang.raise(kind, reason, __STACKTRACE__)
   end
 
@@ -136,7 +136,7 @@ defmodule Jido.Cli.Tui do
 
   defp close_startup_result(runtime, {:ok, startup}) do
     close_runtime_session(runtime, startup.session)
-    CodingSetup.close(startup.coding)
+    Setup.close(startup.coding)
   end
 
   defp close_startup_result(_runtime, {:error, _reason}), do: :ok
@@ -153,7 +153,7 @@ defmodule Jido.Cli.Tui do
   defp open_terminal(opts) do
     Terminal.open(
       owner: self(),
-      adapter: Keyword.get(opts, :terminal_adapter, Jido.Terminal.OTP),
+      adapter: Keyword.get(opts, :terminal_adapter, Jido.Cli.Terminal.OTP),
       adapter_opts: Keyword.get(opts, :terminal_adapter_opts, [])
     )
   end
@@ -224,7 +224,7 @@ defmodule Jido.Cli.Tui do
     coding = Keyword.fetch!(opts, :coding_setup_resolved)
 
     event =
-      case CodingSetup.prepare_prompt(coding, prompt) do
+      case Setup.prepare_prompt(coding, prompt) do
         {:ok, prompt, context} -> {:prompt_ready, prompt, context}
         {:error, reason} -> {:prompt_error, reason}
       end

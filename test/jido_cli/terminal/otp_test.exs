@@ -1,9 +1,9 @@
-defmodule Jido.Terminal.OTPTest do
+defmodule Jido.Cli.Terminal.OTPTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Terminal.OTP
-  alias Jido.Terminal.OTP.Handle
-  alias Jido.Terminal.OTP.Reader
+  alias Jido.Cli.Terminal.OTP
+  alias Jido.Cli.Terminal.OTP.Handle
+  alias Jido.Cli.Terminal.OTP.Reader
 
   test "opens, reads, writes, resizes, and closes through injected effects" do
     {:ok, sizes} = Agent.start_link(fn -> {:ok, {20, 6}} end)

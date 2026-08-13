@@ -35,7 +35,7 @@ defmodule Jido.Cli do
 
   @doc "Returns the CLI version."
   @spec version() :: String.t()
-  def version, do: Jido.Cli.ReleaseIdentity.version()
+  def version, do: Jido.Cli.Release.Identity.version()
 
   @doc false
   @spec main([String.t()]) :: :ok
@@ -56,9 +56,10 @@ defmodule Jido.Cli do
   defp dispatch_fast(_args), do: :continue
 
   defp start_and_run([command | _rest] = args) when command in ["run", "eval"] do
-    with :ok <- start_runtime() do
-      handle_run_result(run(args))
-    else
+    case start_runtime() do
+      :ok ->
+        handle_run_result(run(args))
+
       {:error, reason} ->
         fail("could not start: #{inspect(reason)}")
         System.halt(1)
@@ -71,8 +72,7 @@ defmodule Jido.Cli do
 
   defp start_runtime do
     with :ok <- Jido.Cli.Env.load_provider_credentials(),
-         :ok <- start_applications(),
-         do: :ok
+         do: Jido.Cli.Bootstrap.start_applications()
   end
 
   defp handle_run_result(:ok), do: :ok
@@ -108,18 +108,11 @@ defmodule Jido.Cli do
            ],
            aliases: [h: :help, v: :version]
          ) do
-      {[help: true], [], []} ->
-        print_help()
-
-      {[version: true], [], []} ->
-        print_version()
-
       {options, [], []} ->
-        tui = Keyword.get(opts, :tui, Jido.Cli.Tui)
-        opts = Keyword.merge(opts, normalize_interactive_options(options))
-
-        case tui.run(opts) do
-          :ok -> :ok
+        case Jido.Cli.InteractiveOptions.parse(options) do
+          {:ok, %{help: true}} -> print_help()
+          {:ok, %{version: true}} -> print_version()
+          {:ok, options} -> start_tui(options, opts)
           {:error, reason} -> interactive_error(reason)
         end
 
@@ -170,74 +163,6 @@ defmodule Jido.Cli do
   defp print_help, do: IO.write(@usage)
   defp print_version, do: IO.puts("jido #{version()}")
 
-  # Escript archives can contain priv files, but libraries using File.read/1 cannot
-  # access them in place. Extract once to a versioned cache and put those normal
-  # application directories ahead of the archive before starting dependencies.
-  defp start_applications do
-    with :ok <- make_priv_files_accessible(),
-         {:ok, _applications} <- Application.ensure_all_started(:jido_cli) do
-      :ok
-    end
-  end
-
-  defp make_priv_files_accessible do
-    case :code.priv_dir(:time_zone_info) do
-      path when is_list(path) ->
-        if path |> List.to_string() |> File.dir?() do
-          :ok
-        else
-          extract_escript()
-        end
-
-      _other ->
-        extract_escript()
-    end
-  end
-
-  defp extract_escript do
-    digest = escript_digest()
-
-    cache =
-      Path.join(
-        System.tmp_dir!(),
-        "jido-#{version()}-otp-#{:erlang.system_info(:otp_release)}-#{digest}"
-      )
-
-    with :ok <- ensure_extracted(cache) do
-      cache
-      |> Path.join("*/ebin")
-      |> Path.wildcard()
-      |> Enum.each(&:code.add_patha(String.to_charlist(&1)))
-
-      :ok
-    end
-  end
-
-  defp escript_digest do
-    :escript.script_name()
-    |> List.to_string()
-    |> File.read!()
-    |> then(&:crypto.hash(:sha256, &1))
-    |> Base.encode16(case: :lower)
-    |> binary_part(0, 16)
-  end
-
-  defp ensure_extracted(cache) do
-    marker = Path.join(cache, ".complete")
-
-    if File.regular?(marker) do
-      :ok
-    else
-      with {:ok, sections} <- :escript.extract(:escript.script_name(), []),
-           {:ok, archive} <- Keyword.fetch(sections, :archive),
-           :ok <- File.mkdir_p(cache),
-           {:ok, _files} <- :zip.extract(archive, cwd: String.to_charlist(cache)),
-           :ok <- File.write(marker, "") do
-        :ok
-      end
-    end
-  end
-
   defp format_error(reason) do
     reason
     |> Jido.Cli.Error.normalize()
@@ -257,6 +182,16 @@ defmodule Jido.Cli do
   defp usage_error do
     IO.write(:stderr, @usage)
     {:error, 64}
+  end
+
+  defp start_tui(options, opts) do
+    tui = Keyword.get(opts, :tui, Jido.Cli.Tui)
+    interactive = options |> Map.to_list() |> normalize_interactive_options()
+
+    case tui.run(Keyword.merge(opts, interactive)) do
+      :ok -> :ok
+      {:error, reason} -> interactive_error(reason)
+    end
   end
 
   defp normalize_interactive_options(options) do
@@ -283,6 +218,7 @@ defmodule Jido.Cli do
   defp configuration_error?(:local_coding_root_required), do: true
   defp configuration_error?(:coding_module_name_forbidden), do: true
   defp configuration_error?(:invalid_coding_profile_resolver), do: true
+  defp configuration_error?({:invalid_interactive_options, _errors}), do: true
   defp configuration_error?(_reason), do: false
 
   defp fail(message, prefix \\ "") do

@@ -29,7 +29,7 @@ defmodule Jido.CliTest do
 
   test "prints version" do
     assert capture_io(fn -> assert :ok = Jido.Cli.run(["--version"]) end) ==
-             "jido #{Jido.Cli.ReleaseIdentity.version()}\n"
+             "jido #{Jido.Cli.Release.Identity.version()}\n"
   end
 
   test "prints command help" do
@@ -227,7 +227,7 @@ defmodule Jido.CliTest do
 
       for args <- [["--version"], ["-v"]] do
         assert capture_io(fn -> assert :ok = Jido.Cli.main(args) end) ==
-                 "jido #{Jido.Cli.ReleaseIdentity.version()}\n"
+                 "jido #{Jido.Cli.Release.Identity.version()}\n"
       end
     after
       :erlang.trace(self(), false, [:call])

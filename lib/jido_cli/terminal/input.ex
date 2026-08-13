@@ -1,4 +1,4 @@
-defmodule Jido.Terminal.Input do
+defmodule Jido.Cli.Terminal.Input do
   @moduledoc "Pure incremental decoder for the small Jido terminal input protocol."
 
   @paste_start "\e[200~"
@@ -12,7 +12,7 @@ defmodule Jido.Terminal.Input do
 
   defstruct buffer: "", paste: nil
 
-  @type event :: Jido.Terminal.Adapter.event()
+  @type event :: Jido.Cli.Terminal.Adapter.event()
   @type t :: %__MODULE__{buffer: binary(), paste: binary() | nil}
 
   @doc "Adds a byte chunk and returns all complete events."

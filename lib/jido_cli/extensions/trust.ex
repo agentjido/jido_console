@@ -1,6 +1,26 @@
 defmodule Jido.Cli.Extensions.Trust do
   @moduledoc "Canonical project identity and non-interactive extension trust checks."
 
+  alias Jido.Cli.Document
+
+  @non_empty_string Zoi.string() |> Zoi.regex(~r/\S/)
+  @digest Zoi.string() |> Zoi.regex(~r/^sha256:[0-9a-f]{64}$/)
+  @project_schema Zoi.map(
+                    %{
+                      "extensions" => Zoi.map(@non_empty_string, @digest, []) |> Zoi.optional(),
+                      "repository_id" => @non_empty_string |> Zoi.optional(),
+                      "root" => @non_empty_string
+                    },
+                    unrecognized_keys: :error
+                  )
+  @trust_schema Zoi.map(
+                  %{
+                    "projects" => Zoi.array(@project_schema),
+                    "version" => Zoi.enum([1]) |> Zoi.optional()
+                  },
+                  unrecognized_keys: :error
+                )
+
   @doc "Returns a canonical project identity with an injectable repository identity."
   @spec project_identity(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def project_identity(root, opts \\ []) when is_binary(root) do
@@ -20,8 +40,8 @@ defmodule Jido.Cli.Extensions.Trust do
   end
 
   defp load_trust(path, identity) do
-    with {:ok, document} <- decode(path),
-         1 <- Map.get(document, "version", 1),
+    with {:ok, document, _contents} <- Document.decode_file(path, max_file_bytes: 1_000_000),
+         {:ok, document} <- Document.validate(@trust_schema, document, path),
          projects when is_list(projects) <- Map.get(document, "projects", []),
          {:ok, project} <- find_project(projects, identity),
          extensions when is_map(extensions) <- Map.get(project, "extensions", %{}) do
@@ -74,9 +94,8 @@ defmodule Jido.Cli.Extensions.Trust do
   def canonical_path(path) when is_binary(path) do
     path = Path.expand(path)
 
-    with {:ok, _stat} <- File.stat(path),
-         {:ok, resolved} <- resolve_path(path, 0) do
-      {:ok, resolved}
+    with {:ok, _stat} <- File.stat(path) do
+      resolve_path(path, 0)
     end
   end
 
@@ -105,15 +124,6 @@ defmodule Jido.Cli.Extensions.Trust do
 
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  defp decode(path) do
-    with {:ok, contents} <- File.read(path) do
-      case Path.extname(path) do
-        ".json" -> Jason.decode(contents)
-        _extension -> YamlElixir.read_from_string(contents, merge_anchors: false)
-      end
     end
   end
 end

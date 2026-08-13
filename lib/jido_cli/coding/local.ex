@@ -1,4 +1,4 @@
-defmodule Jido.Cli.LocalCoding do
+defmodule Jido.Cli.Coding.Local do
   @moduledoc "Trusted local-folder ports for an explicitly selected coding profile."
 
   alias Jidoka.CodingPack.{GitPort, MutationPort, ShellPort, VerifyPort, Workspace}
@@ -13,6 +13,7 @@ defmodule Jido.Cli.LocalCoding do
   }
 
   alias Jidoka.Policy.Decision
+  alias Jido.Cli.Coding.Local.{Resources, Setup}
 
   @profile_id "coding.local"
   @adapter_id "jido_cli.local_folder"
@@ -20,7 +21,7 @@ defmodule Jido.Cli.LocalCoding do
   @wall_time_ms 120_000
   @output_bytes 262_144
 
-  @type resources :: %{manager: pid(), binding: struct(), mutation_state: pid()}
+  @type resources :: Resources.t()
 
   @doc "Returns the explicit trusted profile identifier."
   @spec profile_id() :: String.t()
@@ -29,8 +30,8 @@ defmodule Jido.Cli.LocalCoding do
   @doc "Creates folder-scoped coding ports for one validated workspace."
   @spec prepare(Workspace.t()) :: {:ok, map()} | {:error, term()}
   def prepare(%Workspace{} = workspace) do
-    with true <- Code.ensure_loaded?(Jido.Cli.LocalCoding.Adapter),
-         true <- Code.ensure_loaded?(Jido.Cli.LocalCoding.MutationBackend),
+    with true <- Code.ensure_loaded?(Jido.Cli.Coding.Local.Adapter),
+         true <- Code.ensure_loaded?(Jido.Cli.Coding.Local.MutationBackend),
          {:ok, executables} <- executables(),
          {:ok, mutation_state} <-
            Agent.start_link(fn -> %{snapshots: %{}, snapshot_bytes: 0} end) do
@@ -70,7 +71,7 @@ defmodule Jido.Cli.LocalCoding do
 
   defp prepare_ports(manager, binding, profile, mutation_state) do
     with {:ok, mutation} <-
-           MutationPort.new(Jido.Cli.LocalCoding.MutationBackend,
+           MutationPort.new(Jido.Cli.Coding.Local.MutationBackend,
              state: mutation_state,
              profile_digest: profile.digest
            ),
@@ -82,13 +83,13 @@ defmodule Jido.Cli.LocalCoding do
          {:ok, git} <- GitPort.new(shell),
          {:ok, verify} <- VerifyPort.new(shell, verify_helpers()) do
       {:ok,
-       %{
+       %Setup{
          mutation: mutation,
          shell: shell,
          git: git,
          verify: verify,
          disable_tools: ["coding.shell"],
-         resources: %{manager: manager, binding: binding, mutation_state: mutation_state}
+         resources: %Resources{manager: manager, binding: binding, mutation_state: mutation_state}
        }}
     else
       {:error, _reason} = error -> stop_manager(manager, binding, error)
@@ -99,7 +100,7 @@ defmodule Jido.Cli.LocalCoding do
   @spec close(resources() | nil) :: :ok
   def close(nil), do: :ok
 
-  def close(%{manager: manager, binding: binding, mutation_state: mutation_state}) do
+  def close(%Resources{manager: manager, binding: binding, mutation_state: mutation_state}) do
     if Process.alive?(manager) do
       _result = Manager.cleanup(manager, binding)
       GenServer.stop(manager, :normal)
@@ -153,7 +154,7 @@ defmodule Jido.Cli.LocalCoding do
 
     Registration.new!(
       profile: profile,
-      adapter: Jido.Cli.LocalCoding.Adapter,
+      adapter: Jido.Cli.Coding.Local.Adapter,
       capabilities: capabilities
     )
   end
@@ -179,8 +180,9 @@ defmodule Jido.Cli.LocalCoding do
 
   defp executables do
     with git when is_binary(git) <- System.find_executable("git"),
-         mix when is_binary(mix) <- System.find_executable("mix") do
-      {:ok, %{"git" => git, "mix" => mix}}
+         mix when is_binary(mix) <- System.find_executable("mix"),
+         sandbox when is_binary(sandbox) <- System.find_executable("sandbox-exec") do
+      {:ok, %{"git" => git, "mix" => mix, "sandbox-exec" => sandbox}}
     else
       _missing -> {:error, :local_coding_executable_missing}
     end
