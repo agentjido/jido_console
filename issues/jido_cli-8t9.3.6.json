@@ -8,14 +8,16 @@
     "jido_cli-8t9.3.7",
     "jido_cli-8t9.4.4"
   ],
+  "closed_at": "2026-08-13T22:36:55Z",
+  "close_reason": "Implemented in Jidoka commit 8ae0cbf8. Multi-call groups now always use complete preflight regardless of checkpoint policy. Tests prove review and policy stops start zero calls, serial groups run one call at a time, parallel groups remain supported, and observations keep model call order. Validation: 699 deterministic, 32 parity, and mix quality passed.",
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Validate the complete group and complete review or policy checks before any call starts, then schedule safe calls serially or in parallel. Acceptance: checkpoint policy does not change safety; zero calls start before approval; observations return in original call order.",
   "id": "jido_cli-8t9.3.6",
   "labels": [],
   "parent": "jido_cli-8t9.3",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Preflight complete tool groups before scheduling",
   "type": "task",
-  "updated_at": "2026-08-13T22:31:20Z"
+  "updated_at": "2026-08-13T22:36:55Z"
 }
