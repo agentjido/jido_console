@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-8t9.4.3"
+  ],
   "blocks": [],
   "created": "2026-08-13T20:14:28Z",
   "description": "Repository: jido_cli. Add multiline editing, history, scroll, draft retention, exact file-mention grammar, aggregate attachment limits, bounded retention, ANSI cleaning, resize handling, and a small-terminal layout. Acceptance: email and punctuation mentions do not misparse; quoted paths work; Unicode width and control-byte tests pass.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Harden transcript, editor, attachments, and layout",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:28Z"
+  "updated_at": "2026-08-13T20:14:56Z"
 }
