@@ -2,6 +2,7 @@
 /_build/
 /cover/
 /deps/
+/dist/
 
 # Generated documentation
 /doc/

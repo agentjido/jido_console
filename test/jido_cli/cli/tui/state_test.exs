@@ -36,6 +36,44 @@ defmodule Jido.Cli.Tui.StateTest do
     assert state.messages |> List.last() |> Map.fetch!(:content) == "Hi there"
   end
 
+  test "queues the current prompt until the runtime is ready" do
+    state = State.new(nil, {80, 24}, runtime_status: :starting, prepare_prompt: true)
+    {state, []} = State.update(state, {:terminal, {:text, "Review @value.ex"}})
+
+    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    assert state.submit_when_ready?
+    assert state.editor.text == "Review @value.ex"
+    assert state.messages == []
+
+    {state, []} = State.update(state, {:terminal, {:text, " now"}})
+
+    assert {ready, [{:prepare_prompt, "Review @value.ex now"}]} =
+             State.update(state, {:runtime_ready, :session, [%{"path" => "AGENTS.md"}]})
+
+    assert ready.session == :session
+    assert ready.runtime_status == :ready
+    assert ready.status == :resolving
+    refute ready.submit_when_ready?
+    assert ready.project_instructions == [%{"path" => "AGENTS.md"}]
+  end
+
+  test "keeps unsubmitted text and reports a runtime startup failure" do
+    state = State.new(nil, {80, 24}, runtime_status: :starting, prepare_prompt: true)
+    {state, []} = State.update(state, {:terminal, {:text, "draft"}})
+
+    {ready, []} = State.update(state, {:runtime_ready, :session, []})
+    assert ready.runtime_status == :ready
+    assert ready.status == :idle
+    assert ready.editor.text == "draft"
+
+    {failed, []} = State.update(state, {:runtime_failed, :boot_failed})
+    assert failed.runtime_status == :failed
+    assert failed.startup_error == :boot_failed
+    assert failed.error =~ "boot_failed"
+    assert {^failed, []} = State.update(failed, {:terminal, {:key, :enter}})
+    assert {_failed, [:exit]} = State.update(failed, {:terminal, {:key, :escape}})
+  end
+
   test "ignores a late result from an older request" do
     current = %{request_id: "current"}
     old = %{request_id: "old"}

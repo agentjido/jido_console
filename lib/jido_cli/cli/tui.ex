@@ -12,27 +12,128 @@ defmodule Jido.Cli.Tui do
   def run(opts \\ []) do
     runtime = Keyword.get(opts, :runtime, Jido.Cli.Runtime.Jidoka)
     agent = Keyword.get(opts, :agent, Jido.Cli.DefaultAgent)
-    session_opts = Keyword.get(opts, :session_opts, [])
 
-    with {:ok, coding} <- CodingSetup.prepare(agent, opts),
-         session_opts =
-           session_opts
-           |> Keyword.put(:extension_setup, coding.extension_setup)
-           |> Keyword.put(:agent_spec_override, coding.spec),
-         {:ok, session} <- runtime.start_session(agent, session_opts),
-         {:ok, terminal} <- open_terminal(opts) do
+    with {:ok, terminal} <- open_terminal(opts) do
       try do
-        state = State.new(session, terminal.size, prepare_prompt: true, project_instructions: coding.instructions)
-
-        with :ok <- Terminal.draw(terminal, View.render(state)) do
-          {state, []} = State.update(state, :rendered)
-          loop(state, terminal, runtime, Keyword.put(opts, :coding_setup_resolved, coding))
-        end
+        run_terminal(terminal, runtime, agent, opts)
       after
-        close_runtime_session(runtime, session)
         Terminal.close(terminal)
       end
     end
+  end
+
+  defp run_terminal(terminal, runtime, agent, opts) do
+    state =
+      State.new(nil, terminal.size,
+        prepare_prompt: true,
+        runtime_status: :starting
+      )
+
+    with :ok <- Terminal.draw(terminal, View.render(state)) do
+      {state, []} = State.update(state, :rendered)
+      owner = self()
+      {:ok, startup_pid} = Task.start(fn -> runtime_owner(owner, runtime, agent, opts) end)
+
+      try do
+        loop(state, terminal, runtime, opts, startup_pid)
+      after
+        stop_runtime_owner(startup_pid)
+      end
+    end
+  end
+
+  defp runtime_owner(owner, runtime, agent, opts) do
+    owner_monitor = Process.monitor(owner)
+    result = safe_start_runtime(runtime, agent, opts)
+
+    if runtime_owner_stopping?(owner_monitor) do
+      close_startup_result(runtime, result)
+    else
+      send(owner, {:jido_runtime_startup, self(), result})
+
+      case result do
+        {:ok, startup} -> runtime_owner_loop(owner_monitor, runtime, startup)
+        {:error, _reason} -> :ok
+      end
+    end
+  end
+
+  defp runtime_owner_stopping?(owner_monitor) do
+    receive do
+      {:close, _owner} -> true
+      {:DOWN, ^owner_monitor, :process, _owner, _reason} -> true
+    after
+      0 -> false
+    end
+  end
+
+  defp safe_start_runtime(runtime, agent, opts) do
+    startup = Keyword.get(opts, :runtime_startup, fn -> :ok end)
+
+    if is_function(startup, 0) do
+      with :ok <- startup.(),
+           {:ok, coding} <- CodingSetup.prepare(agent, opts) do
+        start_runtime_session(runtime, agent, coding, opts)
+      end
+    else
+      {:error, :invalid_runtime_startup}
+    end
+  rescue
+    exception -> {:error, exception}
+  catch
+    kind, reason -> {:error, {kind, reason}}
+  end
+
+  defp start_runtime_session(runtime, agent, coding, opts) do
+    session_opts =
+      opts
+      |> Keyword.get(:session_opts, [])
+      |> Keyword.put(:extension_setup, coding.extension_setup)
+      |> Keyword.put(:agent_spec_override, coding.spec)
+
+    case runtime.start_session(agent, session_opts) do
+      {:ok, session} ->
+        {:ok,
+         %{
+           coding: coding,
+           opts: ready_opts(opts, coding),
+           session: session
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  rescue
+    exception ->
+      reraise exception, __STACKTRACE__
+  catch
+    kind, reason ->
+      :erlang.raise(kind, reason, __STACKTRACE__)
+  end
+
+  defp ready_opts(opts, coding) do
+    Keyword.put(opts, :coding_setup_resolved, coding)
+  end
+
+  defp runtime_owner_loop(owner_monitor, runtime, startup) do
+    receive do
+      {:close, _owner} ->
+        close_startup_result(runtime, {:ok, startup})
+
+      {:DOWN, ^owner_monitor, :process, _owner, _reason} ->
+        close_startup_result(runtime, {:ok, startup})
+    end
+  end
+
+  defp close_startup_result(runtime, {:ok, startup}) do
+    close_runtime_session(runtime, startup.session)
+  end
+
+  defp close_startup_result(_runtime, {:error, _reason}), do: :ok
+
+  defp stop_runtime_owner(startup_pid) do
+    if Process.alive?(startup_pid), do: send(startup_pid, {:close, self()})
+    :ok
   end
 
   defp close_runtime_session(runtime, session) do
@@ -47,44 +148,60 @@ defmodule Jido.Cli.Tui do
     )
   end
 
-  defp loop(state, terminal, runtime, opts) do
+  defp loop(state, terminal, runtime, opts, startup_pid) do
     receive do
       {:jido_terminal, ref, event} when ref == terminal.ref ->
-        continue(state, {:terminal, event}, terminal, runtime, opts)
+        continue(state, {:terminal, event}, terminal, runtime, opts, startup_pid)
 
       {:jidoka_turn_event, event} ->
-        continue(state, {:jidoka, event}, terminal, runtime, opts)
+        continue(state, {:jidoka, event}, terminal, runtime, opts, startup_pid)
 
       {:jido_turn_result, request, result} ->
-        continue(state, {:turn_result, request, result}, terminal, runtime, opts)
+        continue(state, {:turn_result, request, result}, terminal, runtime, opts, startup_pid)
+
+      {:jido_runtime_startup, ^startup_pid, {:ok, startup}} ->
+        continue(
+          state,
+          {:runtime_ready, startup.session, startup.coding.instructions},
+          terminal,
+          runtime,
+          startup.opts,
+          startup_pid
+        )
+
+      {:jido_runtime_startup, ^startup_pid, {:error, reason}} ->
+        continue(state, {:runtime_failed, reason}, terminal, runtime, opts, startup_pid)
 
       :render_frame ->
         case Terminal.draw(terminal, View.render(state)) do
           :ok ->
             {state, []} = State.update(state, :rendered)
-            loop(state, terminal, runtime, opts)
+            loop(state, terminal, runtime, opts, startup_pid)
 
           {:error, reason} ->
             {:error, reason}
         end
 
       _message ->
-        loop(state, terminal, runtime, opts)
+        loop(state, terminal, runtime, opts, startup_pid)
     end
   end
 
-  defp continue(state, event, terminal, runtime, opts) do
+  defp continue(state, event, terminal, runtime, opts, startup_pid) do
     {state, effects} = State.update(state, event)
 
     case run_effects(state, effects, runtime, opts) do
       {:continue, state} ->
         state = schedule_render(state)
-        loop(state, terminal, runtime, opts)
+        loop(state, terminal, runtime, opts, startup_pid)
 
       :exit ->
-        :ok
+        exit_result(state)
     end
   end
+
+  defp exit_result(%State{runtime_status: :failed, startup_error: reason}), do: {:error, reason}
+  defp exit_result(_state), do: :ok
 
   defp run_effects(state, [], _runtime, _opts), do: {:continue, state}
   defp run_effects(_state, [:exit | _effects], _runtime, _opts), do: :exit

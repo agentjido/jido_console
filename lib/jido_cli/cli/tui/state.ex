@@ -10,6 +10,9 @@ defmodule Jido.Cli.Tui.State do
             editor: %Editor{},
             messages: [],
             streaming: "",
+            runtime_status: :ready,
+            startup_error: nil,
+            submit_when_ready?: false,
             status: :idle,
             error: nil,
             request: nil,
@@ -35,6 +38,7 @@ defmodule Jido.Cli.Tui.State do
     %__MODULE__{
       session: session,
       size: size,
+      runtime_status: Keyword.get(opts, :runtime_status, :ready),
       prepare_prompt?: Keyword.get(opts, :prepare_prompt, false),
       project_instructions: Keyword.get(opts, :project_instructions, [])
     }
@@ -57,6 +61,20 @@ defmodule Jido.Cli.Tui.State do
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :right}}),
     do: changed(state, editor: Editor.right(state.editor))
+
+  def update(
+        %__MODULE__{runtime_status: :starting, request: nil} = state,
+        {:terminal, {:key, :enter}}
+      ) do
+    if String.trim(state.editor.text) == "" do
+      {state, []}
+    else
+      changed(state, submit_when_ready?: true)
+    end
+  end
+
+  def update(%__MODULE__{runtime_status: :failed} = state, {:terminal, {:key, :enter}}),
+    do: {state, []}
 
   def update(%__MODULE__{request: nil} = state, {:terminal, {:key, :enter}}) do
     prompt = String.trim(state.editor.text)
@@ -84,6 +102,42 @@ defmodule Jido.Cli.Tui.State do
 
   def update(%__MODULE__{} = state, {:prompt_error, reason}) do
     {%{state | status: :error, error: format_error(reason), dirty?: true}, []}
+  end
+
+  def update(%__MODULE__{} = state, {:runtime_ready, session, instructions}) do
+    submit? = state.submit_when_ready?
+
+    state = %{
+      state
+      | session: session,
+        runtime_status: :ready,
+        startup_error: nil,
+        submit_when_ready?: false,
+        status: :idle,
+        error: nil,
+        project_instructions: instructions,
+        dirty?: true
+    }
+
+    prompt = String.trim(state.editor.text)
+
+    if submit? and prompt != "" do
+      submit_prompt(state, prompt)
+    else
+      {state, []}
+    end
+  end
+
+  def update(%__MODULE__{} = state, {:runtime_failed, reason}) do
+    {%{
+       state
+       | runtime_status: :failed,
+         startup_error: reason,
+         submit_when_ready?: false,
+         status: :error,
+         error: format_error(reason),
+         dirty?: true
+     }, []}
   end
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :enter}}), do: {state, []}

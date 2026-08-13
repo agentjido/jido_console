@@ -1,5 +1,5 @@
 defmodule Jido.CliTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
 
@@ -28,7 +28,8 @@ defmodule Jido.CliTest do
   end
 
   test "prints version" do
-    assert capture_io(fn -> assert :ok = Jido.Cli.run(["--version"]) end) == "jido 0.1.0\n"
+    assert capture_io(fn -> assert :ok = Jido.Cli.run(["--version"]) end) ==
+             "jido #{Jido.Cli.ReleaseIdentity.version()}\n"
   end
 
   test "prints command help" do
@@ -199,8 +200,38 @@ defmodule Jido.CliTest do
     assert Jido.Cli.DefaultAgent.spec().id == "jido"
   end
 
-  test "main starts the application and prints help" do
-    assert capture_io(fn -> assert :ok = Jido.Cli.main(["--help"]) end) =~ "Usage:"
+  test "main handles help and version without starting the application" do
+    traced_calls = [{Application, :ensure_all_started, 1}]
+
+    Enum.each(traced_calls, fn {module, _function, _arity} = call ->
+      assert {:module, ^module} = Code.ensure_loaded(module)
+      assert :erlang.trace_pattern(call, true, [:local]) > 0
+    end)
+
+    assert 1 = :erlang.trace(self(), true, [:call])
+
+    try do
+      for args <- [
+            ["--help"],
+            ["-h"],
+            ["run", "--help"],
+            ["run", "-h"],
+            ["eval", "--help"],
+            ["eval", "-h"]
+          ] do
+        assert capture_io(fn -> assert :ok = Jido.Cli.main(args) end) =~ "Usage:"
+      end
+
+      for args <- [["--version"], ["-v"]] do
+        assert capture_io(fn -> assert :ok = Jido.Cli.main(args) end) ==
+                 "jido #{Jido.Cli.ReleaseIdentity.version()}\n"
+      end
+    after
+      :erlang.trace(self(), false, [:call])
+      Enum.each(traced_calls, &:erlang.trace_pattern(&1, false, [:local]))
+    end
+
+    refute_received {:trace, _pid, :call, {Application, :ensure_all_started, [:jido_cli]}}
   end
 
   test "formats TUI errors at the CLI boundary" do

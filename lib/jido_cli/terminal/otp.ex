@@ -23,10 +23,27 @@ defmodule Jido.Terminal.OTP do
 
     def start_link(parent, read), do: Task.start_link(fn -> loop(parent, read) end)
 
+    def start_link(parent, start_raw, read) do
+      Task.start_link(fn ->
+        case start_raw.() do
+          :ok ->
+            send(parent, {:terminal_reader_ready, self()})
+            loop(parent, read)
+
+          {:error, reason} ->
+            send(parent, {:terminal_reader_failed, self(), reason})
+        end
+      end)
+    end
+
     defp loop(parent, read) do
       case read.() do
         data when is_binary(data) and data != "" ->
           send(parent, {:terminal_bytes, data})
+          loop(parent, read)
+
+        data when is_list(data) and data != [] ->
+          send(parent, {:terminal_bytes, IO.chardata_to_string(data)})
           loop(parent, read)
 
         :eof ->
@@ -77,10 +94,15 @@ defmodule Jido.Terminal.OTP do
     effects = effects(opts)
 
     with :ok <- require_otp_28(effects.otp_release),
-         :ok <- start_raw_shell(effects.start_raw),
+         {:ok, reader} <-
+           effects.reader.start_link(
+             self(),
+             fn -> start_raw_shell(effects.start_raw) end,
+             effects.read
+           ),
+         :ok <- await_reader_start(reader),
          {:ok, size} <- read_size(effects.size),
-         :ok <- write_stdio(effects.write, @enter),
-         {:ok, reader} <- effects.reader.start_link(self(), effects.read) do
+         :ok <- write_stdio(effects.write, @enter) do
       state = %{
         effects: effects,
         owner: owner,
@@ -174,7 +196,7 @@ defmodule Jido.Terminal.OTP do
     %{
       escape_timeout_ms: Keyword.get(opts, :escape_timeout_ms, @escape_timeout_ms),
       otp_release: Keyword.get(opts, :otp_release, &System.otp_release/0),
-      read: Keyword.get(opts, :read, fn -> IO.getn(:stdio, "", 1) end),
+      read: Keyword.get(opts, :read, fn -> IO.getn(:user, "", 1) end),
       reader: Keyword.get(opts, :reader, Reader),
       resize_interval_ms: Keyword.get(opts, :resize_interval_ms, @resize_interval_ms),
       size: Keyword.get(opts, :size, &system_size/0),
@@ -196,6 +218,16 @@ defmodule Jido.Terminal.OTP do
       :ok -> :ok
       {:error, :already_started} -> {:error, :interactive_shell_already_started}
       {:error, reason} -> {:error, {:raw_terminal_failed, reason}}
+    end
+  end
+
+  defp await_reader_start(reader) do
+    receive do
+      {:terminal_reader_ready, ^reader} -> :ok
+      {:terminal_reader_failed, ^reader, reason} -> {:error, reason}
+      {:EXIT, ^reader, reason} -> {:error, {:terminal_reader_failed, reason}}
+    after
+      5_000 -> {:error, :terminal_reader_start_timeout}
     end
   end
 

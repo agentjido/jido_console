@@ -1,5 +1,10 @@
 import Config
 
+if config_env() == :prod do
+  config :jido_cli,
+    execution_profile_resolver: Jido.Cli.Release.OfflineProfile
+end
+
 if config_env() == :dev do
   config :git_ops,
     mix_project: Jido.Cli.MixProject,

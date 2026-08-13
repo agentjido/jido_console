@@ -25,6 +25,21 @@ defmodule Jido.Cli.Tui.ViewTest do
     assert text =~ "running · Ctrl-C cancels"
   end
 
+  test "renders runtime startup, queued prompt, and startup failure states" do
+    starting = State.new(nil, {60, 8}, runtime_status: :starting)
+    text = starting |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
+    assert text =~ "starting runtime · Enter queues"
+
+    queued = %{starting | submit_when_ready?: true}
+    text = queued |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
+    assert text =~ "starting runtime · prompt queued"
+
+    failed = %{starting | runtime_status: :failed, error: "provider failed"}
+    text = failed |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
+    assert text =~ "startup failed · Esc exits"
+    assert text =~ "provider failed"
+  end
+
   test "renders each terminal status" do
     cases = [
       {:cancelling, nil, "cancelling"},

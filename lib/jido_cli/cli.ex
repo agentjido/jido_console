@@ -1,7 +1,6 @@
 defmodule Jido.Cli do
   @moduledoc "Command-line entry point for the jido coding harness."
 
-  @version "0.1.0"
   @usage """
   Usage:
     jido
@@ -35,16 +34,29 @@ defmodule Jido.Cli do
 
   @doc "Returns the CLI version."
   @spec version() :: String.t()
-  def version, do: @version
+  def version, do: Jido.Cli.ReleaseIdentity.version()
 
   @doc false
   @spec main([String.t()]) :: :ok
   def main(args) do
-    with :ok <- start_applications() do
-      case run(args) do
-        :ok -> :ok
-        {:error, status} -> System.halt(status)
-      end
+    case dispatch_fast(args) do
+      :continue -> start_and_run(args)
+      :ok -> :ok
+    end
+  end
+
+  defp dispatch_fast([flag]) when flag in ["--help", "-h"], do: print_help()
+  defp dispatch_fast([flag]) when flag in ["--version", "-v"], do: print_version()
+
+  defp dispatch_fast([command, flag])
+       when command in ["run", "eval"] and flag in ["--help", "-h"],
+       do: print_help()
+
+  defp dispatch_fast(_args), do: :continue
+
+  defp start_and_run([command | _rest] = args) when command in ["run", "eval"] do
+    with :ok <- start_runtime() do
+      handle_run_result(run(args))
     else
       {:error, reason} ->
         fail("could not start: #{inspect(reason)}")
@@ -52,17 +64,26 @@ defmodule Jido.Cli do
     end
   end
 
+  defp start_and_run(args) do
+    handle_run_result(run(args, runtime_startup: &start_runtime/0))
+  end
+
+  defp start_runtime do
+    start_applications()
+  end
+
+  defp handle_run_result(:ok), do: :ok
+  defp handle_run_result({:error, status}), do: System.halt(status)
+
   @doc "Runs one CLI invocation and returns its exit status without halting the VM."
   @spec run([String.t()], keyword()) :: :ok | {:error, pos_integer()}
   def run(args, opts \\ []) do
     case args do
       [command, "--help"] when command in ["run", "eval"] ->
-        IO.write(@usage)
-        :ok
+        print_help()
 
       [command, "-h"] when command in ["run", "eval"] ->
-        IO.write(@usage)
-        :ok
+        print_help()
 
       [command | _rest] when command in ["run", "eval"] ->
         run_automation(args, opts)
@@ -84,12 +105,10 @@ defmodule Jido.Cli do
            aliases: [h: :help, v: :version]
          ) do
       {[help: true], [], []} ->
-        IO.write(@usage)
-        :ok
+        print_help()
 
       {[version: true], [], []} ->
-        IO.puts("jido #{@version}")
-        :ok
+        print_version()
 
       {options, [], []} ->
         tui = Keyword.get(opts, :tui, Jido.Cli.Tui)
@@ -144,6 +163,9 @@ defmodule Jido.Cli do
     end
   end
 
+  defp print_help, do: IO.write(@usage)
+  defp print_version, do: IO.puts("jido #{version()}")
+
   # Escript archives can contain priv files, but libraries using File.read/1 cannot
   # access them in place. Extract once to a versioned cache and put those normal
   # application directories ahead of the archive before starting dependencies.
@@ -169,10 +191,12 @@ defmodule Jido.Cli do
   end
 
   defp extract_escript do
+    digest = escript_digest()
+
     cache =
       Path.join(
         System.tmp_dir!(),
-        "jido-#{@version}-otp-#{:erlang.system_info(:otp_release)}"
+        "jido-#{version()}-otp-#{:erlang.system_info(:otp_release)}-#{digest}"
       )
 
     with :ok <- ensure_extracted(cache) do
@@ -183,6 +207,15 @@ defmodule Jido.Cli do
 
       :ok
     end
+  end
+
+  defp escript_digest do
+    :escript.script_name()
+    |> List.to_string()
+    |> File.read!()
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
+    |> binary_part(0, 16)
   end
 
   defp ensure_extracted(cache) do

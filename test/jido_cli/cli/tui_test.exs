@@ -183,6 +183,32 @@ defmodule Jido.Cli.TuiTest do
     end
   end
 
+  defmodule CloseRuntime do
+    @behaviour Jido.Cli.Runtime
+
+    @impl true
+    def start_session(Jido.Cli.DefaultAgent, opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      send(test_pid, :close_session_started)
+      {:ok, {:close_session, test_pid}}
+    end
+
+    @impl true
+    def start_turn(_session, _prompt, _owner, _opts), do: {:error, :not_supported}
+
+    @impl true
+    def await(_request, _opts), do: {:error, :not_supported}
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :not_supported}
+
+    @impl true
+    def close_session({:close_session, test_pid}) do
+      send(test_pid, :runtime_session_closed)
+      :ok
+    end
+  end
+
   test "runs one complete streamed turn through injected boundaries" do
     test_pid = self()
 
@@ -197,7 +223,7 @@ defmodule Jido.Cli.TuiTest do
         )
       end)
 
-    assert_receive :session_started
+    assert_receive :session_started, 500
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, initial_frame}
     assert initial_frame =~ "Jido"
@@ -218,6 +244,99 @@ defmodule Jido.Cli.TuiTest do
     assert_receive :terminal_closed
   end
 
+  test "draws first and queues a prompt while the runtime starts" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          runtime_startup: fn ->
+            send(test_pid, {:runtime_starting, self()})
+
+            receive do
+              :release_runtime -> :ok
+            end
+          end,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, first_frame}
+    assert first_frame =~ "starting runtime · Enter queues"
+    assert_receive {:runtime_starting, startup_pid}
+    refute_receive :session_started, 50
+
+    send(owner, {:jido_terminal, ref, {:text, "hello"}})
+    send(owner, {:jido_terminal, ref, {:key, :enter}})
+    assert_frame_contains("starting runtime · prompt queued")
+    refute_receive :turn_started, 50
+
+    send(startup_pid, :release_runtime)
+    assert_receive :session_started
+    assert_receive :turn_started
+    assert_receive {:turn_prompt, "hello", %{"coding" => %{"pack_id" => "jido.coding_pack"}}}
+    assert_receive {:turn_awaited, _await_opts}
+    assert_frame_contains("Hello back")
+
+    send(owner, {:jido_terminal, ref, {:key, :escape}})
+    assert :ok = Task.await(task)
+    assert_receive :terminal_closed
+  end
+
+  test "shows a startup failure and exits with its reason" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          runtime_startup: fn -> {:error, :boot_failed} end,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, first_frame}
+    assert first_frame =~ "starting runtime"
+    assert_frame_contains("startup failed · Esc exits")
+    refute_receive :session_started, 50
+
+    send(owner, {:jido_terminal, ref, {:key, :escape}})
+    assert {:error, :boot_failed} = Task.await(task)
+    assert_receive :terminal_closed
+  end
+
+  test "closes runtime resources after a normal exit" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: CloseRuntime,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _first_frame}
+    assert_receive :close_session_started
+    assert_frame_contains("idle · Enter sends")
+
+    send(owner, {:jido_terminal, ref, {:key, :escape}})
+    assert :ok = Task.await(task)
+    assert_receive :runtime_session_closed
+    assert_receive :terminal_closed
+  end
+
   test "shows bounded coding review returned by the runtime" do
     test_pid = self()
 
@@ -232,7 +351,7 @@ defmodule Jido.Cli.TuiTest do
         )
       end)
 
-    assert_receive :session_started
+    assert_receive :session_started, 500
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
 
@@ -269,10 +388,9 @@ defmodule Jido.Cli.TuiTest do
         )
       end)
 
-    assert_receive :session_started
+    assert_receive :session_started, 500
     assert_receive {:terminal_opened, owner, ref}
-    assert_receive {:frame, frame}
-    assert frame =~ "Loaded AGENTS.md"
+    assert_frame_contains("Loaded AGENTS.md")
 
     send(owner, {:jido_terminal, ref, {:text, "Review @value.ex"}})
     send(owner, {:jido_terminal, ref, {:key, :enter}})
@@ -297,7 +415,7 @@ defmodule Jido.Cli.TuiTest do
                session_opts: [test_pid: self()]
              )
 
-    assert_receive :session_started
+    refute_receive :session_started, 50
     assert_receive {:terminal_opened, _owner, _ref}
     assert_receive :terminal_closed
   end
@@ -315,7 +433,7 @@ defmodule Jido.Cli.TuiTest do
         )
       end)
 
-    assert_receive :session_started
+    assert_receive :session_started, 500
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send(owner, {:jido_terminal, ref, {:text, "change"}})
@@ -390,7 +508,7 @@ defmodule Jido.Cli.TuiTest do
         )
       end)
 
-    assert_receive :failure_session_started
+    assert_receive :failure_session_started, 500
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     {task, owner, ref}

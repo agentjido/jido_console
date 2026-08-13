@@ -9,9 +9,8 @@ assertions. It does not use `jido_eval`.
 
 ## Installation
 
-`jido` is distributed as a self-contained escript. Build it from source with the
-steps in [Build](#build) below, or install a published build through Homebrew as
-described in [Homebrew packaging](#homebrew-packaging).
+The release artifact is a target-specific package with a private Erlang/OTP
+runtime. Homebrew distribution is planned but is not implemented yet.
 
 The `jido_cli` Mix package also carries Hex metadata for programs that depend on
 the harness programmatically:
@@ -26,20 +25,27 @@ end
 
 ## Build
 
-Elixir 1.18 or newer is necessary.
+The supported local release build uses the exact Erlang and Elixir versions in
+`.tool-versions`. The source build uses an exact Jidoka commit from GitHub. It
+does not need a sibling Jidoka checkout and does not use an unreleased Hex
+package.
 
-The source build uses an exact Jidoka commit from GitHub. It does not need a
-sibling Jidoka checkout and does not use an unreleased Hex package.
+Create and test the complete local macOS ARM64 candidate with one command:
 
 ```sh
-mix deps.get
-MIX_ENV=prod mix escript.build
-./jido --version
+mix jido.release
 ```
 
-The executable requires a compatible Erlang/OTP installation on the target
-computer. It extracts packaged runtime data to a versioned temporary directory
-when it starts.
+The command rejects a dirty worktree. For local development tests, use
+`mix jido.release --allow-dirty`. This marks the metadata as dirty and not
+publishable. Output is under `dist/`. The command does not sign, notarize,
+upload, publish, or change Homebrew.
+
+After extraction, run `bin/jido`. It always uses the private runtime under
+`libexec`; Erlang and Elixir are not required on `PATH`.
+
+For a developer escript only, use `MIX_ENV=prod mix escript.build`. The escript
+is not the selected release package.
 
 ## Interactive use
 

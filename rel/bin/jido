@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+# A parent BEAM process exports these internal values. They must not select or
+# configure the packaged runtime.
+unset BINDIR ROOTDIR EMU PROGNAME ERL_LIBS ERL_FLAGS ERL_AFLAGS
+
+readlink_f() {
+  cd "$(dirname "$1")" >/dev/null
+  filename="$(basename "$1")"
+
+  if [ -h "$filename" ]; then
+    readlink_f "$(readlink "$filename")"
+  else
+    printf '%s/%s\n' "$(pwd -P)" "$filename"
+  fi
+}
+
+SELF="$(readlink_f "$0")"
+PACKAGE_ROOT="$(CDPATH='' cd "$(dirname "$SELF")/.." && pwd -P)"
+RELEASE_ROOT="$PACKAGE_ROOT/libexec"
+
+IFS=' ' read -r ERTS_VSN RELEASE_VSN <"$RELEASE_ROOT/releases/start_erl.data" || :
+
+exec "$RELEASE_ROOT/erts-$ERTS_VSN/bin/erl" \
+  +B c \
+  -noshell \
+  -boot "$RELEASE_ROOT/releases/$RELEASE_VSN/start_clean" \
+  -boot_var RELEASE_LIB "$RELEASE_ROOT/lib" \
+  -config "$RELEASE_ROOT/releases/$RELEASE_VSN/sys" \
+  -args_file "$RELEASE_ROOT/releases/$RELEASE_VSN/vm.args" \
+  -s Elixir.Jido.Cli.ReleaseEntry main \
+  -extra "$@"

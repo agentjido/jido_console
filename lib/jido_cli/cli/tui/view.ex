@@ -115,6 +115,15 @@ defmodule Jido.Cli.Tui.View do
   defp marker("interrupted"), do: "[interrupted]"
   defp marker(_status), do: "[failed]"
 
+  defp status_row(%State{runtime_status: :starting, submit_when_ready?: true}),
+    do: "starting runtime · prompt queued"
+
+  defp status_row(%State{runtime_status: :starting}),
+    do: "starting runtime · Enter queues"
+
+  defp status_row(%State{runtime_status: :failed, error: error}),
+    do: "startup failed · Esc exits · #{error}"
+
   defp status_row(%State{status: :idle, error: nil}), do: "idle · Enter sends · Esc exits"
   defp status_row(%State{status: :running}), do: "running · Ctrl-C cancels"
   defp status_row(%State{status: :resolving}), do: "resolving file mentions"

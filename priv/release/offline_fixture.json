@@ -1,0 +1,49 @@
+{
+  "compatibility": {},
+  "digest": "sha256:cace48232cdf26c6b325a45a1a0074cf1994e719b09eca534e29f2c7793636b8",
+  "entries": [
+    {
+      "action": "model.invoke",
+      "class": "policy",
+      "evidence": {"live": false, "source": "recorded"},
+      "fingerprint": "sha256:d7805363c0d6624ad149a0b217f1216a1d2a53c37a5da2c0310034d4fc95694c",
+      "index": 1,
+      "occurrence": 1,
+      "outcome": "ok",
+      "response": {
+        "$jidoka.tuple": [
+          {"$jidoka.atom": "ok"},
+          {
+            "decided_at_ms": null,
+            "evidence": {"source": "jidoka_builtin"},
+            "outcome": {"$jidoka.atom": "allow"},
+            "reason": null,
+            "rule_id": "jidoka.default.llm",
+            "version": 1
+          }
+        ]
+      }
+    },
+    {
+      "action": "invoke",
+      "class": "llm",
+      "evidence": {"live": false, "source": "recorded"},
+      "fingerprint": "sha256:e9635d37d85a0bdc684778c6ed5218a7b4e2d2da0fb67d13dae5916e53fdb056",
+      "index": 2,
+      "occurrence": 1,
+      "outcome": "ok",
+      "response": {
+        "$jidoka.tuple": [
+          {"$jidoka.atom": "ok"},
+          {"content": "OFFLINE", "type": {"$jidoka.atom": "final"}}
+        ]
+      }
+    }
+  ],
+  "redaction": {
+    "key_filter": "sensitive",
+    "live_values": "rejected",
+    "request_bodies": "fingerprint_only"
+  },
+  "version": 1
+}

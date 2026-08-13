@@ -4,6 +4,7 @@
   # modules under Jido.Cli and Jido.Cli.Automation remain fully documented.
   ignore_modules: [
     ~r/^Jido\.Cli\.MixProject$/,
+    ~r/^Jido\.Cli\.Release\.ForbiddenEnvironmentAdapter$/,
     ~r/^Jido\.Cli\.Tui(?:\.|$)/,
     ~r/^Jido\.Terminal\.OTP(?:\.|$)/
   ],

@@ -1,0 +1,93 @@
+%{
+  schema: "jido.license-policy",
+  schema_version: 1,
+  allowed_licenses: [
+    "Apache-2.0",
+    "Apache 2.0",
+    "BSD 2-Clause",
+    "ISC",
+    "LGPL-3.0",
+    "MIT",
+    "Unlicense"
+  ],
+  reviewed_components: ~w(
+    abnf_parsec-2.1.0
+    anubis_mcp-1.14.0
+    ash-3.31.3
+    ash_jido-1.0.1
+    asn1-5.5
+    compiler-10.0.1
+    crontab-1.2.0
+    crux-0.1.4
+    crypto-5.9
+    decimal-3.1.1
+    domainatrex-3.2.0
+    dotenvy-1.1.1
+    ecto-3.14.1
+    eex-1.20.2
+    elixir-1.20.2
+    ets-0.9.0
+    extractous_ex-0.2.1
+    finch-0.23.0
+    floki-0.38.4
+    flow-1.2.4
+    fsmx-0.5.0
+    fuse-2.5.0
+    gen_stage-1.3.2
+    hpax-1.0.4
+    html2markdown-0.3.2
+    idna-6.1.1
+    iex-1.20.2
+    inets-9.7.1
+    iterex-0.1.2
+    jason-1.4.5
+    jido-2.3.3
+    jido_action-2.3.2
+    jido_ai-2.3.0
+    jido_browser-2.2.0
+    jido_cli-0.1.0
+    jido_mcp-1.1.1
+    jido_signal-2.2.2
+    jidoka-0.9.1
+    jsv-0.22.0
+    kernel-11.0.2
+    llm_db-2026.7.5
+    logger-1.20.2
+    lua-1.0.2
+    mime-2.0.7
+    mint-1.9.3
+    mnesia-4.26.1
+    multigraph-0.16.1-mg.4
+    nimble_options-1.1.1
+    nimble_parsec-1.4.2
+    nimble_pool-1.1.0
+    peri-0.9.0
+    poolboy-1.5.2
+    public_key-1.21.2
+    reactor-1.0.6
+    req-0.7.2
+    req_llm-1.20.0
+    runic-0.1.0-alpha.8
+    rustler-0.38.0
+    rustler_precompiled-0.9.0
+    sasl-4.4
+    server_sent_events-1.1.0
+    spark-2.7.2
+    splode-0.3.2
+    ssl-11.7.2
+    stdlib-8.0.1
+    stream_data-1.4.0
+    telemetry-1.4.2
+    telemetry_metrics-1.1.0
+    texture-1.2.1
+    time_zone_info-0.7.15
+    toml-0.7.0
+    unicode_util_compat-0.7.1
+    uniq-0.6.3
+    websockex-0.5.1
+    yamerl-0.10.0
+    yaml_elixir-2.12.2
+    ymlr-5.1.6
+    zoi-0.18.7
+  )
+}

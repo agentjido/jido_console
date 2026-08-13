@@ -98,10 +98,11 @@ defmodule Jido.Terminal.OTPTest do
   end
 
   test "reader forwards data, errors, and end of file" do
-    {:ok, values} = Agent.start_link(fn -> [:ignored, "x", {:error, :read_failed}] end)
+    {:ok, values} = Agent.start_link(fn -> [:ignored, ~c"a", "x", {:error, :read_failed}] end)
     read = queue_reader(values)
     assert {:ok, reader} = Reader.start_link(self(), read)
     monitor = Process.monitor(reader)
+    assert_receive {:terminal_bytes, "a"}
     assert_receive {:terminal_bytes, "x"}
     assert_receive {:terminal_error, :read_failed}
     assert_receive {:DOWN, ^monitor, :process, ^reader, :normal}

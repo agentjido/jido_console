@@ -19,12 +19,13 @@ defmodule Jido.Cli.MixProject do
         main_module: Jido.Cli,
         name: "jido",
         app: nil,
-        include_priv_for: [:llm_db, :req_llm, :time_zone_info]
+        include_priv_for: [:extractous_ex, :llm_db, :req_llm, :time_zone_info]
       ],
       name: "Jido CLI",
       description: @description,
       source_url: @source_url,
       homepage_url: @source_url,
+      releases: releases(),
       package: package(),
       docs: docs(),
       cli: cli(),
@@ -40,12 +41,16 @@ defmodule Jido.Cli.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: extra_applications(Mix.env())
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(:test), do: ["lib", "dev", "test/support"]
+  defp elixirc_paths(:dev), do: ["lib", "dev"]
   defp elixirc_paths(_env), do: ["lib"]
+
+  defp extra_applications(env) when env in [:dev, :test], do: [:logger, :mix]
+  defp extra_applications(_env), do: [:logger]
 
   defp cli do
     [
@@ -131,5 +136,16 @@ defmodule Jido.Cli.MixProject do
           raise "JIDO_CLI_JIDOKA_PATH is permitted only in development and test"
         end
     end
+  end
+
+  # ReqLLM owns llm_db as an included application. The explicit release mode
+  # resolves Jidoka's transitive regular-application declaration without
+  # editing compiled dependency metadata.
+  defp releases do
+    [
+      jido: [
+        applications: [jido_cli: :load, llm_db: :load]
+      ]
+    ]
   end
 end
