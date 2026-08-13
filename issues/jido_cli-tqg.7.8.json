@@ -2,7 +2,6 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [
-    "jido_cli-tqg.7.22",
     "jido_cli-tqg.7.23"
   ],
   "created": "2026-08-12T22:09:59Z",
@@ -20,5 +19,5 @@
   "status": "open",
   "title": "Persist daemon-owned state and recover after restart",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:08Z"
+  "updated_at": "2026-08-13T13:02:09Z"
 }
