@@ -8,14 +8,16 @@
     "jido_cli-8t9.4.5",
     "jido_cli-8t9.5.4"
   ],
+  "closed_at": "2026-08-13T23:49:42Z",
+  "close_reason": "Implemented live tool lifecycle display and interactive approve/deny flow with repeated review resume, safe argument summaries, durable decisions, monitored response streaming, and relay ordering. Commit 6561f17. Validation: 263 tests passed; 84.0% coverage; Credo, Dialyzer, Doctor, docs, dependency lock, and production escript smoke passed.",
   "created": "2026-08-13T20:14:28Z",
   "description": "Repository: jido_cli. Show planned, running, completed, failed, and retried tool calls and let users approve or deny review requests. Acceptance: approval, denial, expiry, and repeated hibernation resume the same wrapped session; decisions stay in the transcript; arguments use safe summaries.",
   "id": "jido_cli-8t9.4.4",
   "labels": [],
   "parent": "jido_cli-8t9.4",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Add live tool activity and interactive approvals",
   "type": "task",
-  "updated_at": "2026-08-13T23:39:19Z"
+  "updated_at": "2026-08-13T23:49:42Z"
 }
