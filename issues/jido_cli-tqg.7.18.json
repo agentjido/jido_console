@@ -7,8 +7,7 @@
     "jido_cli-tqg.7.17"
   ],
   "blocks": [
-    "jido_cli-tqg.7.19",
-    "jido_cli-tqg.7.25"
+    "jido_cli-tqg.7.19"
   ],
   "created": "2026-08-12T22:14:05Z",
   "description": "## Outcome\n\nOne repository command runs the complete local macOS ARM64 release flow and writes one unambiguous candidate under `dist/`.\n\n## Work\n\n1. Validate version, source commit, target, toolchain, and release inputs.\n2. Reject a dirty worktree by default. Support an explicit development override that marks output dirty and not publishable.\n3. Resolve locked dependencies and run format, warnings-as-errors compile, static analysis, and tests.\n4. Run the shipped-dependency and license audit.\n5. Build the production Mix release and package archive.\n6. Generate notices, metadata, SBOM when supported, provenance, and the final checksum.\n7. Unpack the exact final archive and run the acceptance harness.\n8. Write `acceptance.json`.\n9. Print the final artifact paths, version, target, SHA-256 value, and Brew installation path.\n10. Use staging and atomic promotion so a failure leaves no ambiguous candidate.\n11. Make a repeated run safe and deterministic.\n\n## Acceptance criteria\n\n- [ ] One documented command runs the full flow.\n- [ ] A clean checkout can create the complete `dist/` output.\n- [ ] Any failed source, build, license, package, checksum, or acceptance gate stops the flow.\n- [ ] The candidate uses exact final archive bytes for acceptance.\n- [ ] Dirty output is clearly marked and cannot pass a publishable check.\n- [ ] The command makes no live provider call and performs no external publication.\n- [ ] The archive and SHA-256 value are ready for a later GitHub upload and Homebrew formula.\n\n## Tests\n\nRun clean, dirty, repeated, interrupted, failed-quality, failed-build, bad-license, bad-checksum, failed-acceptance, and successful local flows.\n\n## Non-goals\n\nDo not tag, sign, notarize, upload, publish, or edit a Homebrew repository.",
