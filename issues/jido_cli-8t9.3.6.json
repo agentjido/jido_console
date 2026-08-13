@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-8t9.3.1"
+  ],
   "blocks": [],
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Validate the complete group and complete review or policy checks before any call starts, then schedule safe calls serially or in parallel. Acceptance: checkpoint policy does not change safety; zero calls start before approval; observations return in original call order.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Preflight complete tool groups before scheduling",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:27Z"
+  "updated_at": "2026-08-13T20:14:54Z"
 }
