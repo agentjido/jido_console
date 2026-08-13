@@ -2,6 +2,8 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-13T13:02:13Z",
+  "close_reason": "Removed from the release scope by product decision. Jido will not include an independent daemon or operating-system service.",
   "created": "2026-08-12T22:12:32Z",
   "description": "## Outcome\n\nOne lifecycle policy defines admission, active work, client disconnects, drain, cancel, deadlines, forced stop, and cleanup. The daemon and protocol implementation enforce that policy.\n\n## Work\n\n1. Define idle, accepting, draining, cancelling, stopping, and stopped states.\n2. State when a disconnected client cancels work and when durable work continues.\n3. Stop new admission when shutdown starts.\n4. Define drain and cancellation deadlines, forced-stop behavior, and terminal event order.\n5. Preserve the primary work error and each cleanup error without secret data.\n6. Close listeners, sessions, stores, and discovery ownership in a fixed order.\n7. Add injected clock and cancellation boundaries and document service-manager expectations.\n\n## Acceptance criteria\n\n- [ ] Idle and active shutdown have deterministic state transitions.\n- [ ] No new request starts after draining begins.\n- [ ] Blocked work receives public Jidoka cancellation before forced stop.\n- [ ] Each accepted request has one terminal result or one explicit interrupted-state record.\n- [ ] Cleanup runs after success, error, cancellation, disconnect, and deadline.\n- [ ] Repeated stop requests are safe and idempotent.\n\n## Tests\n\nAdd lifecycle state-machine, race, blocked-work, disconnect, timeout, cancellation-failure, and cleanup-failure tests. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not define an OS service wrapper. Do not add hot upgrades or distributed work.",
   "id": "jido_cli-tqg.7.10",
@@ -14,8 +16,8 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
-  "status": "open",
+  "status": "closed",
   "title": "Define and enforce the daemon work lifecycle and shutdown policy",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:09Z"
+  "updated_at": "2026-08-13T13:02:13Z"
 }
