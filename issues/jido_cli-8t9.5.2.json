@@ -2,7 +2,8 @@
   "assignee": "",
   "blocked_by": [
     "jido_cli-8t9.2.7",
-    "jido_cli-8t9.3.8"
+    "jido_cli-8t9.3.8",
+    "jido_cli-8t9.5.1"
   ],
   "blocks": [],
   "created": "2026-08-13T20:14:28Z",
@@ -14,5 +15,5 @@
   "status": "open",
   "title": "Add deterministic three-turn Jidoka coding tests",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:56Z"
+  "updated_at": "2026-08-13T20:14:57Z"
 }
