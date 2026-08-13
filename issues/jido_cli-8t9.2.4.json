@@ -10,14 +10,16 @@
     "jido_cli-8t9.2.8",
     "jido_cli-8t9.4.1"
   ],
+  "closed_at": "2026-08-13T21:25:22Z",
+  "close_reason": "Implemented in Jidoka commit ba4b94ff. Session.run and Session.chat now build from the committed Session.Conversation state, carry safe context, ignore caller-injected history, and attach an optimistic continuation revision. Store claim and commit reject stale or invalid conversation revisions. fresh_conversation resets only on successful completion. Caller-owned, in-memory, DETS restart, failure, cancellation, fresh, stale-claim, and parity coverage pass. Validation: 648 tests passed with 38 excluded; focused parity passed; mix quality passed.",
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Make Session.run and Session.chat build from the canonical conversation revision and promote new state only in the successful commit. Add an explicit fresh-conversation option. Acceptance: two separate calls share full history through caller-owned, in-memory, and DETS sessions; failure and cancellation keep the last completed state.",
   "id": "jido_cli-8t9.2.4",
   "labels": [],
   "parent": "jido_cli-8t9.2",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Make normal Session continuation atomic",
   "type": "task",
-  "updated_at": "2026-08-13T21:18:13Z"
+  "updated_at": "2026-08-13T21:25:22Z"
 }
