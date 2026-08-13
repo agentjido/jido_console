@@ -3,9 +3,7 @@
   "blocked_by": [
     "jido_cli-tqg.7.19"
   ],
-  "blocks": [
-    "jido_cli-tqg.7.24"
-  ],
+  "blocks": [],
   "closed_at": "2026-08-13T14:18:27Z",
   "close_reason": "User validated exact local macOS ARM64 candidate. Manual record saved with Ctrl+C BEAM break-menu UX issue and verified +B c remediation.",
   "created": "2026-08-12T22:14:05Z",
