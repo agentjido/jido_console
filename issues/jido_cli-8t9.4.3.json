@@ -8,14 +8,16 @@
     "jido_cli-8t9.4.4",
     "jido_cli-8t9.4.5"
   ],
+  "closed_at": "2026-08-13T23:39:08Z",
+  "close_reason": "Added a pure checked event mapper and explicit turn records for prompt, bounded attachments, assistant text, distinct tools, reviews, outcome, and changes. Rejected stale, duplicate, and out-of-order events and removed terminal control bytes from projected text and summaries. Commit: cec2aa3. Evidence: 258 tests passed; Credo, Dialyzer, Doctor, docs, coverage, production escript smoke, and diff checks passed.",
   "created": "2026-08-13T20:14:28Z",
   "description": "Repository: jido_cli. Add a pure event mapper and per-turn records for prompt, attachments, assistant text, tools, reviews, outcome, and changes. Acceptance: stale, duplicate, and out-of-order events do not alter the active turn; parallel effects remain distinct; safe summaries remove terminal control bytes.",
   "id": "jido_cli-8t9.4.3",
   "labels": [],
   "parent": "jido_cli-8t9.4",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Add checked event projection and per-turn TUI state",
   "type": "task",
-  "updated_at": "2026-08-13T23:30:23Z"
+  "updated_at": "2026-08-13T23:39:08Z"
 }
