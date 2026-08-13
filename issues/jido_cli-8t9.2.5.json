@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-8t9.2.4"
+  ],
   "blocks": [],
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Remove sequence-local conversation ownership and route ordered sequences through the same promotion rules as normal Session calls. Acceptance: sequence and repeated Session calls create the same transcript shape and preserve existing result contracts.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Unify run_sequence with Session continuation",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:26Z"
+  "updated_at": "2026-08-13T20:14:53Z"
 }
