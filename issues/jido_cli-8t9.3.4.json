@@ -4,7 +4,8 @@
     "jido_cli-8t9.3.2"
   ],
   "blocks": [
-    "jido_cli-8t9.3.8"
+    "jido_cli-8t9.3.8",
+    "jido_cli-8t9.4.3"
   ],
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Project text, reasoning, tool-call, usage, warning, finish, cancellation, and error events with one monotonic request sequence. Acceptance: stream and non-stream records match; calls start only after complete arguments; cancellation closes the stream; each request emits one terminal event.",
@@ -15,5 +16,5 @@
   "status": "open",
   "title": "Normalize ReqLLM streaming into the tool loop",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:54Z"
+  "updated_at": "2026-08-13T20:14:55Z"
 }
