@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.11"
+  ],
   "blocks": [
     "jido_cli-tqg.7.27"
   ],
@@ -17,5 +19,5 @@
   "status": "open",
   "title": "Sign future Windows release executables",
   "type": "task",
-  "updated_at": "2026-08-13T13:05:02Z"
+  "updated_at": "2026-08-13T13:05:03Z"
 }
