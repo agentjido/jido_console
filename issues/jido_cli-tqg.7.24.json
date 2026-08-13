@@ -1,7 +1,6 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-tqg.7.18",
     "jido_cli-tqg.7.20"
   ],
   "blocks": [
@@ -20,5 +19,5 @@
   "status": "open",
   "title": "Sign and notarize the macOS ARM64 release artifact",
   "type": "task",
-  "updated_at": "2026-08-13T13:04:24Z"
+  "updated_at": "2026-08-13T13:05:01Z"
 }
