@@ -4,7 +4,9 @@
     "jido_cli-8t9.1.2",
     "jido_cli-8t9.2.1"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.3.2"
+  ],
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Merge static and extension operations, reject duplicate names, validate arguments centrally, and convert metadata to ReqLLM.Tool schemas. Acceptance: the model receives correct schemas; invalid arguments do not reach handlers; extension and built-in tools use one registry.",
   "id": "jido_cli-8t9.3.1",
@@ -14,5 +16,5 @@
   "status": "open",
   "title": "Build one operation registry and ReqLLM tool projection",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:53Z"
+  "updated_at": "2026-08-13T20:14:54Z"
 }
