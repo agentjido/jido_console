@@ -1,7 +1,6 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-tqg.7.10",
     "jido_cli-tqg.7.3",
     "jido_cli-tqg.7.9"
   ],
@@ -24,5 +23,5 @@
   "status": "open",
   "title": "Make file, signal, and shell boundaries portable to Windows",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:08Z"
+  "updated_at": "2026-08-13T13:02:07Z"
 }
