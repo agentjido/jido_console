@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-8t9.2.4"
+  ],
   "blocks": [],
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Keep stable completed conversation separate from an active snapshot and promote resumed work only after success. Acceptance: resume and recovery continue the correct turn; cancelled work does not leak; source and fork conversations remain isolated.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Reconcile hibernate, resume, recovery, and fork continuation",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:26Z"
+  "updated_at": "2026-08-13T20:14:53Z"
 }
