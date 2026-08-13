@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_cli-tqg.7.18"
   ],
@@ -16,8 +16,8 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "Pass automated acceptance on the local release candidate",
   "type": "task",
-  "updated_at": "2026-08-13T13:05:04Z"
+  "updated_at": "2026-08-13T14:06:18Z"
 }
