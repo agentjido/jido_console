@@ -8,14 +8,16 @@
     "jido_cli-8t9.3.4",
     "jido_cli-8t9.3.5"
   ],
+  "closed_at": "2026-08-13T22:01:00Z",
+  "close_reason": "Completed in Jidoka commit c06e55cd. ReqLLM response classification now normalizes native single and multiple tool calls, maps provider-safe names to canonical operations, preserves provider call IDs, retains JSON fallback parity, and rejects incomplete, cancelled, filtered, error, empty, and malformed results. Validation: 676 deterministic tests passed; 32 parity tests passed; mix quality passed.",
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Use ReqLLM response classification for native calls and finish reasons while retaining the constrained JSON decision protocol as fallback. Acceptance: native single and multiple calls work with empty text; both protocols create equal internal records; incomplete, cancelled, and error responses cannot become empty finals.",
   "id": "jido_cli-8t9.3.2",
   "labels": [],
   "parent": "jido_cli-8t9.3",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Add native and JSON-fallback response normalization",
   "type": "task",
-  "updated_at": "2026-08-13T21:57:35Z"
+  "updated_at": "2026-08-13T22:01:00Z"
 }
