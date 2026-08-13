@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:13:43Z",
+  "description": "Add deterministic repository oracles, multi-turn coding cases, provider contracts, TUI and PTY coverage, cross-repository gates, and exact local-artifact acceptance. No publication work.",
+  "id": "jido_cli-8t9.5",
+  "labels": [],
+  "parent": "jido_cli-8t9",
+  "priority": 1,
+  "status": "open",
+  "title": "Phase 4: Prove the complete local coding flow",
+  "type": "epic",
+  "updated_at": "2026-08-13T20:13:43Z"
+}
