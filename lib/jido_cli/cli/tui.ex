@@ -90,6 +90,7 @@ defmodule Jido.Cli.Tui do
       |> Keyword.get(:session_opts, [])
       |> Keyword.put(:extension_setup, coding.extension_setup)
       |> Keyword.put(:agent_spec_override, coding.spec)
+      |> Keyword.put(:local_resources, coding.local_resources)
 
     case runtime.start_session(agent, session_opts) do
       {:ok, session} ->

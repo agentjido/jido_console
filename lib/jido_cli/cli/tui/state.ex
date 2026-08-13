@@ -2,6 +2,7 @@ defmodule Jido.Cli.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
   alias Jido.Cli.Tui.Editor
+  alias Jido.Cli.Runtime.Jidoka.Result, as: RuntimeResult
   alias Jidoka.Stream, as: JidokaStream
 
   @enforce_keys [:session, :size]
@@ -181,6 +182,28 @@ defmodule Jido.Cli.Tui.State do
 
   def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content}}) do
     finish(state, session, content, :idle, nil)
+  end
+
+  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :ok} = result}) do
+    state = %{state | coding_reviews: Jido.Cli.Coding.Review.normalize(result.coding_reviews)}
+    finish(state, result.session, result.content, :idle, nil)
+  end
+
+  def update(
+        %__MODULE__{} = state,
+        {:turn_result, %RuntimeResult{status: status} = result}
+      )
+      when status in [:hibernated, :pending_review] do
+    message = if status == :pending_review, do: "Agent paused for review.", else: "Agent paused."
+    finish(state, result.session, state.streaming, :interrupted, message)
+  end
+
+  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :cancelled} = result}) do
+    finish(state, result.session, state.streaming, :idle, nil)
+  end
+
+  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :error} = result}) do
+    finish(state, result.session, state.streaming, :error, format_error(result.error))
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content, reviews}}) do

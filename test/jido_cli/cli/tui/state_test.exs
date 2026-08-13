@@ -2,6 +2,7 @@ defmodule Jido.Cli.Tui.StateTest do
   use ExUnit.Case, async: true
 
   alias Jido.Cli.Tui.State
+  alias Jido.Cli.Runtime.Jidoka, as: Runtime
   alias Jidoka.Cancellation
   alias Jidoka.Event
 
@@ -34,6 +35,46 @@ defmodule Jido.Cli.Tui.StateTest do
     assert state.status == :idle
     refute state.finishing?
     assert state.messages |> List.last() |> Map.fetch!(:content) == "Hi there"
+  end
+
+  test "commits a normalized runtime result for the active request" do
+    session =
+      struct!(Runtime.Session,
+        data: :next_data,
+        extension_host: :extension_host,
+        runtime_opts: [operations: :operations],
+        local_resources: :local_resources
+      )
+
+    request =
+      struct!(Runtime.Request,
+        request_id: "request-1",
+        request: :opaque_request,
+        session: session,
+        runtime_opts: [request_id: "request-1"],
+        extension_host: session.extension_host,
+        local_resources: session.local_resources
+      )
+
+    result =
+      struct!(Runtime.Result,
+        request_id: request.request_id,
+        status: :ok,
+        session: session,
+        runtime_opts: request.runtime_opts,
+        extension_host: request.extension_host,
+        local_resources: request.local_resources,
+        handle: request,
+        content: "normalized answer"
+      )
+
+    state = %{State.new(:old_session, {80, 24}) | request: request, status: :running}
+    {state, []} = State.update(state, {:turn_result, request, result})
+
+    assert state.session == session
+    assert state.request == nil
+    assert state.status == :idle
+    assert List.last(state.messages).content == "normalized answer"
   end
 
   test "queues the current prompt until the runtime is ready" do
