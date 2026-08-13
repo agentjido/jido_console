@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-8t9.4.2"
+  ],
   "blocks": [],
   "created": "2026-08-13T20:14:28Z",
   "description": "Repository: jido_cli. On EOF, draw failure, startup failure, or exit, cancel active work, wait for a bounded terminal result, close extension and coding resources, and restore the terminal. Acceptance: resources open and close exactly once; no child remains; terminal cleanup bytes are always emitted.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Add bounded cancel-and-close resource shutdown",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:28Z"
+  "updated_at": "2026-08-13T20:14:56Z"
 }
