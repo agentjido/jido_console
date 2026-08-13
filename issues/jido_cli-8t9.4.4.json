@@ -4,7 +4,9 @@
     "jido_cli-8t9.3.6",
     "jido_cli-8t9.4.3"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.4.5"
+  ],
   "created": "2026-08-13T20:14:28Z",
   "description": "Repository: jido_cli. Show planned, running, completed, failed, and retried tool calls and let users approve or deny review requests. Acceptance: approval, denial, expiry, and repeated hibernation resume the same wrapped session; decisions stay in the transcript; arguments use safe summaries.",
   "id": "jido_cli-8t9.4.4",
