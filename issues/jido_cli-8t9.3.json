@@ -2,14 +2,16 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-13T23:04:56Z",
+  "close_reason": "All eight Phase 2 tasks are complete. Jidoka now has provider-neutral native and fallback tool loops, continuation messages, normalized streaming, recoverable failures, complete-group preflight, durable per-call batch checkpoints, and unified hard runtime limits. The last source commit is 562687d0; full validation passed.",
   "created": "2026-08-13T20:13:43Z",
   "description": "Create one provider-neutral tool exchange, use native ReqLLM tools where supported, retain the JSON fallback, and harden errors, batches, checkpoints, streams, retries, and limits.",
   "id": "jido_cli-8t9.3",
   "labels": [],
   "parent": "jido_cli-8t9",
   "priority": 0,
-  "status": "open",
+  "status": "closed",
   "title": "Phase 2: Implement native and fallback multi-tool loops",
   "type": "epic",
-  "updated_at": "2026-08-13T20:13:43Z"
+  "updated_at": "2026-08-13T23:04:56Z"
 }
