@@ -2,14 +2,16 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-13T20:57:08Z",
+  "close_reason": "Phase 0 complete: interaction semantics, coding-tool schemas, and the ReqLLM dependency contract are implemented and validated.",
   "created": "2026-08-13T20:13:43Z",
   "description": "Define shared loop terms, finish coding-tool schemas, and select one tested ReqLLM dependency contract before runtime changes.",
   "id": "jido_cli-8t9.1",
   "labels": [],
   "parent": "jido_cli-8t9",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Phase 0: Stabilize contracts and dependency baseline",
   "type": "epic",
-  "updated_at": "2026-08-13T20:19:56Z"
+  "updated_at": "2026-08-13T20:57:08Z"
 }
