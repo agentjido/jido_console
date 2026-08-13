@@ -2,6 +2,8 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-13T13:02:13Z",
+  "close_reason": "Removed from the release scope by product decision. Jido will not include an independent daemon or operating-system service.",
   "created": "2026-08-12T22:14:06Z",
   "description": "## Outcome\n\nThe Windows package provides explicit install, start, stop, status, and uninstall operations for one user-scoped daemon service after foreground CLI and TUI acceptance passes.\n\n## Work\n\n1. Select Mix release Windows service support or one maintained service wrapper with a recorded maintenance and signing review.\n2. Configure the service to run the packaged foreground daemon and to use the correct user state root.\n3. Provide explicit operations and clear privilege requirements. Do not register or start during ZIP extraction.\n4. Translate Service Control Manager stop events through the Windows shutdown capability.\n5. Preserve compatible state across package upgrade and rollback tests.\n6. Document logs, state, health, recovery, uninstall, and stale service cleanup.\n\n## Acceptance criteria\n\n- [ ] Foreground daemon tests pass before service registration is enabled.\n- [ ] Install, start, status, stop, and uninstall are idempotent or return stable errors.\n- [ ] Stop follows the drain and cancellation policy.\n- [ ] The service does not use a system Erlang installation.\n- [ ] Service arguments and logs contain no authentication token.\n- [ ] One-user state is not exposed as a multi-user public daemon.\n\n## Tests\n\nRun native Windows service lifecycle, upgrade, crash, recovery, permission, and path-with-spaces tests.\n\n## Non-goals\n\nDo not auto-register from the first ZIP, add MSI or Winget, or support public network access.",
   "id": "jido_cli-tqg.7.23",
@@ -13,8 +15,8 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 2,
-  "status": "open",
+  "status": "closed",
   "title": "Add explicit Windows daemon service operations",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:11Z"
+  "updated_at": "2026-08-13T13:02:13Z"
 }
