@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-8t9.2.2"
+  ],
   "blocks": [],
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Preserve the assistant tool-call message, matched call IDs, result messages, and provider continuation metadata. Acceptance: OpenAI, Anthropic, and Google fixtures complete dependent and parallel loops; duplicate calls to one operation stay distinct; required provider metadata survives.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Build provider-correct tool continuation messages",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:27Z"
+  "updated_at": "2026-08-13T20:14:53Z"
 }
