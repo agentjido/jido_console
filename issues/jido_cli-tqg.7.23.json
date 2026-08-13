@@ -1,7 +1,6 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-tqg.7.10",
     "jido_cli-tqg.7.11",
     "jido_cli-tqg.7.19",
     "jido_cli-tqg.7.20",
@@ -27,5 +26,5 @@
   "status": "open",
   "title": "Add explicit Windows daemon service operations",
   "type": "task",
-  "updated_at": "2026-08-12T22:15:11Z"
+  "updated_at": "2026-08-13T13:02:09Z"
 }
