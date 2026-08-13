@@ -11,9 +11,15 @@
   "id": "jido_cli-8t9.2.7",
   "labels": [],
   "parent": "jido_cli-8t9.2",
+  "comments": [
+    {
+      "text": "Implemented in Jidoka commit 4102a2ff. Added a typed context policy with input budget, output reserve, recent-turn floor, model-limit derivation, and deterministic byte-based token estimation. Prompt assembly removes only whole oldest turns, emits compaction evidence and session.compact lifecycle events, preserves the durable transcript, and fails before the model when mandatory content cannot fit. Validation: 660 passed, 38 excluded; focused parity 3 passed; mix quality passed.",
+      "timestamp": "2026-08-13T21:41:43Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "Add bounded context projection and compaction",
   "type": "task",
-  "updated_at": "2026-08-13T21:33:10Z"
+  "updated_at": "2026-08-13T21:41:43Z"
 }
