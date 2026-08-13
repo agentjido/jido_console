@@ -11,9 +11,15 @@
   "id": "jido_cli-8t9.2.6",
   "labels": [],
   "parent": "jido_cli-8t9.2",
+  "comments": [
+    {
+      "text": "Implemented in Jidoka commit 6a0337d6. Snapshots now record their completed-conversation revision. Resume, recovery, checkpoint, and fork reject stale active work. Caller-owned and stored resume use the same validation. Tests cover successful promotion, cancelled isolation, expired-lease recovery, independent source/fork promotion, and stale rejection. Validation: 654 passed, 38 excluded; focused parity 5 passed; mix quality passed.",
+      "timestamp": "2026-08-13T21:32:56Z"
+    }
+  ],
   "priority": 0,
   "status": "in_progress",
   "title": "Reconcile hibernate, resume, recovery, and fork continuation",
   "type": "task",
-  "updated_at": "2026-08-13T21:27:56Z"
+  "updated_at": "2026-08-13T21:32:56Z"
 }
