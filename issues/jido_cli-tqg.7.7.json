@@ -2,7 +2,6 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [
-    "jido_cli-tqg.7.8",
     "jido_cli-tqg.7.9"
   ],
   "created": "2026-08-12T22:09:58Z",
@@ -20,5 +19,5 @@
   "status": "open",
   "title": "Implement the framed loopback daemon client and server",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:05Z"
+  "updated_at": "2026-08-13T13:02:06Z"
 }
