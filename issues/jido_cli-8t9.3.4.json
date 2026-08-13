@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-8t9.3.2"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.3.8"
+  ],
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Project text, reasoning, tool-call, usage, warning, finish, cancellation, and error events with one monotonic request sequence. Acceptance: stream and non-stream records match; calls start only after complete arguments; cancellation closes the stream; each request emits one terminal event.",
   "id": "jido_cli-8t9.3.4",
