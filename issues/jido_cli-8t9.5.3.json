@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-8t9.3.8"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.5.5"
+  ],
   "created": "2026-08-13T20:14:28Z",
   "description": "Repository: Jidoka. Add sanitized native and JSON-fallback fixtures for OpenAI, Anthropic, and Google, plus optional tagged live tests. Acceptance: single, parallel, dependent, streamed, invalid, truncated, timeout, rate-limit, and authentication cases normalize correctly; live tests enforce cost, call, time, and concurrency limits.",
   "id": "jido_cli-8t9.5.3",
@@ -13,5 +15,5 @@
   "status": "open",
   "title": "Add provider-contract fixtures and bounded live tests",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:56Z"
+  "updated_at": "2026-08-13T20:14:58Z"
 }
