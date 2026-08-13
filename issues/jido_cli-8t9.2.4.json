@@ -6,7 +6,8 @@
   "blocks": [
     "jido_cli-8t9.2.5",
     "jido_cli-8t9.2.6",
-    "jido_cli-8t9.2.7"
+    "jido_cli-8t9.2.7",
+    "jido_cli-8t9.2.8"
   ],
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Make Session.run and Session.chat build from the canonical conversation revision and promote new state only in the successful commit. Add an explicit fresh-conversation option. Acceptance: two separate calls share full history through caller-owned, in-memory, and DETS sessions; failure and cancellation keep the last completed state.",
