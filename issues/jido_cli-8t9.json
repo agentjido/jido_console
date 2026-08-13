@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
   "created": "2026-08-13T20:13:42Z",
@@ -7,8 +7,8 @@
   "id": "jido_cli-8t9",
   "labels": [],
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "Ship durable multi-turn, multi-tool coding interactions",
   "type": "epic",
-  "updated_at": "2026-08-13T20:13:42Z"
+  "updated_at": "2026-08-13T20:19:56Z"
 }
