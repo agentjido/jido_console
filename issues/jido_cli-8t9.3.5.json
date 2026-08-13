@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:14:27Z",
+  "description": "Repository: Jidoka. Separate recoverable tool results, transport retries, policy or review stops, reconciliation, cancellation, and runtime failures. Acceptance: stale edit can produce failed edit, read, corrected edit, verify, and final; all batch siblings remain visible; policy and reconciliation errors do not cause blind retries.",
+  "id": "jido_cli-8t9.3.5",
+  "labels": [],
+  "parent": "jido_cli-8t9.3",
+  "priority": 0,
+  "status": "open",
+  "title": "Classify tool failures and support model recovery",
+  "type": "task",
+  "updated_at": "2026-08-13T20:14:27Z"
+}
