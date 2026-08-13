@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:14:27Z",
+  "description": "Repository: jido_cli. Expose stable request identity and normalize success, failure, cancellation, hibernation, pending review, and approval results while preserving the CLI session wrapper. Acceptance: every result keeps runtime options, extension host, and local resources; events can be matched to the active request.",
+  "id": "jido_cli-8t9.4.1",
+  "labels": [],
+  "parent": "jido_cli-8t9.4",
+  "priority": 0,
+  "status": "open",
+  "title": "Redesign the CLI runtime request handle",
+  "type": "task",
+  "updated_at": "2026-08-13T20:14:27Z"
+}
