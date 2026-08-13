@@ -10,6 +10,8 @@
     "jido_cli-tqg.7.2",
     "jido_cli-tqg.7.3"
   ],
+  "closed_at": "2026-08-13T02:38:24Z",
+  "close_reason": "Implemented the user-approved immutable GitHub dependency in CLI commit 6e7400a. Jidoka commit 23bd10ff is on GitHub. Local and isolated checks pass; no Hex release was published.",
   "created": "2026-08-12T22:09:57Z",
   "description": "## Outcome\n\nA clean `jido_cli` checkout resolves one exact Jidoka commit from GitHub. It does not need the sibling `../jidoka` checkout or a Jidoka Hex release.\n\n## Implemented contract\n\n- The default dependency is `agentjido/jidoka` at full commit `23bd10ffc822935c06395e34301d63c249e5cbe3`.\n- `mix.lock` records the same immutable Git source and commit.\n- `JIDO_CLI_JIDOKA_PATH` is an explicit development/test-only local override. Production rejects it.\n- Unused lock entries were removed.\n- The public Jidoka source-boundary test remains active.\n- An isolated Git worktree with no sibling Jidoka repository passes dependency resolution, compile, 189 tests, and docs.\n\n## Non-goals\n\nDo not publish Jidoka or `jido_cli` to Hex. Do not use a moving Git branch or tag.",
   "id": "jido_cli-tqg.7.1",
@@ -21,8 +23,8 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Use an immutable GitHub Jidoka dependency",
   "type": "task",
-  "updated_at": "2026-08-13T02:38:23Z"
+  "updated_at": "2026-08-13T02:38:24Z"
 }
