@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:14:26Z",
+  "description": "Repository: Jidoka. Add canonical conversation state, continuation revision, turn count, context state, and last completed request identity to Session.Data. Acceptance: version 1 and 2 sessions load; version 3 round-trips; stored data contains no process handles or credentials.",
+  "id": "jido_cli-8t9.2.3",
+  "labels": [],
+  "parent": "jido_cli-8t9.2",
+  "priority": 0,
+  "status": "open",
+  "title": "Add Session.Conversation and schema version 3",
+  "type": "task",
+  "updated_at": "2026-08-13T20:14:26Z"
+}
