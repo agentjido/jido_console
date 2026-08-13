@@ -2,6 +2,8 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-13T13:02:13Z",
+  "close_reason": "Removed from the release scope by product decision. Jido will not include an independent daemon or operating-system service.",
   "created": "2026-08-12T22:12:32Z",
   "description": "## Outcome\n\nThe public command contract provides `jido daemon`, `jido daemon status`, and `jido daemon health`. The daemon stays in the foreground. The TUI, `run`, and `eval` stay local by default.\n\n## Work\n\n1. Add a validated daemon command schema and route it before interactive fallback.\n2. Make `jido daemon` start the explicit daemon supervision boundary and wait for its terminal result.\n3. Route status and health through the daemon client with stable behavior when no daemon runs.\n4. Add complete help text and normalize errors through `Jido.Cli.Error`.\n5. Keep exit statuses `0`, `1`, and `64` stable.\n6. Prove that normal modes do not read discovery state or connect to the daemon.\n\n## Acceptance criteria\n\n- [ ] All documented daemon commands and help forms parse exactly.\n- [ ] Unknown daemon arguments return exit 64.\n- [ ] `jido daemon` stays attached and does not fork or background itself.\n- [ ] Status and health do not require provider credentials.\n- [ ] No-daemon status and health behavior is documented and tested.\n- [ ] TUI, `run`, and `eval` do not discover or use a daemon.\n\n## Tests\n\nExtend CLI routing tests and add injected daemon client/supervisor tests. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not add `--connect`, `--local`, automatic discovery, service installation, or background execution.",
   "id": "jido_cli-tqg.7.9",
@@ -13,8 +15,8 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
-  "status": "open",
+  "status": "closed",
   "title": "Route foreground daemon commands without changing local execution",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:10Z"
+  "updated_at": "2026-08-13T13:02:13Z"
 }
