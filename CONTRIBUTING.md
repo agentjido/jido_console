@@ -29,6 +29,12 @@ JIDO_CLI_JIDOKA_PATH=../jidoka mix test
 Do not set this variable in production, CI, or a release build. The default
 GitHub commit and `mix.lock` are the repeatable integration contract.
 
+The CLI also constrains ReqLLM to `~> 1.20.0`, the line tested by Jidoka. Update
+Jidoka and its adapter tests first. Then update the immutable Jidoka reference
+and ReqLLM lock here. Test both the default Git dependency and the local
+`JIDO_CLI_JIDOKA_PATH` workflow. A new ReqLLM minor line requires an explicit
+constraint change in both repositories.
+
 CLI source must use the documented Jidoka facades and stable data contracts.
 It must not use Jidoka runtime, adapter, execution, or asynchronous task
 internals.

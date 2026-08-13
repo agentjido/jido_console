@@ -111,6 +111,7 @@ defmodule Jido.Cli.MixProject do
       jidoka_dep(),
       {:dotenvy, "~> 1.1"},
       {:jason, "~> 1.4"},
+      {:req_llm, "~> 1.20.0"},
       {:yaml_elixir, "~> 2.12"},
       {:zoi, "~> 0.18"},
       {:splode, "~> 0.3.0"},
