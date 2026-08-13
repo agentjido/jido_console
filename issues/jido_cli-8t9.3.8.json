@@ -4,7 +4,9 @@
     "jido_cli-8t9.3.4",
     "jido_cli-8t9.3.7"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.5.2"
+  ],
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Add one provider-attempt budget plus limits for calls per group, calls per turn, recovery steps, observation size, repairs, tokens, cost, and elapsed time. Acceptance: retry layers do not multiply; unsafe calls never retry; oversized groups fail before execution; exhaustion prevents the next model step.",
   "id": "jido_cli-8t9.3.8",
@@ -14,5 +16,5 @@
   "status": "open",
   "title": "Unify retries, timeouts, idempotency, and hard limits",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:55Z"
+  "updated_at": "2026-08-13T20:14:56Z"
 }
