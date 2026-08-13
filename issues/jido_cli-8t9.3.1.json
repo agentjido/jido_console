@@ -8,14 +8,16 @@
     "jido_cli-8t9.3.2",
     "jido_cli-8t9.3.6"
   ],
+  "closed_at": "2026-08-13T21:57:14Z",
+  "close_reason": "Completed in Jidoka commit f500c819. Added one static/extension operation registry, duplicate rejection, central JSON Schema argument validation before dispatch, provider-safe ReqLLM.Tool projection, and automatic operation-source merge/routing. Validation: 670 deterministic tests passed; 32 parity tests passed; mix quality passed.",
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Merge static and extension operations, reject duplicate names, validate arguments centrally, and convert metadata to ReqLLM.Tool schemas. Acceptance: the model receives correct schemas; invalid arguments do not reach handlers; extension and built-in tools use one registry.",
   "id": "jido_cli-8t9.3.1",
   "labels": [],
   "parent": "jido_cli-8t9.3",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Build one operation registry and ReqLLM tool projection",
   "type": "task",
-  "updated_at": "2026-08-13T21:47:26Z"
+  "updated_at": "2026-08-13T21:57:14Z"
 }
