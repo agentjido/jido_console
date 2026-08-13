@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-8t9.1.1"
+  ],
   "blocks": [],
   "created": "2026-08-13T20:14:28Z",
   "description": "Repositories: Jidoka and jido_cli tests. Create a deterministic rate-limiter fixture and trusted test-only oracle for allowed changes, operation partial order, verification, Git state, and before and after digests. Acceptance: setup is repeatable; extra changes, test tampering, missing verification, wrong order, and false model claims fail.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Add a data-only coding scenario and repository oracle",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:28Z"
+  "updated_at": "2026-08-13T20:14:52Z"
 }
