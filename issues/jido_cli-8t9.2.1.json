@@ -7,14 +7,16 @@
     "jido_cli-8t9.2.2",
     "jido_cli-8t9.3.1"
   ],
+  "closed_at": "2026-08-13T21:04:18Z",
+  "close_reason": "Implemented in Jidoka commit 629c5d20. Added Zoi-validated model interaction, tool-call group, and tool-call records with stable Jidoka and provider identities, zero-based call ordering, singular-call normalization, durable payload projection, and signed snapshot round-trip coverage. Validation: 637 tests passed with 38 excluded; mix quality passed.",
   "created": "2026-08-13T20:14:25Z",
   "description": "Repository: Jidoka. Add interaction ID, group ID, provider call ID, call index, arguments, provider metadata, and singular-call normalization. Acceptance: one call becomes a one-call group; records pass Zoi validation and durable projection; snapshot restore keeps every ID.",
   "id": "jido_cli-8t9.2.1",
   "labels": [],
   "parent": "jido_cli-8t9.2",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Add typed model-interaction and tool-call-group records",
   "type": "task",
-  "updated_at": "2026-08-13T20:57:19Z"
+  "updated_at": "2026-08-13T21:04:18Z"
 }
