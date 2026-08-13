@@ -9,6 +9,8 @@
     "jido_cli-tqg.7.18",
     "jido_cli-tqg.7.28"
   ],
+  "closed_at": "2026-08-13T14:06:08Z",
+  "close_reason": "Implemented the deterministic darwin-arm64 private-OTP builder, relative non-eval launcher, pinned toolchain, runtime-data and native inventory, stable archive layout, and exact repeated archive hash.",
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nThe Mix release builder creates the macOS ARM64 package directory and deterministic archive with application code, a private OTP runtime, runtime data, launcher, license files, and metadata. It preserves fast dispatch and paint-first startup.\n\n## Work\n\n1. Implement the Mix release method confirmed by `jido_cli-tqg.7.14`.\n2. Build the exact archive layout and name in the artifact contract.\n3. Include `llm_db`, `req_llm`, `time_zone_info`, `extractous_ex`, and all required runtime resources without broken `priv` links.\n4. Make `bin/jido` resolve paths relative to itself and invoke only the private runtime.\n5. Enter the CLI before application startup. Do not put a release `eval` expression in the public launcher.\n6. Preserve fast help and version, paint-first TUI, arguments, streams, terminal control, signals, and exit status.\n7. Pin OTP, Elixir, package, and native dependency inputs.\n8. Normalize archive ordering, timestamps, ownership, and permissions.\n\n## Acceptance criteria\n\n- [ ] The macOS ARM64 archive builds from source.\n- [ ] The archive validates and can move after extraction.\n- [ ] No system OTP is required.\n- [ ] TUI, `run`, and `eval` start from the package.\n- [ ] Help and version return before runtime startup.\n- [ ] The first TUI frame appears before runtime-ready state.\n- [ ] All required `priv` files and native libraries load.\n- [ ] The archive layout can be installed by a later Homebrew formula.\n- [ ] Repeated controlled builds have matching content or a recorded variance.\n\n## Tests\n\nRun builder unit checks, archive validation, and focused startup checks on macOS ARM64.\n\n## Non-goals\n\nDo not build another target, publish, sign, or create a Homebrew formula.",
   "id": "jido_cli-tqg.7.15",
@@ -20,7 +22,7 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Implement the macOS ARM64 private-OTP artifact builder",
   "type": "task",
   "updated_at": "2026-08-13T14:06:08Z"
