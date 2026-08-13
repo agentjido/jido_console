@@ -11,6 +11,7 @@
     "cli",
     "foundation",
     "release",
+    "removed-scope",
     "security"
   ],
   "parent": "jido_cli-tqg.7",
@@ -18,5 +19,5 @@
   "status": "closed",
   "title": "Resolve secure per-user state roots on every platform",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:11Z"
+  "updated_at": "2026-08-13T13:06:29Z"
 }
