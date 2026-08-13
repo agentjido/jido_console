@@ -101,18 +101,27 @@ defmodule Jido.Cli.Tui do
          }}
 
       {:error, reason} ->
+        CodingSetup.close(coding)
         {:error, reason}
     end
   rescue
     exception ->
+      CodingSetup.close(coding)
       reraise exception, __STACKTRACE__
   catch
     kind, reason ->
+      CodingSetup.close(coding)
       :erlang.raise(kind, reason, __STACKTRACE__)
   end
 
   defp ready_opts(opts, coding) do
-    Keyword.put(opts, :coding_setup_resolved, coding)
+    opts
+    |> Keyword.update(:turn_opts, coding.turn_opts, &Keyword.merge(coding.turn_opts, &1))
+    |> Keyword.put_new(:await_opts,
+      timeout: coding.await_timeout_ms,
+      cancel_on_timeout: false
+    )
+    |> Keyword.put(:coding_setup_resolved, coding)
   end
 
   defp runtime_owner_loop(owner_monitor, runtime, startup) do
@@ -127,6 +136,7 @@ defmodule Jido.Cli.Tui do
 
   defp close_startup_result(runtime, {:ok, startup}) do
     close_runtime_session(runtime, startup.session)
+    CodingSetup.close(startup.coding)
   end
 
   defp close_startup_result(_runtime, {:error, _reason}), do: :ok

@@ -13,6 +13,7 @@ defmodule Jido.Cli do
         --coding-pack ID        Select a trusted coding pack or `disabled`
         --coding-profile ID     Select the trusted execution profile
         --project-root DIR      Select the trusted coding workspace root
+        --model MODEL           Select the interactive provider and model
 
   Run options:
     -a, --agent FILE           Load one agent YAML or JSON file
@@ -69,7 +70,9 @@ defmodule Jido.Cli do
   end
 
   defp start_runtime do
-    start_applications()
+    with :ok <- Jido.Cli.Env.load_provider_credentials(),
+         :ok <- start_applications(),
+         do: :ok
   end
 
   defp handle_run_result(:ok), do: :ok
@@ -100,7 +103,8 @@ defmodule Jido.Cli do
              version: :boolean,
              coding_pack: :string,
              coding_profile: :string,
-             project_root: :string
+             project_root: :string,
+             model: :string
            ],
            aliases: [h: :help, v: :version]
          ) do
@@ -276,6 +280,7 @@ defmodule Jido.Cli do
        do: true
 
   defp configuration_error?({:unknown_runtime_profile, _id, _reason}), do: true
+  defp configuration_error?(:local_coding_root_required), do: true
   defp configuration_error?(:coding_module_name_forbidden), do: true
   defp configuration_error?(:invalid_coding_profile_resolver), do: true
   defp configuration_error?(_reason), do: false

@@ -32,7 +32,6 @@ defmodule Jido.Cli.MixProject do
       aliases: aliases(),
       test_coverage: [
         tool: ExCoveralls,
-        summary: [threshold: 80],
         export: "cov"
       ],
       deps: deps()
@@ -110,6 +109,7 @@ defmodule Jido.Cli.MixProject do
   defp deps do
     [
       jidoka_dep(),
+      {:dotenvy, "~> 1.1"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.12"},
       {:zoi, "~> 0.18"},

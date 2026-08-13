@@ -35,11 +35,13 @@ defmodule Jido.Cli.Extensions do
   @doc "Opens one public Jidoka host and compiles its operation sources."
   @spec open(Jidoka.Session.Data.t(), [Request.t()], setup(), :interactive | :automation, keyword()) ::
           {:ok, map()} | {:error, term()}
-  def open(session, requests, %{registry: registry}, mode, opts \\ []) do
+  def open(session, requests, %{registry: registry} = setup, mode, opts \\ []) do
     if map_size(registry) == 0 do
       {:ok, %{session: session, host: nil, runtime_opts: []}}
     else
       with {:ok, host} <- Jidoka.Extension.Host.open(session, requests, registry, mode) do
+        opts = Keyword.put_new(opts, :recover_coding_errors, Map.get(setup, :recover_coding_errors, false))
+
         case configure_host(session, host, opts) do
           {:ok, runtime} ->
             {:ok, runtime}
@@ -77,7 +79,12 @@ defmodule Jido.Cli.Extensions do
     with {:ok, compiled} <- Jidoka.Operation.Source.compile(Jidoka.Extension.Host.operation_sources(host)),
          {:ok, spec} <- put_operations(session.spec, compiled.operations) do
       runtime_opts = [
-        operations: route_operations(compiled, Keyword.get(opts, :operations)),
+        operations:
+          route_operations(
+            compiled,
+            Keyword.get(opts, :operations),
+            Keyword.get(opts, :recover_coding_errors, false)
+          ),
         extension_dispatcher: host.dispatcher
       ]
 
@@ -231,16 +238,42 @@ defmodule Jido.Cli.Extensions do
     Jidoka.Agent.Spec.new(attrs)
   end
 
-  defp route_operations(compiled, nil), do: compiled.capability
+  defp route_operations(compiled, nil, recover?) do
+    recover_coding_errors(compiled.capability, recover?)
+  end
 
-  defp route_operations(compiled, base) when is_function(base, 3) do
+  defp route_operations(compiled, base, recover?) when is_function(base, 3) do
     names = MapSet.new(Enum.map(compiled.operations, & &1.name))
 
-    fn intent, journal, context ->
+    capability = fn intent, journal, context ->
       with {:ok, request} <- Jidoka.Effect.OperationRequest.from_input(intent.payload) do
-        if MapSet.member?(names, request.name),
-          do: compiled.capability.(intent, journal, context),
-          else: base.(intent, journal, context)
+        if MapSet.member?(names, request.name) do
+          compiled.capability.(intent, journal, context)
+        else
+          base.(intent, journal, context)
+        end
+      end
+    end
+
+    recover_coding_errors(capability, recover?)
+  end
+
+  defp recover_coding_errors(capability, false), do: capability
+
+  defp recover_coding_errors(capability, true) do
+    fn intent, journal, context ->
+      case capability.(intent, journal, context) do
+        {:error, %Jidoka.CodingPack.Error{} = error} ->
+          {:ok,
+           %{
+             "status" => "error",
+             "retryable" => true,
+             "code" => Atom.to_string(error.code),
+             "details" => error.details
+           }}
+
+        result ->
+          result
       end
     end
   end

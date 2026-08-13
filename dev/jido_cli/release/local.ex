@@ -25,7 +25,7 @@ defmodule Jido.Cli.Release.Local do
     File.mkdir_p!(candidate)
 
     try do
-      if Keyword.get(opts, :quality, true), do: run_source_gates!(project_root)
+      if Keyword.get(opts, :quality, true), do: source_gates!(project_root)
 
       artifact =
         Artifact.build!(candidate,
@@ -69,20 +69,22 @@ defmodule Jido.Cli.Release.Local do
   def validate_source!(%{dirty: dirty}, _allow_dirty) when is_boolean(dirty), do: :ok
   def validate_source!(source, _allow_dirty), do: raise("invalid source identity: #{inspect(source)}")
 
-  defp run_source_gates!(project_root) do
+  @doc false
+  @spec source_gates!(Path.t()) :: :ok
+  def source_gates!(project_root) do
     gates = [
-      {"locked dependencies", "mix", ["deps.get", "--check-locked"]},
-      {"format", "mix", ["format", "--check-formatted"]},
-      {"compile", "mix", ["compile", "--warnings-as-errors"]},
-      {"credo", "mix", ["credo", "--min-priority", "higher"]},
-      {"dialyzer", "mix", ["dialyzer"]},
-      {"doctor", "mix", ["doctor", "--raise"]},
-      {"tests", "mix", ["test"]}
+      {"locked dependencies", "mix", ["deps.get", "--check-locked"], []},
+      {"format", "mix", ["format", "--check-formatted"], []},
+      {"compile", "mix", ["compile", "--warnings-as-errors"], []},
+      {"credo", "mix", ["credo", "--min-priority", "higher"], []},
+      {"dialyzer", "mix", ["dialyzer"], []},
+      {"doctor", "mix", ["doctor", "--raise"], []},
+      {"coverage", "mix", ["coveralls"], [{"MIX_ENV", "test"}]}
     ]
 
-    Enum.each(gates, fn {name, command, args} ->
+    Enum.each(gates, fn {name, command, args, env} ->
       IO.puts("release source gate: #{name}")
-      run!(command, args, project_root)
+      run!(command, args, project_root, env)
     end)
   end
 
@@ -151,8 +153,13 @@ defmodule Jido.Cli.Release.Local do
     %{commit: commit, dirty: dirty}
   end
 
-  defp run!(command, args, directory) do
-    case System.cmd(command, args, cd: directory, stderr_to_stdout: true, into: IO.stream(:stdio, :line)) do
+  defp run!(command, args, directory, env) do
+    case System.cmd(command, args,
+           cd: directory,
+           env: env,
+           stderr_to_stdout: true,
+           into: IO.stream(:stdio, :line)
+         ) do
       {_output, 0} -> ""
       {_output, status} -> raise "release command #{command} failed with status #{status}"
     end

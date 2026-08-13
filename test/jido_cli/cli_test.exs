@@ -201,7 +201,10 @@ defmodule Jido.CliTest do
   end
 
   test "main handles help and version without starting the application" do
-    traced_calls = [{Application, :ensure_all_started, 1}]
+    traced_calls = [
+      {Jido.Cli.Env, :load_provider_credentials, 0},
+      {Application, :ensure_all_started, 1}
+    ]
 
     Enum.each(traced_calls, fn {module, _function, _arity} = call ->
       assert {:module, ^module} = Code.ensure_loaded(module)
@@ -230,6 +233,8 @@ defmodule Jido.CliTest do
       :erlang.trace(self(), false, [:call])
       Enum.each(traced_calls, &:erlang.trace_pattern(&1, false, [:local]))
     end
+
+    refute_received {:trace, _pid, :call, {Jido.Cli.Env, :load_provider_credentials, []}}
 
     refute_received {:trace, _pid, :call, {Application, :ensure_all_started, [:jido_cli]}}
   end

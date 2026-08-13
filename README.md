@@ -30,6 +30,13 @@ The supported local release build uses the exact Erlang and Elixir versions in
 does not need a sibling Jidoka checkout and does not use an unreleased Hex
 package.
 
+Validate source, enforce at least 80% unit coverage for production code, build
+the developer escript, and smoke-test its fast commands with one command:
+
+```sh
+mix jido.check
+```
+
 Create and test the complete local macOS ARM64 candidate with one command:
 
 ```sh
@@ -54,6 +61,15 @@ Set the provider credential for the built-in agent. Then, start the terminal UI:
 ```sh
 export OPENAI_API_KEY=...
 ./jido
+```
+
+The CLI also loads provider credentials from `.env` in its current directory.
+The host process environment has precedence. The CLI accepts only known
+provider credential names from this file and requires private file permissions:
+
+```sh
+cp .env.example .env
+chmod 600 .env
 ```
 
 The terminal UI requires Erlang/OTP 28 or newer for raw terminal input.
@@ -110,6 +126,40 @@ The stable review states are `changed`, `no_change`, `conflict`, `interrupted`,
 patches are redacted. A checkpoint is recovery evidence only. The TUI does not
 restore a checkpoint, accept a change, read a changed file, or run a Git
 command. Malformed and unsafe review data is not shown.
+
+### Trusted local-folder coding
+
+The `coding.local` profile is an explicit development profile. It requires one
+`--project-root` and confines every file and command operation to that canonical
+folder. It enables read, search, edit, write, read-only Git review, and one
+fixed `mix-test` verifier. It does not give the model an arbitrary shell.
+
+The profile uses `openai:gpt-4.1-mini` by default with temperature 0,
+4,000 maximum output tokens, at most 12 model calls, one operation at a time,
+and a 180-second turn limit. `--model` can select another configured provider
+model.
+
+Prepare and run the included isolated scenario:
+
+The build command below uses the checked-out Jidoka workspace for integration
+testing. The normal dependency remains the pinned GitHub revision.
+
+```sh
+mix jido.scenario.prepare --force
+JIDO_CLI_JIDOKA_PATH=../jidoka mix escript.build
+./jido \
+  --coding-profile coding.local \
+  --project-root .jido/scenarios/rate_limiter \
+  --model openai:gpt-4.1-mini
+```
+
+Submit this prompt:
+
+```text
+Read AGENTS.md and SCENARIO.md. Fix the defect with the smallest change. Do not
+change tests. Run coding.verify with helper_id mix-test. Review coding.git_status
+and coding.git_diff before you report completion.
+```
 
 ## Run one input or scenario
 

@@ -2,6 +2,7 @@ defmodule Jido.Cli.ReleaseIdentity do
   @moduledoc "Provides the compiled product and runtime release identity."
 
   @app :jido_cli
+  @compiled_version Mix.Project.config() |> Keyword.fetch!(:version)
 
   @type t :: %{
           product: String.t(),
@@ -12,14 +13,18 @@ defmodule Jido.Cli.ReleaseIdentity do
           otp: String.t()
         }
 
-  @doc "Returns the product version from compiled application metadata."
+  @doc "Returns the product version embedded from the Mix project at compile time."
   @spec version(keyword()) :: String.t()
   def version(opts \\ []) do
-    application_get_key = Keyword.get(opts, :application_get_key, &Application.spec/2)
+    case Keyword.fetch(opts, :application_get_key) do
+      {:ok, application_get_key} ->
+        case application_get_key.(@app, :vsn) do
+          nil -> raise "compiled jido_cli application version is unavailable"
+          version -> to_string(version)
+        end
 
-    case application_get_key.(@app, :vsn) do
-      nil -> raise "compiled jido_cli application version is unavailable"
-      version -> to_string(version)
+      :error ->
+        @compiled_version
     end
   end
 

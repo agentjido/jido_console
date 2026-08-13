@@ -41,8 +41,9 @@ With `run` or `eval` it runs file-based scenarios headless and writes JSONL.
 
 ```sh
 mix deps.get
+mix jido.check    # full source gate, docs, escript build, and fast-command smoke test
 mix quality        # format, compile --warnings-as-errors, credo, dialyzer, doctor --raise
-mix test --cover
+MIX_ENV=test mix coveralls
 mix docs
 MIX_ENV=prod mix escript.build
 ./jido --version

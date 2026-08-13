@@ -10,6 +10,12 @@
 # Local architecture, research, and planning notes
 /docs/
 
+# Local credentials and generated coding scenarios
+/.env
+/.env.*
+!/.env.example
+/.jido/
+
 # Dialyzer PLT files - do not commit these
 *.plt
 *.plt.hash

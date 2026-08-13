@@ -3,7 +3,7 @@ defmodule Jido.Cli.ReleaseIdentityTest do
 
   alias Jido.Cli.ReleaseIdentity
 
-  test "reads the product version from compiled application metadata" do
+  test "embeds the Mix project version for startup before the application loads" do
     assert ReleaseIdentity.version() == to_string(Application.spec(:jido_cli, :vsn))
   end
 

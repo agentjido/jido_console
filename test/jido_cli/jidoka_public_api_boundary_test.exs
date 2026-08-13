@@ -19,6 +19,7 @@ defmodule Jido.Cli.JidokaPublicApiBoundaryTest do
       "Jidoka.ExecutionEnvironment",
       "Jidoka.Extension",
       "Jidoka.Operation.Source",
+      "Jidoka.Policy",
       "Jidoka.Replay",
       "Jidoka.Review",
       "Jidoka.Runtime.Limits",
