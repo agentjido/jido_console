@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_cli-tqg.7.1"
   ],
@@ -17,8 +17,8 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "Make the Mix application version the only product version source",
   "type": "task",
-  "updated_at": "2026-08-13T13:04:22Z"
+  "updated_at": "2026-08-13T13:08:51Z"
 }
