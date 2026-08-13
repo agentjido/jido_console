@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:14:26Z",
+  "description": "Repository: Jidoka. Merge static and extension operations, reject duplicate names, validate arguments centrally, and convert metadata to ReqLLM.Tool schemas. Acceptance: the model receives correct schemas; invalid arguments do not reach handlers; extension and built-in tools use one registry.",
+  "id": "jido_cli-8t9.3.1",
+  "labels": [],
+  "parent": "jido_cli-8t9.3",
+  "priority": 0,
+  "status": "open",
+  "title": "Build one operation registry and ReqLLM tool projection",
+  "type": "task",
+  "updated_at": "2026-08-13T20:14:26Z"
+}
