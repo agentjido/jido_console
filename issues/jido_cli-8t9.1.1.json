@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:14:25Z",
+  "description": "Repositories: Jidoka and jido_cli. Define user turn, model step, tool-call group, dependent call sequence, and all related limit counters. Acceptance: public types, guides, events, and tests use the same terms; tests assert exact model-step and tool-call counts.",
+  "id": "jido_cli-8t9.1.1",
+  "labels": [],
+  "parent": "jido_cli-8t9.1",
+  "priority": 0,
+  "status": "open",
+  "title": "Define turn, model-step, and tool-group semantics",
+  "type": "task",
+  "updated_at": "2026-08-13T20:14:25Z"
+}
