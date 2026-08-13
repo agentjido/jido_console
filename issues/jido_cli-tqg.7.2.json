@@ -7,6 +7,8 @@
     "jido_cli-tqg.7.12",
     "jido_cli-tqg.7.17"
   ],
+  "closed_at": "2026-08-13T13:10:31Z",
+  "close_reason": "Implemented one compiled application version source through Jido.Cli.ReleaseIdentity. CLI and automation manifests use it. Focused tests pass and production compilation with warnings as errors passes.",
   "created": "2026-08-12T22:09:58Z",
   "description": "## Outcome\n\nThe Mix application version is the only Jido product version source. CLI output, cache paths, run manifests, artifact names, and release metadata read that value. The fast `--version` path reads it without starting `:jido_cli` or provider applications.\n\n## Work\n\n1. Add a small release identity boundary that reads the compiled application version.\n2. Remove the CLI version constant and update `jido --version`, escript cache naming, automation manifests, and release metadata.\n3. Keep the exact `--version` command on the fast dispatcher. Do not run credential checks or `Application.ensure_all_started/1`.\n4. Make the local release command and documentation use the same source.\n5. Report the Jido version, Jidoka source identity, Elixir version, and OTP version through one tested runtime API.\n6. Add an architecture test that rejects a second product SemVer literal in production source.\n\n## Acceptance criteria\n\n- [ ] `mix.exs` owns the only Jido product version value.\n- [ ] `jido --version`, JSONL manifests, archive names, and release metadata match.\n- [ ] Source, escript, and Mix release builds report the same value.\n- [ ] Exact `--version` does not start `:jido_cli`, credential checks, or provider applications.\n- [ ] Tests can inject version data without changing global application state.\n\n## Tests\n\nExtend CLI, automation-plan, and release-identity tests. Run `mix quality`, `mix test --cover`, and `mix docs`.\n\n## Non-goals\n\nDo not create a second version file. Do not infer the version from Git at runtime. Tag validation belongs to the later publication task.",
   "id": "jido_cli-tqg.7.2",
@@ -17,8 +19,8 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Make the Mix application version the only product version source",
   "type": "task",
-  "updated_at": "2026-08-13T13:08:51Z"
+  "updated_at": "2026-08-13T13:10:31Z"
 }
