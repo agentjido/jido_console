@@ -11,12 +11,13 @@
     "cli",
     "daemon",
     "foundation",
-    "release"
+    "release",
+    "removed-scope"
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 0,
   "status": "closed",
   "title": "Add the optional daemon application supervision boundary",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:12Z"
+  "updated_at": "2026-08-13T13:06:29Z"
 }
