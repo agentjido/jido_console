@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-8t9.3.1"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.3.3"
+  ],
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Use ReqLLM response classification for native calls and finish reasons while retaining the constrained JSON decision protocol as fallback. Acceptance: native single and multiple calls work with empty text; both protocols create equal internal records; incomplete, cancelled, and error responses cannot become empty finals.",
   "id": "jido_cli-8t9.3.2",
