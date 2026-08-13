@@ -1,7 +1,8 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-8t9.3.1"
+    "jido_cli-8t9.3.1",
+    "jido_cli-8t9.3.5"
   ],
   "blocks": [],
   "created": "2026-08-13T20:14:27Z",
@@ -13,5 +14,5 @@
   "status": "open",
   "title": "Preflight complete tool groups before scheduling",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:54Z"
+  "updated_at": "2026-08-13T20:14:55Z"
 }
