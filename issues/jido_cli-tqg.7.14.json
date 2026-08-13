@@ -16,6 +16,12 @@
     "release"
   ],
   "parent": "jido_cli-tqg.7",
+  "comments": [
+    {
+      "text": "Startup and package evidence from 2026-08-13:\n\n- Production escript help/version: 0.83-0.85 s.\n- OTP release help/version: 0.22-0.23 s.\n- Production escript first TUI frame: 0.88-0.99 s.\n- OTP release first TUI frame: 0.25-0.28 s.\n- Production escript runtime ready: 3.41-3.55 s.\n- OTP release runtime ready: 0.86-0.96 s.\n- Escript size: 71 MB.\n- Release size: 217 MB extracted and 76 MB gzip.\n- Stock Mix release blocker: llm_db is both a regular Jidoka application and an included ReqLLM application.\n- The successful release used a disposable metadata correction. It proves feasibility only.\n\nDecision: use the Mix release as the preferred path. Keep this task open until the source-level blocker is fixed and all four native targets pass. Burrito is only a fallback.",
+      "timestamp": "2026-08-13T12:55:45Z"
+    }
+  ],
   "priority": 0,
   "status": "open",
   "title": "Confirm Mix release packaging on the first target matrix",
