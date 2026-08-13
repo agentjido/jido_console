@@ -6,14 +6,16 @@
   "blocks": [
     "jido_cli-8t9.5.5"
   ],
+  "closed_at": "2026-08-13T21:27:47Z",
+  "close_reason": "Implemented in Jidoka commit 3e18619a. run_sequence no longer owns or injects agent history; each step uses normal Session continuation and promotion. Fresh conversation applies only to the first step, caller state is ignored consistently, and turn-scoped operation results remain unchanged. Sequence and repeated calls produce equal Session.Conversation records. Validation: 649 tests passed with 38 excluded; mix quality passed.",
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Remove sequence-local conversation ownership and route ordered sequences through the same promotion rules as normal Session calls. Acceptance: sequence and repeated Session calls create the same transcript shape and preserve existing result contracts.",
   "id": "jido_cli-8t9.2.5",
   "labels": [],
   "parent": "jido_cli-8t9.2",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Unify run_sequence with Session continuation",
   "type": "task",
-  "updated_at": "2026-08-13T21:25:33Z"
+  "updated_at": "2026-08-13T21:27:47Z"
 }
