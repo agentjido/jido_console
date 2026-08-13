@@ -3,7 +3,6 @@
   "blocked_by": [],
   "blocks": [
     "jido_cli-tqg.7.11",
-    "jido_cli-tqg.7.6",
     "jido_cli-tqg.7.8"
   ],
   "created": "2026-08-12T22:09:58Z",
@@ -20,5 +19,5 @@
   "status": "open",
   "title": "Resolve secure per-user state roots on every platform",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:03Z"
+  "updated_at": "2026-08-13T13:02:04Z"
 }
