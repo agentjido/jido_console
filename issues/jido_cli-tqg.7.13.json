@@ -2,7 +2,6 @@
   "assignee": "",
   "blocked_by": [
     "jido_cli-tqg.6.4",
-    "jido_cli-tqg.7.10",
     "jido_cli-tqg.7.11",
     "jido_cli-tqg.7.12",
     "jido_cli-tqg.7.8",
@@ -26,5 +25,5 @@
   "status": "open",
   "title": "Build a hermetic packaged-artifact acceptance harness",
   "type": "task",
-  "updated_at": "2026-08-13T12:57:43Z"
+  "updated_at": "2026-08-13T13:02:08Z"
 }
