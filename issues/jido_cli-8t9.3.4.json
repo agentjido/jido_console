@@ -7,14 +7,16 @@
     "jido_cli-8t9.3.8",
     "jido_cli-8t9.4.3"
   ],
+  "closed_at": "2026-08-13T22:17:06Z",
+  "close_reason": "Implemented in Jidoka commit beaa2a7e. ReqLLM stream and non-stream paths now emit provider-neutral text, reasoning, complete tool-call, usage, warning, finish, cancellation, and error records. Tool calls emit only after ResponseAdapter validates complete arguments and IDs. External turn events use one request-wide monotonic sequence. Evidence: 684 deterministic tests passed with 38 excluded; 32 parity tests passed; mix quality passed.",
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Project text, reasoning, tool-call, usage, warning, finish, cancellation, and error events with one monotonic request sequence. Acceptance: stream and non-stream records match; calls start only after complete arguments; cancellation closes the stream; each request emits one terminal event.",
   "id": "jido_cli-8t9.3.4",
   "labels": [],
   "parent": "jido_cli-8t9.3",
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Normalize ReqLLM streaming into the tool loop",
   "type": "task",
-  "updated_at": "2026-08-13T22:07:59Z"
+  "updated_at": "2026-08-13T22:17:06Z"
 }
