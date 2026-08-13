@@ -1,7 +1,6 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-tqg.7.18",
     "jido_cli-tqg.7.19"
   ],
   "blocks": [
@@ -21,5 +20,5 @@
   "status": "open",
   "title": "Publish Jido through the Homebrew tap",
   "type": "task",
-  "updated_at": "2026-08-13T13:04:24Z"
+  "updated_at": "2026-08-13T13:05:01Z"
 }
