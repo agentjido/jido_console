@@ -9,7 +9,6 @@
     "jido_cli-tqg.7.13",
     "jido_cli-tqg.7.22",
     "jido_cli-tqg.7.23",
-    "jido_cli-tqg.7.8",
     "jido_cli-tqg.7.9"
   ],
   "created": "2026-08-12T22:12:32Z",
@@ -27,5 +26,5 @@
   "status": "open",
   "title": "Define and enforce the daemon work lifecycle and shutdown policy",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:04Z"
+  "updated_at": "2026-08-13T13:02:05Z"
 }
