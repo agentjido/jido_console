@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-tqg.7.15"
+  ],
   "blocks": [],
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nThe launcher, archive, file, process, and path boundaries can support a later native Windows package without changing the public Jido command contract.\n\n## Work\n\n1. Audit production code and package scripts for Unix-only permissions, executable bits, path separators, quoting, and shell commands.\n2. Keep process launch on argument vectors. Do not build command strings from user paths.\n3. Define the later Windows launcher and ZIP permission contract.\n4. Add deterministic tests for drive paths, spaces, non-ASCII profiles, reserved names, and long paths where supported.\n5. Record work that requires a native Windows runner.\n\n## Acceptance criteria\n\n- [ ] No future Windows path needs a POSIX shell.\n- [ ] Launchers preserve arguments that contain spaces and Unicode.\n- [ ] The artifact contract has one explicit Windows target extension.\n- [ ] Native-only checks are listed and do not block the macOS ARM64 local release.\n\n## Tests\n\nAdd target-neutral path and launcher contract tests. Run native Windows integration only when Windows artifact work starts.\n\n## Non-goals\n\nDo not build a Windows artifact, add a service, or block the current local macOS release.",
@@ -17,5 +19,5 @@
   "status": "open",
   "title": "Prepare launcher and package boundaries for Windows",
   "type": "task",
-  "updated_at": "2026-08-13T13:05:00Z"
+  "updated_at": "2026-08-13T13:05:03Z"
 }

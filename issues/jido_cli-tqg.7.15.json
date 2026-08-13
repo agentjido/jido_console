@@ -4,6 +4,7 @@
     "jido_cli-tqg.7.14"
   ],
   "blocks": [
+    "jido_cli-tqg.7.11",
     "jido_cli-tqg.7.17",
     "jido_cli-tqg.7.18",
     "jido_cli-tqg.7.28"
@@ -22,5 +23,5 @@
   "status": "open",
   "title": "Implement the macOS ARM64 private-OTP artifact builder",
   "type": "task",
-  "updated_at": "2026-08-13T13:04:23Z"
+  "updated_at": "2026-08-13T13:05:03Z"
 }
