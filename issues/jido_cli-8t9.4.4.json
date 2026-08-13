@@ -1,7 +1,8 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_cli-8t9.3.6"
+    "jido_cli-8t9.3.6",
+    "jido_cli-8t9.4.3"
   ],
   "blocks": [],
   "created": "2026-08-13T20:14:28Z",
@@ -13,5 +14,5 @@
   "status": "open",
   "title": "Add live tool activity and interactive approvals",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:55Z"
+  "updated_at": "2026-08-13T20:14:56Z"
 }
