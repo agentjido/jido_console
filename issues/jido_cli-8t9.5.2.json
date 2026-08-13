@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:14:28Z",
+  "description": "Repository: Jidoka. Test one session that inspects without edits, fixes and verifies, then handles a changed requirement and verifies again. Acceptance: includes one parallel read group, one dependent read-edit-verify chain, one recoverable tool failure, full prior-turn context, final Git review, and no network.",
+  "id": "jido_cli-8t9.5.2",
+  "labels": [],
+  "parent": "jido_cli-8t9.5",
+  "priority": 0,
+  "status": "open",
+  "title": "Add deterministic three-turn Jidoka coding tests",
+  "type": "task",
+  "updated_at": "2026-08-13T20:14:28Z"
+}
