@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_cli-8t9.2.1"
+  ],
   "blocks": [],
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Store each user message, assistant tool-call message, matched tool result, and final assistant message exactly once. Acceptance: multi-step tool loops and later user turns preserve exact order without duplicate or missing messages.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Store the complete ordered conversation transcript",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:26Z"
+  "updated_at": "2026-08-13T20:14:52Z"
 }

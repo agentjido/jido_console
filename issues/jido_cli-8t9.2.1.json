@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-8t9.1.1"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.2.2"
+  ],
   "created": "2026-08-13T20:14:25Z",
   "description": "Repository: Jidoka. Add interaction ID, group ID, provider call ID, call index, arguments, provider metadata, and singular-call normalization. Acceptance: one call becomes a one-call group; records pass Zoi validation and durable projection; snapshot restore keeps every ID.",
   "id": "jido_cli-8t9.2.1",
