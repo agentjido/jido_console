@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_cli-8t9.1.2",
     "jido_cli-8t9.2.1"
@@ -14,8 +14,8 @@
   "labels": [],
   "parent": "jido_cli-8t9.3",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "Build one operation registry and ReqLLM tool projection",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:54Z"
+  "updated_at": "2026-08-13T21:47:26Z"
 }
