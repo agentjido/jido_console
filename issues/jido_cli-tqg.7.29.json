@@ -7,7 +7,7 @@
   ],
   "blocks": [],
   "created": "2026-08-12T22:14:08Z",
-  "description": "## Outcome\n\nTwo independent readiness reviews decide whether to create follow-up publication tasks for Winget and `homebrew/core`.\n\n## Work\n\n1. Evaluate Winget after Windows signing and service operations are stable. Review manifest, installer, identity, update, and support requirements.\n2. Evaluate `homebrew/core` after stable repeatable releases, Linux support, tap history, and sufficient project use exist.\n3. Record objective evidence, unmet criteria, owner, maintenance cost, and security requirements for each channel.\n4. If a channel is ready, create one separate implementation task with its own acceptance tests.\n5. If it is not ready, record the next review trigger and do not submit a weak package.\n6. Keep MSI and other installer options separate from the ZIP and Scoop contract.\n\n## Acceptance criteria\n\n- [ ] Winget and `homebrew/core` each have a clear independent decision.\n- [ ] Decisions cite current channel requirements and project evidence.\n- [ ] A positive decision creates a bounded follow-up issue.\n- [ ] A negative decision states measurable review triggers.\n- [ ] No channel submission occurs through an undocumented manual path.\n- [ ] Windows ARM64 remains a later target unless a separate plan approves it.\n\n## Tests\n\nValidate decision templates and any created follow-up issue dependencies. Channel implementation tests belong to those follow-up tasks.\n\n## Non-goals\n\nDo not submit to Winget or `homebrew/core` only to close this review task.",
+  "description": "## Outcome\n\nTwo later readiness reviews decide whether to create separate implementation tasks for Winget and `homebrew/core`.\n\n## Work\n\n1. Evaluate Winget after Windows packaging and signing are stable.\n2. Evaluate `homebrew/core` after stable repeatable releases, Linux support, tap history, and sufficient use.\n3. Record evidence, unmet criteria, maintenance cost, owner, and security requirements.\n4. Create a bounded follow-up issue only for a ready channel.\n5. Record a measurable next review trigger for a channel that is not ready.\n\n## Acceptance criteria\n\n- [ ] Winget and `homebrew/core` have independent decisions.\n- [ ] Decisions cite current channel requirements and project evidence.\n- [ ] A positive decision creates one bounded follow-up issue.\n- [ ] A negative decision states measurable review triggers.\n\n## Tests\n\nValidate decision templates and created dependency links.\n\n## Non-goals\n\nDo not submit to a channel only to close this review.",
   "id": "jido_cli-tqg.7.29",
   "labels": [
     "cross-repo",
@@ -17,7 +17,7 @@
   "parent": "jido_cli-tqg.7",
   "priority": 3,
   "status": "open",
-  "title": "Evaluate Winget and homebrew-core readiness",
+  "title": "Evaluate later Winget and homebrew-core publication",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:11Z"
+  "updated_at": "2026-08-13T13:04:25Z"
 }
