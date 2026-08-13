@@ -7,8 +7,7 @@
   ],
   "blocks": [
     "jido_cli-tqg.7.16",
-    "jido_cli-tqg.7.2",
-    "jido_cli-tqg.7.3"
+    "jido_cli-tqg.7.2"
   ],
   "closed_at": "2026-08-13T02:38:24Z",
   "close_reason": "Implemented the user-approved immutable GitHub dependency in CLI commit 6e7400a. Jidoka commit 23bd10ff is on GitHub. Local and isolated checks pass; no Hex release was published.",
@@ -26,5 +25,5 @@
   "status": "closed",
   "title": "Use an immutable GitHub Jidoka dependency",
   "type": "task",
-  "updated_at": "2026-08-13T02:38:24Z"
+  "updated_at": "2026-08-13T13:02:03Z"
 }
