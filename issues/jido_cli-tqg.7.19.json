@@ -4,7 +4,6 @@
     "jido_cli-tqg.7.18"
   ],
   "blocks": [
-    "jido_cli-tqg.7.21",
     "jido_cli-tqg.7.26"
   ],
   "created": "2026-08-12T22:14:05Z",
@@ -21,5 +20,5 @@
   "status": "open",
   "title": "Pass automated acceptance on the local release candidate",
   "type": "task",
-  "updated_at": "2026-08-13T13:04:24Z"
+  "updated_at": "2026-08-13T13:05:01Z"
 }
