@@ -13,7 +13,7 @@ defmodule Jido.Cli.Tui.StateTest do
     assert state.messages == [%{role: :user, content: "hello"}]
 
     request = %{request_id: "request-1"}
-    {state, []} = State.update(state, {:turn_started, request})
+    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
 
     delta =
       Event.build(:llm_delta, [],
@@ -25,7 +25,7 @@ defmodule Jido.Cli.Tui.StateTest do
     assert state.streaming == "Hi"
 
     terminal = Event.build(:turn_finished, [delta], request_id: "request-1")
-    {state, [{:finish_turn, ^request}]} = State.update(state, {:jidoka, terminal})
+    {state, []} = State.update(state, {:jidoka, terminal})
     assert state.finishing?
 
     {state, []} =
@@ -151,12 +151,13 @@ defmodule Jido.Cli.Tui.StateTest do
     assert {_state, [:exit]} = State.update(state, {:terminal, {:key, :ctrl_c}})
 
     request = %{request_id: "request-1"}
-    {state, []} = State.update(state, {:turn_started, request})
+    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
 
     assert {state, [{:cancel_turn, ^request}]} =
              State.update(state, {:terminal, {:key, :ctrl_c}})
 
     assert state.status == :cancelling
+    assert {^state, []} = State.update(state, {:terminal, {:key, :ctrl_c}})
   end
 
   test "edits the prompt and handles terminal control events" do
@@ -177,7 +178,7 @@ defmodule Jido.Cli.Tui.StateTest do
     assert {^state, []} = State.update(state, {:terminal, {:key, :enter}})
 
     request = %{request_id: "request-1"}
-    {state, []} = State.update(state, {:turn_started, request})
+    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
     assert {^state, []} = State.update(state, {:terminal, {:key, :enter}})
     assert {^state, []} = State.update(state, {:terminal, {:key, :escape}})
   end

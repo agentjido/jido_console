@@ -88,27 +88,36 @@ defmodule Jido.Cli.TuiTest do
     def await(request, opts) do
       send(request.test_pid, {:turn_awaited, opts})
 
-      if request.prompt == "review edit" do
-        {:ok, :next_session, "Edit complete.",
-         [
-           %{
-             "kind" => "edit",
-             "path" => "lib/value.ex",
-             "action" => "edit",
-             "status" => "changed",
-             "before_sha256" => "sha256:" <> String.duplicate("1", 64),
-             "after_sha256" => "sha256:" <> String.duplicate("2", 64),
-             "checkpoint" => %{"checkpoint_ref" => "check-1"},
-             "diff" => %{
-               "before_lines" => 4,
-               "after_lines" => 5,
-               "changed_before_lines" => 1,
-               "changed_after_lines" => 2
+      case request.prompt do
+        "early stream" ->
+          send(request.test_pid, {:await_blocked, self()})
+
+          receive do
+            :release_await -> {:ok, :next_session, "Hello back"}
+          end
+
+        "review edit" ->
+          {:ok, :next_session, "Edit complete.",
+           [
+             %{
+               "kind" => "edit",
+               "path" => "lib/value.ex",
+               "action" => "edit",
+               "status" => "changed",
+               "before_sha256" => "sha256:" <> String.duplicate("1", 64),
+               "after_sha256" => "sha256:" <> String.duplicate("2", 64),
+               "checkpoint" => %{"checkpoint_ref" => "check-1"},
+               "diff" => %{
+                 "before_lines" => 4,
+                 "after_lines" => 5,
+                 "changed_before_lines" => 1,
+                 "changed_after_lines" => 2
+               }
              }
-           }
-         ]}
-      else
-        {:ok, :next_session, "Hello back"}
+           ]}
+
+        _other ->
+          {:ok, :next_session, "Hello back"}
       end
     end
 
@@ -135,10 +144,29 @@ defmodule Jido.Cli.TuiTest do
       mode = Keyword.fetch!(opts, :mode)
       send(test_pid, {:failure_turn_started, mode})
 
+      if mode == :blocking_start do
+        send(test_pid, {:start_turn_blocked, self()})
+
+        receive do
+          :release_start_turn -> :ok
+        end
+      end
+
       if mode == :start_error do
         {:error, :start_failed}
       else
-        request = %{request_id: "failure-request", mode: mode, owner: owner, test_pid: test_pid}
+        controller =
+          if mode in [:cancel_ok, :cancel_error, :blocking_cancel, :already_finished] do
+            spawn(fn -> controller_loop(Process.monitor(test_pid), nil) end)
+          end
+
+        request = %{
+          request_id: "failure-request",
+          mode: mode,
+          owner: owner,
+          test_pid: test_pid,
+          controller: controller
+        }
 
         if mode in [:await_raise, :await_throw] do
           event = Event.build(:turn_finished, [], request_id: request.request_id)
@@ -155,15 +183,26 @@ defmodule Jido.Cli.TuiTest do
 
     def await(%{mode: :already_finished} = request, opts) do
       send(request.test_pid, {:turn_awaited, opts})
-      {:ok, :next_session, "completed"}
+      await_controller(request.controller)
     end
+
+    def await(%{mode: mode} = request, _opts) when mode in [:cancel_ok, :cancel_error] do
+      await_controller(request.controller)
+    end
+
+    def await(%{mode: :blocking_cancel} = request, _opts), do: await_controller(request.controller)
+
+    def await(%{mode: :no_terminal}, _opts),
+      do: {:ok, :next_session, "completed without terminal event"}
 
     def await(request, _opts), do: {:cancelled, cancellation(request.request_id)}
 
     @impl true
     def cancel(%{mode: :cancel_ok} = request, _opts) do
       send(request.test_pid, {:cancel_called, :cancel_ok})
-      {:ok, cancellation(request.request_id)}
+      cancellation = cancellation(request.request_id)
+      send(request.controller, {:complete, {:cancelled, cancellation}})
+      {:ok, cancellation}
     end
 
     def cancel(%{mode: :cancel_error} = request, _opts) do
@@ -171,11 +210,54 @@ defmodule Jido.Cli.TuiTest do
       {:error, :cancel_failed}
     end
 
+    def cancel(%{mode: :blocking_cancel} = request, _opts) do
+      send(request.test_pid, {:cancel_blocked, self()})
+
+      receive do
+        :release_cancel -> :ok
+      end
+
+      cancellation = cancellation(request.request_id)
+      send(request.controller, {:complete, {:cancelled, cancellation}})
+      {:ok, cancellation}
+    end
+
     def cancel(%{mode: :already_finished} = request, _opts) do
       terminal = Event.build(:turn_finished, [], request_id: request.request_id)
       send(request.owner, {:jidoka_turn_event, terminal})
       send(request.test_pid, {:cancel_called, :already_finished})
+      send(request.controller, {:complete, {:ok, :next_session, "completed"}})
       {:error, :request_already_finished}
+    end
+
+    defp await_controller(controller) do
+      send(controller, {:register, self()})
+
+      receive do
+        {:complete, result} -> result
+      after
+        5_000 -> {:error, :fake_await_timeout}
+      end
+    end
+
+    defp controller_loop(test_ref, await_pid) do
+      receive do
+        {:register, pid} when is_tuple(await_pid) ->
+          {:pending, result} = await_pid
+          send(pid, {:complete, result})
+
+        {:register, pid} ->
+          controller_loop(test_ref, pid)
+
+        {:complete, result} when is_pid(await_pid) ->
+          send(await_pid, {:complete, result})
+
+        {:complete, result} ->
+          controller_loop(test_ref, {:pending, result})
+
+        {:DOWN, ^test_ref, :process, _pid, _reason} ->
+          :ok
+      end
     end
 
     defp cancellation(request_id) do
@@ -242,6 +324,33 @@ defmodule Jido.Cli.TuiTest do
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)
     assert_receive :terminal_closed
+  end
+
+  test "buffers stream events until the asynchronous request is installed" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive :session_started, 500
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+    send(owner, {:jido_terminal, ref, {:text, "early stream"}})
+    send(owner, {:jido_terminal, ref, {:key, :enter}})
+    assert_receive {:await_blocked, worker}
+    assert_frame_contains("Hello")
+
+    send(worker, :release_await)
+    assert_frame_contains("Hello back")
+    stop_tui(task, owner, ref)
   end
 
   test "draws first and queues a prompt while the runtime starts" do
@@ -328,7 +437,7 @@ defmodule Jido.Cli.TuiTest do
 
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _first_frame}
-    assert_receive :close_session_started
+    assert_receive :close_session_started, 500
     assert_frame_contains("idle · Enter sends")
 
     send(owner, {:jido_terminal, ref, {:key, :escape}})
@@ -449,10 +558,67 @@ defmodule Jido.Cli.TuiTest do
     stop_tui(task, owner, ref)
   end
 
+  test "paints resolving before prompt preparation finishes" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          prompt_preparer: fn _coding, prompt ->
+            send(test_pid, {:prompt_preparation_blocked, self()})
+
+            receive do
+              :release_prompt_preparation ->
+                {:ok, prompt, %{"coding" => %{"pack_id" => "jido.coding_pack"}}}
+            end
+          end,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive :session_started, 500
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+    send_prompt(owner, ref)
+    assert_receive {:prompt_preparation_blocked, worker}
+    assert_frame_contains("resolving file mentions")
+    refute_receive :turn_started, 50
+
+    send(worker, :release_prompt_preparation)
+    assert_receive :turn_started
+    assert_frame_contains("Hello back")
+    stop_tui(task, owner, ref)
+  end
+
+  test "runs turn start outside the terminal loop" do
+    {task, owner, ref} = start_failure_tui(:blocking_start)
+    send_prompt(owner, ref)
+    assert_receive {:failure_turn_started, :blocking_start}
+    assert_receive {:start_turn_blocked, _worker}
+    assert_frame_contains("running · Ctrl-C cancels")
+
+    send(owner, {:jido_terminal, ref, {:key, :escape}})
+    assert :ok = Task.await(task, 500)
+    assert_receive :terminal_closed
+  end
+
+  test "awaits a turn without a terminal stream event" do
+    {task, owner, ref} = start_failure_tui(:no_terminal)
+    send_prompt(owner, ref)
+    assert_receive {:failure_turn_started, :no_terminal}
+    assert_frame_contains("completed without terminal event")
+    stop_tui(task, owner, ref)
+  end
+
   test "handles successful and failed cancellation" do
     {task, owner, ref} = start_failure_tui(:cancel_ok)
     send_prompt(owner, ref)
     assert_receive {:failure_turn_started, :cancel_ok}
+    assert_frame_contains("running · Ctrl-C cancels")
     send(owner, {:jido_terminal, ref, {:key, :ctrl_c}})
     assert_receive {:cancel_called, :cancel_ok}
     assert_frame_contains("idle ·")
@@ -461,9 +627,24 @@ defmodule Jido.Cli.TuiTest do
     {task, owner, ref} = start_failure_tui(:cancel_error)
     send_prompt(owner, ref)
     assert_receive {:failure_turn_started, :cancel_error}
+    assert_frame_contains("running · Ctrl-C cancels")
     send(owner, {:jido_terminal, ref, {:key, :ctrl_c}})
     assert_receive {:cancel_called, :cancel_error}
     assert_frame_contains("error · :cancel_failed")
+    stop_tui(task, owner, ref)
+  end
+
+  test "paints cancellation before the cancel call finishes" do
+    {task, owner, ref} = start_failure_tui(:blocking_cancel)
+    send_prompt(owner, ref)
+    assert_receive {:failure_turn_started, :blocking_cancel}
+    assert_frame_contains("running · Ctrl-C cancels")
+    send(owner, {:jido_terminal, ref, {:key, :ctrl_c}})
+    assert_receive {:cancel_blocked, worker}
+    assert_frame_contains("cancelling")
+
+    send(worker, :release_cancel)
+    assert_frame_contains("idle ·")
     stop_tui(task, owner, ref)
   end
 
@@ -471,6 +652,7 @@ defmodule Jido.Cli.TuiTest do
     {task, owner, ref} = start_failure_tui(:already_finished)
     send_prompt(owner, ref)
     assert_receive {:failure_turn_started, :already_finished}
+    assert_frame_contains("running · Ctrl-C cancels")
 
     send(owner, {:jido_terminal, ref, {:key, :ctrl_c}})
     assert_receive {:cancel_called, :already_finished}

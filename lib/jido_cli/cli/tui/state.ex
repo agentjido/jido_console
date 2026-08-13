@@ -28,8 +28,9 @@ defmodule Jido.Cli.Tui.State do
           {:start_turn, String.t()}
           | {:start_turn, String.t(), map()}
           | {:prepare_prompt, String.t()}
-          | {:finish_turn, term()}
+          | {:await_turn, term()}
           | {:cancel_turn, term()}
+          | {:respond_review, :approve | :deny, term(), term()}
           | :exit
 
   @type t :: %__MODULE__{}
@@ -147,6 +148,9 @@ defmodule Jido.Cli.Tui.State do
       when key in [:escape, :ctrl_c],
       do: {state, [:exit]}
 
+  def update(%__MODULE__{status: :cancelling} = state, {:terminal, {:key, :ctrl_c}}),
+    do: {state, []}
+
   def update(%__MODULE__{request: request} = state, {:terminal, {:key, :ctrl_c}}) do
     {%{state | status: :cancelling, dirty?: true}, [{:cancel_turn, request}]}
   end
@@ -159,7 +163,8 @@ defmodule Jido.Cli.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:turn_started, request}) do
-    changed(state, request: request, finishing?: false, status: :running)
+    state = %{state | request: request, finishing?: false, status: :running, dirty?: true}
+    {state, [{:await_turn, request}]}
   end
 
   def update(%__MODULE__{request: nil} = state, {:jidoka, _event}), do: {state, []}
@@ -170,11 +175,8 @@ defmodule Jido.Cli.Tui.State do
       state = if is_binary(delta), do: %{state | streaming: state.streaming <> delta}, else: state
       state = %{state | dirty?: true}
 
-      if JidokaStream.terminal?(event) and not state.finishing? do
-        {%{state | finishing?: true}, [{:finish_turn, state.request}]}
-      else
-        {state, []}
-      end
+      state = if JidokaStream.terminal?(event), do: %{state | finishing?: true}, else: state
+      {state, []}
     else
       {state, []}
     end

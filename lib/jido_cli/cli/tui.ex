@@ -1,8 +1,7 @@
 defmodule Jido.Cli.Tui do
   @moduledoc "Full-screen Jido chat loop."
 
-  alias Jido.Cli.Tui.State
-  alias Jido.Cli.Tui.View
+  alias Jido.Cli.Tui.{Effects, State, View, Workers}
   alias Jido.Cli.Coding.Setup
   alias Jido.Cli.Terminal
 
@@ -32,12 +31,18 @@ defmodule Jido.Cli.Tui do
     with :ok <- Terminal.draw(terminal, View.render(state)) do
       {state, []} = State.update(state, :rendered)
       owner = self()
-      {:ok, startup_pid} = Task.start(fn -> runtime_owner(owner, runtime, agent, opts) end)
+
+      {startup_pid, startup_ref} =
+        spawn_monitor(fn -> runtime_owner(owner, runtime, agent, opts) end)
 
       try do
-        loop(state, terminal, runtime, opts, startup_pid)
+        {result, workers} =
+          loop(state, terminal, runtime, opts, %{pid: startup_pid, ref: startup_ref}, %{})
+
+        Workers.stop_all(workers)
+        result
       after
-        stop_runtime_owner(startup_pid)
+        stop_runtime_owner(startup_pid, startup_ref)
       end
     end
   end
@@ -142,8 +147,9 @@ defmodule Jido.Cli.Tui do
 
   defp close_startup_result(_runtime, {:error, _reason}), do: :ok
 
-  defp stop_runtime_owner(startup_pid) do
+  defp stop_runtime_owner(startup_pid, startup_ref) do
     if Process.alive?(startup_pid), do: send(startup_pid, {:close, self()})
+    Process.demonitor(startup_ref, [:flush])
     :ok
   end
 
@@ -159,16 +165,43 @@ defmodule Jido.Cli.Tui do
     )
   end
 
-  defp loop(state, terminal, runtime, opts, startup_pid) do
+  defp loop(
+         state,
+         terminal,
+         runtime,
+         opts,
+         %{pid: startup_pid, ref: startup_ref} = startup,
+         workers
+       ) do
     receive do
       {:jido_terminal, ref, event} when ref == terminal.ref ->
-        continue(state, {:terminal, event}, terminal, runtime, opts, startup_pid)
+        continue(state, {:terminal, event}, terminal, runtime, opts, startup, workers)
 
       {:jidoka_turn_event, event} ->
-        continue(state, {:jidoka, event}, terminal, runtime, opts, startup_pid)
+        continue(state, {:jidoka, event}, terminal, runtime, opts, startup, workers)
 
       {:jido_turn_result, request, result} ->
-        continue(state, {:turn_result, request, result}, terminal, runtime, opts, startup_pid)
+        continue(
+          state,
+          {:turn_result, request, result},
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
+
+      {:jido_tui_effect_result, worker_pid, outcome} ->
+        handle_effect_result(
+          state,
+          worker_pid,
+          outcome,
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
 
       {:jido_runtime_startup, ^startup_pid, {:ok, startup}} ->
         continue(
@@ -177,104 +210,212 @@ defmodule Jido.Cli.Tui do
           terminal,
           runtime,
           startup.opts,
-          startup_pid
+          %{pid: startup_pid, ref: startup_ref},
+          workers
         )
 
       {:jido_runtime_startup, ^startup_pid, {:error, reason}} ->
-        continue(state, {:runtime_failed, reason}, terminal, runtime, opts, startup_pid)
+        continue(
+          state,
+          {:runtime_failed, reason},
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
+
+      {:DOWN, ^startup_ref, :process, ^startup_pid, :normal} ->
+        loop(state, terminal, runtime, opts, startup, workers)
+
+      {:DOWN, ^startup_ref, :process, ^startup_pid, reason} ->
+        continue(
+          state,
+          {:runtime_failed, {:runtime_owner_failed, reason}},
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
+
+      {:DOWN, worker_ref, :process, worker_pid, reason} ->
+        handle_worker_down(
+          state,
+          worker_pid,
+          worker_ref,
+          reason,
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
 
       :render_frame ->
         case Terminal.draw(terminal, View.render(state)) do
           :ok ->
             {state, []} = State.update(state, :rendered)
-            loop(state, terminal, runtime, opts, startup_pid)
+            loop(state, terminal, runtime, opts, startup, workers)
 
           {:error, reason} ->
-            {:error, reason}
+            {{:error, reason}, workers}
         end
 
       _message ->
-        loop(state, terminal, runtime, opts, startup_pid)
+        loop(state, terminal, runtime, opts, startup, workers)
     end
   end
 
-  defp continue(state, event, terminal, runtime, opts, startup_pid) do
+  defp continue(state, event, terminal, runtime, opts, startup, workers) do
     {state, effects} = State.update(state, event)
+    continue_transition(state, effects, terminal, runtime, opts, startup, workers)
+  end
 
-    case run_effects(state, effects, runtime, opts) do
-      {:continue, state} ->
-        state = schedule_render(state)
-        loop(state, terminal, runtime, opts, startup_pid)
+  defp continue_transition(state, effects, terminal, runtime, opts, startup, workers) do
+    case paint_before_effects(state, effects, terminal) do
+      {:ok, state} ->
+        case Effects.dispatch(state, effects, runtime, opts, workers) do
+          {:continue, workers} ->
+            state = schedule_render(state)
+            loop(state, terminal, runtime, opts, startup, workers)
 
-      :exit ->
-        exit_result(state)
+          {:exit, workers} ->
+            {exit_result(state), workers}
+        end
+
+      {:error, reason} ->
+        {{:error, reason}, workers}
     end
   end
 
   defp exit_result(%State{runtime_status: :failed, startup_error: reason}), do: {:error, reason}
   defp exit_result(_state), do: :ok
 
-  defp run_effects(state, [], _runtime, _opts), do: {:continue, state}
-  defp run_effects(_state, [:exit | _effects], _runtime, _opts), do: :exit
+  defp paint_before_effects(state, [], _terminal), do: {:ok, state}
+  defp paint_before_effects(state, [:exit | _effects], _terminal), do: {:ok, state}
 
-  defp run_effects(state, [{:start_turn, prompt} | effects], runtime, opts) do
-    run_effects(state, [{:start_turn, prompt, %{}} | effects], runtime, opts)
+  defp paint_before_effects(%State{dirty?: true} = state, _effects, terminal) do
+    with :ok <- Terminal.draw(terminal, View.render(state)) do
+      {state, []} = State.update(state, :rendered)
+      {:ok, state}
+    end
   end
 
-  defp run_effects(state, [{:prepare_prompt, prompt} | effects], runtime, opts) do
-    coding = Keyword.fetch!(opts, :coding_setup_resolved)
+  defp paint_before_effects(state, _effects, _terminal), do: {:ok, state}
 
-    event =
-      case Setup.prepare_prompt(coding, prompt) do
-        {:ok, prompt, context} -> {:prompt_ready, prompt, context}
-        {:error, reason} -> {:prompt_error, reason}
-      end
+  defp handle_effect_result(
+         state,
+         worker_pid,
+         outcome,
+         terminal,
+         runtime,
+         opts,
+         startup,
+         workers
+       ) do
+    case Workers.pop(workers, worker_pid) do
+      {:ok, worker, workers} ->
+        handle_completed_effect(
+          state,
+          worker,
+          outcome,
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
 
-    {state, next_effects} = State.update(state, event)
-    run_effects(state, next_effects ++ effects, runtime, opts)
+      :error ->
+        loop(state, terminal, runtime, opts, startup, workers)
+    end
   end
 
-  defp run_effects(state, [{:start_turn, prompt, context} | effects], runtime, opts) do
-    turn_opts = Keyword.get(opts, :turn_opts, [])
-    turn_opts = Keyword.put(turn_opts, :context, context)
+  defp handle_completed_effect(
+         state,
+         worker,
+         outcome,
+         terminal,
+         runtime,
+         opts,
+         startup,
+         workers
+       ) do
+    case Effects.complete(worker, outcome) do
+      {:event, event} ->
+        continue(state, event, terminal, runtime, opts, startup, workers)
 
-    event =
-      case runtime.start_turn(state.session, prompt, self(), turn_opts) do
-        {:ok, request} -> {:turn_started, request}
-        {:error, reason} -> {:turn_result, {:error, reason}}
-      end
+      {:start_turn, relay_pid, {:turn_started, request}} ->
+        {state, effects} = State.update(state, {:turn_started, request})
+        workers = Workers.activate_relay(workers, relay_pid, request)
+        continue_transition(state, effects, terminal, runtime, opts, startup, workers)
 
-    {state, next_effects} = State.update(state, event)
-    run_effects(state, next_effects ++ effects, runtime, opts)
+      {:start_turn, relay_pid, event} ->
+        workers = Workers.stop(workers, relay_pid)
+        continue(state, event, terminal, runtime, opts, startup, workers)
+
+      {:request_result, request, result} ->
+        finish_request_effect(
+          state,
+          request,
+          result,
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
+
+      :ignore ->
+        loop(state, terminal, runtime, opts, startup, workers)
+    end
   end
 
-  defp run_effects(state, [{:finish_turn, request} | effects], runtime, opts) do
-    await_opts = Keyword.get(opts, :await_opts, timeout: 30_000, cancel_on_timeout: false)
-    owner = self()
-
-    {:ok, _task} =
-      Task.start(fn ->
-        result = await_result(runtime, request, await_opts)
-        send(owner, {:jido_turn_result, request, result})
-      end)
-
-    run_effects(state, effects, runtime, opts)
+  defp finish_request_effect(
+         state,
+         request,
+         result,
+         terminal,
+         runtime,
+         opts,
+         startup,
+         workers
+       ) do
+    {state, effects} = State.update(state, {:turn_result, request, result})
+    workers = if state.request == request, do: workers, else: Workers.stop_subject(workers, request)
+    continue_transition(state, effects, terminal, runtime, opts, startup, workers)
   end
 
-  defp run_effects(state, [{:cancel_turn, request} | effects], runtime, opts) do
-    cancel_opts = Keyword.get(opts, :cancel_opts, [])
+  defp handle_worker_down(
+         state,
+         worker_pid,
+         worker_ref,
+         reason,
+         terminal,
+         runtime,
+         opts,
+         startup,
+         workers
+       ) do
+    case Workers.take_down(workers, worker_pid, worker_ref) do
+      {:ok, %{kind: :stream_relay}, workers} ->
+        loop(state, terminal, runtime, opts, startup, workers)
 
-    case runtime.cancel(request, cancel_opts) do
-      {:ok, cancellation} ->
-        {state, next_effects} = State.update(state, {:turn_result, {:cancelled, cancellation}})
-        run_effects(state, next_effects ++ effects, runtime, opts)
+      {:ok, worker, workers} ->
+        handle_completed_effect(
+          state,
+          worker,
+          {:crash, {:effect_worker_down, reason}},
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
 
-      {:error, :request_already_finished} ->
-        run_effects(state, effects, runtime, opts)
-
-      {:error, reason} ->
-        {state, next_effects} = State.update(state, {:turn_result, {:error, reason}})
-        run_effects(state, next_effects ++ effects, runtime, opts)
+      :error ->
+        loop(state, terminal, runtime, opts, startup, workers)
     end
   end
 
@@ -285,12 +426,4 @@ defmodule Jido.Cli.Tui do
   end
 
   defp schedule_render(state), do: state
-
-  defp await_result(runtime, request, opts) do
-    runtime.await(request, opts)
-  rescue
-    exception -> {:error, exception}
-  catch
-    kind, reason -> {:error, {kind, reason}}
-  end
 end
