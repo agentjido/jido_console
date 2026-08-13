@@ -11,7 +11,6 @@
   "id": "jido_cli-tqg.7.19",
   "labels": [
     "automation",
-    "daemon",
     "packaging",
     "release"
   ],
@@ -20,5 +19,5 @@
   "status": "open",
   "title": "Pass automated acceptance on the local release candidate",
   "type": "task",
-  "updated_at": "2026-08-13T13:05:03Z"
+  "updated_at": "2026-08-13T13:05:04Z"
 }
