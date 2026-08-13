@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-tqg.7.18"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-tqg.7.20"
+  ],
   "created": "2026-08-12T22:14:05Z",
   "description": "## Outcome\n\nThe exact archive and evidence produced by the local release command pass the full non-interactive release contract and startup limits on macOS ARM64.\n\n## Work\n\n1. Verify the external checksum before extraction.\n2. Run `jido --version`, `--help`, `run --help`, and `eval --help` with no Erlang or Elixir on `PATH`.\n3. Measure 20 warm runs and one cold run for help, version, first TUI frame, and runtime-ready state.\n4. Require warm medians of at most 0.50 seconds for help and version, 0.50 seconds for the first frame, and 1.25 seconds for runtime ready.\n5. Prove input works during startup and one queued submission runs exactly once.\n6. Run one provider-free local scenario and verify exit statuses `0`, `1`, and `64`.\n7. Test spaces, non-ASCII paths, and a read-only extracted package.\n8. Validate metadata, notices, private runtime, runtime data, native libraries, and artifact integrity.\n9. Store acceptance and performance evidence with the candidate.\n\n## Acceptance criteria\n\n- [ ] The exact `dist/` archive passes every required gate.\n- [ ] No test can find `erl`, `elixir`, or `mix` through `PATH`.\n- [ ] The first frame precedes runtime-ready state.\n- [ ] No live provider credential or model call is used.\n- [ ] One failed gate marks the candidate unusable for publication.\n\n## Tests\n\nAlso prove that a corrupt candidate and a startup-regressed candidate fail.\n\n## Non-goals\n\nDo not publish the candidate or treat automated terminal checks as manual TUI acceptance.",
   "id": "jido_cli-tqg.7.19",
@@ -18,5 +20,5 @@
   "status": "open",
   "title": "Pass automated acceptance on the local release candidate",
   "type": "task",
-  "updated_at": "2026-08-13T13:05:02Z"
+  "updated_at": "2026-08-13T13:05:03Z"
 }
