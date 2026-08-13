@@ -5,8 +5,7 @@
     "jido_cli-tqg.7.12"
   ],
   "blocks": [
-    "jido_cli-tqg.7.18",
-    "jido_cli-tqg.7.28"
+    "jido_cli-tqg.7.18"
   ],
   "closed_at": "2026-08-13T14:06:17Z",
   "close_reason": "Implemented an exact-final-archive harness with safe extraction, isolated empty environment, private runtime and integrity gates, 20 warm startup runs plus cold and p95 evidence, read-only relocation tests, provider-free replay, native load, queued input, startup failure, and machine-readable acceptance.",

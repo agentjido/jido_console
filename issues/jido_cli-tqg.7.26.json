@@ -4,8 +4,7 @@
     "jido_cli-tqg.7.24"
   ],
   "blocks": [
-    "jido_cli-tqg.7.21",
-    "jido_cli-tqg.7.28"
+    "jido_cli-tqg.7.21"
   ],
   "created": "2026-08-12T22:14:07Z",
   "description": "## Outcome\n\nA later publication flow uploads the exact accepted macOS ARM64 artifact and its evidence to an immutable GitHub release.\n\n## Work\n\n1. Validate the tag against the single application version.\n2. Require automated and manual acceptance for the exact archive checksum.\n3. Require configured signing and notarization for stable public status.\n4. Upload the archive, notices, SBOM, provenance, `release.json`, `acceptance.json`, checksums, and release notes to a draft.\n5. Publish the GitHub release with an idempotent recovery plan.\n6. Record the immutable URL needed by the Homebrew task.\n\n## Acceptance criteria\n\n- [ ] A tag or version mismatch stops before upload.\n- [ ] Uploaded bytes match the accepted checksum.\n- [ ] The release states target, trust state, startup limits, and known limits.\n- [ ] A partial publication has a safe resume procedure.\n- [ ] The immutable artifact URL and checksum are available to the later Homebrew task.\n\n## Tests\n\nRun dry-run, mismatch, artifact failure, signing failure, draft upload, and rerun simulations.\n\n## Non-goals\n\nDo not publish Hex, update Homebrew, or publish another target.",

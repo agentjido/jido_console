@@ -7,8 +7,7 @@
     "jido_cli-tqg.7.2"
   ],
   "blocks": [
-    "jido_cli-tqg.7.18",
-    "jido_cli-tqg.7.28"
+    "jido_cli-tqg.7.18"
   ],
   "closed_at": "2026-08-13T14:06:08Z",
   "close_reason": "Generated validated release metadata, internal file digests, exact external checksum, CycloneDX 1.5 SBOM, local provenance, dirty and unsigned trust state, and future Homebrew inputs.",

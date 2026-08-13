@@ -6,8 +6,7 @@
   ],
   "blocks": [
     "jido_cli-tqg.7.17",
-    "jido_cli-tqg.7.18",
-    "jido_cli-tqg.7.28"
+    "jido_cli-tqg.7.18"
   ],
   "closed_at": "2026-08-13T14:06:08Z",
   "close_reason": "Added a reviewed exact-version policy for all 78 shipped applications, lock-source identities, license validation, native inventory, deterministic notices, and new-component rejection.",
