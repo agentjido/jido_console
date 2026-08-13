@@ -3,8 +3,7 @@
   "blocked_by": [
     "jido_cli-tqg.6.4",
     "jido_cli-tqg.7.11",
-    "jido_cli-tqg.7.12",
-    "jido_cli-tqg.7.9"
+    "jido_cli-tqg.7.12"
   ],
   "blocks": [
     "jido_cli-tqg.7.18",

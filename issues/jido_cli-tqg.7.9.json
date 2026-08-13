@@ -2,7 +2,6 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [
-    "jido_cli-tqg.7.13",
     "jido_cli-tqg.7.22",
     "jido_cli-tqg.7.23"
   ],
@@ -20,5 +19,5 @@
   "status": "open",
   "title": "Route foreground daemon commands without changing local execution",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:07Z"
+  "updated_at": "2026-08-13T13:02:08Z"
 }
