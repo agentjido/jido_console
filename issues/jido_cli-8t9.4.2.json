@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-8t9.4.1"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.4.3"
+  ],
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: jido_cli. Run prompt preparation, turn start, await, cancel, review response, and close work in monitored workers. Acceptance: resolving and cancelling frames paint immediately; a lost terminal stream event cannot leave the TUI running; completion and cancellation races are idempotent.",
   "id": "jido_cli-8t9.4.2",
