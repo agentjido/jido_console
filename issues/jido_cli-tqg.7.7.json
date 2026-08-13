@@ -12,6 +12,7 @@
     "daemon",
     "foundation",
     "release",
+    "removed-scope",
     "security"
   ],
   "parent": "jido_cli-tqg.7",
@@ -19,5 +20,5 @@
   "status": "closed",
   "title": "Implement the framed loopback daemon client and server",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:12Z"
+  "updated_at": "2026-08-13T13:06:30Z"
 }
