@@ -5,7 +5,6 @@
   ],
   "blocks": [
     "jido_cli-tqg.7.21",
-    "jido_cli-tqg.7.22",
     "jido_cli-tqg.7.23",
     "jido_cli-tqg.7.26"
   ],
@@ -23,5 +22,5 @@
   "status": "open",
   "title": "Pass automated packaged acceptance on the first target matrix",
   "type": "task",
-  "updated_at": "2026-08-13T12:57:43Z"
+  "updated_at": "2026-08-13T13:02:08Z"
 }
