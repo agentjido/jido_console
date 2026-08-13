@@ -8,14 +8,16 @@
     "jido_cli-8t9.3.5",
     "jido_cli-8t9.4.1"
   ],
+  "closed_at": "2026-08-13T22:07:46Z",
+  "close_reason": "Completed in Jidoka commit 766183b1. Durable tool-call groups now project into ReqLLM assistant and matched tool-result messages, preserve provider call IDs and names, retain message metadata and reasoning signatures, and keep Google thought signatures. OpenAI, Anthropic, and Google fixtures cover dependent and parallel duplicate calls. Validation: 679 deterministic tests passed; 32 parity tests passed; mix quality passed.",
   "created": "2026-08-13T20:14:27Z",
   "description": "Repository: Jidoka. Preserve the assistant tool-call message, matched call IDs, result messages, and provider continuation metadata. Acceptance: OpenAI, Anthropic, and Google fixtures complete dependent and parallel loops; duplicate calls to one operation stay distinct; required provider metadata survives.",
   "id": "jido_cli-8t9.3.3",
   "labels": [],
   "parent": "jido_cli-8t9.3",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Build provider-correct tool continuation messages",
   "type": "task",
-  "updated_at": "2026-08-13T22:01:13Z"
+  "updated_at": "2026-08-13T22:07:46Z"
 }
