@@ -4,7 +4,6 @@
     "jido_cli-tqg.7.18"
   ],
   "blocks": [
-    "jido_cli-tqg.7.23",
     "jido_cli-tqg.7.24",
     "jido_cli-tqg.7.25",
     "jido_cli-tqg.7.26"
@@ -23,5 +22,5 @@
   "status": "open",
   "title": "Complete manual TUI acceptance on the first target matrix",
   "type": "task",
-  "updated_at": "2026-08-13T12:55:44Z"
+  "updated_at": "2026-08-13T13:02:10Z"
 }
