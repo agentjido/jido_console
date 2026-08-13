@@ -12,6 +12,7 @@
     "documentation",
     "foundation",
     "release",
+    "removed-scope",
     "security"
   ],
   "parent": "jido_cli-tqg.7",
@@ -19,5 +20,5 @@
   "status": "closed",
   "title": "Define and enforce the daemon work lifecycle and shutdown policy",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:13Z"
+  "updated_at": "2026-08-13T13:06:30Z"
 }
