@@ -6,6 +6,8 @@
   "blocks": [
     "jido_cli-tqg.7.15"
   ],
+  "closed_at": "2026-08-13T14:06:07Z",
+  "close_reason": "Confirmed the source-built macOS ARM64 Mix release with supported start_clean entry, no compiled dependency edit, isolated launcher, native and runtime-data gates, 20-run startup benchmarks, and a written reversal rule.",
   "created": "2026-08-12T22:12:33Z",
   "description": "## Outcome\n\nConfirm the target-specific Mix release as the package method for the first local macOS ARM64 candidate. Use Burrito only if a required failure cannot be corrected in the Mix release configuration or launcher.\n\n## Evidence already available\n\nA macOS ARM64 feasibility test on 2026-08-13 used the production build and paint-first CLI entry order.\n\n- Help and version improved from 0.83-0.85 seconds in the escript to 0.22-0.23 seconds in the release.\n- The first TUI frame improved from 0.88-0.99 seconds to 0.25-0.28 seconds.\n- Runtime ready improved from 3.41-3.55 seconds to 0.86-0.96 seconds.\n- The escript was 71 MB. The release was 217 MB after extraction and 76 MB as a gzip archive.\n- A normal `mix release` is blocked because `llm_db` is a regular Jidoka application and an included ReqLLM application.\n- A disposable metadata correction proved feasibility only. It is not an acceptable release fix.\n\n## Work\n\n1. Resolve the `llm_db` application ownership conflict in source metadata or release configuration.\n2. Add a supported release entry module and launcher that enter the CLI before application startup.\n3. Build a production Mix release with no edit to a compiled dependency.\n4. Verify startup, terminal cleanup, runtime data, exit status, and native dependencies on macOS ARM64.\n5. Record warm and cold startup, extracted size, archive size, native libraries, and all failed gates.\n6. Write the package decision and reversal rule.\n\n## Acceptance criteria\n\n- [ ] A normal source build creates the release with no post-build dependency edit.\n- [ ] Required terminal, runtime-data, CLI, and exit checks pass.\n- [ ] Warm medians meet the release-plan limits.\n- [ ] The installed and archive size are recorded and accepted.\n- [ ] Only one package method remains maintained.\n- [ ] Later targets must confirm this method on their native systems.\n\n## Tests\n\nUse the local macOS ARM64 feasibility package and focused package checks. Keep live providers disabled.\n\n## Non-goals\n\nDo not require other targets, publish, sign, notarize, or create a Homebrew formula.",
   "id": "jido_cli-tqg.7.14",
@@ -23,8 +25,8 @@
     }
   ],
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Confirm the source-built Mix release on macOS ARM64",
   "type": "task",
-  "updated_at": "2026-08-13T13:59:20Z"
+  "updated_at": "2026-08-13T14:06:07Z"
 }
