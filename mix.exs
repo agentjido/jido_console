@@ -6,6 +6,7 @@ defmodule Jido.Cli.MixProject do
   @version "0.1.0"
   @source_url "https://github.com/mikehostetler/jido_cli"
   @description "Terminal and automation harness for the Jidoka agent framework."
+  @jidoka_ref "23bd10ffc822935c06395e34301d63c249e5cbe3"
 
   def project do
     [
@@ -103,7 +104,7 @@ defmodule Jido.Cli.MixProject do
 
   defp deps do
     [
-      {:jidoka, path: "../jidoka"},
+      jidoka_dep(),
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.12"},
       {:zoi, "~> 0.18"},
@@ -116,5 +117,19 @@ defmodule Jido.Cli.MixProject do
       {:git_hooks, "~> 0.8", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.9", only: :dev, runtime: false}
     ]
+  end
+
+  defp jidoka_dep do
+    case System.get_env("JIDO_CLI_JIDOKA_PATH") do
+      nil ->
+        {:jidoka, github: "agentjido/jidoka", ref: @jidoka_ref}
+
+      path ->
+        if Mix.env() in [:dev, :test] do
+          {:jidoka, path: Path.expand(path)}
+        else
+          raise "JIDO_CLI_JIDOKA_PATH is permitted only in development and test"
+        end
+    end
   end
 end

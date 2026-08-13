@@ -28,6 +28,9 @@ end
 
 Elixir 1.18 or newer is necessary.
 
+The source build uses an exact Jidoka commit from GitHub. It does not need a
+sibling Jidoka checkout and does not use an unreleased Hex package.
+
 ```sh
 mix deps.get
 MIX_ENV=prod mix escript.build

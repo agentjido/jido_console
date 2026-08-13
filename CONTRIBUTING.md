@@ -10,28 +10,32 @@
 
 ## Setup
 
-Development and tests use the public API from the sibling Jidoka checkout. Put
-both repositories in the same parent directory:
-
-```text
-workspace/
-  jido_cli/
-  jidoka/
-```
-
-Then, get the dependencies from the `jido_cli` directory:
+The default dependency is an exact Jidoka commit from GitHub. A clean checkout
+does not need a sibling Jidoka repository. Get dependencies from the
+`jido_cli` directory:
 
 ```bash
 mix deps.get
 ```
 
+To test an unpublished local Jidoka change, set an explicit path only in the
+development or test environment:
+
+```bash
+JIDO_CLI_JIDOKA_PATH=../jidoka mix deps.get
+JIDO_CLI_JIDOKA_PATH=../jidoka mix test
+```
+
+Do not set this variable in production, CI, or a release build. The default
+GitHub commit and `mix.lock` are the repeatable integration contract.
+
 CLI source must use the documented Jidoka facades and stable data contracts.
 It must not use Jidoka runtime, adapter, execution, or asynchronous task
 internals.
 
-Before a package release, a maintainer must replace the sibling path dependency
-with the approved Jidoka Hex requirement and refresh the Jidoka lock entry. Do
-not publish the package with a local path dependency.
+No Hex Jidoka release is necessary for current source builds. A future package
+release must first select an approved immutable Jidoka package strategy. Do not
+publish with a local path dependency or a moving Git branch.
 
 ## Quality Gate
 
