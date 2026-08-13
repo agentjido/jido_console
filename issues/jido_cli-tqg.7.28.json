@@ -7,9 +7,7 @@
     "jido_cli-tqg.7.17",
     "jido_cli-tqg.7.26"
   ],
-  "blocks": [
-    "jido_cli-tqg.7.29"
-  ],
+  "blocks": [],
   "created": "2026-08-12T22:14:07Z",
   "description": "## Outcome\n\nA later native Linux ARM64 flow creates `jido-\u003cversion\u003e-linux-arm64.tar.gz` with the same package, metadata, and acceptance contract.\n\n## Work\n\n1. Select a native Linux ARM64 build environment and pin inputs.\n2. Build a private ARM64 OTP runtime and target-native dependencies.\n3. Run the full final-archive harness and manual Linux TUI checklist.\n4. Add metadata, notices, checksums, SBOM, and provenance.\n5. Add the target to publication and Homebrew selection when accepted.\n6. Measure size and startup against the stable baseline.\n\n## Acceptance criteria\n\n- [ ] No x86-64 binary or system OTP is required.\n- [ ] Automated and manual gates match the artifact contract.\n- [ ] Native dependency and license inventories are complete.\n- [ ] Homebrew can select Linux ARM64 after publication.\n\n## Tests\n\nRun native package, harness, tamper, upgrade, and manual TUI checks.\n\n## Non-goals\n\nDo not add a daemon, service, or Windows ARM64.",
   "id": "jido_cli-tqg.7.28",
