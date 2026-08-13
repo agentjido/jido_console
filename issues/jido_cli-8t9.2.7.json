@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_cli-8t9.2.4"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.5.2"
+  ],
   "created": "2026-08-13T20:14:26Z",
   "description": "Repository: Jidoka. Add input budget, output reserve, minimum recent turns, deterministic overflow behavior, and compaction evidence. Acceptance: a prompt never exceeds policy; complete tool exchanges stay together; durable audit history remains complete; truncation is deterministic.",
   "id": "jido_cli-8t9.2.7",
@@ -13,5 +15,5 @@
   "status": "open",
   "title": "Add bounded context projection and compaction",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:53Z"
+  "updated_at": "2026-08-13T20:14:56Z"
 }
