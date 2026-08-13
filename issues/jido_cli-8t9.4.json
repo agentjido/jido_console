@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-13T20:13:43Z",
+  "description": "Give jido_cli stable request identity, non-blocking work, per-turn state, live tool activity, approval handling, safe transcript UX, and bounded shutdown.",
+  "id": "jido_cli-8t9.4",
+  "labels": [],
+  "parent": "jido_cli-8t9",
+  "priority": 1,
+  "status": "open",
+  "title": "Phase 3: Build the interactive coding TUI state machine",
+  "type": "epic",
+  "updated_at": "2026-08-13T20:13:43Z"
+}
