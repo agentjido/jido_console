@@ -1,9 +1,8 @@
 defmodule Jido.Cli.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
-  alias Jido.Cli.Tui.Editor
+  alias Jido.Cli.Tui.{Editor, EventProjection, Turn}
   alias Jido.Cli.Runtime.Jidoka.Result, as: RuntimeResult
-  alias Jidoka.Stream, as: JidokaStream
 
   @enforce_keys [:session, :size]
   defstruct session: nil,
@@ -21,6 +20,9 @@ defmodule Jido.Cli.Tui.State do
             prepare_prompt?: false,
             project_instructions: [],
             coding_reviews: [],
+            turns: [],
+            active_turn: nil,
+            next_turn_id: 0,
             dirty?: true,
             render_scheduled?: false
 
@@ -89,17 +91,21 @@ defmodule Jido.Cli.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:prompt_ready, prompt, context}) do
+    turn = Turn.new(state.next_turn_id, prompt, context)
+
     state = %{
       state
       | editor: Editor.clear(state.editor),
-        messages: state.messages ++ [%{role: :user, content: prompt}],
+        messages: state.messages ++ [%{role: :user, content: turn.prompt}],
         streaming: "",
         status: :running,
         error: nil,
+        active_turn: turn,
+        next_turn_id: state.next_turn_id + 1,
         dirty?: true
     }
 
-    {state, [{:start_turn, prompt, context}]}
+    {state, [{:start_turn, turn.prompt, context}]}
   end
 
   def update(%__MODULE__{} = state, {:prompt_error, reason}) do
@@ -163,32 +169,52 @@ defmodule Jido.Cli.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:turn_started, request}) do
-    state = %{state | request: request, finishing?: false, status: :running, dirty?: true}
+    {turn, next_turn_id} = ensure_turn(state)
+    turn = Turn.put_request(turn, request)
+
+    state = %{
+      state
+      | request: request,
+        active_turn: turn,
+        next_turn_id: next_turn_id,
+        finishing?: false,
+        status: :running,
+        dirty?: true
+    }
+
     {state, [{:await_turn, request}]}
   end
 
   def update(%__MODULE__{request: nil} = state, {:jidoka, _event}), do: {state, []}
 
-  def update(%__MODULE__{} = state, {:jidoka, event}) do
-    if request_matches?(state.request, event) do
-      delta = JidokaStream.text_delta(event)
-      state = if is_binary(delta), do: %{state | streaming: state.streaming <> delta}, else: state
-      state = %{state | dirty?: true}
+  def update(%__MODULE__{active_turn: %Turn{} = turn} = state, {:jidoka, event}) do
+    with {:ok, projection} <- EventProjection.project(event),
+         {:ok, turn} <- Turn.apply_event(turn, projection) do
+      state = %{
+        state
+        | active_turn: turn,
+          streaming: turn.assistant,
+          finishing?: turn.status == :terminal,
+          dirty?: true
+      }
 
-      state = if JidokaStream.terminal?(event), do: %{state | finishing?: true}, else: state
       {state, []}
     else
-      {state, []}
+      {:ignore, _reason} -> {state, []}
+      {:error, _reason} -> {state, []}
     end
   end
 
+  def update(%__MODULE__{} = state, {:jidoka, _event}), do: {state, []}
+
   def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content}}) do
-    finish(state, session, content, :idle, nil)
+    finish(state, session, content, :idle, nil, outcome: :completed)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :ok} = result}) do
-    state = %{state | coding_reviews: Jido.Cli.Coding.Review.normalize(result.coding_reviews)}
-    finish(state, result.session, result.content, :idle, nil)
+    changes = Jido.Cli.Coding.Review.normalize(result.coding_reviews)
+    state = %{state | coding_reviews: changes}
+    finish(state, result.session, result.content, :idle, nil, outcome: :completed, changes: changes)
   end
 
   def update(
@@ -197,44 +223,53 @@ defmodule Jido.Cli.Tui.State do
       )
       when status in [:hibernated, :pending_review] do
     message = if status == :pending_review, do: "Agent paused for review.", else: "Agent paused."
-    finish(state, result.session, state.streaming, :interrupted, message)
+
+    finish(state, result.session, state.streaming, :interrupted, message,
+      outcome: status,
+      reviews: result.pending_reviews
+    )
   end
 
   def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :cancelled} = result}) do
-    finish(state, result.session, state.streaming, :idle, nil)
+    finish(state, result.session, state.streaming, :idle, nil, outcome: :cancelled)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :error} = result}) do
-    finish(state, result.session, state.streaming, :error, format_error(result.error))
+    error = format_error(result.error)
+    finish(state, result.session, state.streaming, :error, error, outcome: :failed)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content, reviews}}) do
-    state = %{state | coding_reviews: Jido.Cli.Coding.Review.normalize(reviews)}
-    finish(state, session, content, :idle, nil)
+    changes = Jido.Cli.Coding.Review.normalize(reviews)
+    state = %{state | coding_reviews: changes}
+    finish(state, session, content, :idle, nil, outcome: :completed, changes: changes)
   end
 
   def update(%__MODULE__{} = state, {:coding_review, reviews}) do
-    changed(state, coding_reviews: Jido.Cli.Coding.Review.normalize(reviews))
+    changes = Jido.Cli.Coding.Review.normalize(reviews)
+    state = put_active_changes(state, changes)
+    changed(state, coding_reviews: changes)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:ok, content}}) do
-    finish(state, state.session, content, :idle, nil)
+    finish(state, state.session, content, :idle, nil, outcome: :completed)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:hibernate, session, _snapshot}}) do
-    finish(state, session, state.streaming, :interrupted, "Agent paused for review.")
+    finish(state, session, state.streaming, :interrupted, "Agent paused for review.", outcome: :hibernated)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:hibernate, _snapshot}}) do
-    finish(state, state.session, state.streaming, :interrupted, "Agent paused for review.")
+    finish(state, state.session, state.streaming, :interrupted, "Agent paused for review.", outcome: :hibernated)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:cancelled, _cancellation}}) do
-    finish(state, state.session, state.streaming, :idle, nil)
+    finish(state, state.session, state.streaming, :idle, nil, outcome: :cancelled)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:error, reason}}) do
-    finish(state, state.session, state.streaming, :error, format_error(reason))
+    error = format_error(reason)
+    finish(state, state.session, state.streaming, :error, error, outcome: :failed)
   end
 
   def update(%__MODULE__{request: request} = state, {:turn_result, request, result}) do
@@ -256,17 +291,21 @@ defmodule Jido.Cli.Tui.State do
   end
 
   defp submit_prompt(state, prompt) do
+    turn = Turn.new(state.next_turn_id, prompt)
+
     state = %{
       state
       | editor: Editor.clear(state.editor),
-        messages: state.messages ++ [%{role: :user, content: prompt}],
+        messages: state.messages ++ [%{role: :user, content: turn.prompt}],
         streaming: "",
         status: :running,
         error: nil,
+        active_turn: turn,
+        next_turn_id: state.next_turn_id + 1,
         dirty?: true
     }
 
-    {state, [{:start_turn, prompt}]}
+    {state, [{:start_turn, turn.prompt}]}
   end
 
   defp changed(state, updates) do
@@ -274,14 +313,23 @@ defmodule Jido.Cli.Tui.State do
     {state, []}
   end
 
-  defp finish(state, session, content, status, error) do
+  defp finish(state, session, content, status, error, opts) do
     content = if is_binary(content) and content != "", do: content, else: state.streaming
+    {turn, next_turn_id} = ensure_turn(state)
+
+    turn =
+      Turn.finish(
+        turn,
+        Keyword.fetch!(opts, :outcome),
+        content,
+        Keyword.merge([error: error], opts)
+      )
 
     messages =
-      if content == "" do
+      if turn.assistant == "" do
         state.messages
       else
-        state.messages ++ [%{role: :assistant, content: content}]
+        state.messages ++ [%{role: :assistant, content: turn.assistant}]
       end
 
     {%{
@@ -292,14 +340,24 @@ defmodule Jido.Cli.Tui.State do
          status: status,
          error: error,
          request: nil,
+         turns: state.turns ++ [turn],
+         active_turn: nil,
+         next_turn_id: next_turn_id,
          finishing?: false,
          dirty?: true
      }, []}
   end
 
-  defp request_matches?(%{request_id: request_id}, %{request_id: request_id}), do: true
-  defp request_matches?(%{request_id: _request_id}, %{request_id: _other}), do: false
-  defp request_matches?(_request, _event), do: true
+  defp ensure_turn(%__MODULE__{active_turn: %Turn{} = turn} = state),
+    do: {turn, state.next_turn_id}
+
+  defp ensure_turn(%__MODULE__{} = state),
+    do: {Turn.new(state.next_turn_id, ""), state.next_turn_id + 1}
+
+  defp put_active_changes(%__MODULE__{active_turn: %Turn{} = turn} = state, changes),
+    do: %{state | active_turn: Turn.put_changes(turn, changes)}
+
+  defp put_active_changes(state, _changes), do: state
 
   defp format_error(%{__exception__: true} = error), do: Exception.message(error)
   defp format_error(reason) when is_binary(reason), do: reason

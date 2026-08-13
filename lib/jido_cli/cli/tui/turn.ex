@@ -1,0 +1,240 @@
+defmodule Jido.Cli.Tui.Turn do
+  @moduledoc false
+
+  alias Jido.Cli.Tui.{EventProjection, SafeText}
+
+  defmodule Tool do
+    @moduledoc false
+    @enforce_keys [:id, :operation, :status, :events]
+    defstruct @enforce_keys ++ [:summary, :error, :loop_index]
+
+    @type t :: %__MODULE__{
+            id: term(),
+            operation: String.t() | nil,
+            status: atom(),
+            events: [map()],
+            summary: String.t() | nil,
+            error: String.t() | nil,
+            loop_index: non_neg_integer() | nil
+          }
+  end
+
+  @enforce_keys [
+    :id,
+    :prompt,
+    :attachments,
+    :assistant,
+    :tools,
+    :tool_order,
+    :reviews,
+    :outcome,
+    :changes,
+    :events,
+    :seen_events,
+    :status
+  ]
+  defstruct @enforce_keys ++ [request_id: nil, last_seq: nil]
+
+  @type t :: %__MODULE__{
+          id: non_neg_integer(),
+          request_id: String.t() | nil,
+          prompt: String.t(),
+          attachments: [map()],
+          assistant: String.t(),
+          tools: %{optional(term()) => Tool.t()},
+          tool_order: [term()],
+          reviews: [map()],
+          outcome: map() | nil,
+          changes: [map()],
+          events: [map()],
+          seen_events: MapSet.t(),
+          last_seq: non_neg_integer() | nil,
+          status: atom()
+        }
+
+  @spec new(non_neg_integer(), String.t(), map()) :: t()
+  def new(id, prompt, context \\ %{}) do
+    %__MODULE__{
+      id: id,
+      prompt: SafeText.clean(prompt),
+      attachments: attachments(context),
+      assistant: "",
+      tools: %{},
+      tool_order: [],
+      reviews: [],
+      outcome: nil,
+      changes: [],
+      events: [],
+      seen_events: MapSet.new(),
+      status: :starting
+    }
+  end
+
+  @spec put_request(t(), term()) :: t()
+  def put_request(%__MODULE__{} = turn, request) do
+    %{turn | request_id: request_id(request), status: :running}
+  end
+
+  @spec put_changes(t(), [map()]) :: t()
+  def put_changes(%__MODULE__{} = turn, changes) do
+    %{turn | changes: normalize_records(changes)}
+  end
+
+  @spec apply_event(t(), EventProjection.t()) :: {:ok, t()} | {:ignore, atom()}
+  def apply_event(%__MODULE__{request_id: request_id}, %EventProjection{request_id: other})
+      when request_id != other,
+      do: {:ignore, :stale_request}
+
+  def apply_event(%__MODULE__{} = turn, %EventProjection{} = projection) do
+    cond do
+      MapSet.member?(turn.seen_events, projection.id) ->
+        {:ignore, :duplicate}
+
+      is_integer(turn.last_seq) and projection.seq <= turn.last_seq ->
+        {:ignore, :out_of_order}
+
+      turn.outcome != nil ->
+        {:ignore, :terminal_turn}
+
+      true ->
+        turn =
+          turn
+          |> apply_projection(projection)
+          |> record_event(projection)
+
+        {:ok, turn}
+    end
+  end
+
+  @spec finish(t(), atom(), String.t() | nil, keyword()) :: t()
+  def finish(%__MODULE__{} = turn, outcome, content, opts \\ []) do
+    assistant =
+      if is_binary(content) and content != "", do: SafeText.clean(content), else: turn.assistant
+
+    %{
+      turn
+      | assistant: assistant,
+        reviews: normalize_records(Keyword.get(opts, :reviews, turn.reviews)),
+        changes: normalize_records(Keyword.get(opts, :changes, turn.changes)),
+        outcome: %{
+          status: outcome,
+          error: safe_optional(Keyword.get(opts, :error))
+        },
+        status: :finished
+    }
+  end
+
+  defp apply_projection(turn, %EventProjection{kind: :assistant_delta, data: %{text: text}}) do
+    %{turn | assistant: turn.assistant <> text}
+  end
+
+  defp apply_projection(turn, %EventProjection{kind: :tool, data: data} = projection) do
+    id = data.id
+
+    event = %{
+      seq: projection.seq,
+      event: projection.event,
+      status: data.status,
+      summary: data.summary,
+      error: data.error
+    }
+
+    tool =
+      case Map.get(turn.tools, id) do
+        nil ->
+          %Tool{
+            id: id,
+            operation: data.operation,
+            status: data.status,
+            events: [event],
+            summary: data.summary,
+            error: data.error,
+            loop_index: data.loop_index
+          }
+
+        %Tool{} = tool ->
+          %{
+            tool
+            | operation: data.operation || tool.operation,
+              status: data.status,
+              events: tool.events ++ [event],
+              summary: data.summary,
+              error: data.error || tool.error,
+              loop_index: data.loop_index || tool.loop_index
+          }
+      end
+
+    order = if Map.has_key?(turn.tools, id), do: turn.tool_order, else: turn.tool_order ++ [id]
+    %{turn | tools: Map.put(turn.tools, id, tool), tool_order: order}
+  end
+
+  defp apply_projection(turn, %EventProjection{kind: :review, data: data}) do
+    reviews = put_record(turn.reviews, normalize_record(data))
+    %{turn | reviews: reviews}
+  end
+
+  defp apply_projection(turn, %EventProjection{kind: :outcome, data: data}) do
+    %{turn | outcome: normalize_record(data), status: :terminal}
+  end
+
+  defp apply_projection(turn, %EventProjection{}), do: turn
+
+  defp record_event(turn, projection) do
+    event = %{seq: projection.seq, event: projection.event, kind: projection.kind}
+
+    %{
+      turn
+      | last_seq: projection.seq,
+        seen_events: MapSet.put(turn.seen_events, projection.id),
+        events: turn.events ++ [event]
+    }
+  end
+
+  defp attachments(context) do
+    context
+    |> coding_context()
+    |> Map.get("files", [])
+    |> Enum.map(fn file ->
+      file
+      |> Map.take(["path", "sha256", "size", "truncated", "ignore"])
+      |> normalize_record()
+    end)
+  end
+
+  defp coding_context(context) when is_map(context) do
+    Map.get(context, "coding", Map.get(context, :coding, %{}))
+  end
+
+  defp coding_context(_context), do: %{}
+
+  defp request_id(%{request_id: request_id}) when is_binary(request_id), do: request_id
+  defp request_id(_request), do: nil
+
+  defp normalize_records(records) when is_list(records), do: Enum.map(records, &normalize_record/1)
+  defp normalize_records(_records), do: []
+
+  defp normalize_record(%_{} = record), do: record |> Map.from_struct() |> normalize_record()
+
+  defp normalize_record(record) when is_map(record) do
+    Map.new(record, fn {key, value} -> {key, normalize_value(value)} end)
+  end
+
+  defp normalize_record(value), do: %{summary: SafeText.summary(value)}
+
+  defp normalize_value(value) when is_binary(value), do: SafeText.clean(value)
+  defp normalize_value(value) when is_map(value), do: normalize_record(value)
+  defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
+  defp normalize_value(value), do: value
+
+  defp put_record(records, %{id: id} = record) do
+    case Enum.find_index(records, &(Map.get(&1, :id) == id)) do
+      nil -> records ++ [record]
+      index -> List.replace_at(records, index, Map.merge(Enum.at(records, index), record))
+    end
+  end
+
+  defp put_record(records, record), do: records ++ [record]
+
+  defp safe_optional(nil), do: nil
+  defp safe_optional(value), do: SafeText.summary(value)
+end

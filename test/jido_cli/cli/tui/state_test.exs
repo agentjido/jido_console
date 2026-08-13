@@ -77,6 +77,53 @@ defmodule Jido.Cli.Tui.StateTest do
     assert List.last(state.messages).content == "normalized answer"
   end
 
+  test "archives one explicit turn record with prompt, attachment, assistant, and outcome" do
+    context = %{
+      "coding" => %{
+        "files" => [
+          %{
+            "path" => "lib/value.ex",
+            "content" => "defmodule Value do\nend\n",
+            "size" => 23,
+            "sha256" => "sha256:value"
+          }
+        ]
+      }
+    }
+
+    state = State.new(:session, {80, 24}, prepare_prompt: true)
+
+    {state, [{:start_turn, "Review value.ex", ^context}]} =
+      State.update(state, {:prompt_ready, "Review value.ex", context})
+
+    request = %{request_id: "request-1"}
+    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+
+    delta =
+      Event.build(:llm_delta, [],
+        request_id: "request-1",
+        seq: 0,
+        data: %{chunk_type: :content, delta: "partial"}
+      )
+
+    {state, []} = State.update(state, {:jidoka, delta})
+
+    {state, []} =
+      State.update(state, {:turn_result, request, {:ok, :next_session, "final answer"}})
+
+    assert state.active_turn == nil
+    assert [turn] = state.turns
+    assert turn.request_id == "request-1"
+    assert turn.prompt == "Review value.ex"
+
+    assert turn.attachments == [
+             %{"path" => "lib/value.ex", "size" => 23, "sha256" => "sha256:value"}
+           ]
+
+    assert turn.assistant == "final answer"
+    assert turn.outcome.status == :completed
+  end
+
   test "queues the current prompt until the runtime is ready" do
     state = State.new(nil, {80, 24}, runtime_status: :starting, prepare_prompt: true)
     {state, []} = State.update(state, {:terminal, {:text, "Review @value.ex"}})
@@ -183,23 +230,31 @@ defmodule Jido.Cli.Tui.StateTest do
     assert {^state, []} = State.update(state, {:terminal, {:key, :escape}})
   end
 
-  test "filters Jidoka events by active request" do
-    delta =
+  test "accepts only checked events for the active request" do
+    other_delta =
       Event.build(:llm_delta, [],
         request_id: "other",
         data: %{chunk_type: :content, delta: "ignored"}
       )
 
     idle = State.new(:session, {80, 24})
-    assert {^idle, []} = State.update(idle, {:jidoka, delta})
+    assert {^idle, []} = State.update(idle, {:jidoka, other_delta})
 
     request = %{request_id: "current"}
-    running = %{idle | request: request, status: :running}
-    assert {^running, []} = State.update(running, {:jidoka, delta})
+    {running, [{:await_turn, ^request}]} = State.update(idle, {:turn_started, request})
+    assert {^running, []} = State.update(running, {:jidoka, other_delta})
 
-    permissive = %{idle | request: :opaque, status: :running}
-    {permissive, []} = State.update(permissive, {:jidoka, delta})
-    assert permissive.streaming == "ignored"
+    current_delta =
+      Event.build(:llm_delta, [],
+        request_id: "current",
+        data: %{chunk_type: :content, delta: "accepted"}
+      )
+
+    {running, []} = State.update(running, {:jidoka, current_delta})
+    assert running.streaming == "accepted"
+
+    {opaque, [{:await_turn, :opaque}]} = State.update(idle, {:turn_started, :opaque})
+    assert {^opaque, []} = State.update(opaque, {:jidoka, other_delta})
   end
 
   test "normalizes all supported turn results" do
