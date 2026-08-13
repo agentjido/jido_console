@@ -11,12 +11,13 @@
     "cli",
     "daemon",
     "documentation",
-    "release"
+    "release",
+    "removed-scope"
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 2,
   "status": "closed",
   "title": "Add explicit Windows daemon service operations",
   "type": "task",
-  "updated_at": "2026-08-13T13:02:13Z"
+  "updated_at": "2026-08-13T13:06:31Z"
 }
