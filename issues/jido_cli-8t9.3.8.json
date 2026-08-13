@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_cli-8t9.3.4",
     "jido_cli-8t9.3.7"
@@ -14,8 +14,8 @@
   "labels": [],
   "parent": "jido_cli-8t9.3",
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "Unify retries, timeouts, idempotency, and hard limits",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:56Z"
+  "updated_at": "2026-08-13T22:48:14Z"
 }
