@@ -9,7 +9,9 @@
     "jido_cli-8t9.5.3",
     "jido_cli-8t9.5.4"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_cli-8t9.5.6"
+  ],
   "created": "2026-08-13T20:14:29Z",
   "description": "Repositories: Jidoka and jido_cli. Test CLI once against the sibling Jidoka checkout and once against the exact pinned revision. Extend archive acceptance so the extracted local artifact runs the provider-free coding scenario in an external writable workspace. Acceptance: pin names the tested Jidoka commit; package stays read-only; no system Erlang, Elixir, or Mix is used; repository oracle passes.",
   "id": "jido_cli-8t9.5.5",
