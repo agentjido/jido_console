@@ -6,6 +6,8 @@
   "blocks": [
     "jido_cli-tqg.7.24"
   ],
+  "closed_at": "2026-08-13T14:18:27Z",
+  "close_reason": "User validated exact local macOS ARM64 candidate. Manual record saved with Ctrl+C BEAM break-menu UX issue and verified +B c remediation.",
   "created": "2026-08-12T22:14:05Z",
   "description": "## Outcome\n\nA release-candidate record captures manual TUI results for the exact macOS ARM64 archive produced by the local release command.\n\n## Work\n\n1. Verify the archive checksum and run the extracted package.\n2. Test prompt first paint before runtime-ready state.\n3. Type and submit during startup. Confirm the prompt runs exactly once after ready.\n4. Test startup failure text and clean exit before ready.\n5. Test raw input startup and cleanup, cursor restoration, and alternate-screen restoration.\n6. Test resize, arrow keys, control keys, bracketed paste, and abnormal termination.\n7. Test UTF-8 width, non-ASCII input, Braille display and fallback, and supported color modes.\n8. Record terminal application, OS, target, checksum, steps, result, and known limits.\n\n## Acceptance criteria\n\n- [ ] The record identifies the exact archive checksum.\n- [ ] The TUI is visible and accepts input before runtime-ready state.\n- [ ] A prompt submitted during startup runs exactly once.\n- [ ] Cursor and alternate-screen state restore after normal exit and tested abnormal exit.\n- [ ] Resize, keys, paste, Unicode, Braille fallback, and colors have explicit results.\n- [ ] Known font-only limits are separate from product defects.\n\n## Tests\n\nUse the versioned manual checklist and store the result with the local candidate.\n\n## Non-goals\n\nDo not replace manual review with a pseudo-terminal or publish the artifact.",
   "id": "jido_cli-tqg.7.20",
@@ -17,8 +19,8 @@
   ],
   "parent": "jido_cli-tqg.7",
   "priority": 1,
-  "status": "open",
+  "status": "closed",
   "title": "Complete manual TUI acceptance on the local release candidate",
   "type": "task",
-  "updated_at": "2026-08-13T13:05:03Z"
+  "updated_at": "2026-08-13T14:18:27Z"
 }
