@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m1e15",
     "jido_console-m1e17",
@@ -22,5 +22,5 @@
   "status": "open",
   "title": "M1-E22: Review, Reject, and Revert Current-Run Effects",
   "type": "epic",
-  "updated_at": "2026-08-14T19:21:38Z"
+  "updated_at": "2026-08-14T21:21:14Z"
 }
