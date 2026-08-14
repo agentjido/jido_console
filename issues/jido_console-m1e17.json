@@ -13,6 +13,7 @@
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e17-own-child-process-trees.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E17: Own Complete Child-Process Trees\n\n## Goal\n\nOwn and stop every child process created by restricted work.\n\n## Scope\n\n- Create one owner for each restricted child-process tree.\n- Track descendants without granting them new authority.\n- Stop the complete tree on normal completion.\n- Stop the complete tree on rejection, cancel, timeout, and owner exit.\n- Report an unclean or unknown descendant as a failed cleanup result.\n- Remove process-local temporary state after confirmed cleanup.\n- Add controlled parent-and-child fixtures for each termination path.\n\n## Out of Scope\n\n- Network policy.\n- General remote or container executors.\n- Process recovery after application restart.\n- Unbounded process supervision outside a restricted run.\n\n## Dependencies\n\nThis epic depends on M1-E13 for the restricted profile and execution ownership contract.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds child-tree ownership, termination controls, cleanup evidence, and focused process fixtures.\n\n## Acceptance Checks\n\n- The owner can identify every process created by a restricted run without exposing unstable identifiers in user evidence.\n- Normal completion leaves no child process.\n- Rejection leaves no child process.\n- Cancel leaves no child process.\n- Timeout leaves no child process.\n- Owner exit leaves no child process.\n- A failed cleanup is visible and blocks a safe completion result.\n- The Gate 0 hostile runtime-boundary process fixtures pass.\n\n## Proof Artifacts\n\n- Child-process ownership contract.\n- Parent-and-child cleanup results for all five exit paths.\n- Failed-cleanup result and diagnostic record.\n- Temporary-state cleanup result.\n- Gate 0 process-tree report.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 requirement to own and stop the complete child-process tree on normal completion, rejection, cancel, timeout, and owner exit.",
   "id": "jido_console-m1e17",
   "labels": [
+    "effort:large",
     "milestone-1",
     "one-pr",
     "readiness:planned",
@@ -23,5 +24,5 @@
   "status": "open",
   "title": "M1-E17: Own Complete Child-Process Trees",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:12Z"
+  "updated_at": "2026-08-14T21:21:24Z"
 }
