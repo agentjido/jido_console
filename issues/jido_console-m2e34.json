@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-m2e01"
+  ],
   "blocks": [],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e34-audit-v0-2-release.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E34: Audit the v0.2 Release\n\n## Goal\n\nMake the final evidence-only decision for the v0.2 release candidate.\n\n## Scope\n\n- Audit all Milestone 2 epic evidence and the common release-gate evidence.\n- Verify the exact source identity, native payload identity, checksums, provenance, and support claims.\n- Record unresolved defects, known limits, and the final release decision.\n- Link the audit to the Milestone 2 delivery graph and proof artifacts.\n\n## Out of Scope\n\n- Code changes that alter the release candidate.\n- Production publication.\n- New feature, packaging, or support claims.\n- Replacing missing evidence with a demonstration from a development checkout.\n\n## Dependencies\n\nThis epic depends on every Milestone 2 epic from M2-E01 through M2-E33 because the release decision needs their completed evidence.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one audit-only pull request. The pull request records the release decision and evidence only. It must not publish v0.2 or change the candidate payload.\n\n## Acceptance Checks\n\n- Every M2-E01 through M2-E33 proof artifact is linked and reviewed.\n- The audit names the exact source commit, artifact checksum, payload identity, and tested platform-by-channel cells.\n- The audit verifies the common release gate and the Milestone 2 exit gate.\n- The audit records known limits, unresolved defects, and the explicit crash-loss limit.\n- The audit result is an approved release decision or a clear blocked decision.\n\n## Proof Artifacts\n\n- v0.2 release audit record.\n- Exact source and payload identity record.\n- Complete Milestone 2 evidence index.\n- Release decision and known-limit record.\n\n## Milestone Traceability\n\nThis epic covers the evidence-only final audit of the Milestone 2 v0.2 release candidate.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "M2-E34: Audit the v0.2 Release",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:16Z"
+  "updated_at": "2026-08-14T20:08:41Z"
 }
