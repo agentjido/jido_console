@@ -86,10 +86,12 @@ defmodule Jido.Cli.Release.ToolingTest do
         else: System.delete_env("JIDO_RELEASE_TUI_PROBE_LOG")
     end)
 
-    assert {:ok, request} = ProbeRuntime.start_turn(:release_probe_session, "hello", self(), [])
+    assert {:ok, session} = ProbeRuntime.start_session(Jido.Cli.DefaultAgent, probe_log: log)
+    assert {:ok, request} = ProbeRuntime.start_turn(session, "hello", self(), [])
     assert_receive {:jidoka_turn_event, _event}
     assert_receive {:jidoka_turn_event, _event}
-    assert {:ok, :release_probe_session, "Release probe completed."} = ProbeRuntime.await(request, [])
+    assert {:ok, ^session, "Release probe completed."} = ProbeRuntime.await(request, [])
+    assert :ok = ProbeRuntime.close_session(session)
     assert [_one_turn] = log |> File.read!() |> String.split("\n", trim: true)
   end
 end

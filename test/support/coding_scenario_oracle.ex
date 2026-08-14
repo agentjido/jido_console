@@ -13,6 +13,7 @@ defmodule CodingScenario.Oracle do
 
   @type fixture :: %{root: String.t(), scenario: map(), revision: String.t()}
 
+  @doc false
   @spec scenario!() :: map()
   def scenario! do
     @fixture_root
@@ -22,6 +23,7 @@ defmodule CodingScenario.Oracle do
     |> validate_scenario!()
   end
 
+  @doc false
   @spec materialize!(String.t()) :: fixture()
   def materialize!(root) do
     scenario = scenario!()
@@ -33,7 +35,8 @@ defmodule CodingScenario.Oracle do
 
     git!(root, ["init", "-b", "main"])
     git!(root, ["add", "--all"])
-    git!(root, ["commit", "-m", "Initial rate limiter fixture"], env: @git_env)
+
+    git!(root, ["-c", "commit.gpgSign=false", "commit", "-m", "Initial rate limiter fixture"], env: @git_env)
 
     before_digest = tree_digest!(root, initial_paths(scenario), :workspace)
 
@@ -48,6 +51,7 @@ defmodule CodingScenario.Oracle do
     %{root: root, scenario: scenario, revision: git!(root, ["rev-parse", "HEAD"])}
   end
 
+  @doc false
   @spec install_expected!(fixture()) :: fixture()
   def install_expected!(%{root: root, scenario: scenario} = fixture) do
     Enum.each(allowed_paths(scenario), fn path ->
@@ -57,11 +61,13 @@ defmodule CodingScenario.Oracle do
     fixture
   end
 
+  @doc false
   @spec valid_operations(map()) :: [map()]
   def valid_operations(scenario \\ scenario!()) do
     get_in(scenario, ["operations", "requirements"])
   end
 
+  @doc false
   @spec expected_claims(fixture()) :: map()
   def expected_claims(%{scenario: scenario}) do
     %{
@@ -75,6 +81,7 @@ defmodule CodingScenario.Oracle do
     }
   end
 
+  @doc false
   @spec observe!(fixture()) :: map()
   def observe!(%{root: root, scenario: scenario}) do
     paths = initial_paths(scenario)
@@ -92,6 +99,7 @@ defmodule CodingScenario.Oracle do
     }
   end
 
+  @doc false
   @spec verify(fixture(), [map()], map()) :: {:ok, map()} | {:error, [term()]}
   def verify(fixture, operations, claims) when is_list(operations) and is_map(claims) do
     observed = observe!(fixture)
@@ -352,16 +360,36 @@ defmodule CodingScenario.Oracle do
            "expected_git" => expected_git,
            "digests" => %{"before" => before_digest, "after" => after_digest}
          } = scenario
-       )
-       when is_binary(id) and is_list(files) and is_list(allowed) and is_list(protected) and
-              is_binary(command) and is_binary(program) and is_integer(timeout_ms) and timeout_ms > 0 and
-              is_list(requirements) and is_list(order) and is_map(expected_git) and
-              is_binary(before_digest) and is_binary(after_digest) do
-    Enum.each(files ++ allowed ++ protected, &safe_join!(@fixture_root, &1))
-    scenario
+       ) do
+    fields = [
+      {:binary, id},
+      {:list, files},
+      {:list, allowed},
+      {:list, protected},
+      {:binary, command},
+      {:binary, program},
+      {:positive_integer, timeout_ms},
+      {:list, requirements},
+      {:list, order},
+      {:map, expected_git},
+      {:binary, before_digest},
+      {:binary, after_digest}
+    ]
+
+    if Enum.all?(fields, &valid_scenario_field?/1) do
+      Enum.each(files ++ allowed ++ protected, &safe_join!(@fixture_root, &1))
+      scenario
+    else
+      raise "invalid coding scenario data"
+    end
   end
 
   defp validate_scenario!(_scenario), do: raise("invalid coding scenario data")
+
+  defp valid_scenario_field?({:binary, value}), do: is_binary(value)
+  defp valid_scenario_field?({:list, value}), do: is_list(value)
+  defp valid_scenario_field?({:map, value}), do: is_map(value)
+  defp valid_scenario_field?({:positive_integer, value}), do: is_integer(value) and value > 0
 
   defp initial_paths(scenario), do: get_in(scenario, ["repository", "initial_files"])
   defp allowed_paths(scenario), do: get_in(scenario, ["repository", "allowed_changes"])

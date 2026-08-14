@@ -27,7 +27,7 @@ defmodule Jido.Cli.Release.Entry do
         Keyword.get(opts, :cli_main, &Jido.Cli.main/1).(args)
         0
 
-      mode when mode in ["success", "failure"] ->
+      mode when mode in ["success", "failure", "workflow"] ->
         run_tui_probe(args, mode, opts)
 
       _other ->
@@ -60,14 +60,37 @@ defmodule Jido.Cli.Release.Entry do
 
     cli_run = Keyword.get(opts, :cli_run, &Jido.Cli.run/2)
 
-    case cli_run.(args,
-           runtime: Jido.Cli.Release.ProbeRuntime,
-           runtime_startup: startup,
-           coding_pack: :disabled
-         ) do
+    tui_opts = [
+      runtime: Jido.Cli.Release.ProbeRuntime,
+      runtime_startup: startup,
+      coding_pack: :disabled,
+      session_opts: probe_session_opts(mode, opts)
+    ]
+
+    case cli_run.(args, tui_opts) do
       :ok -> 0
       {:error, status} -> status
     end
+  end
+
+  defp probe_session_opts("workflow", opts) do
+    [
+      probe_mode: :workflow,
+      probe_workspace: probe_option(opts, :probe_workspace, "JIDO_RELEASE_TUI_PROBE_WORKSPACE"),
+      probe_expected: probe_option(opts, :probe_expected, "JIDO_RELEASE_TUI_PROBE_EXPECTED"),
+      probe_log: probe_option(opts, :probe_log, "JIDO_RELEASE_TUI_PROBE_LOG")
+    ]
+  end
+
+  defp probe_session_opts(_mode, opts) do
+    [
+      probe_mode: :success,
+      probe_log: probe_option(opts, :probe_log, "JIDO_RELEASE_TUI_PROBE_LOG")
+    ]
+  end
+
+  defp probe_option(opts, key, environment) do
+    Keyword.get_lazy(opts, key, fn -> System.get_env(environment) end)
   end
 
   defp probe_delay_ms(opts) do

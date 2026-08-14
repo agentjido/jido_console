@@ -71,6 +71,26 @@ defmodule Jido.Cli.Release.EntryTest do
     assert_receive {:tui, ["chat"], success_opts}
     assert success_opts[:runtime] == Jido.Cli.Release.ProbeRuntime
     assert success_opts[:coding_pack] == :disabled
+    assert success_opts[:session_opts][:probe_mode] == :success
+
+    workflow_opts =
+      Keyword.merge(common,
+        tui_probe: "workflow",
+        probe_workspace: "/fixture/workspace",
+        probe_expected: "/fixture/expected.ex",
+        probe_log: "/fixture/workflow.jsonl"
+      )
+
+    assert 0 = Entry.run([], workflow_opts)
+    assert_receive {:sleep, 12}
+    assert_receive {:tui, [], workflow_tui_opts}
+
+    assert workflow_tui_opts[:session_opts] == [
+             probe_mode: :workflow,
+             probe_workspace: "/fixture/workspace",
+             probe_expected: "/fixture/expected.ex",
+             probe_log: "/fixture/workflow.jsonl"
+           ]
 
     assert 1 = Entry.run([], Keyword.put(common, :tui_probe, "failure"))
     assert_receive {:sleep, 12}

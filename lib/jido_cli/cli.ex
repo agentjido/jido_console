@@ -41,7 +41,7 @@ defmodule Jido.Cli do
   @spec main([String.t()]) :: :ok
   def main(args) do
     case dispatch_fast(args) do
-      :continue -> start_and_run(args)
+      :continue -> start_probe_or_run(args)
       :ok -> :ok
     end
   end
@@ -54,6 +54,19 @@ defmodule Jido.Cli do
        do: print_help()
 
   defp dispatch_fast(_args), do: :continue
+
+  defp start_probe_or_run(args) do
+    if release_probe?() do
+      System.halt(Jido.Cli.Release.Entry.run(args))
+    else
+      start_and_run(args)
+    end
+  end
+
+  defp release_probe? do
+    System.get_env("JIDO_RELEASE_NATIVE_PROBE") != nil or
+      System.get_env("JIDO_RELEASE_TUI_PROBE") != nil
+  end
 
   defp start_and_run([command | _rest] = args) when command in ["run", "eval"] do
     case start_runtime() do
