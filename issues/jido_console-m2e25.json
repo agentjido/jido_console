@@ -6,7 +6,8 @@
     "jido_console-m2e24"
   ],
   "blocks": [
-    "jido_console-m2e26"
+    "jido_console-m2e26",
+    "jido_console-m2e34"
   ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e25-define-extension-and-hook-contracts.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E25: Define Extension and Hook Contracts\n\n## Goal\n\nDefine a small host-independent extension descriptor and one safe failure rule\nfor every hook type without loading extensions.\n\n## Scope\n\n- Define the host-independent extension descriptor and its version.\n- Declare extension identity, capabilities, hook types, input schema, output\n  schema, provenance, and trust data.\n- Define the authority boundary for each hook type.\n- Fail closed when an authority hook is missing, invalid, denied, or fails.\n- Make information-only hook failures visible without granting authority.\n- Preserve bounded unknown descriptor and hook data without granting authority.\n- Validate descriptors through the command and client registry and permission\n  contract.\n- Do not connect the new descriptor to an extension loader or process host.\n\n## Out of Scope\n\n- Loading, resolving, or executing extensions.\n- Extension process hosting or remote extensions.\n- New authority policy beyond the declared hook rules.\n- Client adapter migration.\n- Changes to existing extension loading or hosting behavior.\n\n## Dependencies\n\nThis epic depends on M2-E04 for generated semantic protocol types, M2-E21 for\ncommand and client declarations, and M2-E24 for permission life-cycle data.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the\ndescriptor schema, hook capability declarations, failure rules, validators,\nand deterministic descriptor tests. It must not load or host an extension.\n\n## Acceptance Checks\n\n- A descriptor has one stable identity, version, capability set, hook set,\n  schemas, provenance, and trust data.\n- Every hook type has a declared authority or information-only failure rule.\n- An authority hook failure returns a denied or failed result and grants no\n  authority.\n- An information-only hook failure is visible in the semantic result.\n- Unknown bounded descriptor and hook data cannot grant authority.\n- Invalid, conflicting, or incomplete descriptors fail validation.\n- No code path introduced by this epic loads an extension or starts an extension process.\n- Deterministic tests cover valid descriptors, invalid descriptors, authority\n  failures, information-only failures, and unknown fields.\n\n## Proof Artifacts\n\n- Host-independent extension descriptor schema\n- Hook capability and authority table\n- Authority-failure and information-only-failure results\n- Descriptor validation results\n- Evidence that the new descriptor is not connected to loading or hosting\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to define a small host-independent\nextension descriptor and one failure rule for each hook type while keeping\nextension loading out of scope.",
@@ -21,5 +22,5 @@
   "status": "open",
   "title": "M2-E25: Define Extension and Hook Contracts",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:38Z"
+  "updated_at": "2026-08-14T20:08:47Z"
 }
