@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-m2e09"
+  ],
   "blocks": [],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e11-implement-semantic-reduction-and-replay.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E11: Implement Semantic Reduction and Replay\n\n## Goal\n\nReduce ordered semantic events into session state and prove that replay matches live reduction.\n\n## Scope\n\n- Implement pure reduction for the versioned session state from M2-E10.\n- Apply commands, interactions, controls, and Jidoka projections through the same reduction boundary.\n- Preserve event identity and sequence checks during live application and replay.\n- Define snapshots that contain semantic state and bounded recovery metadata only.\n- Replay the same event stream and compare the transcript, outcomes, and relevant state.\n- Reject duplicate, invalid-order, stale, and cross-session events.\n- Keep client-local drafts outside the replay input.\n\n## Out of Scope\n\n- Application-restart recovery\n- A durable Console-to-Jidoka watermark\n- Durable input acknowledgement\n- Session supervision topology\n- Client delivery backpressure\n\n## Dependencies\n\nThis epic depends on M2-E09 for the Jidoka projection boundary and M2-E10 for the semantic state and protocol definitions.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the reducer, replay path, snapshot types, and deterministic tests. It must not add process supervision or persistent storage recovery.\n\n## Acceptance Checks\n\n- Live reduction and replay produce the same transcript and semantic outcomes from the same valid events.\n- Duplicate events do not create duplicate semantic state.\n- Invalid order, stale identity, and cross-session events fail clearly.\n- Snapshots contain only approved semantic data and bounded metadata.\n- Replay does not call a model, tool, or renderer.\n- Client-local input and navigation state do not change replay results.\n\n## Proof Artifacts\n\n- Pure reducer and replay result\n- Snapshot schema and validation result\n- Duplicate and invalid-order denial results\n- Cross-session identity denial results\n- Live-versus-replay equivalence report\n\n## Milestone Traceability\n\nThis epic supplies semantic replay and snapshot behavior for the Milestone 2 exit gate and later client recovery from delivery gaps.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "M2-E11: Implement Semantic Reduction and Replay",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:10Z"
+  "updated_at": "2026-08-14T20:08:27Z"
 }
