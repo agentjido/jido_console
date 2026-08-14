@@ -5,7 +5,8 @@
     "jido_console-m2e13"
   ],
   "blocks": [
-    "jido_console-m2e18"
+    "jido_console-m2e18",
+    "jido_console-m2e34"
   ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e17-bound-client-delivery.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E17: Bound Client Delivery\n\n## Goal\n\nDeliver session updates to each client with bounded memory and explicit acknowledgement behavior.\n\n## Scope\n\n- Give each attached client a bounded delivery state and pending-update limit.\n- Define acknowledgement, safe coalescing, client stop, and delivery-timeout behavior.\n- Keep delivery state separate for each client and separate from canonical session history.\n- Coalesce only updates that the protocol marks safe to coalesce.\n- Detect when a client falls behind and emit an explicit gap signal.\n- Ensure a slow or stopped client cannot cause unlimited session mailbox growth.\n- Keep client delivery process-lifetime only; do not add restart-safe receipts.\n\n## Out of Scope\n\n- Snapshot and gap recovery implementation\n- Application-restart recovery\n- Durable input or delivery receipts\n- Remote client transport\n- Multi-user authorization\n\n## Dependencies\n\nThis epic depends on M2-E07 for process-lifetime client and acknowledgement identities and on M2-E13 for the session owner and client-projection boundary.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds bounded client delivery, acknowledgement, coalescing, lag detection, and focused tests. It must not implement durable delivery or restart recovery.\n\n## Acceptance Checks\n\n- Each client has a finite delivery bound and explicit lag behavior.\n- Acknowledgements identify the client, session, and delivered sequence.\n- Unsafe updates are never coalesced or dropped silently.\n- Safe coalescing does not change the latest semantic state.\n- A slow or stopped client cannot cause unlimited session mailbox growth.\n- A client that falls behind receives an explicit gap signal.\n- Delivery state is not treated as durable input or restart-safe receipt state.\n\n## Proof Artifacts\n\n- Client delivery state machine\n- Acknowledgement and coalescing contract\n- Slow-client and stopped-client boundedness results\n- Gap detection result\n- Mailbox-growth limit evidence\n\n## Milestone Traceability\n\nThis epic provides bounded client delivery for the Milestone 2 current-client contract and enables explicit gap recovery.",
@@ -20,5 +21,5 @@
   "status": "open",
   "title": "M2-E17: Bound Client Delivery",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:31Z"
+  "updated_at": "2026-08-14T20:08:45Z"
 }
