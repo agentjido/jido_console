@@ -7,7 +7,8 @@
     "jido_console-m2e22",
     "jido_console-m2e24",
     "jido_console-m2e25",
-    "jido_console-m2e26"
+    "jido_console-m2e26",
+    "jido_console-m2e34"
   ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e21-build-command-and-client-registry.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E21: Build the Command and Client Registry\n\n## Goal\n\nDefine commands and client capabilities once so every current surface uses the\nsame declaration.\n\n## Scope\n\n- Add one registry for command names, help, schemas, permissions, and\n  provenance.\n- Add client capability descriptors to the same registry contract.\n- Define the command identity, version, input schema, output schema, and\n  required permission data.\n- Define the provenance record for a command declaration and client\n  descriptor.\n- Reject duplicate, incomplete, or conflicting declarations.\n- Preserve bounded unknown declaration data without granting authority.\n- Make registry lookup independent of renderer-specific data.\n\n## Out of Scope\n\n- Typed command-effect execution owned by M2-E22.\n- Permission request and response transitions owned by M2-E24.\n- Loading extensions or hosting extension processes.\n- Migration of TUI, automation, text, or JSON adapters.\n\n## Dependencies\n\nThis epic depends on M2-E04 for generated command and client protocol types\nand validators.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the\nregistry schema, declaration validators, lookup behavior, provenance data, and\ndeterministic registry tests. It must not implement client migration or\ncommand-effect execution.\n\n## Acceptance Checks\n\n- Each command and client descriptor has one stable identity and version.\n- Help, input schema, output schema, permission requirements, provenance, and\n  client capabilities come from one declaration.\n- Duplicate or conflicting declarations fail before registration completes.\n- An incomplete declaration fails with a typed validation result.\n- Unknown bounded fields remain data and cannot grant permission or authority.\n- Registry lookups return renderer-neutral values.\n- Deterministic tests cover registration, lookup, duplicate, invalid, and\n  unknown-field cases.\n\n## Proof Artifacts\n\n- Command and client descriptor schema\n- Registry declaration examples\n- Provenance and version records\n- Duplicate and invalid declaration results\n- Registry validator test results\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to put commands, help, schemas,\npermissions, provenance, and client descriptors in one registry. It is the\ndeclaration source for the typed effect, permission, extension, and client\ncontract epics.",
@@ -22,5 +23,5 @@
   "status": "open",
   "title": "M2-E21: Build the Command and Client Registry",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:36Z"
+  "updated_at": "2026-08-14T20:08:46Z"
 }
