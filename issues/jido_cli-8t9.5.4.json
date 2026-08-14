@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_cli-8t9.4.4",
     "jido_cli-8t9.4.5",
@@ -15,8 +15,8 @@
   "labels": [],
   "parent": "jido_cli-8t9.5",
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "Add deterministic TUI and PTY coding tests",
   "type": "task",
-  "updated_at": "2026-08-13T20:14:58Z"
+  "updated_at": "2026-08-14T00:50:50Z"
 }
