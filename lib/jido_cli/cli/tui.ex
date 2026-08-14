@@ -387,7 +387,7 @@ defmodule Jido.Cli.Tui do
          startup,
          workers
        ) do
-    case Workers.pop(workers, worker_pid) do
+    case Workers.take_completion(workers, worker_pid) do
       {:ok, worker, workers} ->
         handle_completed_effect(
           state,
@@ -421,11 +421,16 @@ defmodule Jido.Cli.Tui do
 
       {:start_turn, relay_pid, {:turn_started, request}} ->
         {state, effects} = State.update(state, {:turn_started, request})
-        workers = Workers.activate_relay(workers, relay_pid, request)
+
+        workers =
+          workers
+          |> Workers.promote_request_owner(worker.pid, request)
+          |> Workers.activate_relay(relay_pid, request)
+
         continue_transition(state, effects, terminal, runtime, opts, startup, workers)
 
       {:start_turn, relay_pid, event} ->
-        workers = Workers.stop(workers, relay_pid)
+        workers = workers |> Workers.stop(worker.pid) |> Workers.stop(relay_pid)
         continue(state, event, terminal, runtime, opts, startup, workers)
 
       {:review_result, relay_pid, result} ->

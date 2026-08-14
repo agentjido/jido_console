@@ -15,6 +15,39 @@ defmodule Jido.Cli.ErrorTest do
       assert Error.normalize(original) == original
     end
 
+    test "shows the sanitized provider cause in a generic Jidoka execution error" do
+      cause =
+        ReqLLM.Error.API.Request.exception(
+          reason: "bad key sk-secretvalue123",
+          status: 401
+        )
+
+      jidoka_error = Jidoka.normalize_error(cause, operation: :llm, phase: :effect)
+      normalized = Error.normalize(jidoka_error)
+      message = Exception.message(normalized)
+
+      assert %Error.ExecutionFailureError{} = normalized
+      assert message == "API request failed (401): bad key [REDACTED]"
+      refute message =~ "secretvalue"
+    end
+
+    test "shows a safe reason when a generic Jidoka error has no cause message" do
+      jidoka_error =
+        Jidoka.normalize_error(
+          {:invalid_provider_message, %{messages: ["private prompt"], api_key: "sk-secretvalue123"}},
+          operation: :llm,
+          phase: :effect
+        )
+
+      normalized = Error.normalize(jidoka_error)
+
+      assert Exception.message(normalized) ==
+               "The LLM request failed: invalid provider message."
+
+      refute inspect(normalized.details) =~ "private prompt"
+      refute inspect(normalized.details) =~ "secretvalue"
+    end
+
     test "maps known automation reason terms to concrete errors with binary messages" do
       checks = [
         {:missing_agent, Error.InvalidInputError},
@@ -51,6 +84,16 @@ defmodule Jido.Cli.ErrorTest do
       normalized = Error.normalize({:some, :unknown, :reason})
       assert %Error.ExecutionFailureError{} = normalized
       assert is_binary(Exception.message(normalized))
+    end
+
+    test "explains an expired request and separates it from API-key errors" do
+      normalized = Error.normalize(:request_expired)
+      message = Exception.message(normalized)
+
+      assert %Error.InternalError{} = normalized
+      assert message =~ "internal request error"
+      assert message =~ "does not mean that the API key is invalid"
+      assert message =~ "Try the prompt again"
     end
   end
 

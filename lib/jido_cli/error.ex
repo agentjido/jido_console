@@ -276,7 +276,7 @@ defmodule Jido.Cli.Error do
   @spec normalize(term()) :: Exception.t()
   def normalize(reason)
 
-  def normalize(%{__exception__: true} = exception), do: exception
+  def normalize(%{__exception__: true} = exception), do: expand_generic_jidoka_error(exception)
 
   def normalize(message) when is_binary(message),
     do: InternalError.exception(message: message)
@@ -339,8 +339,142 @@ defmodule Jido.Cli.Error do
         profile: profile
       )
 
+  def normalize(:request_expired) do
+    InternalError.exception(
+      message:
+        "The request was no longer available when Jido read the result. " <>
+          "This is an internal request error. It does not mean that the API key is invalid. " <>
+          "Try the prompt again. If the error occurs again, restart Jido."
+    )
+  end
+
   def normalize(reason) do
     Error.ExecutionFailureError.exception(message: jidoka_message(reason))
+  end
+
+  defp expand_generic_jidoka_error(exception) do
+    error = Jidoka.error_to_map(exception)
+    message = Map.get(error, :message, Map.get(error, "message"))
+
+    if generic_jidoka_execution_message?(message) do
+      case detailed_jidoka_message(error) do
+        nil -> exception
+        detailed -> ExecutionFailureError.exception(message: detailed, details: safe_error_details(error))
+      end
+    else
+      exception
+    end
+  rescue
+    _exception -> exception
+  end
+
+  defp generic_jidoka_execution_message?(message) when is_binary(message) do
+    message |> String.trim() |> String.trim_trailing(".") == "Jidoka execution failed"
+  end
+
+  defp generic_jidoka_execution_message?(_message), do: false
+
+  defp detailed_jidoka_message(error) do
+    details = Map.get(error, :details, Map.get(error, "details", %{}))
+
+    find_detail_message(details) || cause_message(details, error)
+  end
+
+  defp find_detail_message(%{} = value) do
+    message = Map.get(value, :message, Map.get(value, "message"))
+
+    if useful_detail_message?(message) do
+      message
+    else
+      [:cause, "cause", :error, "error", :errors, "errors"]
+      |> Enum.find_value(fn key ->
+        case Map.fetch(value, key) do
+          {:ok, nested} -> find_detail_message(nested)
+          :error -> nil
+        end
+      end)
+      |> then(fn
+        nil ->
+          value
+          |> Map.values()
+          |> Enum.find_value(fn
+            nested when is_map(nested) or is_list(nested) -> find_detail_message(nested)
+            _nested -> nil
+          end)
+
+        message ->
+          message
+      end)
+    end
+  end
+
+  defp find_detail_message(values) when is_list(values) do
+    Enum.find_value(values, fn
+      value when is_map(value) or is_list(value) -> find_detail_message(value)
+      _value -> nil
+    end)
+  end
+
+  defp find_detail_message(_value), do: nil
+
+  defp useful_detail_message?(message) when is_binary(message) do
+    String.trim(message) != "" and not generic_jidoka_execution_message?(message)
+  end
+
+  defp useful_detail_message?(_message), do: false
+
+  defp cause_message(details, error) do
+    cause = Map.get(details, :cause, Map.get(details, "cause"))
+    reason = cause_reason(cause)
+    operation = Map.get(details, :operation, Map.get(details, "operation"))
+    phase = Map.get(error, :phase, Map.get(error, "phase"))
+
+    cond do
+      not is_nil(reason) and operation == :llm ->
+        "The LLM request failed: #{reason_text(reason)}."
+
+      not is_nil(reason) ->
+        "Jidoka execution failed: #{reason_text(reason)}."
+
+      operation == :llm ->
+        "The LLM request failed."
+
+      not is_nil(phase) and is_atom(phase) ->
+        "Jidoka execution failed during the #{reason_text(phase)} phase."
+
+      true ->
+        nil
+    end
+  end
+
+  defp cause_reason(reason) when is_atom(reason) and reason != :exception, do: reason
+
+  defp cause_reason(reason) when is_tuple(reason) and tuple_size(reason) > 0 do
+    case elem(reason, 0) do
+      tag when is_atom(tag) -> tag
+      _tag -> nil
+    end
+  end
+
+  defp cause_reason(_reason), do: nil
+
+  defp safe_error_details(error) do
+    details = Map.get(error, :details, Map.get(error, "details", %{}))
+    cause = Map.get(details, :cause, Map.get(details, "cause"))
+
+    %{
+      category: Map.get(error, :category, Map.get(error, "category")),
+      phase: Map.get(error, :phase, Map.get(error, "phase")),
+      operation: Map.get(details, :operation, Map.get(details, "operation")),
+      cause: cause_reason(cause)
+    }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp reason_text(reason) do
+    reason
+    |> Atom.to_string()
+    |> String.replace("_", " ")
   end
 
   defp format_options(options) do

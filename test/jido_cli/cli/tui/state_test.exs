@@ -434,6 +434,11 @@ defmodule Jido.Cli.Tui.StateTest do
     {state, []} = State.update(base, {:turn_result, {:error, "plain failure"}})
     assert state.error == "plain failure"
 
+    {state, []} = State.update(base, {:turn_result, {:error, :request_expired}})
+    assert state.error =~ "internal request error"
+    assert state.error =~ "does not mean that the API key is invalid"
+    assert state.error =~ "Try the prompt again"
+
     {state, []} = State.update(base, {:turn_result, {:error, {:bad, :reason}}})
     assert is_binary(state.error)
   end

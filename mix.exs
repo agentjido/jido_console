@@ -6,7 +6,7 @@ defmodule Jido.Cli.MixProject do
   @version "0.1.0"
   @source_url "https://github.com/mikehostetler/jido_cli"
   @description "Terminal and automation harness for the Jidoka agent framework."
-  @jidoka_ref "23bd10ffc822935c06395e34301d63c249e5cbe3"
+  @jidoka_ref "f19ce72e7591b3215e832e6e034e3752e84a3604"
 
   def project do
     [

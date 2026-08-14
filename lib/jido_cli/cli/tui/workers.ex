@@ -34,9 +34,16 @@ defmodule Jido.Cli.Tui.Workers do
   @spec start_turn(t(), (pid() -> term())) :: t()
   def start_turn(workers, fun) when is_map(workers) and is_function(fun, 1) do
     {workers, relay_pid} = start_relay(workers, nil, true)
+    owner = self()
 
-    workers
-    |> start({:start_turn, relay_pid}, nil, fn -> fun.(relay_pid) end)
+    {pid, ref} =
+      spawn_link_monitor(fn ->
+        owner_ref = Process.monitor(owner)
+        send(owner, {:jido_tui_effect_result, self(), safe_effect(fn -> fun.(relay_pid) end)})
+        await_release(owner, owner_ref)
+      end)
+
+    put(workers, pid, ref, {:start_turn, relay_pid}, nil)
   end
 
   @spec start_review(t(), :approve | :deny, term(), (pid() -> term())) :: t()
@@ -65,6 +72,26 @@ defmodule Jido.Cli.Tui.Workers do
       {worker, workers} ->
         Process.demonitor(worker.ref, [:flush])
         {:ok, worker, workers}
+    end
+  end
+
+  @spec take_completion(t(), pid()) :: {:ok, Worker.t(), t()} | :error
+  def take_completion(workers, pid) do
+    case Map.get(workers, pid) do
+      %Worker{kind: {:start_turn, _relay_pid}} = worker -> {:ok, worker, workers}
+      %Worker{} -> pop(workers, pid)
+      nil -> :error
+    end
+  end
+
+  @spec promote_request_owner(t(), pid(), term()) :: t()
+  def promote_request_owner(workers, pid, request) do
+    case Map.get(workers, pid) do
+      %Worker{kind: {:start_turn, _relay_pid}} = worker ->
+        Map.put(workers, pid, %{worker | kind: :request_owner, subject: request})
+
+      _worker ->
+        workers
     end
   end
 
@@ -155,6 +182,14 @@ defmodule Jido.Cli.Tui.Workers do
   end
 
   defp spawn_link_monitor(fun), do: :erlang.spawn_opt(fun, [:link, :monitor])
+
+  defp await_release(owner, owner_ref) do
+    receive do
+      :stop -> :ok
+      {:DOWN, ^owner_ref, :process, ^owner, _reason} -> :ok
+      _message -> await_release(owner, owner_ref)
+    end
+  end
 
   defp await_stopped(workers, _deadline) when map_size(workers) == 0, do: :ok
 

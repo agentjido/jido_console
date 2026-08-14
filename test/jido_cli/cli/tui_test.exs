@@ -294,6 +294,48 @@ defmodule Jido.Cli.TuiTest do
     end
   end
 
+  defmodule OwnerBoundRuntime do
+    @behaviour Jido.Cli.Runtime
+
+    @impl true
+    def start_session(Jido.Cli.DefaultAgent, _opts), do: {:ok, :owner_bound_session}
+
+    @impl true
+    def start_turn(:owner_bound_session, _prompt, _relay, opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      request_owner = self()
+      controller = spawn(fn -> controller_loop(Process.monitor(request_owner)) end)
+      send(test_pid, {:owner_bound_request, request_owner, controller})
+      {:ok, %{request_id: "owner-bound-request", controller: controller}}
+    end
+
+    @impl true
+    def await(request, _opts) do
+      Process.sleep(25)
+      send(request.controller, {:await, self()})
+
+      receive do
+        {:owner_bound_result, result} -> result
+      after
+        100 -> {:error, :request_expired}
+      end
+    end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
+
+    defp controller_loop(owner_ref) do
+      receive do
+        {:await, caller} ->
+          send(caller, {:owner_bound_result, {:ok, :next_session, "owner kept result"}})
+          controller_loop(owner_ref)
+
+        {:DOWN, ^owner_ref, :process, _owner, _reason} ->
+          :ok
+      end
+    end
+  end
+
   defmodule ShutdownRuntime do
     @behaviour Jido.Cli.Runtime
 
@@ -499,6 +541,31 @@ defmodule Jido.Cli.TuiTest do
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)
     assert_receive :terminal_closed
+  end
+
+  test "keeps the Jidoka request owner alive while it awaits the result" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: OwnerBoundRuntime,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+    send_prompt(owner, ref)
+    assert_receive {:owner_bound_request, request_owner, controller}
+    assert Process.alive?(request_owner)
+    assert_frame_contains("owner kept result")
+
+    refute Process.alive?(request_owner)
+    refute Process.alive?(controller)
+    stop_tui(task, owner, ref)
   end
 
   test "buffers stream events until the asynchronous request is installed" do

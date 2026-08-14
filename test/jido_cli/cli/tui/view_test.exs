@@ -104,6 +104,20 @@ defmodule Jido.Cli.Tui.ViewTest do
     end
   end
 
+  test "renders a failed turn error in the transcript" do
+    turn =
+      Turn.new(0, "hello")
+      |> Turn.finish(:failed, "partial answer", error: "The provider rejected the request.")
+
+    state = %{State.new(:session, {60, 10}) | turns: [turn], status: :error, error: "provider error"}
+    text = state |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
+
+    assert text =~ "Assistant (partial)"
+    assert text =~ "partial answer"
+    assert text =~ "Error"
+    assert text =~ "The provider rejected the request."
+  end
+
   test "renders live tool states and safe approval controls" do
     turn = Turn.new(0, "run tools") |> Turn.put_request(%{request_id: "request-1"})
 

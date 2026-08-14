@@ -91,10 +91,21 @@ defmodule Jido.Cli.Tui.View do
       end)
 
     tools = Enum.flat_map(turn.tool_order, &tool_rows(Map.fetch!(turn.tools, &1), width))
-    assistant = content_rows("Assistant", turn.assistant, width)
+    assistant = content_rows(assistant_role(turn), turn.assistant, width)
     reviews = Enum.flat_map(turn.reviews, &approval_rows(&1, width))
-    user ++ attachments ++ tools ++ assistant ++ reviews
+    error = error_rows(turn.outcome, width)
+    user ++ attachments ++ tools ++ assistant ++ reviews ++ error
   end
+
+  defp error_rows(%{status: :failed, error: error}, width) when is_binary(error) and error != "",
+    do: content_rows("Error", error, width)
+
+  defp error_rows(_outcome, _width), do: []
+
+  defp assistant_role(%{outcome: %{status: :failed}, assistant: assistant}) when assistant != "",
+    do: "Assistant (partial)"
+
+  defp assistant_role(_turn), do: "Assistant"
 
   defp content_rows(_role, "", _width), do: []
   defp content_rows(role, content, width), do: [role | Frame.wrap(content, width)] ++ [""]

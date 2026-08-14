@@ -33,10 +33,9 @@ defmodule Jido.Cli.Tui.Shutdown do
 
         receive do
           {:jido_tui_effect_result, ^pid, outcome} ->
-            case Workers.pop(workers, pid) do
+            case Workers.take_completion(workers, pid) do
               {:ok, worker, workers} ->
-                Workers.reap(pid, option_timeout(opts, :shutdown_reap_timeout_ms, @reap_timeout_ms))
-                start_request(Effects.complete(worker, outcome), workers)
+                settle_start_completion(Effects.complete(worker, outcome), worker, workers)
 
               :error ->
                 {nil, workers}
@@ -56,14 +55,24 @@ defmodule Jido.Cli.Tui.Shutdown do
     end
   end
 
-  defp start_request({:start_turn, _relay_pid, {:turn_started, request}}, workers),
-    do: {request, workers}
+  defp settle_start_completion(
+         {:start_turn, _relay_pid, {:turn_started, request}},
+         worker,
+         workers
+       ) do
+    workers = Workers.promote_request_owner(workers, worker.pid, request)
+    {request, workers}
+  end
 
-  defp start_request(_completion, workers), do: {nil, workers}
+  defp settle_start_completion({:start_turn, relay_pid, _event}, worker, workers) do
+    workers = workers |> Workers.stop(worker.pid) |> Workers.stop(relay_pid)
+    {nil, workers}
+  end
 
   defp active_worker_request(workers) do
     Enum.find_value(workers, fn
-      {_pid, %Worker{kind: kind, subject: request}} when kind in [:await_turn, :cancel_turn] ->
+      {_pid, %Worker{kind: kind, subject: request}}
+      when kind in [:request_owner, :await_turn, :cancel_turn] ->
         request
 
       {_pid, %Worker{kind: {:respond_review, _decision, _relay}, subject: %{handle: request}}} ->
