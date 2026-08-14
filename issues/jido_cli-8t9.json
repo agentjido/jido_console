@@ -2,13 +2,15 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-14T13:34:29Z",
+  "close_reason": "All local durable multi-turn and multi-tool coding interaction phases are complete. Brew, signing, notarization, publication, and daemon work remain out of scope.",
   "created": "2026-08-13T20:13:42Z",
   "description": "Cross-repository Jidoka and jido_cli work to support durable multi-turn coding sessions, native and fallback multi-tool loops, recovery, an interactive TUI, and exact local-artifact validation. Scope is local development only. Excludes Brew, signing, notarization, publication, and an independent daemon.",
   "id": "jido_cli-8t9",
   "labels": [],
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Ship durable multi-turn, multi-tool coding interactions",
   "type": "epic",
-  "updated_at": "2026-08-13T20:19:56Z"
+  "updated_at": "2026-08-14T13:34:29Z"
 }
