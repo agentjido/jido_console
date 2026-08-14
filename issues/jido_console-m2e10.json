@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-m2e04"
+  ],
   "blocks": [],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e10-define-renderer-neutral-session-state.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E10: Define Renderer-Neutral Session State\n\n## Goal\n\nCompose one semantic session state that all current clients can project without renderer or live runtime state.\n\n## Scope\n\n- Compose the shared session state from the generated protocol types and classified Console events.\n- Keep shared state free of terminal cells, ANSI text, DOM data, viewport state, client drafts, PIDs, references, functions, and raw runtime structs.\n- Separate canonical semantic history from client-local input and navigation state.\n- Define the initial state and the allowed semantic state fields for history, transcript, outcomes, controls, queues, and active-run summaries.\n- Add recursive invariants that reject renderer values and live runtime values anywhere in shared state.\n- Keep state composition data-only and independent of a client or transport.\n\n## Out of Scope\n\n- Session process supervision\n- Application-restart recovery or durable input receipts\n- LiveView, SSH, or external client deployment\n- Runtime event projection implementation\n- Extension loading\n- Protocol schema, version, generation, and event-classification changes\n\n## Dependencies\n\nThis epic depends on M2-E04 for generated protocol types and validators and on M2-E08 for Console event identity and classification.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds semantic state composition, state invariants, and focused tests. It must not redefine the protocol or event classes, add a session owner, or add a client transport.\n\n## Acceptance Checks\n\n- One semantic state model composes only generated protocol values and classified events.\n- Shared state contains no renderer data, process handles, references, functions, or raw runtime structures.\n- Client-local drafts and navigation state cannot enter shared semantic history.\n- History, transcript, outcomes, controls, queues, and active-run summaries have explicit data-only fields.\n- Recursive validation rejects a forbidden value at any nesting depth with a focused reason.\n- State composition has no client or transport dependency.\n\n## Proof Artifacts\n\n- Semantic state composition and field map\n- Initial-state and state-invariant results\n- Renderer-data exclusion checks\n- Live-runtime exclusion checks\n\n## Milestone Traceability\n\nThis epic defines the renderer-neutral semantic state required by the Milestone 2 session owner and current-client migration.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "M2-E10: Define Renderer-Neutral Session State",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:09Z"
+  "updated_at": "2026-08-14T20:08:27Z"
 }
