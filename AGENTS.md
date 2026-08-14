@@ -89,6 +89,7 @@ bw ready
 bw blocked
 bw show <id>
 bw list --all --label gate-0
+bw list --all --label milestone-1
 bw export
 ```
 

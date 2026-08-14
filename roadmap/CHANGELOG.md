@@ -4,6 +4,27 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.6] - 2026-08-14
+
+### Added
+
+- Add 30 generated epics for Milestone 1 under its milestone directory.
+- Give each Milestone 1 epic one pull request boundary, acceptance checks,
+  proof artifacts, dependencies, and milestone traceability.
+- Add a Mermaid diagram that shows the complete Milestone 1 dependency order.
+- Add one Beadwork identifier for each Milestone 1 epic.
+
+### Changed
+
+- Link the Milestone 1 milestone to its generated epic index.
+- Split the former five broad Milestone 1 groups into reviewable
+  one-pull-request delivery units without a change to the milestone outcome or
+  exit gate.
+- Keep the provider, restricted-execution, distribution, golden-workflow, and
+  final release-audit boundaries in separate pull requests.
+- Keep candidate audit and protected production publication in separate pull
+  requests.
+
 ## [1.0.5] - 2026-08-14
 
 ### Added

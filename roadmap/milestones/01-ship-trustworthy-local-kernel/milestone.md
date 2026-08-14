@@ -6,7 +6,7 @@ status: proposed
 depends_on: [gate-0]
 release: v0.1
 introduced_in: 0.1.0
-last_updated_in: 1.0.2
+last_updated_in: 1.0.6
 ---
 
 # Milestone 1: Ship the Trustworthy Local Kernel
@@ -26,6 +26,10 @@ A new user can install Jido Console, select a tested model and restricted execut
 - [The delivery plan](delivery-plan.json) stores stable identifiers and the critical path. It does not copy current task state.
 - [The first-user support boundary](../00-establish-release-readiness/first-user-support.md) defines the initial claim.
 - The critical path ends at `jido_console-m1e30`, after the release audit in `jido_console-m1e29`.
+
+## Generated Epics
+
+The [Milestone 1 epic index](epics/README.md) splits this milestone into 30 epics. Each epic is the scope for exactly one pull request.
 
 ## Work
 
