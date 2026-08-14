@@ -7,6 +7,8 @@
   "blocks": [
     "jido_console-g0e15"
   ],
+  "closed_at": "2026-08-14T20:40:29Z",
+  "close_reason": "Compiled PTY, terminal cleanup, and 20-turn streamed endurance evidence pass with a 180-second bound and no provider calls.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/00-establish-release-readiness/epics/g0-e05-tui-terminal-endurance-evidence.md`\nRoadmap version: `1.0.5`\n\n# G0-E05: Add TUI Terminal and Endurance Evidence\n\n## Goal\n\nProve the current TUI behavior through bounded terminal-process tests.\n\n## Scope\n\n- Test raw terminal start, input, output, resize, and restore behavior.\n- Test queued input, multiline input, review input, and cancellation.\n- Test timing boundaries with injected or bounded time sources.\n- Test a bounded long session with repeated turns and streaming output.\n- Prove cleanup for readers, workers, timers, and terminal state.\n- Run the required PTY flow through the production artifact.\n\n## Out of Scope\n\n- Reducer and layout evidence from G0-E04\n- Performance measures from G0-E08\n- TUI redesign\n- Unbounded endurance tests\n\n## Dependencies\n\nThis epic depends on G0-E01 for evidence identity and G0-E04 for deterministic view expectations.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request contains PTY, input, timing, cleanup, and bounded endurance evidence.\n\n## Acceptance Checks\n\n- The production PTY test passes with the declared terminal and OTP versions.\n- Input, resize, cancellation, and terminal restore paths have explicit results.\n- The long-session test has a fixed bound and finishes in CI.\n- All owned processes and terminal resources stop after each test.\n- Tests do not call a live model provider.\n- A timeout gives a useful failure and performs cleanup.\n\n## Proof Artifacts\n\n- Production PTY result\n- Input and cancellation results\n- Long-session result and bound\n- Process and terminal cleanup report\n- Supported terminal and OTP assumptions\n\n## Milestone Traceability\n\nThis epic covers terminal behavior, input, timing, and long-session evidence. It also supplies the production PTY part of the Gate 0 exit gate.",
   "id": "jido_console-g0e05",
@@ -16,8 +18,8 @@
     "one-pr"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "G0-E05: Add TUI Terminal and Endurance Evidence",
   "type": "epic",
-  "updated_at": "2026-08-14T20:32:35Z"
+  "updated_at": "2026-08-14T20:40:29Z"
 }
