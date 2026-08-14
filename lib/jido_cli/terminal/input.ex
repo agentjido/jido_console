@@ -4,8 +4,14 @@ defmodule Jido.Cli.Terminal.Input do
   @paste_start "\e[200~"
   @paste_end "\e[201~"
   @sequences [
+    {"\e[5~", {:key, :page_up}},
+    {"\e[6~", {:key, :page_down}},
+    {"\e[A", {:key, :up}},
+    {"\e[B", {:key, :down}},
     {"\e[D", {:key, :left}},
     {"\e[C", {:key, :right}},
+    {"\eOA", {:key, :up}},
+    {"\eOB", {:key, :down}},
     {"\eOD", {:key, :left}},
     {"\eOC", {:key, :right}}
   ]
@@ -82,7 +88,7 @@ defmodule Jido.Cli.Terminal.Input do
     do: parse(%{state | buffer: rest}, [{:key, :enter} | events])
 
   defp parse_byte(%__MODULE__{buffer: <<10, rest::binary>>} = state, events),
-    do: parse(%{state | buffer: rest}, [{:key, :enter} | events])
+    do: parse(%{state | buffer: rest}, [{:key, :newline} | events])
 
   defp parse_byte(%__MODULE__{buffer: <<127, rest::binary>>} = state, events),
     do: parse(%{state | buffer: rest}, [{:key, :backspace} | events])

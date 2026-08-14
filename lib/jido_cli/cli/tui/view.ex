@@ -1,28 +1,46 @@
 defmodule Jido.Cli.Tui.View do
   @moduledoc "Pure frame renderer for the Jido TUI."
 
-  alias Jido.Cli.Tui.Editor
-  alias Jido.Cli.Tui.State
+  alias Jido.Cli.Tui.{Editor, SafeText, State}
   alias Jido.Cli.Tui.Turn.Tool
   alias Jido.Cli.Terminal.Frame
 
   @spec render(State.t()) :: Frame.t()
+  def render(%State{size: {width, 1}}) do
+    Frame.new(width, 1, ["Jido · resize"], cursor: nil)
+  end
+
   def render(%State{size: {width, height}}) when width < 12 or height < 5 do
-    Frame.new(width, height, ["Jido", "Terminal is too small."], cursor: nil)
+    Frame.new(width, height, ["Jido", "Resize terminal."], cursor: nil)
   end
 
   def render(%State{size: {width, height}} = state) do
-    review = review_rows(state.coding_reviews, width, max(div(height, 2), 1))
-    transcript_height = max(height - 4 - length(review), 0)
-    transcript = transcript_rows(state, width) |> Enum.take(-transcript_height)
-    transcript = List.duplicate("", transcript_height - length(transcript)) ++ transcript
+    prompt_limit = min(5, max(height - 4, 1))
+    {editor_rows, {cursor_column, cursor_row}} = Editor.render(state.editor, max(width - 2, 1), prompt_limit)
+    prompt = prompt_rows(editor_rows)
+    body_height = max(height - 3 - length(prompt), 0)
+    review = review_rows(state.coding_reviews, width, min(div(height, 2), body_height))
+    transcript_height = max(body_height - length(review), 0)
+    transcript = transcript_viewport(transcript_rows(state, width), transcript_height, state.scroll_offset)
     divider = String.duplicate("─", width)
     status = status_row(state)
-    {prompt, cursor_offset} = Editor.visible(state.editor, max(width - 2, 1))
-    prompt_row = "> " <> prompt
 
-    rows = [title(width)] ++ transcript ++ review ++ [divider, status, prompt_row]
-    Frame.new(width, height, rows, cursor: {min(cursor_offset + 3, width), height})
+    rows = [title(width)] ++ transcript ++ review ++ [divider, status] ++ prompt
+    prompt_start = height - length(prompt) + 1
+    cursor = {min(cursor_column + 3, width), prompt_start + cursor_row}
+    Frame.new(width, height, rows, cursor: cursor)
+  end
+
+  defp prompt_rows([first | rest]), do: ["> " <> first | Enum.map(rest, &("  " <> &1))]
+
+  defp transcript_viewport(_rows, 0, _offset), do: []
+
+  defp transcript_viewport(rows, height, offset) do
+    offset = min(offset, max(length(rows) - height, 0))
+    stop = length(rows) - offset
+    start = max(stop - height, 0)
+    visible = Enum.slice(rows, start, height)
+    List.duplicate("", height - length(visible)) ++ visible
   end
 
   defp transcript_rows(state, width) do
@@ -39,7 +57,9 @@ defmodule Jido.Cli.Tui.View do
   defp instruction_rows(instructions, width) do
     instructions
     |> Enum.map(fn instruction ->
-      %{role: :project, content: "Loaded #{instruction["path"]} (scope #{instruction["scope"]})"}
+      path = SafeText.summary(instruction["path"] || "project instructions")
+      scope = SafeText.summary(instruction["scope"] || "project")
+      %{role: :project, content: "Loaded #{path} (scope #{scope})"}
     end)
     |> message_rows(width)
   end
@@ -58,7 +78,7 @@ defmodule Jido.Cli.Tui.View do
   defp message_rows(messages, width) do
     Enum.flat_map(messages, fn message ->
       role = role(message.role)
-      [role | Frame.wrap(message.content, width)] ++ [""]
+      [role | Frame.wrap(SafeText.clean(message.content), width)] ++ [""]
     end)
   end
 
@@ -80,22 +100,22 @@ defmodule Jido.Cli.Tui.View do
   defp content_rows(role, content, width), do: [role | Frame.wrap(content, width)] ++ [""]
 
   defp tool_rows(%Tool{} = tool, width) do
-    operation = tool.operation || "tool"
+    operation = SafeText.summary(tool.operation || "tool")
     header = "#{tool_marker(tool.status)} #{operation}"
 
     detail =
       if tool.summary in [nil, "", operation] do
         []
       else
-        ["  #{tool.summary}"]
+        ["  #{SafeText.summary(tool.summary)}"]
       end
 
     Enum.map([header | detail], &Frame.fit(&1, width))
   end
 
   defp approval_rows(review, width) do
-    operation = Map.get(review, :operation) || Map.get(review, "operation") || "tool"
-    arguments = Map.get(review, :arguments_summary, "")
+    operation = review |> Map.get(:operation, Map.get(review, "operation")) |> then(&SafeText.summary(&1 || "tool"))
+    arguments = review |> Map.get(:arguments_summary, "") |> SafeText.summary()
     status = Map.get(review, :status, :pending)
     decision = Map.get(review, :decision)
 
@@ -111,10 +131,10 @@ defmodule Jido.Cli.Tui.View do
           ["[denied] #{operation}#{arguments_suffix(arguments)}"]
 
         :expired ->
-          ["[expired] #{operation} · #{Map.get(review, :error)}"]
+          ["[expired] #{operation} · #{SafeText.summary(Map.get(review, :error))}"]
 
         :failed ->
-          ["[review failed] #{operation} · #{Map.get(review, :error)}"]
+          ["[review failed] #{operation} · #{SafeText.summary(Map.get(review, :error))}"]
 
         _other when decision in [:approve, :deny] ->
           ["[#{decision}] #{operation}#{arguments_suffix(arguments)}"]
@@ -143,6 +163,7 @@ defmodule Jido.Cli.Tui.View do
   defp title(width), do: Frame.fit(" Jido " <> String.duplicate("─", width), width)
 
   defp review_rows([], _width, _limit), do: []
+  defp review_rows(_reviews, _width, 0), do: []
 
   defp review_rows(reviews, width, limit) do
     all_rows = ["Review"] ++ Enum.flat_map(reviews, &review_record(&1, width))
@@ -178,7 +199,7 @@ defmodule Jido.Cli.Tui.View do
         "  #{file["path"]} · #{facts}"
       end)
 
-    patch = review["patch"] |> String.split("\n") |> Enum.take(4) |> Enum.map(&("  " <> &1))
+    patch = review["patch"] |> SafeText.clean() |> String.split("\n") |> Enum.take(4) |> Enum.map(&("  " <> &1))
     Enum.map([header] ++ files ++ patch, &Frame.fit(&1, width))
   end
 
@@ -215,15 +236,20 @@ defmodule Jido.Cli.Tui.View do
     do: "starting runtime · Enter queues"
 
   defp status_row(%State{runtime_status: :failed, error: error}),
-    do: "startup failed · Esc exits · #{error}"
+    do: "startup failed · Esc exits · #{SafeText.summary(error)}"
 
-  defp status_row(%State{status: :idle, error: nil}), do: "idle · Enter sends · Esc exits"
+  defp status_row(%State{scroll_offset: offset}) when offset > 0,
+    do: "scroll #{offset} · PgDn follows output"
+
+  defp status_row(%State{status: :idle, error: nil}),
+    do: "idle · Enter sends · Ctrl-J newline · Esc exits"
+
   defp status_row(%State{status: :running}), do: "running · Ctrl-C cancels"
   defp status_row(%State{status: :resolving}), do: "resolving file mentions"
   defp status_row(%State{status: :cancelling}), do: "cancelling"
   defp status_row(%State{status: :review}), do: "review required · A approves · D denies"
   defp status_row(%State{status: :responding_review}), do: "sending review decision"
-  defp status_row(%State{status: :interrupted, error: error}), do: error || "paused"
-  defp status_row(%State{status: :error, error: error}), do: "error · #{error}"
+  defp status_row(%State{status: :interrupted, error: error}), do: SafeText.summary(error || "paused")
+  defp status_row(%State{status: :error, error: error}), do: "error · #{SafeText.summary(error)}"
   defp status_row(%State{status: status}), do: Atom.to_string(status)
 end

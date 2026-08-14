@@ -6,8 +6,56 @@ defmodule Jido.Cli.Tui.ViewTest do
 
   test "renders a useful warning when the terminal is too small" do
     frame = State.new(:session, {10, 4}) |> View.render()
-    assert Enum.join(frame.rows, "\n") =~ "Terminal i"
+    assert Enum.join(frame.rows, "\n") =~ "Resize"
     assert frame.cursor == nil
+
+    one_row = State.new(:session, {6, 1}) |> View.render()
+    assert one_row.rows == ["Jido ·"]
+  end
+
+  test "renders a multiline editor and follows its Unicode cursor after resize" do
+    state = State.new(:session, {12, 8})
+    {state, []} = State.update(state, {:terminal, {:paste, "one\n界界界界界界"}})
+    frame = View.render(state)
+
+    assert Enum.join(frame.rows, "\n") =~ "> one"
+    assert Enum.join(frame.rows, "\n") =~ "界界界界界"
+    assert frame.cursor == {5, 8}
+
+    {state, []} = State.update(state, {:terminal, {:resize, 20, 7}})
+    assert View.render(state).cursor == {15, 7}
+  end
+
+  test "uses a stable transcript viewport while scrolled" do
+    messages = Enum.map(1..12, &%{role: :assistant, content: "line #{&1}"})
+    live = %{State.new(:session, {30, 8}) | messages: messages}
+    scrolled = %{live | scroll_offset: 4}
+
+    live_text = live |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
+    scrolled_text = scrolled |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
+
+    assert live_text =~ "line 12"
+    refute scrolled_text =~ "line 12"
+    assert scrolled_text =~ "PgDn follows output"
+  end
+
+  test "cleans controls from all external frame fields" do
+    state = %{
+      State.new(:session, {50, 10}, project_instructions: [%{"path" => "\e[2JAGENTS.md", "scope" => "root"}])
+      | messages: [%{role: :assistant, content: "safe\e]0;title\a\e[31mtext\e[0m"}],
+        error: "bad\e[2J",
+        status: :error
+    }
+
+    frame = View.render(state)
+    text = Enum.join(frame.rows, "\n")
+    output = frame |> Jido.Cli.Terminal.Frame.to_iodata() |> IO.iodata_to_binary()
+
+    assert text =~ "safe"
+    assert text =~ "text"
+    assert text =~ "AGENTS.md"
+    refute output =~ "\e[31m"
+    refute output =~ "\e[2JAGENTS"
   end
 
   test "renders streaming content as a temporary assistant message" do

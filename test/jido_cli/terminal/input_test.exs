@@ -3,16 +3,21 @@ defmodule Jido.Cli.Terminal.InputTest do
 
   alias Jido.Cli.Terminal.Input
 
-  test "decodes text, control keys, and arrow sequences" do
-    {_state, events} = Input.feed(%Input{}, "a\r\x7f\x03\e[D\e[C")
+  test "decodes text, control keys, and navigation sequences" do
+    {_state, events} = Input.feed(%Input{}, "a\r\n\x7f\x03\e[A\e[B\e[D\e[C\e[5~\e[6~")
 
     assert events == [
              {:text, "a"},
              {:key, :enter},
+             {:key, :newline},
              {:key, :backspace},
              {:key, :ctrl_c},
+             {:key, :up},
+             {:key, :down},
              {:key, :left},
-             {:key, :right}
+             {:key, :right},
+             {:key, :page_up},
+             {:key, :page_down}
            ]
   end
 
@@ -37,9 +42,9 @@ defmodule Jido.Cli.Terminal.InputTest do
     {_state, [{:paste, "hello"}]} = Input.feed(state, "1~")
   end
 
-  test "decodes alternate enter and backspace bytes" do
+  test "decodes newline and alternate backspace bytes" do
     {_state, events} = Input.feed(%Input{}, <<10, 8>>)
-    assert events == [{:key, :enter}, {:key, :backspace}]
+    assert events == [{:key, :newline}, {:key, :backspace}]
   end
 
   test "treats an unknown escape sequence as escape and text" do

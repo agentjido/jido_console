@@ -4,10 +4,22 @@ defmodule Jido.Cli.Tui.State do
   alias Jido.Cli.Tui.{Editor, EventProjection, Turn}
   alias Jido.Cli.Runtime.Jidoka.Result, as: RuntimeResult
 
+  @default_history_limit 100
+  @default_turn_limit 100
+  @review_limit 100
+  @max_scroll_offset 1_000_000
+
   @enforce_keys [:session, :size]
   defstruct session: nil,
             size: nil,
             editor: %Editor{},
+            history: [],
+            history_index: nil,
+            history_draft: nil,
+            history_limit: @default_history_limit,
+            pending_prompt: nil,
+            scroll_offset: 0,
+            turn_limit: @default_turn_limit,
             messages: [],
             streaming: "",
             runtime_status: :ready,
@@ -45,7 +57,9 @@ defmodule Jido.Cli.Tui.State do
       size: size,
       runtime_status: Keyword.get(opts, :runtime_status, :ready),
       prepare_prompt?: Keyword.get(opts, :prepare_prompt, false),
-      project_instructions: Keyword.get(opts, :project_instructions, [])
+      project_instructions: Keyword.get(opts, :project_instructions, []),
+      history_limit: positive_limit(opts, :history_limit, @default_history_limit),
+      turn_limit: positive_limit(opts, :turn_limit, @default_turn_limit)
     }
   end
 
@@ -66,22 +80,49 @@ defmodule Jido.Cli.Tui.State do
       when status in [:review, :responding_review],
       do: {state, []}
 
+  def update(%__MODULE__{status: status} = state, {:terminal, {:key, :newline}})
+      when status in [:review, :responding_review],
+      do: {state, []}
+
+  def update(%__MODULE__{status: :resolving} = state, {:terminal, {kind, _value}})
+      when kind in [:text, :paste],
+      do: {state, []}
+
+  def update(%__MODULE__{status: :resolving} = state, {:terminal, {:key, key}})
+      when key in [:newline, :backspace, :left, :right, :up, :down],
+      do: {state, []}
+
   def update(%__MODULE__{} = state, {:terminal, {:text, text}}) do
-    changed(state, editor: Editor.insert(state.editor, text))
+    edit(state, Editor.insert(state.editor, text))
   end
 
   def update(%__MODULE__{} = state, {:terminal, {:paste, text}}) do
-    changed(state, editor: Editor.insert(state.editor, text))
+    edit(state, Editor.insert(state.editor, text))
   end
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :backspace}}),
-    do: changed(state, editor: Editor.backspace(state.editor))
+    do: edit(state, Editor.backspace(state.editor))
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :left}}),
     do: changed(state, editor: Editor.left(state.editor))
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :right}}),
     do: changed(state, editor: Editor.right(state.editor))
+
+  def update(%__MODULE__{} = state, {:terminal, {:key, :newline}}),
+    do: edit(state, Editor.newline(state.editor))
+
+  def update(%__MODULE__{} = state, {:terminal, {:key, :up}}), do: move_up(state)
+  def update(%__MODULE__{} = state, {:terminal, {:key, :down}}), do: move_down(state)
+
+  def update(%__MODULE__{} = state, {:terminal, {:key, :page_up}}) do
+    offset = min(state.scroll_offset + scroll_page(state), @max_scroll_offset)
+    changed(state, scroll_offset: offset)
+  end
+
+  def update(%__MODULE__{} = state, {:terminal, {:key, :page_down}}) do
+    changed(state, scroll_offset: max(state.scroll_offset - scroll_page(state), 0))
+  end
 
   def update(
         %__MODULE__{runtime_status: :starting, request: nil} = state,
@@ -97,6 +138,10 @@ defmodule Jido.Cli.Tui.State do
   def update(%__MODULE__{runtime_status: :failed} = state, {:terminal, {:key, :enter}}),
     do: {state, []}
 
+  def update(%__MODULE__{status: status} = state, {:terminal, {:key, :enter}})
+      when status in [:running, :resolving, :cancelling, :review, :responding_review],
+      do: {state, []}
+
   def update(%__MODULE__{request: nil} = state, {:terminal, {:key, :enter}}) do
     prompt = String.trim(state.editor.text)
 
@@ -110,9 +155,13 @@ defmodule Jido.Cli.Tui.State do
   def update(%__MODULE__{} = state, {:prompt_ready, prompt, context}) do
     turn = Turn.new(state.next_turn_id, prompt, context)
 
+    state = remember_prompt(state, state.pending_prompt || prompt)
+
     state = %{
       state
       | editor: Editor.clear(state.editor),
+        pending_prompt: nil,
+        scroll_offset: 0,
         messages: state.messages ++ [%{role: :user, content: turn.prompt}],
         streaming: "",
         status: :running,
@@ -126,7 +175,7 @@ defmodule Jido.Cli.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:prompt_error, reason}) do
-    {%{state | status: :error, error: format_error(reason), dirty?: true}, []}
+    {%{state | pending_prompt: nil, status: :error, error: format_error(reason), dirty?: true}, []}
   end
 
   def update(%__MODULE__{} = state, {:runtime_ready, session, instructions}) do
@@ -227,7 +276,7 @@ defmodule Jido.Cli.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :ok} = result}) do
-    changes = Jido.Cli.Coding.Review.normalize(result.coding_reviews)
+    changes = result.coding_reviews |> Jido.Cli.Coding.Review.normalize() |> retain(@review_limit)
     state = %{state | coding_reviews: changes}
     finish(state, result.session, result.content, :idle, nil, outcome: :completed, changes: changes)
   end
@@ -257,7 +306,7 @@ defmodule Jido.Cli.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:coding_review, reviews}) do
-    changes = Jido.Cli.Coding.Review.normalize(reviews)
+    changes = reviews |> Jido.Cli.Coding.Review.normalize() |> retain(@review_limit)
     state = put_active_changes(state, changes)
     changed(state, coding_reviews: changes)
   end
@@ -298,15 +347,19 @@ defmodule Jido.Cli.Tui.State do
   def update(%__MODULE__{} = state, _event), do: {state, []}
 
   defp submit_prompt(%__MODULE__{prepare_prompt?: true} = state, prompt) do
-    {%{state | status: :resolving, error: nil, dirty?: true}, [{:prepare_prompt, prompt}]}
+    {%{state | pending_prompt: prompt, status: :resolving, error: nil, dirty?: true}, [{:prepare_prompt, prompt}]}
   end
 
   defp submit_prompt(state, prompt) do
     turn = Turn.new(state.next_turn_id, prompt)
 
+    state = remember_prompt(state, prompt)
+
     state = %{
       state
       | editor: Editor.clear(state.editor),
+        pending_prompt: nil,
+        scroll_offset: 0,
         messages: state.messages ++ [%{role: :user, content: turn.prompt}],
         streaming: "",
         status: :running,
@@ -323,6 +376,64 @@ defmodule Jido.Cli.Tui.State do
     state = struct!(state, Keyword.put(updates, :dirty?, true))
     {state, []}
   end
+
+  defp edit(state, editor) do
+    changed(state,
+      editor: editor,
+      history_index: nil,
+      history_draft: nil
+    )
+  end
+
+  defp move_up(state) do
+    editor = Editor.up(state.editor)
+    if editor == state.editor, do: previous_history(state), else: changed(state, editor: editor)
+  end
+
+  defp move_down(state) do
+    editor = Editor.down(state.editor)
+    if editor == state.editor, do: next_history(state), else: changed(state, editor: editor)
+  end
+
+  defp previous_history(%__MODULE__{history: []} = state), do: {state, []}
+
+  defp previous_history(%__MODULE__{history_index: nil} = state) do
+    index = length(state.history) - 1
+
+    changed(state,
+      editor: state.history |> Enum.at(index) |> Editor.from_text(),
+      history_index: index,
+      history_draft: state.editor.text
+    )
+  end
+
+  defp previous_history(%__MODULE__{history_index: index} = state) do
+    index = max(index - 1, 0)
+    changed(state, editor: state.history |> Enum.at(index) |> Editor.from_text(), history_index: index)
+  end
+
+  defp next_history(%__MODULE__{history_index: nil} = state), do: {state, []}
+
+  defp next_history(state) do
+    index = state.history_index + 1
+
+    if index < length(state.history) do
+      changed(state, editor: state.history |> Enum.at(index) |> Editor.from_text(), history_index: index)
+    else
+      changed(state,
+        editor: Editor.from_text(state.history_draft || ""),
+        history_index: nil,
+        history_draft: nil
+      )
+    end
+  end
+
+  defp remember_prompt(state, prompt) do
+    history = if List.last(state.history) == prompt, do: state.history, else: state.history ++ [prompt]
+    %{state | history: retain(history, state.history_limit), history_index: nil, history_draft: nil}
+  end
+
+  defp scroll_page(%__MODULE__{size: {_columns, rows}}), do: max(rows - 4, 1)
 
   defp finish(state, session, content, status, error, opts) do
     content = if is_binary(content) and content != "", do: content, else: state.streaming
@@ -343,6 +454,9 @@ defmodule Jido.Cli.Tui.State do
         state.messages ++ [%{role: :assistant, content: turn.assistant}]
       end
 
+    messages = retain(messages, state.turn_limit * 2)
+    turns = retain(state.turns ++ [turn], state.turn_limit)
+
     {%{
        state
        | session: session,
@@ -351,7 +465,7 @@ defmodule Jido.Cli.Tui.State do
          status: status,
          error: error,
          request: nil,
-         turns: state.turns ++ [turn],
+         turns: turns,
          active_turn: nil,
          next_turn_id: next_turn_id,
          pending_review: nil,
@@ -426,5 +540,15 @@ defmodule Jido.Cli.Tui.State do
     Jidoka.Error.format(reason)
   rescue
     _exception -> inspect(reason)
+  end
+
+  defp retain(values, limit) when length(values) > limit, do: Enum.take(values, -limit)
+  defp retain(values, _limit), do: values
+
+  defp positive_limit(opts, key, default) do
+    case Keyword.get(opts, key, default) do
+      value when is_integer(value) and value > 0 -> value
+      _other -> default
+    end
   end
 end

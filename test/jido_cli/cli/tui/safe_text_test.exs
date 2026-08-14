@@ -11,6 +11,13 @@ defmodule Jido.Cli.Tui.SafeTextTest do
     refute SafeText.summary(unsafe) =~ "\e"
   end
 
+  test "removes terminated and incomplete terminal control strings" do
+    unsafe = "before\ePsecret\e\\after\e]0;title\e\\done\e]unterminated"
+
+    assert SafeText.clean(unsafe) == "beforeafterdone"
+    assert SafeText.summary(unsafe) == "beforeafterdone"
+  end
+
   test "bounds inspected summaries" do
     assert SafeText.summary(%{value: String.duplicate("x", 500)}, limit: 20) |> String.length() == 20
   end

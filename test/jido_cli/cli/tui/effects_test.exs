@@ -38,10 +38,10 @@ defmodule Jido.Cli.Tui.EffectsTest do
                  %{}
                )
 
-      assert_receive {:review_response, ^decision, worker_pid, relay_pid}
+      assert_receive {:review_response, ^decision, worker_pid, relay_pid}, 500
       assert worker_pid != relay_pid
-      assert_receive {:jidoka_turn_event, %Event{request_id: "review-request"}}
-      assert_receive {:jido_tui_effect_result, ^worker_pid, outcome}
+      assert_receive {:jidoka_turn_event, %Event{request_id: "review-request"}}, 500
+      assert_receive {:jido_tui_effect_result, ^worker_pid, outcome}, 500
       assert {:ok, worker, remaining} = Workers.pop(workers, worker_pid)
 
       expected =

@@ -1,6 +1,8 @@
 defmodule Jido.Cli.Terminal.Frame do
   @moduledoc "Pure full-screen frame data and rendering helpers."
 
+  alias Jido.Cli.Terminal.PlainText
+
   @enforce_keys [:width, :height, :rows]
   defstruct [:width, :height, :rows, :cursor]
 
@@ -55,6 +57,7 @@ defmodule Jido.Cli.Terminal.Frame do
     text =
       text
       |> IO.iodata_to_binary()
+      |> PlainText.clean()
       |> String.replace(["\r", "\n"], " ")
       |> String.replace("\t", "    ")
 
@@ -66,6 +69,8 @@ defmodule Jido.Cli.Terminal.Frame do
   @spec wrap(String.t(), pos_integer()) :: [String.t()]
   def wrap(text, width) when is_binary(text) and width > 0 do
     text
+    |> PlainText.clean()
+    |> String.replace("\t", "    ")
     |> String.split("\n", trim: false)
     |> Enum.flat_map(&wrap_line(&1, width))
   end
@@ -73,6 +78,7 @@ defmodule Jido.Cli.Terminal.Frame do
   @doc "Returns the displayed terminal width of plain text."
   @spec width(String.t()) :: non_neg_integer()
   def width(text) when is_binary(text) do
+    text = text |> PlainText.clean() |> String.replace(["\n", "\t"], "")
     :shell.prompt_width(text, :unicode)
   rescue
     _exception -> String.length(text)

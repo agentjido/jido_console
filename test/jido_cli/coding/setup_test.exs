@@ -10,6 +10,7 @@ defmodule Jido.Cli.Coding.SetupTest do
     File.write!(Path.join(root, "AGENTS.md"), "root rules")
     File.write!(Path.join(root, "lib/AGENTS.md"), "lib rules")
     File.write!(Path.join(root, "lib/value.ex"), "defmodule Value do\nend\n")
+    File.write!(Path.join(root, "lib/nested/with space.ex"), "defmodule WithSpace do\nend\n")
     File.write!(Path.join(root, ".env"), "TOKEN=secret")
     on_exit(fn -> File.rm_rf(root) end)
     %{root: root}
@@ -108,6 +109,49 @@ defmodule Jido.Cli.Coding.SetupTest do
 
     assert {:ok, "Review value.ex", unique_context} = Setup.prepare_prompt(setup, "Review @value.ex")
     assert [%{"path" => "lib/value.ex"}] = unique_context["coding"]["files"]
+  end
+
+  test "uses exact mention boundaries and supports quoted paths", %{root: root} do
+    assert {:ok, setup} = Setup.prepare(Jido.Cli.DefaultAgent, project_root: root)
+
+    prompt = ~s|Email dev@example.com; review (@lib/value.ex), @"lib/nested/with space.ex".|
+
+    assert {:ok, "Email dev@example.com; review (lib/value.ex), lib/nested/with space.ex.", context} =
+             Setup.prepare_prompt(setup, prompt)
+
+    assert Enum.map(context["coding"]["files"], & &1["path"]) == [
+             "lib/value.ex",
+             "lib/nested/with space.ex"
+           ]
+
+    assert {:ok, "Keep foo@bar.com and @not-a-mention!", context} =
+             Setup.prepare_prompt(setup, "Keep foo@bar.com and \\@not-a-mention!")
+
+    assert context["coding"]["files"] == []
+
+    assert {:ok, "Review lib/value.ex.", context} =
+             Setup.prepare_prompt(setup, "Review @lib/value.ex.")
+
+    assert [%{"path" => "lib/value.ex"}] = context["coding"]["files"]
+  end
+
+  test "rejects aggregate attachment count and byte limits", %{root: root} do
+    for index <- 1..21 do
+      File.write!(Path.join(root, "file-#{index}.txt"), "x")
+    end
+
+    assert {:ok, setup} = Setup.prepare(Jido.Cli.DefaultAgent, project_root: root)
+    count_prompt = Enum.map_join(1..21, " ", &"@file-#{&1}.txt")
+
+    assert {:error, %Jidoka.CodingPack.Error{code: :coding_file_attachments_too_many}} =
+             Setup.prepare_prompt(setup, count_prompt)
+
+    for index <- 1..3 do
+      File.write!(Path.join(root, "large-#{index}.txt"), String.duplicate("x", 800_000))
+    end
+
+    assert {:error, %Jidoka.CodingPack.Error{code: :coding_file_attachments_too_large}} =
+             Setup.prepare_prompt(setup, "@large-1.txt @large-2.txt @large-3.txt")
   end
 
   test "mention errors do not return unsafe context", %{root: root} do

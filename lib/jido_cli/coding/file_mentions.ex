@@ -1,28 +1,85 @@
 defmodule Jido.Cli.Coding.FileMentions do
   @moduledoc "Deterministic `@file` parsing through Jidoka workspace read and search services."
 
+  alias Jido.Cli.Terminal.PlainText
   alias Jidoka.CodingPack.{Error, Read, Search, Workspace}
 
-  @mention ~r/(?<!\\)@([^\s]+)/u
+  @mention ~r/(?<![\p{L}\p{N}_@\\])(?<full>@(?:"(?<double>(?:\\.|[^"\\\r\n])*)"|'(?<single>(?:\\.|[^'\\\r\n])*)'|(?<bare>[\p{L}\p{N}._\/~+#=-]*[\p{L}\p{N}_~+#=-])))/u
+  @max_files 20
+  @max_total_bytes 2_097_152
 
   @doc "Resolves all exact file mentions and removes mention syntax from the prompt."
   @spec resolve(Workspace.t(), String.t()) :: {:ok, String.t(), [map()]} | {:error, term()}
   def resolve(%Workspace{} = workspace, prompt) when is_binary(prompt) do
-    mentions = Regex.scan(@mention, prompt, capture: :all_but_first) |> List.flatten() |> Enum.uniq()
+    prompt = PlainText.clean(prompt)
+    mentions = prompt |> matches() |> Enum.map(& &1.path) |> Enum.uniq()
 
-    with {:ok, files} <- resolve_mentions(workspace, mentions) do
-      prompt = prompt |> String.replace(@mention, "\\1") |> String.replace("\\@", "@")
+    with :ok <- check_count(mentions),
+         {:ok, files} <- resolve_mentions(workspace, mentions) do
+      prompt = prompt |> replace_mentions() |> String.replace("\\@", "@")
       {:ok, prompt, files}
     end
   end
 
+  defp matches(prompt) do
+    Regex.scan(@mention, prompt, capture: ["full", "double", "single", "bare"], return: :index)
+    |> Enum.map(fn [full, double, single, bare] ->
+      %{full: full, path: capture(prompt, [double, single, bare])}
+    end)
+  end
+
+  defp capture(prompt, captures) do
+    captures
+    |> Enum.find(fn {start, _length} -> start >= 0 end)
+    |> then(fn {start, length} -> binary_part(prompt, start, length) end)
+    |> String.replace(~r/\\(["'\\])/u, "\\1")
+  end
+
+  defp replace_mentions(prompt) do
+    {parts, offset} =
+      Enum.reduce(matches(prompt), {[], 0}, fn %{full: {start, length}, path: path}, {parts, offset} ->
+        prefix = binary_part(prompt, offset, start - offset)
+        {[parts, prefix, path], start + length}
+      end)
+
+    IO.iodata_to_binary([parts, binary_part(prompt, offset, byte_size(prompt) - offset)])
+  end
+
+  defp check_count(mentions) when length(mentions) <= @max_files, do: :ok
+
+  defp check_count(mentions) do
+    {:error,
+     Error.new(:coding_file_attachments_too_many, %{
+       count: length(mentions),
+       max_files: @max_files
+     })}
+  end
+
   defp resolve_mentions(workspace, mentions) do
-    Enum.reduce_while(mentions, {:ok, []}, fn mention, {:ok, files} ->
+    Enum.reduce_while(mentions, {:ok, [], 0}, fn mention, {:ok, files, total_bytes} ->
       case resolve_one(workspace, mention) do
-        {:ok, file} -> {:cont, {:ok, files ++ [file]}}
-        {:error, reason} -> {:halt, {:error, {:file_mention_failed, mention, reason}}}
+        {:ok, file} ->
+          total_bytes = total_bytes + Map.get(file, "size", 0)
+
+          if total_bytes <= @max_total_bytes do
+            {:cont, {:ok, files ++ [file], total_bytes}}
+          else
+            {:halt,
+             {:error,
+              Error.new(:coding_file_attachments_too_large, %{
+                total_bytes: total_bytes,
+                max_total_bytes: @max_total_bytes
+              })}}
+          end
+
+        {:error, reason} ->
+          {:halt, {:error, {:file_mention_failed, mention, reason}}}
       end
     end)
+    |> case do
+      {:ok, files, _total_bytes} -> {:ok, files}
+      {:error, _reason} = error -> error
+    end
   end
 
   defp resolve_one(workspace, mention) do

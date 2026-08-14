@@ -12,6 +12,16 @@ defmodule Jido.Cli.Terminal.FrameTest do
 
   test "wraps Unicode text by display width" do
     assert Frame.wrap("a😀b", 3) == ["a😀", "b"]
+    assert Frame.width("\e[31m界\e[0m") == 2
+  end
+
+  test "removes terminal sequences and controls before rendering" do
+    frame = Frame.new(16, 2, ["\e]0;title\a\e[31mred\e[0m", "next\e[2Jline\x00"])
+    output = frame |> Frame.to_iodata() |> IO.iodata_to_binary()
+
+    assert frame.rows == ["red             ", "nextline        "]
+    refute output =~ "\e[31m"
+    refute output =~ "\e[2Jline"
   end
 
   test "renders the cursor and complete rows" do

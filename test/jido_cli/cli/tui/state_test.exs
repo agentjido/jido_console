@@ -289,11 +289,88 @@ defmodule Jido.Cli.Tui.StateTest do
     assert {_state, [:exit]} = State.update(state, {:terminal, :eof})
   end
 
+  test "keeps multiline drafts, bounded history, and history drafts" do
+    state = State.new(:session, {80, 24}, history_limit: 2)
+
+    {state, []} = State.update(state, {:terminal, {:text, "one"}})
+    {state, []} = State.update(state, {:terminal, {:key, :newline}})
+    {state, []} = State.update(state, {:terminal, {:text, "line"}})
+    assert state.editor.text == "one\nline"
+
+    {state, [{:start_turn, "one\nline"}]} = State.update(state, {:terminal, {:key, :enter}})
+    {state, []} = State.update(state, {:turn_result, {:ok, "done"}})
+
+    state =
+      Enum.reduce(["two", "three"], state, fn prompt, state ->
+        {state, []} = State.update(state, {:terminal, {:text, prompt}})
+        {state, [{:start_turn, ^prompt}]} = State.update(state, {:terminal, {:key, :enter}})
+        {state, []} = State.update(state, {:turn_result, {:ok, "done"}})
+        state
+      end)
+
+    assert state.history == ["two", "three"]
+
+    {state, []} = State.update(state, {:terminal, {:text, "draft"}})
+    {state, []} = State.update(state, {:terminal, {:key, :up}})
+    assert state.editor.text == "three"
+    {state, []} = State.update(state, {:terminal, {:key, :up}})
+    assert state.editor.text == "two"
+    {state, []} = State.update(state, {:terminal, {:key, :down}})
+    {state, []} = State.update(state, {:terminal, {:key, :down}})
+    assert state.editor.text == "draft"
+  end
+
+  test "retains a draft after prompt preparation fails" do
+    state = State.new(:session, {80, 24}, prepare_prompt: true)
+    {state, []} = State.update(state, {:terminal, {:text, "Review @missing.ex"}})
+    {state, [{:prepare_prompt, "Review @missing.ex"}]} = State.update(state, {:terminal, {:key, :enter}})
+    {state, []} = State.update(state, {:prompt_error, :missing})
+
+    assert state.editor.text == "Review @missing.ex"
+    assert state.pending_prompt == nil
+  end
+
+  test "retains the next draft while a turn completes" do
+    state = State.new(:session, {80, 24})
+    {state, []} = State.update(state, {:terminal, {:text, "first"}})
+    {state, [{:start_turn, "first"}]} = State.update(state, {:terminal, {:key, :enter}})
+    {state, []} = State.update(state, {:terminal, {:text, "next\e[2J draft"}})
+    {state, []} = State.update(state, {:turn_result, {:ok, "answer"}})
+
+    assert state.editor.text == "next draft"
+  end
+
+  test "scrolls by pages, follows new prompts, and bounds archived turns" do
+    state = State.new(:session, {80, 8}, turn_limit: 2)
+    {state, []} = State.update(state, {:terminal, {:key, :page_up}})
+    assert state.scroll_offset == 4
+    {state, []} = State.update(state, {:terminal, {:key, :page_down}})
+    assert state.scroll_offset == 0
+
+    state = %{state | scroll_offset: 20}
+
+    state =
+      Enum.reduce(["one", "two", "three"], state, fn prompt, state ->
+        {state, []} = State.update(state, {:terminal, {:text, prompt}})
+        {state, [{:start_turn, ^prompt}]} = State.update(state, {:terminal, {:key, :enter}})
+        assert state.scroll_offset == 0
+        {state, []} = State.update(state, {:turn_result, {:ok, "answer #{prompt}"}})
+        state
+      end)
+
+    assert Enum.map(state.turns, & &1.prompt) == ["two", "three"]
+    assert length(state.messages) == 4
+  end
+
   test "does not submit an empty prompt or accept controls during a turn" do
     state = State.new(:session, {80, 24})
     assert {^state, []} = State.update(state, {:terminal, {:key, :enter}})
 
     request = %{request_id: "request-1"}
+
+    pre_request = %{state | editor: Jido.Cli.Tui.Editor.from_text("second"), status: :running}
+    assert {^pre_request, []} = State.update(pre_request, {:terminal, {:key, :enter}})
+
     {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
     assert {^state, []} = State.update(state, {:terminal, {:key, :enter}})
     assert {^state, []} = State.update(state, {:terminal, {:key, :escape}})

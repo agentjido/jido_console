@@ -9,13 +9,26 @@ defmodule Jido.Cli.Tui.EditorTest do
     assert editor.cursor == 1
   end
 
-  test "converts pasted newlines to spaces" do
-    assert %Editor{} |> Editor.insert("one\ntwo") |> Map.fetch!(:text) == "one two"
+  test "inserts and edits multiline text" do
+    editor = %Editor{} |> Editor.insert("one") |> Editor.newline() |> Editor.insert("two")
+    assert editor.text == "one\ntwo"
+    assert editor |> Editor.up() |> Map.fetch!(:cursor) == 3
+    assert editor |> Editor.up() |> Editor.down() == editor
   end
 
   test "keeps the cursor visible in a narrow prompt" do
     editor = Editor.insert(%Editor{}, "123456")
     assert Editor.visible(editor, 4) == {"3456", 4}
+  end
+
+  test "keeps a Unicode cursor visible in a multiline viewport" do
+    editor = Editor.from_text("one\n界界界")
+    assert Editor.render(editor, 4, 2) == {["界界", "界"], {2, 1}}
+  end
+
+  test "removes pasted terminal controls without removing line breaks" do
+    editor = Editor.insert(%Editor{}, "one\e[2J\n\e]0;title\atwo\x00")
+    assert editor.text == "one\ntwo"
   end
 
   test "does not move or delete beyond the editor boundaries" do

@@ -3,6 +3,13 @@ defmodule Jido.Cli.Tui.Turn do
 
   alias Jido.Cli.Tui.{EventProjection, SafeText}
 
+  @assistant_limit 200_000
+  @prompt_limit 65_536
+  @event_limit 1_000
+  @tool_limit 200
+  @tool_event_limit 100
+  @record_limit 100
+
   defmodule Tool do
     @moduledoc false
     @enforce_keys [:id, :operation, :status, :events]
@@ -56,8 +63,8 @@ defmodule Jido.Cli.Tui.Turn do
   def new(id, prompt, context \\ %{}) do
     %__MODULE__{
       id: id,
-      prompt: SafeText.clean(prompt),
-      attachments: attachments(context),
+      prompt: prompt |> SafeText.clean() |> retain_text(@prompt_limit),
+      attachments: context |> attachments() |> retain(20),
       assistant: "",
       tools: %{},
       tool_order: [],
@@ -77,12 +84,12 @@ defmodule Jido.Cli.Tui.Turn do
 
   @spec put_changes(t(), [map()]) :: t()
   def put_changes(%__MODULE__{} = turn, changes) do
-    %{turn | changes: normalize_records(changes)}
+    %{turn | changes: changes |> normalize_records() |> retain(@record_limit)}
   end
 
   @spec put_reviews(t(), [term()]) :: t()
   def put_reviews(%__MODULE__{} = turn, reviews) when is_list(reviews) do
-    reviews = Enum.reduce(reviews, turn.reviews, &put_record(&2, normalize_review(&1)))
+    reviews = reviews |> Enum.reduce(turn.reviews, &put_record(&2, normalize_review(&1))) |> retain(@record_limit)
     %{turn | reviews: reviews, status: :review}
   end
 
@@ -150,13 +157,15 @@ defmodule Jido.Cli.Tui.Turn do
   @spec finish(t(), atom(), String.t() | nil, keyword()) :: t()
   def finish(%__MODULE__{} = turn, outcome, content, opts \\ []) do
     assistant =
-      if is_binary(content) and content != "", do: SafeText.clean(content), else: turn.assistant
+      if is_binary(content) and content != "",
+        do: content |> SafeText.clean() |> retain_text(@assistant_limit),
+        else: turn.assistant
 
     %{
       turn
       | assistant: assistant,
-        reviews: normalize_records(Keyword.get(opts, :reviews, turn.reviews)),
-        changes: normalize_records(Keyword.get(opts, :changes, turn.changes)),
+        reviews: opts |> Keyword.get(:reviews, turn.reviews) |> normalize_records() |> retain(@record_limit),
+        changes: opts |> Keyword.get(:changes, turn.changes) |> normalize_records() |> retain(@record_limit),
         outcome: %{
           status: outcome,
           error: safe_optional(Keyword.get(opts, :error))
@@ -166,7 +175,7 @@ defmodule Jido.Cli.Tui.Turn do
   end
 
   defp apply_projection(turn, %EventProjection{kind: :assistant_delta, data: %{text: text}}) do
-    %{turn | assistant: turn.assistant <> text}
+    %{turn | assistant: retain_text(turn.assistant <> text, @assistant_limit)}
   end
 
   defp apply_projection(turn, %EventProjection{kind: :tool, data: data} = projection) do
@@ -198,7 +207,7 @@ defmodule Jido.Cli.Tui.Turn do
             tool
             | operation: data.operation || tool.operation,
               status: data.status,
-              events: tool.events ++ [event],
+              events: retain(tool.events ++ [event], @tool_event_limit),
               summary: data.summary,
               error: data.error || tool.error,
               loop_index: data.loop_index || tool.loop_index
@@ -206,11 +215,12 @@ defmodule Jido.Cli.Tui.Turn do
       end
 
     order = if Map.has_key?(turn.tools, id), do: turn.tool_order, else: turn.tool_order ++ [id]
-    %{turn | tools: Map.put(turn.tools, id, tool), tool_order: order}
+    {tools, order} = retain_tools(Map.put(turn.tools, id, tool), order)
+    %{turn | tools: tools, tool_order: order}
   end
 
   defp apply_projection(turn, %EventProjection{kind: :review, data: data}) do
-    reviews = put_record(turn.reviews, normalize_record(data))
+    reviews = turn.reviews |> put_record(normalize_record(data)) |> retain(@record_limit)
     %{turn | reviews: reviews}
   end
 
@@ -221,13 +231,14 @@ defmodule Jido.Cli.Tui.Turn do
   defp apply_projection(turn, %EventProjection{}), do: turn
 
   defp record_event(turn, projection) do
-    event = %{seq: projection.seq, event: projection.event, kind: projection.kind}
+    event = %{id: projection.id, seq: projection.seq, event: projection.event, kind: projection.kind}
+    events = retain(turn.events ++ [event], @event_limit)
 
     %{
       turn
       | last_seq: projection.seq,
-        seen_events: MapSet.put(turn.seen_events, projection.id),
-        events: turn.events ++ [event]
+        seen_events: MapSet.new(events, & &1.id),
+        events: events
     }
   end
 
@@ -319,6 +330,20 @@ defmodule Jido.Cli.Tui.Turn do
     do: [review | update_decided_review(reviews, failed_status, summary)]
 
   defp update_decided_review([], _failed_status, _summary), do: []
+
+  defp retain_tools(tools, order) when length(order) > @tool_limit do
+    order = Enum.take(order, -@tool_limit)
+    {Map.take(tools, order), order}
+  end
+
+  defp retain_tools(tools, order), do: {tools, order}
+
+  defp retain(values, limit) when length(values) > limit, do: Enum.take(values, -limit)
+  defp retain(values, _limit), do: values
+
+  defp retain_text(text, limit) do
+    if String.length(text) > limit, do: "…\n" <> String.slice(text, -limit, limit), else: text
+  end
 
   defp safe_optional(nil), do: nil
   defp safe_optional(value), do: SafeText.summary(value)

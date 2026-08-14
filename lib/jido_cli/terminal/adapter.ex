@@ -6,7 +6,18 @@ defmodule Jido.Cli.Terminal.Adapter do
   @type event ::
           {:text, String.t()}
           | {:paste, String.t()}
-          | {:key, :enter | :backspace | :left | :right | :escape | :ctrl_c}
+          | {:key,
+             :enter
+             | :newline
+             | :backspace
+             | :left
+             | :right
+             | :up
+             | :down
+             | :page_up
+             | :page_down
+             | :escape
+             | :ctrl_c}
           | {:resize, pos_integer(), pos_integer()}
           | :eof
 
