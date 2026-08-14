@@ -1,0 +1,23 @@
+{
+  "assignee": "",
+  "blocked_by": [
+    "jido_console-g0e01"
+  ],
+  "blocks": [
+    "jido_console-g0e03",
+    "jido_console-g0e15"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/00-establish-release-readiness/epics/g0-e02-recorded-replay-corpus.md`\nRoadmap version: `1.0.4`\n\n# G0-E02: Capture the Recorded Replay Corpus\n\n## Goal\n\nCreate a redacted record set that detects changes in a provider-free session replay.\n\n## Scope\n\n- Record terminal, JSONL, Jidoka event, model-result, and tool-result data.\n- Use `priv/release/offline_fixture.json` as the only canonical provider-free replay source.\n- Define stable redaction and normalization rules.\n- Compare prompt, model-call, tool, and event records.\n- Report the record type and location of each divergence.\n- Keep controlled fixtures in their existing release and test fixture areas.\n\n## Out of Scope\n\n- A second offline fixture source\n- Live model calls in tests\n- Durable resume or Milestone 3 recovery behavior\n- The golden coding task from G0-E03\n\n## Dependencies\n\nThis epic depends on G0-E01 for the evidence schema and clean-run identity.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the record set, replay comparison, redaction rules, and focused tests.\n\n## Acceptance Checks\n\n- Replay completes without a paid model call.\n- Each required record type has a redacted fixture.\n- A controlled change to each record type produces a clear divergence result.\n- Repeated replay of unchanged inputs produces the same semantic result.\n- No fixture or report contains a credential value or canary secret.\n- No fixture duplicates the canonical offline replay source.\n\n## Proof Artifacts\n\n- Versioned replay manifest\n- Redacted terminal and structured records\n- Divergence test results for each record type\n- Provider-free replay result\n\n## Milestone Traceability\n\nThis epic covers the recorded session fixtures and the provider-free divergence check in Gate 0.",
+  "id": "jido_console-g0e02",
+  "labels": [
+    "gate-0",
+    "roadmap",
+    "one-pr"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "G0-E02: Capture the Recorded Replay Corpus",
+  "type": "epic",
+  "updated_at": "2026-08-14T19:01:33Z"
+}

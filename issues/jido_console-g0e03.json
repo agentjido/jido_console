@@ -1,0 +1,24 @@
+{
+  "assignee": "",
+  "blocked_by": [
+    "jido_console-g0e01",
+    "jido_console-g0e02"
+  ],
+  "blocks": [
+    "jido_console-g0e13",
+    "jido_console-g0e15"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/00-establish-release-readiness/epics/g0-e03-golden-coding-task.md`\nRoadmap version: `1.0.4`\n\n# G0-E03: Freeze the Golden Coding Task\n\n## Goal\n\nFreeze one deterministic coding task that Milestone 1 must run through the production artifact.\n\n## Scope\n\n- Version the existing rate-limiter task as the canonical golden task.\n- Record its exact initial repository state and expected final states.\n- Cover discovery, read, search, edit, command, test, and exact diff operations.\n- Cover approval, rejection, cancellation, and current-run revert paths.\n- Reference immutable model-result and tool-result records from G0-E02.\n- Record the golden-task decisions, accepted effects, and expected checks.\n- Define the exact production-artifact invocation that Milestone 1 must use.\n- Define a change-control rule for a new fixture version.\n\n## Out of Scope\n\n- Restricted-execution implementation\n- A claim that the current product passes the Milestone 1 gate\n- A new public example\n- A second golden coding task\n\n## Dependencies\n\nThis epic depends on G0-E01 for evidence identity and G0-E02 for recorded replay inputs.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request freezes the task, adds its verifier, and records the Milestone 1 invocation contract.\n\n## Acceptance Checks\n\n- The fixture has one versioned initial state and explicit expected states.\n- The verifier checks every required operation and decision path.\n- Verification does not need a live model call.\n- The expected diff and current-run revert state are exact.\n- A fixture change requires a new version or an approved correction record.\n- The production-artifact command is stable and machine-readable.\n\n## Proof Artifacts\n\n- Golden task manifest and source digest\n- Initial and expected repository states\n- Referenced model-result and tool-result record identifiers\n- Verifier results\n- Milestone 1 production-artifact command\n\n## Milestone Traceability\n\nThis epic covers the deterministic golden coding task that Gate 0 must freeze for Milestone 1.",
+  "id": "jido_console-g0e03",
+  "labels": [
+    "gate-0",
+    "roadmap",
+    "one-pr"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "G0-E03: Freeze the Golden Coding Task",
+  "type": "epic",
+  "updated_at": "2026-08-14T19:01:33Z"
+}
