@@ -1,14 +1,15 @@
 ---
-phase: 2
+milestone: 2
+type: release_milestone
 title: Ship the semantic and supervised session plane
 status: proposed
-depends_on: [1]
+depends_on: [milestone-1]
 release: v0.2
 introduced_in: 0.1.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 2: Ship the Semantic and Supervised Session Plane
+# Milestone 2: Ship the Semantic and Supervised Session Plane
 
 ## Goal
 
@@ -18,16 +19,7 @@ Make every current surface a client of one supervised, renderer-neutral session 
 
 The TUI, automation, text, and JSON surfaces use one versioned session protocol and one ordered semantic state. A client can exit and attach again while the application and session stay alive.
 
-This phase combines the former semantic-core, session-owner, and client-conversion milestones. Internal stages belong in Beadwork and do not make separate releases.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P2-E1` Semantic protocol | Versioned commands, events, outcomes, controls, schemas, and Jidoka projections |
-| `P2-E2` Supervised session owner | One owner for live session state, work, queues, controls, and event order |
-| `P2-E3` Client delivery | Bounded delivery, acknowledgement, gaps, snapshots, recovery, and capability data |
-| `P2-E4` Current client migration | TUI, automation, text, and JSON use one client contract and the old path is removed |
+This milestone combines the former semantic-core, session-owner, and client-conversion milestones. Internal stages belong in Beadwork and do not make separate releases.
 
 ## Work
 
@@ -47,7 +39,7 @@ This phase combines the former semantic-core, session-owner, and client-conversi
 - Put commands, help, schemas, permissions, provenance, and client descriptors in one registry.
 - Return typed command effects and separate concise model content from structured view details.
 - Define the complete permission request and response life cycle.
-- Define a small host-independent extension descriptor and one failure rule for each hook type. Do not load extensions in this phase.
+- Define a small host-independent extension descriptor and one failure rule for each hook type. Do not load extensions in this milestone.
 - Make the TUI, automation, text, and JSON surfaces use the same `Session.Client` contract.
 - Generate protocol types and validators from one canonical schema and preserve bounded unknown data without granting authority.
 - Delete the old TUI-owned session and turn path after parity passes.
@@ -74,15 +66,9 @@ This phase combines the former semantic-core, session-owner, and client-conversi
 - A slow or stopped client cannot cause unlimited mailbox growth and can recover after a gap.
 - A client or tool-worker failure does not corrupt or cancel the session unless policy requires it.
 - An authority hook fails closed, and an information-only hook failure is visible.
-- The phase states clearly that accepted input can be lost on an application crash before Phase 3.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The milestone states clearly that accepted input can be lost on an application crash before Milestone 3.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.2 with the canonical supervised session plane and current-client migration complete.
-
-## References
-
-- [Foundation and core backlog](../backlog/foundation-and-core.md)
-- [Session runtime backlog](../backlog/session-runtime.md)
-- [Clients and protocol backlog](../backlog/clients-and-protocol.md)

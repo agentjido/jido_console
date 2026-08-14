@@ -1,14 +1,15 @@
 ---
-phase: 1
+milestone: 1
+type: release_milestone
 title: Ship the trustworthy local kernel
 status: proposed
 depends_on: [gate-0]
 release: v0.1
 introduced_in: 0.1.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 1: Ship the Trustworthy Local Kernel
+# Milestone 1: Ship the Trustworthy Local Kernel
 
 ## Goal
 
@@ -17,16 +18,6 @@ Ship a safe, local, multi-model coding harness through the current terminal and 
 ## Outcome
 
 A new user can install Jido Console, select a tested model and restricted execution profile, complete one coding task, review the exact effects, and leave or restore the workspace to a known state.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P1-E1` Product and local contract | Jido Console identity, stable command behavior, Jido home, and process controls |
-| `P1-E2` Native distribution | One tested macOS ARM64 payload through archive, Homebrew, and npm |
-| `P1-E3` Models and credentials | Tested provider support, model discovery, selection, diagnostics, and safe credential resolution |
-| `P1-E4` Restricted execution | Default file, network, environment, approval, and process-tree controls |
-| `P1-E5` Golden coding workflow | One complete production-artifact task with accept, reject, cancel, and revert proof |
 
 ## Work
 
@@ -83,13 +74,8 @@ A new user can install Jido Console, select a tested model and restricted execut
 - Symbolic-link, undeclared loopback, and undeclared external network tests fail safely.
 - Normal completion, rejection, cancel, timeout, and owner exit leave no child process.
 - Background-process status and shutdown use normal `jido` command behavior and leave no owned process after shutdown.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.1 as a trustworthy local multi-model coding kernel. Do not claim durable session recovery.
-
-## References
-
-- [Foundation and core backlog](../backlog/foundation-and-core.md)
-- [Executors and security backlog](../backlog/executors-and-security.md)

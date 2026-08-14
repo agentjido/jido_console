@@ -1,14 +1,15 @@
 ---
-phase: 6
+milestone: 6
+type: release_milestone
 title: Add isolated local executors
 status: proposed
-depends_on: [5]
+depends_on: [milestone-5]
 release: v0.6
 introduced_in: 1.0.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 6: Add Isolated Local Executors
+# Milestone 6: Add Isolated Local Executors
 
 ## Goal
 
@@ -17,14 +18,6 @@ Generalize the v0.1 restricted path into a location-neutral local executor proto
 ## Outcome
 
 The session can run tools through supported local process, port, isolated-service, and container adapters with explicit custody, resource, network, environment, cancellation, and cleanup behavior.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P6-E1` Executor protocol | Versioned request, result, stream, cancellation, and artifact messages |
-| `P6-E2` Isolated local adapters | Supervised process, port, service, and container adapters with explicit custody |
-| `P6-E3` Support and evidence | Tested support tiers plus restricted build, scan, test, and artifact proof |
 
 ## Work
 
@@ -54,12 +47,8 @@ The session can run tools through supported local process, port, isolated-servic
 - Cancel, timeout, owner exit, adapter crash, and normal completion leave no child process or temporary state.
 - A delegated request cannot gain authority or capacity.
 - A generated artifact cannot gain trust from a compile result alone.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.6 with supported isolated local executor adapters.
-
-## References
-
-- [Executors and security backlog](../backlog/executors-and-security.md)

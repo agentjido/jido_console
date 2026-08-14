@@ -1,14 +1,15 @@
 ---
-phase: 5
+milestone: 5
+type: release_milestone
 title: Add the local LiveView workbench
 status: proposed
-depends_on: [4]
+depends_on: [milestone-4]
 release: v0.5
 introduced_in: 1.0.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 5: Add the Local LiveView Workbench
+# Milestone 5: Add the Local LiveView Workbench
 
 ## Goal
 
@@ -17,14 +18,6 @@ Add a rich local web view without adding a second source of truth or multi-user 
 ## Outcome
 
 A loopback-only, single-user LiveView client shows and controls the same durable sessions, lanes, tools, diffs, tests, approvals, budgets, and supervision state as the terminal.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P5-E1` Workbench projections | Renderer-neutral files, tools, diffs, review state, navigation, and actions |
-| `P5-E2` Local LiveView client | Loopback-only web access through the same session client contract |
-| `P5-E3` Project projection owner | One supervised owner for file, Git, diff, and review refresh work |
 
 ## Work
 
@@ -57,13 +50,8 @@ A loopback-only, single-user LiveView client shows and controls the same durable
 - Real diff-hunk review binds comments and decisions to content identity, not only path and line.
 - One project process, not each subscriber, owns file, Git, diff, and review refresh work.
 - Browser and terminal drivers pass the shared client suite for every declared capability.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.5 with a supported local single-user LiveView workbench.
-
-## References
-
-- [Views and TUI backlog](../backlog/views-and-tui.md)
-- [Clients and protocol backlog](../backlog/clients-and-protocol.md)

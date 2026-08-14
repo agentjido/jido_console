@@ -1,6 +1,6 @@
 # Jido Console Roadmap
 
-Roadmap version: **1.0.1**
+Roadmap version: **1.0.2**
 
 Roadmap status: **proposed**
 
@@ -52,30 +52,30 @@ Jidoka owns execution truth. Jido Console owns user-visible session truth. One d
 
 ## Roadmap Sequence
 
-Gate 0 is a readiness gate. It is not a phase milestone and does not make a release. Every numbered phase is a milestone that must ship a working, installable release.
+Gate 0 is a readiness milestone and does not make a release. Every numbered directory in `roadmap/milestones/` is one release milestone that must ship a working, installable release.
 
 | Stage | File | Main result | Release point |
 | --- | --- | --- | --- |
-| Gate 0 | [Establish release readiness](epics/00-establish-release-readiness.md) | Repeatable evidence and an owned delivery graph | No release |
-| Phase 1 | [Ship the trustworthy local kernel](epics/01-ship-trustworthy-local-kernel.md) | Safe local multi-model coding | v0.1 |
-| Phase 2 | [Ship the supervised session plane](epics/02-ship-supervised-session-plane.md) | One owner and one protocol for all current clients | v0.2 |
-| Phase 3 | [Add durable resume, fork, and audit](epics/03-add-durable-resume.md) | Restart-safe acknowledged state | v0.3 |
-| Phase 4 | [Add supervised multi-agent work](epics/04-add-supervised-multi-agent-work.md) | Durable child agents and owned worktree lanes | v0.4 |
-| Phase 5 | [Add the local LiveView workbench](epics/05-add-local-liveview-workbench.md) | Loopback-only single-user web workbench | v0.5 |
-| Phase 6 | [Add isolated local executors](epics/06-add-isolated-local-executors.md) | Location-neutral restricted local adapters | v0.6 |
-| Phase 7 | [Add managed and remote executors](epics/07-add-managed-and-remote-executors.md) | Trusted nodes and remote work with explicit custody | v0.7 |
-| Phase 8 | [Add authenticated remote access](epics/08-add-authenticated-remote-access.md) | Single-operator remote web and SSH access | v0.8 |
-| Phase 9 | [Add multi-user collaboration](epics/09-add-multi-user-collaboration.md) | Authorized shared resources and convergent editing | v0.9 |
-| Phase 10 | [Add controlled live extension](epics/10-add-controlled-live-extension.md) | Reviewed extension, migration, recovery, and rollback | v0.10 |
+| Gate 0 | [Establish release readiness](milestones/00-establish-release-readiness/milestone.md) | Repeatable evidence and an owned delivery graph | No release |
+| Milestone 1 | [Ship the trustworthy local kernel](milestones/01-ship-trustworthy-local-kernel/milestone.md) | Safe local multi-model coding | v0.1 |
+| Milestone 2 | [Ship the supervised session plane](milestones/02-ship-supervised-session-plane/milestone.md) | One owner and one protocol for all current clients | v0.2 |
+| Milestone 3 | [Add durable resume, fork, and audit](milestones/03-add-durable-resume/milestone.md) | Restart-safe acknowledged state | v0.3 |
+| Milestone 4 | [Add supervised multi-agent work](milestones/04-add-supervised-multi-agent-work/milestone.md) | Durable child agents and owned worktree lanes | v0.4 |
+| Milestone 5 | [Add the local LiveView workbench](milestones/05-add-local-liveview-workbench/milestone.md) | Loopback-only single-user web workbench | v0.5 |
+| Milestone 6 | [Add isolated local executors](milestones/06-add-isolated-local-executors/milestone.md) | Location-neutral restricted local adapters | v0.6 |
+| Milestone 7 | [Add managed and remote executors](milestones/07-add-managed-and-remote-executors/milestone.md) | Trusted nodes and remote work with explicit custody | v0.7 |
+| Milestone 8 | [Add authenticated remote access](milestones/08-add-authenticated-remote-access/milestone.md) | Single-operator remote web and SSH access | v0.8 |
+| Milestone 9 | [Add multi-user collaboration](milestones/09-add-multi-user-collaboration/milestone.md) | Authorized shared resources and convergent editing | v0.9 |
+| Milestone 10 | [Add controlled live extension](milestones/10-add-controlled-live-extension/milestone.md) | Reviewed extension, migration, recovery, and rollback | v0.10 |
 
-Each phase depends on the prior phase. A phase can start only after its dependencies and readiness checks pass. Internal build stages belong in Beadwork. They are not separate roadmap milestones.
+Each milestone depends on the prior milestone. A milestone can start only after its dependencies and readiness checks pass. Internal build stages belong in generated epics and Beadwork. They are not separate roadmap milestones.
 
-The [implementation backlog](backlog/README.md) gives accepted rules stable work identifiers. Each milestone file groups the work into a small set of epics. Beadwork owns implementation tasks, dependencies, assignment, and status.
+The `milestone.md` file is the roadmap milestone item. It owns the goal, outcome, work boundary, exclusions, exit gate, and release effect. Epics are generated from the approved milestone and live in its `epics/` directory. Beadwork owns implementation tasks, dependencies, assignment, and status.
 
 ## Immediate Build Order
 
-1. Pass Gate 0 and link the Phase 1 delivery graph.
-2. Land the Phase 1 Jidoka policy and execution contracts. Keep later Jidoka changes in their owning release phases.
+1. Pass Gate 0 and link the Milestone 1 delivery graph.
+2. Land the Milestone 1 Jidoka policy and execution contracts. Keep later Jidoka changes in their owning release milestones.
 3. Rename the product and establish Jido home, provider, model, credential, and release contracts.
 4. Make restricted execution the default and pass the production-artifact golden coding task.
 5. Add the semantic protocol, one supervised session owner, and current-client migration as one v0.2 release train.
@@ -83,18 +83,18 @@ The [implementation backlog](backlog/README.md) gives accepted rules stable work
 
 ## Common Milestone Release Gate
 
-Every numbered phase must pass these checks in addition to its phase-specific gate:
+Every numbered milestone must pass these checks in addition to its milestone-specific gate:
 
 - Build one production artifact from a clean checkout.
 - Install, start, update, and remove the artifact for each platform and channel pair claimed by that release.
 - Run all earlier release workflows and compatibility fixtures.
-- Demonstrate the new phase outcome through the production artifact.
+- Demonstrate the new milestone outcome through the production artifact.
 - Publish a runnable quick start and one complete workflow for the new capability.
 - Record failure, cancellation, recovery, and cleanup evidence for each new owned process or external boundary.
 - Publish the support matrix, known limits, security boundary, and rollback or repair path.
 - Pass deterministic tests, package quality gates, dependency checks, secret checks, and release checks.
 - Show that no known critical defect invalidates a release claim.
-- Link the roadmap phase, GitHub milestone, Beadwork epics, proof artifacts, and release record.
+- Link the roadmap milestone, generated epics, Beadwork work graph, proof artifacts, and release record.
 
 A milestone is complete only when the working release and its evidence exist. A merge, internal architecture stage, or demonstration from a development checkout is not enough.
 
@@ -123,9 +123,9 @@ All channels must wrap the same tested native release payload. Add another platf
 9. Automation contracts stay versioned and stable.
 10. Erlang distribution is for trusted nodes. It is not a security sandbox.
 11. Untrusted work uses a restricted external boundary.
-12. Every numbered roadmap phase ships a working release.
+12. Every numbered roadmap milestone ships a working release.
 13. Use OTP and runtime primitives when they meet the need. Add an abstraction only for a stable contract or policy.
-14. Admit process-lifetime input before wake-up in Phase 2. Admit restart-safe input and its receipt before wake-up in Phase 3.
+14. Admit process-lifetime input before wake-up in Milestone 2. Admit restart-safe input and its receipt before wake-up in Milestone 3.
 15. Keep canonical history immutable. Compaction is a prompt projection.
 16. Keep model-facing tool content separate from structured view data.
 17. Give each session, worktree, project cache, executor, and protocol one named owner.
@@ -175,7 +175,7 @@ Integrate these reviewed ideas from Tilde:
 - Named supervised session servers
 - Client attach, detach, subscription, snapshot, and replay
 - Renderer-neutral transcript blocks, widgets, workbench state, and actions
-- LiveView and SSH renderer patterns after their product phases start
+- LiveView and SSH renderer patterns after their owning milestones start
 - Cross-client behavior tests
 
 Do not reuse Tilde file tools, bash execution, session identity, storage lifecycle, `/clear`, `/compact`, demo authentication, or OpenRouter-only runtime gating without redesign.
@@ -195,11 +195,11 @@ Do not reuse Tilde file tools, bash execution, session identity, storage lifecyc
 
 The version at the top of this file is the current roadmap version. Record each version in [`CHANGELOG.md`](CHANGELOG.md).
 
-- Use a major increase for a substantial direction or phase-structure change.
-- Use a minor increase for a phase, outcome, dependency, or exit-gate change.
+- Use a major increase for a substantial direction or milestone-structure change.
+- Use a minor increase for a milestone, outcome, dependency, or exit-gate change.
 - Use a patch increase for text that does not change an outcome.
-- Update `last_updated_in` in each changed phase file.
+- Update `last_updated_in` in each changed `milestone.md` file.
 - Make one logical change in each Git commit.
 - Tag approved roadmap versions as `roadmap-vX.Y.Z`.
 
-Allowed phase status values are `proposed`, `ready`, `in_progress`, `completed`, and `blocked`.
+Allowed milestone status values are `proposed`, `ready`, `in_progress`, `completed`, and `blocked`.

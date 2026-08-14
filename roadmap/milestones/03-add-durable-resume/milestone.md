@@ -1,14 +1,15 @@
 ---
-phase: 3
+milestone: 3
+type: release_milestone
 title: Add durable resume, fork, and audit
 status: proposed
-depends_on: [2]
+depends_on: [milestone-2]
 release: v0.3
 introduced_in: 0.1.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 3: Add Durable Resume, Fork, and Audit
+# Milestone 3: Add Durable Resume, Fork, and Audit
 
 ## Goal
 
@@ -17,16 +18,6 @@ Recover acknowledged session and execution state after an application restart.
 ## Outcome
 
 A session can use exact resume when the Console and Jidoka records share one verified durable watermark. It can use a clearly named transcript-only mode when exact recovery is not possible.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P3-E1` Durable event store | Versioned indexed storage, migrations, retention, backup, and repair |
-| `P3-E2` Console and Jidoka watermark | One checkpoint boundary, commit order, orphan rules, and crash reconciliation |
-| `P3-E3` Durable admission and effects | Restart-safe receipts, reserved results, and safe uncertain-effect handling |
-| `P3-E4` Resume, replay, retry, and fork | Distinct recovery operations with exact state claims |
-| `P3-E5` Durable identity and audit | Complete model identity, trust, origin, portable audit, and credential references |
 
 ## Work
 
@@ -68,12 +59,8 @@ A session can use exact resume when the Console and Jidoka records share one ver
 - Sessions survive an application restart under the default and an isolated `JIDO_HOME`.
 - An incompatible schema or storage error fails explicitly without creating an empty replacement session.
 - No credential value enters a file, database, event, log, trace, artifact, or protocol record.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.3 with durable resume, fork, and audit. This is the first release with a complete continuity claim.
-
-## References
-
-- [Durability and recovery backlog](../backlog/durability-and-recovery.md)

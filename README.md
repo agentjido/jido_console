@@ -8,21 +8,21 @@
 
 Start with the [roadmap](roadmap/README.md) and the
 [contribution guide](CONTRIBUTING.md). The roadmap is open for review. Each
-ready backlog item should map to one pull request.
+directory in `roadmap/milestones/` contains one milestone item.
 
 ### Major Roadmap Items
 
-- [ ] Establish repeatable release readiness.
-- [ ] Ship the trustworthy local multi-model kernel.
-- [ ] Ship the supervised semantic session plane.
-- [ ] Add durable resume, fork, and audit.
-- [ ] Add supervised multi-agent worktree lanes.
-- [ ] Add the local LiveView workbench.
-- [ ] Add isolated local executors.
-- [ ] Add managed and remote executors.
-- [ ] Add authenticated remote web and SSH access.
-- [ ] Add multi-user collaboration.
-- [ ] Add controlled live extension.
+- [ ] [Establish repeatable release readiness](roadmap/milestones/00-establish-release-readiness/milestone.md).
+- [ ] [Ship the trustworthy local multi-model kernel](roadmap/milestones/01-ship-trustworthy-local-kernel/milestone.md).
+- [ ] [Ship the supervised semantic session plane](roadmap/milestones/02-ship-supervised-session-plane/milestone.md).
+- [ ] [Add durable resume, fork, and audit](roadmap/milestones/03-add-durable-resume/milestone.md).
+- [ ] [Add supervised multi-agent worktree lanes](roadmap/milestones/04-add-supervised-multi-agent-work/milestone.md).
+- [ ] [Add the local LiveView workbench](roadmap/milestones/05-add-local-liveview-workbench/milestone.md).
+- [ ] [Add isolated local executors](roadmap/milestones/06-add-isolated-local-executors/milestone.md).
+- [ ] [Add managed and remote executors](roadmap/milestones/07-add-managed-and-remote-executors/milestone.md).
+- [ ] [Add authenticated remote web and SSH access](roadmap/milestones/08-add-authenticated-remote-access/milestone.md).
+- [ ] [Add multi-user collaboration](roadmap/milestones/09-add-multi-user-collaboration/milestone.md).
+- [ ] [Add controlled live extension](roadmap/milestones/10-add-controlled-live-extension/milestone.md).
 
 Read the [full roadmap](roadmap/README.md) for the order and architecture rules.
 
@@ -31,7 +31,7 @@ Read the [full roadmap](roadmap/README.md) for the order and architecture rules.
 - [Join the Jido Discord](https://jido.run/discord) to meet the community.
 - [Start a Discussion](https://github.com/agentjido/jido_console/discussions/new/choose)
   to ask a question or propose an idea.
-- Own a ready backlog item and its pull request. Read the
+- Own a scoped implementation issue for a ready milestone. Read the
   [12-hour reservation policy](ROADMAP_OWNERSHIP.md) first.
 - Give roadmap feedback in
   [Discussions](https://github.com/agentjido/jido_console/discussions).

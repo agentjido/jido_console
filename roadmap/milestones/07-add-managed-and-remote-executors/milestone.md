@@ -1,14 +1,15 @@
 ---
-phase: 7
+milestone: 7
+type: release_milestone
 title: Add managed and remote executors
 status: proposed
-depends_on: [6]
+depends_on: [milestone-6]
 release: v0.7
 introduced_in: 1.0.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 7: Add Managed and Remote Executors
+# Milestone 7: Add Managed and Remote Executors
 
 ## Goal
 
@@ -17,15 +18,6 @@ Run trusted BEAM workloads and explicit remote workloads without changing sessio
 ## Outcome
 
 A session can use managed trusted OTP nodes and remote-host executors through versioned handshakes, explicit file custody, bounded credential delegation, monitoring, revocation, and audit.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P7-E1` Runtime handshake | Version, capability, trust, custody, transfer, and protocol compatibility checks |
-| `P7-E2` Managed BEAM nodes | Owned trusted nodes with separate dependencies, leases, monitoring, and cleanup |
-| `P7-E3` Remote execution | Remote hosts with explicit paths, transfers, grants, credentials, resources, and custody |
-| `P7-E4` Remote evidence | Measured transfer, cache, latency, recovery, revocation, and cleanup behavior |
 
 ## Work
 
@@ -57,12 +49,8 @@ A session can use managed trusted OTP nodes and remote-host executors through ve
 - Security tests do not present node separation as protection from untrusted code.
 - Credential delegation, use, expiry, and revocation are audited without a secret value.
 - The remote support matrix matches measured protocol, transfer, cache, and recovery behavior.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.7 with managed trusted-node and remote executor support.
-
-## References
-
-- [Executors and security backlog](../backlog/executors-and-security.md)

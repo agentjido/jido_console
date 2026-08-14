@@ -1,14 +1,15 @@
 ---
-phase: 9
+milestone: 9
+type: release_milestone
 title: Add multi-user collaboration
 status: proposed
-depends_on: [8]
+depends_on: [milestone-8]
 release: v0.9
 introduced_in: 1.0.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 9: Add Multi-User Collaboration
+# Milestone 9: Add Multi-User Collaboration
 
 ## Goal
 
@@ -17,15 +18,6 @@ Add authorized shared work only after local durability, custody, isolation, and 
 ## Outcome
 
 Several authorized users can observe and change declared shared resources with one server order, convergent text, transient presence, and explicit responsibility for each accepted effect.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P9-E1` Organization identity and authorization | Users, memberships, roles, resources, and permission checks before admission |
-| `P9-E2` Shared operation log | Revisions, acknowledgements, gaps, snapshots, reconnect, and deterministic no-change results |
-| `P9-E3` Convergent editing | One versioned CRDT or operational-transformation contract for declared resources |
-| `P9-E4` Presence and responsibility | Private drafts, transient presence, operator identity, audit, and custody under concurrency |
 
 ## Work
 
@@ -58,14 +50,8 @@ Several authorized users can observe and change declared shared resources with o
 - Private drafts never enter shared state.
 - Identity, authorization, executor, and worktree controls remain effective under concurrent load and revocation.
 - Every accepted unsafe effect identifies the responsible operator and exact approval scope.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.9 with supported multi-user collaboration.
-
-## References
-
-- [Session runtime backlog](../backlog/session-runtime.md)
-- [Clients and protocol backlog](../backlog/clients-and-protocol.md)
-- [Views and TUI backlog](../backlog/views-and-tui.md)

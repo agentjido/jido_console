@@ -4,6 +4,17 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-08-14
+
+### Changed
+
+- Put each roadmap milestone in `roadmap/milestones/<name>/milestone.md`.
+- Reserve an `epics/` directory under each milestone for epics generated from that milestone.
+- Remove the incorrect nested epic table from each milestone file.
+- Remove the copied `roadmap/backlog/` capability backlog.
+- Keep generated epics and implementation delivery state in the milestone directory and Beadwork.
+- Align the root roadmap, README, and ownership guidance with the milestone structure.
+
 ## [1.0.1] - 2026-08-14
 
 ### Changed

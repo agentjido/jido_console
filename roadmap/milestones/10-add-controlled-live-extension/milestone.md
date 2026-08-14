@@ -1,14 +1,15 @@
 ---
-phase: 10
+milestone: 10
+type: release_milestone
 title: Add controlled live extension
 status: proposed
-depends_on: [9]
+depends_on: [milestone-9]
 release: v0.10
 introduced_in: 0.1.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 10: Add Controlled Live Extension
+# Milestone 10: Add Controlled Live Extension
 
 ## Goal
 
@@ -17,15 +18,6 @@ Use BEAM code replacement without creating a security or recovery bypass.
 ## Outcome
 
 Trusted extensions can update with exact-content review, health checks, state migration, rollback, durable evidence, and recovery code that stays outside the mutable runtime.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P10-E1` Extension contracts | Trusted manifests, host contracts, capabilities, and hook failure policy |
-| `P10-E2` Isolated artifact evaluation | Bound build, scan, test, schema, and artifact evidence |
-| `P10-E3` Consent and trust promotion | Exact content approval and explicit promotion from restricted to trusted use |
-| `P10-E4` Live migration and recovery | Reconstructible update, lease handoff, health check, rollback, and independent recovery |
 
 ## Work
 
@@ -58,12 +50,8 @@ Trusted extensions can update with exact-content review, health checks, state mi
 - A failed authority hook cannot permit an effect.
 - Unreviewed model output cannot load into the trusted node.
 - The complete load, health, migration, handoff, and rollback flow is in the audit record.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.10 with controlled live extension and rollback.
-
-## References
-
-- [Extensions and live update backlog](../backlog/extensions-and-live-update.md)

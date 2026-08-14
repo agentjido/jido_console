@@ -1,14 +1,15 @@
 ---
-phase: 4
+milestone: 4
+type: release_milestone
 title: Add supervised multi-agent work
 status: proposed
-depends_on: [3]
+depends_on: [milestone-3]
 release: v0.4
 introduced_in: 1.0.0
-last_updated_in: 1.0.1
+last_updated_in: 1.0.2
 ---
 
-# Phase 4: Add Supervised Multi-Agent Work
+# Milestone 4: Add Supervised Multi-Agent Work
 
 ## Goal
 
@@ -17,15 +18,6 @@ Make BEAM supervision and controlled concurrency visible in a reliable local cod
 ## Outcome
 
 Several agents can work in parallel on named lanes with durable child identity, bounded authority, owned worktrees, explicit budgets, and deterministic acceptance or rejection.
-
-## Epic Breakdown
-
-| Epic | Result |
-| --- | --- |
-| `P4-E1` Durable child agents | Parent, child, task, attempt, lane, queue, mailbox, and recovery identity |
-| `P4-E2` Authority and budgets | Inherited restrictions plus token, cost, time, tool, depth, and capacity limits |
-| `P4-E3` Worktree lanes | Named lanes, model selection, file custody, merge policy, and monitored cleanup |
-| `P4-E4` Fault containment | Cancellation trees and fault injection that protect parent and peer state |
 
 ## Work
 
@@ -60,14 +52,8 @@ Several agents can work in parallel on named lanes with durable child identity, 
 - Accept, reject, merge, revert, crash, cancel, and force-kill paths leave no unowned worktree or child process.
 - Parent and child budget accounting reconciles after normal completion and failure.
 - Fault-injection results state recovery time, lost work, repeated work, and final accepted state.
-- The common milestone release gate in [the roadmap index](../README.md#common-milestone-release-gate) passes.
+- The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Ship Jido Console v0.4 with supervised local multi-agent work and owned worktree lanes.
-
-## References
-
-- [Session runtime backlog](../backlog/session-runtime.md)
-- [Views and TUI backlog](../backlog/views-and-tui.md)
-- [Executors and security backlog](../backlog/executors-and-security.md)
