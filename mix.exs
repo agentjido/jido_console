@@ -83,10 +83,13 @@ defmodule Jido.Cli.MixProject do
       source_url: @source_url,
       extras: [
         "README.md",
+        "ROADMAP.md",
+        "ROADMAP_OWNERSHIP.md",
         "guides/extensions.md",
         "guides/multi-turn-coding.md",
         "CHANGELOG.md",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "LICENSE"
       ]
     ]
   end
@@ -96,8 +99,8 @@ defmodule Jido.Cli.MixProject do
       setup: ["deps.get"],
       install_hooks: ["git_hooks.install"],
       test: ["test --exclude flaky"],
-      q: ["quality"],
-      quality: [
+      q: ["precommit"],
+      precommit: [
         "format --check-formatted",
         "compile --warnings-as-errors",
         "credo",

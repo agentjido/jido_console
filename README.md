@@ -1,118 +1,59 @@
-# Jido CLI
+# Jido Console
 
 > [!WARNING]
-> This project is in active development. It is not a supported production
-> release. Commands, data contracts, and internal APIs can change.
+> Jido Console is in active development. It is not ready for use. There is no
+> stable release, installation path, API, or data format yet.
 
-`jido_cli` is the terminal and automation client for
-[Jidoka](https://github.com/agentjido/jidoka). The executable is `jido`.
+## Help Build Jido Console
 
-This repository is primarily for developers who want to test changes and
-submit pull requests. There is no supported package installation or Homebrew
-flow yet.
+Start with the [roadmap](ROADMAP.md) and the
+[contribution guide](CONTRIBUTING.md). The roadmap is open for review. Each
+ready epic maps to one pull request.
 
-## Scope
+### Major Roadmap Items
 
-The CLI owns:
+- [ ] Preserve and publish the current baseline.
+- [ ] Establish the Jido Console identity, local paths, and release channels.
+- [ ] Add a renderer-neutral semantic session core.
+- [ ] Add supervised sessions that clients can attach to.
+- [ ] Move terminal, automation, text, and JSON to one client protocol.
+- [ ] Add durable session resume and recovery.
+- [ ] Add a shared web workbench and declared shared resources.
+- [ ] Add controlled local, isolated, and remote execution.
+- [ ] Add reviewed live extension, recovery, and rollback.
 
-- command parsing and data-only YAML or JSON input;
-- the interactive terminal UI;
-- scenario and evaluation-matrix planning;
-- JSONL output, artifacts, and exit status;
-- local release assembly and acceptance tests.
+Read the [full roadmap](ROADMAP.md) for the order and architecture rules.
 
-Jidoka owns agent execution, sessions, effects, cancellation, execution
-environments, and runtime state. CLI code must use public Jidoka APIs. It must
-not depend on Jidoka internals.
+### Ways to Get Involved
 
-The project does not include a daemon or service. It does not publish, sign,
-notarize, or update Homebrew.
+- [Join the Jido Discord](https://jido.run/discord) to meet the community.
+- [Start a Discussion](https://github.com/agentjido/jido_console/discussions/new/choose)
+  to ask a question or propose an idea.
+- Own a ready epic and its pull request. Read the
+  [12-hour reservation policy](ROADMAP_OWNERSHIP.md) first.
+- Give roadmap feedback in
+  [Discussions](https://github.com/agentjido/jido_console/discussions).
+- Test the current work and report failures in a
+  [bug Discussion](https://github.com/agentjido/jido_console/discussions/new?category=q-a).
 
-## Set up a development checkout
+Jido Console collects no usage data or telemetry. A useful bug report includes
+the operating system, architecture, OTP and Elixir versions, commit ID, exact
+steps, expected result, actual result, and sanitized output. Add a small
+reproduction when possible. Never include credentials.
 
-Install the Erlang and Elixir versions in `.tool-versions`, then run:
+## Jido, Jidoka, and Jido Console
 
-```sh
-mix deps.get
-mix test
-```
+| Project | Role |
+| --- | --- |
+| [Jido](https://github.com/agentjido/jido) | The Elixir framework and core building blocks for autonomous agents. |
+| [Jidoka](https://github.com/agentjido/jidoka) | The runtime for agent sessions, execution, effects, cancellation, and recovery. |
+| Jido Console | The user-facing control plane for terminal, automation, web, SSH, text, and JSON clients. |
 
-The normal build uses a pinned Jidoka Git commit. To test a local Jidoka
-checkout, use an explicit path in development or test only:
+Jidoka owns agent execution truth. Jido Console owns user-visible session truth.
+A client presents session state. It does not own that state.
 
-```sh
-JIDO_CLI_JIDOKA_PATH=../jidoka mix deps.get
-JIDO_CLI_JIDOKA_PATH=../jidoka mix test
-```
+Jido Console is intended to run supported models, keep work alive, isolate
+tools, show effects, compare results, and recover sessions without loss of
+accepted work.
 
-Do not use this override in CI or release builds.
-
-## Run from source
-
-Build the developer executable:
-
-```sh
-MIX_ENV=prod mix escript.build
-./jido --help
-```
-
-To test the terminal UI with a provider, create a private `.env` file:
-
-```sh
-cp .env.example .env
-chmod 600 .env
-./jido
-```
-
-Never commit credentials. Tests must not call live providers.
-
-For the current multi-turn local coding path, read
-[Multi-Turn Coding Development](guides/multi-turn-coding.md).
-
-## Before you submit a pull request
-
-Read `AGENTS.md` and [CONTRIBUTING.md](CONTRIBUTING.md). Keep the change small
-and include tests for changed behavior.
-
-Run the complete gate:
-
-```sh
-mix jido.check
-```
-
-This command checks locked dependencies, formatting, compilation warnings,
-Credo, Dialyzer, documentation, specs, test coverage, generated docs, and the
-production escript fast path.
-
-Pull requests must:
-
-- keep agent, scenario, and suite files data-only;
-- validate external input with Zoi at the correct boundary;
-- preserve `jido.case-result` as the automation JSONL boundary;
-- keep status `0` for success, `1` for execution failure, and `64` for usage or
-  configuration errors;
-- use injected test dependencies and deterministic fixtures;
-- use a Conventional Commit title.
-
-If a change affects release code, test a non-publishable local macOS ARM64
-candidate:
-
-```sh
-mix jido.release --allow-dirty
-```
-
-This command writes to `dist/`. It does not publish or update Homebrew.
-
-## Repository layout
-
-```text
-lib/jido_cli/cli/       CLI, automation, and TUI code
-lib/jido_cli/coding/    Trusted local coding integration
-lib/jido_cli/terminal/  Terminal input and rendering adapters
-dev/                    Development and local release tasks
-test/                   Deterministic tests
-examples/               Data-only agents, scenarios, and suites
-release/                Local packaging policy and evidence rules
-```
-
-Licensed under Apache-2.0. See `LICENSE`.
+Licensed under Apache-2.0. See [LICENSE](LICENSE).
