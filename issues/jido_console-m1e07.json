@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m1e05",
     "jido_console-m1e06"
@@ -25,5 +25,5 @@
   "status": "open",
   "title": "M1-E07: Build the Provider Contract Harness",
   "type": "epic",
-  "updated_at": "2026-08-14T19:15:46Z"
+  "updated_at": "2026-08-14T21:21:06Z"
 }
