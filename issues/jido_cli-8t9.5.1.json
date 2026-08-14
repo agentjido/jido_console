@@ -7,14 +7,16 @@
     "jido_cli-8t9.5.2",
     "jido_cli-8t9.5.4"
   ],
+  "closed_at": "2026-08-14T00:30:07Z",
+  "close_reason": "Implemented the versioned data-only rate-limiter scenario and trusted repository oracle in both repositories. The oracle verifies allowed and protected paths, operation partial order, required independent verification, exact Git state, pinned before/after digests, and model claims. Focused tests: 7 passed in each repository. Full gates: Jidoka 720 passed with 41 excluded; jido_cli 290 passed. Source commits: Jidoka a552a864; jido_cli ab83959.",
   "created": "2026-08-13T20:14:28Z",
   "description": "Repositories: Jidoka and jido_cli tests. Create a deterministic rate-limiter fixture and trusted test-only oracle for allowed changes, operation partial order, verification, Git state, and before and after digests. Acceptance: setup is repeatable; extra changes, test tampering, missing verification, wrong order, and false model claims fail.",
   "id": "jido_cli-8t9.5.1",
   "labels": [],
   "parent": "jido_cli-8t9.5",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Add a data-only coding scenario and repository oracle",
   "type": "task",
-  "updated_at": "2026-08-14T00:18:50Z"
+  "updated_at": "2026-08-14T00:30:07Z"
 }
