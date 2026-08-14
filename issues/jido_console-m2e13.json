@@ -1,7 +1,8 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_console-m2e07"
+    "jido_console-m2e07",
+    "jido_console-m2e11"
   ],
   "blocks": [],
   "created": "",
@@ -17,5 +18,5 @@
   "status": "open",
   "title": "M2-E13: Make the Session Server the Runtime Owner",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:28Z"
+  "updated_at": "2026-08-14T20:08:29Z"
 }
