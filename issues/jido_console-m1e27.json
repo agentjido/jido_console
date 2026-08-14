@@ -13,13 +13,14 @@
   "id": "jido_console-m1e27",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
   "status": "open",
   "title": "M1-E27: Verify the v0.1 Channel Matrix",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:16Z"
+  "updated_at": "2026-08-14T21:21:17Z"
 }
