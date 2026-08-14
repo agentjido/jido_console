@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [
     "jido_console-g0e15"
@@ -13,8 +13,8 @@
     "one-pr"
   ],
   "priority": 2,
-  "status": "open",
+  "status": "in_progress",
   "title": "G0-E12: Harden the Release Workflow Controls",
   "type": "epic",
-  "updated_at": "2026-08-14T19:03:22Z"
+  "updated_at": "2026-08-14T21:16:23Z"
 }
