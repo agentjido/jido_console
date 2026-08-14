@@ -6,14 +6,16 @@
   "blocks": [
     "jido_cli-8t9.5.4"
   ],
+  "closed_at": "2026-08-14T00:18:41Z",
+  "close_reason": "Implemented a bounded cancel/terminal-result/reap shutdown barrier, linked monitored TUI workers, bounded concurrent extension and coding resource closure, runtime-owner termination, safe terminal draw/close normalization, and OTP partial-open cleanup bytes. Commit 7fdfdc8. Validation: 283 tests passed; 83.6% coverage; Credo, Dialyzer, Doctor, docs, dependency lock, and production escript smoke passed.",
   "created": "2026-08-13T20:14:28Z",
   "description": "Repository: jido_cli. On EOF, draw failure, startup failure, or exit, cancel active work, wait for a bounded terminal result, close extension and coding resources, and restore the terminal. Acceptance: resources open and close exactly once; no child remains; terminal cleanup bytes are always emitted.",
   "id": "jido_cli-8t9.4.6",
   "labels": [],
   "parent": "jido_cli-8t9.4",
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Add bounded cancel-and-close resource shutdown",
   "type": "task",
-  "updated_at": "2026-08-14T00:03:30Z"
+  "updated_at": "2026-08-14T00:18:41Z"
 }
