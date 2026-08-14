@@ -3,7 +3,9 @@
   "blocked_by": [
     "jido_console-m2e32"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_console-m2e34"
+  ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e33-prove-v0-2-production-candidate.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E33: Prove the v0.2 Production Candidate\n\n## Goal\n\nProve the complete v0.2 release claim through the exact production artifact.\n\n## Scope\n\n- Build and test the exact production artifact through the common release gate.\n- Test every platform-and-channel pair claimed by v0.2, including each retained v0.1 cell, with the same v0.2 native payload.\n- Run all earlier release workflows and compatibility fixtures against the exact candidate.\n- Prove session detach and attach, failure handling, cancellation, cleanup, and client recovery.\n- Publish a quick start, support matrix, known limits, security boundary, and rollback or repair path.\n- State explicitly that accepted input can be lost on an application crash before Milestone 3.\n\n## Out of Scope\n\n- Production publication.\n- Application-restart recovery or a durable input receipt.\n- New platform or channel claims.\n- New client surfaces.\n\n## Dependencies\n\nThis epic depends on M2-E32 because the production candidate must contain only the supervised session path.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request creates and verifies a production candidate. It does not publish the release.\n\n## Acceptance Checks\n\n- The common milestone release gate passes through the exact production artifact.\n- Every platform-and-channel pair claimed by v0.2 installs, starts, updates, and removes the same tested native payload.\n- All earlier release workflows and compatibility fixtures pass against the candidate.\n- Detach and attach, failure, cancellation, worker drain, and cleanup evidence pass through the artifact.\n- The quick start, support matrix, known limits, security boundary, and rollback or repair path are runnable and current.\n- Documentation states the explicit pre-Milestone-3 crash-loss limit.\n\n## Proof Artifacts\n\n- Production artifact and checksum.\n- Platform-by-channel acceptance results.\n- Session detach and attach evidence.\n- Failure, cleanup, and recovery evidence.\n- Quick-start and support documentation review.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 production-candidate proof for the v0.2 release claim.",
   "id": "jido_console-m2e33",
@@ -17,5 +19,5 @@
   "status": "open",
   "title": "M2-E33: Prove the v0.2 Production Candidate",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:40Z"
+  "updated_at": "2026-08-14T20:08:49Z"
 }
