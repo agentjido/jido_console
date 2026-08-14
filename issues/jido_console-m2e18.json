@@ -4,7 +4,9 @@
     "jido_console-m2e11",
     "jido_console-m2e17"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_console-m2e26"
+  ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e18-recover-clients-from-gaps.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E18: Recover Clients from Delivery Gaps\n\n## Goal\n\nLet a client recover from a delivery gap through an explicit snapshot and replay path without silently losing semantic state.\n\n## Scope\n\n- Define explicit gap messages with session identity, last acknowledged sequence, and current sequence.\n- Provide a bounded snapshot of approved semantic session state.\n- Replay an available event suffix after a snapshot when the client requests it.\n- Validate snapshot and replay identities before applying them to a client projection.\n- Reset client delivery state after successful recovery and resume bounded updates.\n- Reject stale, cross-session, invalid-order, and malformed recovery data.\n- Distinguish delivery-gap recovery from application-restart recovery and durable resume.\n\n## Out of Scope\n\n- Application-restart recovery\n- Durable input receipts or a Console-to-Jidoka watermark\n- Persistent event-log repair\n- Remote client deployment\n- Multi-user collaboration\n\n## Dependencies\n\nThis epic depends on M2-E11 for semantic snapshots and replay and M2-E17 for bounded delivery and explicit gap detection.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds gap messages, snapshot and suffix replay recovery, identity checks, and focused tests. It must not claim restart-safe session recovery.\n\n## Acceptance Checks\n\n- A client receives an explicit gap instead of silently missing updates.\n- Snapshot and suffix replay restore the same semantic state as the session owner.\n- Recovery checks session identity, sequence, protocol version, and bounded data size.\n- Stale, cross-session, invalid-order, and malformed recovery data is rejected.\n- A recovered client resumes bounded delivery from the correct acknowledged sequence.\n- A delivery gap is not described as application-restart recovery or durable resume.\n\n## Proof Artifacts\n\n- Gap message and recovery protocol schema\n- Snapshot and suffix replay result\n- Stale and cross-session recovery denial results\n- Bounded recovery-size results\n- Recovery limitation record for Milestone 3 durability\n\n## Milestone Traceability\n\nThis epic completes process-lifetime client recovery from delivery gaps for the Milestone 2 session plane without taking scope from Milestone 3 durable resume.",
   "id": "jido_console-m2e18",
@@ -18,5 +20,5 @@
   "status": "open",
   "title": "M2-E18: Recover Clients from Delivery Gaps",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:31Z"
+  "updated_at": "2026-08-14T20:08:36Z"
 }
