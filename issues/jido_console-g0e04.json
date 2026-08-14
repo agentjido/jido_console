@@ -7,6 +7,8 @@
     "jido_console-g0e05",
     "jido_console-g0e15"
   ],
+  "closed_at": "2026-08-14T20:32:31Z",
+  "close_reason": "Deterministic reducer and layout evidence now covers required view states; 39 focused tests pass.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/00-establish-release-readiness/epics/g0-e04-tui-reducer-layout-evidence.md`\nRoadmap version: `1.0.5`\n\n# G0-E04: Add TUI Reducer and Layout Evidence\n\n## Goal\n\nProve deterministic TUI state changes and layout behavior without a terminal process.\n\n## Scope\n\n- Add reducer tests for each important TUI state change.\n- Add layout evidence for narrow, standard, and wide terminal sizes.\n- Cover Unicode display width, wrapping, clipping, and resize behavior.\n- Cover streaming content, review controls, and error views.\n- Use stable expected data that does not depend on wall-clock time.\n\n## Out of Scope\n\n- Raw terminal and PTY behavior\n- Long-session evidence\n- TUI redesign\n- LiveView or SSH clients\n\n## Dependencies\n\nThis epic depends on G0-E01 for the evidence result contract.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request contains reducer and layout evidence only. G0-E05 owns terminal-process evidence.\n\n## Acceptance Checks\n\n- Named tests cover the important reducer states.\n- Width cases include narrow, standard, wide, and resize inputs.\n- Unicode and multiline content have explicit expected layouts.\n- Tests do not use unbounded waits or a live model.\n- A layout difference produces a readable failure.\n\n## Proof Artifacts\n\n- Reducer test results\n- Width and resize case results\n- Stable layout expectations\n- Coverage map from TUI states to tests\n\n## Milestone Traceability\n\nThis epic covers the reducer and width layers of the Gate 0 TUI evidence requirement.",
   "id": "jido_console-g0e04",
@@ -16,8 +18,8 @@
     "one-pr"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "G0-E04: Add TUI Reducer and Layout Evidence",
   "type": "epic",
-  "updated_at": "2026-08-14T20:30:03Z"
+  "updated_at": "2026-08-14T20:32:31Z"
 }
