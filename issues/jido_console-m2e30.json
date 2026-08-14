@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-m2e26"
+  ],
   "blocks": [],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e30-migrate-json-session-client.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E30: Migrate JSON Output to Session.Client\n\n## Goal\n\nMake JSON output a JSON-compatible semantic `Session.Client` adapter.\n\n## Scope\n\n- Add a JSON-compatible semantic client adapter through `Session.Client`.\n- Preserve `Jido.Cli.Automation.JSONL` as the only writer of automation standard output and run artifacts.\n- Keep bounded unknown data without granting authority.\n- Project ordered outcomes, snapshots, gaps, and errors into JSON-compatible values.\n\n## Out of Scope\n\n- A second JSONL writer.\n- Breaking changes to automation JSONL schemas.\n- Raw runtime terms or client-local renderer data in JSON values.\n- Remote JSON transport.\n\n## Dependencies\n\nThis epic depends on M2-E26 for the completed `Session.Client` API and reusable behavior suite.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request migrates the JSON client adapter only and does not change unrelated automation behavior.\n\n## Acceptance Checks\n\n- The JSON adapter uses `Session.Client` and produces JSON-compatible values only.\n- `Jido.Cli.Automation.JSONL` remains the only automation standard-output and artifact writer.\n- Unknown data is bounded, preserved as data, and cannot grant authority.\n- JSON output preserves ordered semantic identity and reports gaps explicitly.\n- JSON encoding and automation output tests pass.\n\n## Proof Artifacts\n\n- JSON client contract fixture.\n- JSON encoding result.\n- Unknown-data boundary fixture.\n- JSONL writer ownership result.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 migration of JSON output to `Session.Client`.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "M2-E30: Migrate JSON Output to Session.Client",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:15Z"
+  "updated_at": "2026-08-14T20:08:39Z"
 }
