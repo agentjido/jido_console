@@ -34,6 +34,10 @@ defmodule Jido.Cli.Terminal do
   @spec draw(t(), Frame.t()) :: :ok | {:error, term()}
   def draw(%__MODULE__{} = terminal, %Frame{} = frame) do
     terminal.adapter.write(terminal.handle, Frame.to_iodata(frame))
+  rescue
+    exception -> {:error, exception}
+  catch
+    kind, reason -> {:error, {kind, reason}}
   end
 
   @doc "Reads the current terminal size and returns an updated terminal."
@@ -46,5 +50,12 @@ defmodule Jido.Cli.Terminal do
 
   @doc "Closes the terminal. This function can be called more than once."
   @spec close(t()) :: :ok
-  def close(%__MODULE__{} = terminal), do: terminal.adapter.close(terminal.handle)
+  def close(%__MODULE__{} = terminal) do
+    _result = terminal.adapter.close(terminal.handle)
+    :ok
+  rescue
+    _exception -> :ok
+  catch
+    _kind, _reason -> :ok
+  end
 end

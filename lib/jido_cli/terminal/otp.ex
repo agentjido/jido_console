@@ -99,29 +99,8 @@ defmodule Jido.Cli.Terminal.OTP do
     Process.flag(:trap_exit, true)
     effects = effects(opts)
 
-    with :ok <- require_otp_28(effects.otp_release),
-         {:ok, reader} <-
-           effects.reader.start_link(
-             self(),
-             fn -> start_raw_shell(effects.start_raw) end,
-             effects.read
-           ),
-         :ok <- await_reader_start(reader),
-         {:ok, size} <- read_size(effects.size),
-         :ok <- write_stdio(effects.write, @enter) do
-      state = %{
-        effects: effects,
-        owner: owner,
-        owner_monitor: Process.monitor(owner),
-        reader: reader,
-        ref: make_ref(),
-        input: %Input{},
-        escape_timer: nil,
-        size: size
-      }
-
-      {:ok, schedule_resize(state)}
-    else
+    case require_otp_28(effects.otp_release) do
+      :ok -> open_reader(owner, effects)
       {:error, reason} -> {:stop, reason}
     end
   end
@@ -189,14 +168,71 @@ defmodule Jido.Cli.Terminal.OTP do
 
   @impl GenServer
   def terminate(_reason, state) do
-    if is_pid(state[:reader]) and Process.alive?(state.reader) do
-      Process.unlink(state.reader)
-      Process.exit(state.reader, :kill)
-    end
-
+    stop_reader(state[:reader])
     _result = write_stdio(state.effects.write, @leave)
     :ok
   end
+
+  defp open_reader(owner, effects) do
+    case effects.reader.start_link(
+           self(),
+           fn -> start_raw_shell(effects.start_raw) end,
+           effects.read
+         ) do
+      {:ok, reader} ->
+        case await_reader_start(reader) do
+          :ok -> finish_open(owner, effects, reader)
+          {:error, reason} -> stop_open(reader, nil, reason)
+        end
+
+      {:error, reason} ->
+        {:stop, reason}
+    end
+  end
+
+  defp finish_open(owner, effects, reader) do
+    with {:ok, size} <- read_size(effects.size),
+         :ok <- write_stdio(effects.write, @enter) do
+      state = %{
+        effects: effects,
+        owner: owner,
+        owner_monitor: Process.monitor(owner),
+        reader: reader,
+        ref: make_ref(),
+        input: %Input{},
+        escape_timer: nil,
+        size: size
+      }
+
+      {:ok, schedule_resize(state)}
+    else
+      {:error, reason} -> stop_open(reader, effects.write, reason)
+    end
+  end
+
+  defp stop_open(reader, write, reason) do
+    stop_reader(reader)
+    if is_function(write, 1), do: write_stdio(write, @leave)
+    {:stop, reason}
+  end
+
+  defp stop_reader(reader) when is_pid(reader) do
+    if Process.alive?(reader) do
+      ref = Process.monitor(reader)
+      Process.unlink(reader)
+      Process.exit(reader, :kill)
+
+      receive do
+        {:DOWN, ^ref, :process, ^reader, _reason} -> :ok
+      after
+        100 -> Process.demonitor(ref, [:flush])
+      end
+    end
+
+    :ok
+  end
+
+  defp stop_reader(_reader), do: :ok
 
   defp effects(opts) do
     %{

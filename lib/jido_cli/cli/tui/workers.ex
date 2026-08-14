@@ -2,6 +2,7 @@ defmodule Jido.Cli.Tui.Workers do
   @moduledoc false
 
   @relay_flush_timeout_ms 1_000
+  @shutdown_timeout_ms 250
 
   defmodule Worker do
     @moduledoc false
@@ -23,7 +24,7 @@ defmodule Jido.Cli.Tui.Workers do
     owner = self()
 
     {pid, ref} =
-      spawn_monitor(fn ->
+      spawn_link_monitor(fn ->
         send(owner, {:jido_tui_effect_result, self(), safe_effect(fun)})
       end)
 
@@ -46,7 +47,7 @@ defmodule Jido.Cli.Tui.Workers do
     owner = self()
 
     {pid, ref} =
-      spawn_monitor(fn ->
+      spawn_link_monitor(fn ->
         outcome = safe_effect(fn -> fun.(relay_pid) end)
         flush_relay(relay_pid)
         send(owner, {:jido_tui_effect_result, self(), outcome})
@@ -102,17 +103,43 @@ defmodule Jido.Cli.Tui.Workers do
 
       {worker, workers} ->
         Process.demonitor(worker.ref, [:flush])
-        if Process.alive?(pid), do: Process.exit(pid, :kill)
+
+        if Process.alive?(pid) do
+          Process.unlink(pid)
+          Process.exit(pid, :kill)
+        end
+
         workers
     end
   end
 
-  @spec stop_all(t()) :: :ok
-  def stop_all(workers) do
-    Enum.each(workers, fn {pid, worker} ->
-      Process.demonitor(worker.ref, [:flush])
-      if Process.alive?(pid), do: Process.exit(pid, :kill)
+  @spec stop_all(t(), non_neg_integer()) :: :ok
+  def stop_all(workers, timeout_ms \\ @shutdown_timeout_ms)
+      when is_map(workers) and is_integer(timeout_ms) and timeout_ms >= 0 do
+    Enum.each(workers, fn {pid, _worker} ->
+      if Process.alive?(pid) do
+        Process.unlink(pid)
+        Process.exit(pid, :kill)
+      end
     end)
+
+    await_stopped(workers, deadline(timeout_ms))
+  end
+
+  @spec reap(pid(), non_neg_integer()) :: :ok
+  def reap(pid, timeout_ms) when is_pid(pid) and is_integer(timeout_ms) and timeout_ms >= 0 do
+    Process.unlink(pid)
+
+    if Process.alive?(pid) do
+      ref = Process.monitor(pid)
+      Process.exit(pid, :kill)
+
+      receive do
+        {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+      after
+        timeout_ms -> Process.demonitor(ref, [:flush])
+      end
+    end
 
     :ok
   end
@@ -123,9 +150,35 @@ defmodule Jido.Cli.Tui.Workers do
 
   defp start_relay(workers, subject, stop_on_terminal?) do
     owner = self()
-    {relay_pid, relay_ref} = spawn_monitor(fn -> stream_relay(owner, stop_on_terminal?) end)
+    {relay_pid, relay_ref} = spawn_link_monitor(fn -> stream_relay(owner, stop_on_terminal?) end)
     {put(workers, relay_pid, relay_ref, :stream_relay, subject), relay_pid}
   end
+
+  defp spawn_link_monitor(fun), do: :erlang.spawn_opt(fun, [:link, :monitor])
+
+  defp await_stopped(workers, _deadline) when map_size(workers) == 0, do: :ok
+
+  defp await_stopped(workers, deadline) do
+    remaining = remaining_ms(deadline)
+
+    receive do
+      {:DOWN, ref, :process, pid, _reason} ->
+        workers =
+          case Map.get(workers, pid) do
+            %Worker{ref: ^ref} -> Map.delete(workers, pid)
+            _other -> workers
+          end
+
+        await_stopped(workers, deadline)
+    after
+      remaining ->
+        Enum.each(workers, fn {_pid, worker} -> Process.demonitor(worker.ref, [:flush]) end)
+        :ok
+    end
+  end
+
+  defp deadline(timeout_ms), do: System.monotonic_time(:millisecond) + timeout_ms
+  defp remaining_ms(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
 
   defp safe_effect(fun) do
     {:ok, fun.()}

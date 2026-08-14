@@ -32,6 +32,29 @@ defmodule Jido.Cli.TerminalTest do
     end
   end
 
+  defmodule RaisingAdapter do
+    @behaviour Jido.Cli.Terminal.Adapter
+
+    @impl true
+    def open(owner, opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      ref = make_ref()
+      {:ok, %{owner: owner, test_pid: test_pid}, ref, {20, 6}}
+    end
+
+    @impl true
+    def write(_handle, _output), do: raise("draw failed")
+
+    @impl true
+    def size(_handle), do: {:ok, {20, 6}}
+
+    @impl true
+    def close(handle) do
+      send(handle.test_pid, :raising_adapter_close_attempted)
+      raise "close failed"
+    end
+  end
+
   test "uses an injected adapter for all effects" do
     assert {:ok, terminal} =
              Terminal.open(adapter: FakeAdapter, adapter_opts: [test_pid: self()])
@@ -49,5 +72,16 @@ defmodule Jido.Cli.TerminalTest do
     assert resized.size == {20, 6}
     assert :ok = Terminal.close(terminal)
     assert_receive :closed
+  end
+
+  test "normalizes adapter failures and still attempts close" do
+    assert {:ok, terminal} =
+             Terminal.open(adapter: RaisingAdapter, adapter_opts: [test_pid: self()])
+
+    assert {:error, %RuntimeError{message: "draw failed"}} =
+             Terminal.draw(terminal, Frame.new(20, 6, ["Jido"]))
+
+    assert :ok = Terminal.close(terminal)
+    assert_receive :raising_adapter_close_attempted
   end
 end

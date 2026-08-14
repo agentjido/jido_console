@@ -1,11 +1,13 @@
 defmodule Jido.Cli.Tui do
   @moduledoc "Full-screen Jido chat loop."
 
-  alias Jido.Cli.Tui.{Effects, State, View, Workers}
+  alias Jido.Cli.Tui.{Effects, Shutdown, State, View, Workers}
   alias Jido.Cli.Coding.Setup
   alias Jido.Cli.Terminal
 
   @frame_interval_ms 33
+  @shutdown_timeout_ms 250
+  @resource_close_timeout_ms 250
 
   @spec run(keyword()) :: :ok | {:error, term()}
   def run(opts \\ []) do
@@ -22,6 +24,16 @@ defmodule Jido.Cli.Tui do
   end
 
   defp run_terminal(terminal, runtime, agent, opts) do
+    previous_trap_exit = Process.flag(:trap_exit, true)
+
+    try do
+      run_terminal_loop(terminal, runtime, agent, opts)
+    after
+      Process.flag(:trap_exit, previous_trap_exit)
+    end
+  end
+
+  defp run_terminal_loop(terminal, runtime, agent, opts) do
     state =
       State.new(nil, terminal.size,
         prepare_prompt: true,
@@ -36,13 +48,13 @@ defmodule Jido.Cli.Tui do
         spawn_monitor(fn -> runtime_owner(owner, runtime, agent, opts) end)
 
       try do
-        {result, workers} =
+        {result, state, workers} =
           loop(state, terminal, runtime, opts, %{pid: startup_pid, ref: startup_ref}, %{})
 
-        Workers.stop_all(workers)
+        Shutdown.run(state, workers, runtime, opts)
         result
       after
-        stop_runtime_owner(startup_pid, startup_ref)
+        stop_runtime_owner(startup_pid, startup_ref, shutdown_timeout(opts))
       end
     end
   end
@@ -141,20 +153,81 @@ defmodule Jido.Cli.Tui do
   end
 
   defp close_startup_result(runtime, {:ok, startup}) do
-    close_runtime_session(runtime, startup.session)
-    Setup.close(startup.coding)
+    previous_trap_exit = Process.flag(:trap_exit, true)
+
+    try do
+      close_resources(runtime, startup)
+    after
+      Process.flag(:trap_exit, previous_trap_exit)
+    end
   end
 
   defp close_startup_result(_runtime, {:error, _reason}), do: :ok
 
-  defp stop_runtime_owner(startup_pid, startup_ref) do
-    if Process.alive?(startup_pid), do: send(startup_pid, {:close, self()})
+  defp close_resources(runtime, startup) do
+    closers =
+      [
+        fn -> close_runtime_session(runtime, startup.session) end,
+        fn -> Setup.close(startup.coding) end
+      ]
+      |> Map.new(fn closer ->
+        {pid, ref} =
+          :erlang.spawn_opt(
+            fn -> safe_close(closer) end,
+            [:link, :monitor]
+          )
+
+        {pid, ref}
+      end)
+
+    remaining = await_resource_closers(closers, System.monotonic_time(:millisecond) + @resource_close_timeout_ms)
+
+    Enum.each(remaining, fn {pid, _ref} ->
+      Process.unlink(pid)
+      if Process.alive?(pid), do: Process.exit(pid, :kill)
+    end)
+
+    _remaining = await_resource_closers(remaining, System.monotonic_time(:millisecond) + 100)
+    :ok
+  end
+
+  defp stop_runtime_owner(startup_pid, startup_ref, timeout_ms) do
+    if Process.alive?(startup_pid) do
+      send(startup_pid, {:close, self()})
+
+      unless await_process_down(startup_pid, startup_ref, timeout_ms) do
+        Process.exit(startup_pid, :kill)
+        _stopped? = await_process_down(startup_pid, startup_ref, timeout_ms)
+      end
+    end
+
     Process.demonitor(startup_ref, [:flush])
     :ok
   end
 
   defp close_runtime_session(runtime, session) do
     if function_exported?(runtime, :close_session, 1), do: runtime.close_session(session), else: :ok
+  end
+
+  defp safe_close(fun) do
+    _result = fun.()
+    :ok
+  rescue
+    _exception -> :ok
+  catch
+    _kind, _reason -> :ok
+  end
+
+  defp await_resource_closers(closers, _deadline) when map_size(closers) == 0, do: closers
+
+  defp await_resource_closers(closers, deadline) do
+    receive do
+      {:DOWN, ref, :process, pid, _reason} when is_map_key(closers, pid) ->
+        closers = if Map.get(closers, pid) == ref, do: Map.delete(closers, pid), else: closers
+        await_resource_closers(closers, deadline)
+    after
+      max(deadline - System.monotonic_time(:millisecond), 0) -> closers
+    end
   end
 
   defp open_terminal(opts) do
@@ -259,7 +332,7 @@ defmodule Jido.Cli.Tui do
             loop(state, terminal, runtime, opts, startup, workers)
 
           {:error, reason} ->
-            {{:error, reason}, workers}
+            {{:error, reason}, state, workers}
         end
 
       _message ->
@@ -281,11 +354,11 @@ defmodule Jido.Cli.Tui do
             loop(state, terminal, runtime, opts, startup, workers)
 
           {:exit, workers} ->
-            {exit_result(state), workers}
+            {exit_result(state), state, workers}
         end
 
       {:error, reason} ->
-        {{:error, reason}, workers}
+        {{:error, reason}, state, workers}
     end
   end
 
@@ -430,4 +503,21 @@ defmodule Jido.Cli.Tui do
   end
 
   defp schedule_render(state), do: state
+
+  defp await_process_down(pid, ref, timeout_ms) do
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> true
+    after
+      timeout_ms -> not Process.alive?(pid)
+    end
+  end
+
+  defp shutdown_timeout(opts), do: option_timeout(opts, :shutdown_timeout_ms, @shutdown_timeout_ms)
+
+  defp option_timeout(opts, key, default) do
+    case Keyword.get(opts, key, default) do
+      value when is_integer(value) and value >= 0 -> value
+      _other -> default
+    end
+  end
 end

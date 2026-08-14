@@ -97,6 +97,32 @@ defmodule Jido.Cli.Terminal.OTPTest do
              OTP.open(self(), Keyword.put(base, :write, fn _output -> raise "write failed" end))
   end
 
+  test "emits cleanup bytes and stops the reader after a partial open failure" do
+    test_pid = self()
+    {:ok, sizes} = Agent.start_link(fn -> {:ok, {20, 6}} end)
+
+    opts =
+      adapter_opts(test_pid, sizes)
+      |> Keyword.put(:start_raw, fn ->
+        send(test_pid, {:partial_reader, self()})
+        :ok
+      end)
+      |> Keyword.put(:write, fn output ->
+        output = IO.iodata_to_binary(output)
+        send(test_pid, {:partial_write, output})
+        if String.contains?(output, "\e[?1049h"), do: {:error, :write_failed}, else: :ok
+      end)
+
+    assert {:error, :write_failed} = OTP.open(self(), opts)
+    assert_receive {:partial_reader, reader}
+    assert_receive {:partial_write, enter}
+    assert_receive {:partial_write, leave}
+    assert enter =~ "\e[?1049h"
+    assert leave =~ "\e[?2004l"
+    assert leave =~ "\e[?1049l"
+    refute Process.alive?(reader)
+  end
+
   test "reader forwards data, errors, and end of file" do
     {:ok, values} = Agent.start_link(fn -> [:ignored, ~c"a", "x", {:error, :read_failed}] end)
     read = queue_reader(values)

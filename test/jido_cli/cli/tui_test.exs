@@ -21,6 +21,7 @@ defmodule Jido.Cli.TuiTest do
         ref: ref,
         fail_write?: Keyword.get(opts, :fail_write?, false),
         fail_after: Keyword.get(opts, :fail_after),
+        fail_control: Keyword.get(opts, :fail_control),
         writes: writes
       }
 
@@ -33,8 +34,9 @@ defmodule Jido.Cli.TuiTest do
 
     def write(handle, output) do
       count = Agent.get_and_update(handle.writes, &{&1, &1 + 1})
+      controlled_failure? = if handle.fail_control, do: Agent.get(handle.fail_control, & &1), else: false
 
-      if is_integer(handle.fail_after) and count >= handle.fail_after do
+      if controlled_failure? or (is_integer(handle.fail_after) and count >= handle.fail_after) do
         {:error, :draw_failed}
       else
         send(handle.test_pid, {:frame, IO.iodata_to_binary(output)})
@@ -292,6 +294,78 @@ defmodule Jido.Cli.TuiTest do
     end
   end
 
+  defmodule ShutdownRuntime do
+    @behaviour Jido.Cli.Runtime
+
+    @impl true
+    def start_session(Jido.Cli.DefaultAgent, opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      send(test_pid, {:shutdown_session_opened, self()})
+      {:ok, {:shutdown_session, test_pid, Keyword.get(opts, :shutdown_mode, :normal)}}
+    end
+
+    @impl true
+    def start_turn({:shutdown_session, test_pid, mode}, prompt, relay, _opts) do
+      controller = spawn(fn -> shutdown_controller(test_pid, Process.monitor(relay), nil, false) end)
+      request = %{request_id: "shutdown-request", test_pid: test_pid, controller: controller, mode: mode}
+      send(test_pid, {:shutdown_turn_started, self(), relay, controller, prompt})
+      {:ok, request}
+    end
+
+    @impl true
+    def await(request, _opts) do
+      send(request.test_pid, {:shutdown_await_started, self()})
+      send(request.controller, {:await, self()})
+
+      receive do
+        :shutdown_cancelled ->
+          send(request.test_pid, {:shutdown_terminal_result, self()})
+          {:cancelled, Cancellation.new!(request_id: request.request_id, cancelled_at_ms: 0)}
+      end
+    end
+
+    @impl true
+    def cancel(%{mode: :block_cancel} = request, _opts) do
+      send(request.test_pid, {:shutdown_cancel_blocked, self()})
+      receive do: (:never -> {:error, :never})
+    end
+
+    def cancel(request, _opts) do
+      send(request.test_pid, {:shutdown_cancel_called, self()})
+      send(request.controller, :cancel)
+      {:ok, Cancellation.new!(request_id: request.request_id, cancelled_at_ms: 0)}
+    end
+
+    @impl true
+    def close_session({:shutdown_session, test_pid, _mode}) do
+      send(test_pid, {:shutdown_session_closed, self()})
+      :ok
+    end
+
+    defp shutdown_controller(test_pid, relay_ref, await_pid, cancelled?) do
+      receive do
+        {:await, pid} ->
+          if cancelled? do
+            send(pid, :shutdown_cancelled)
+            send(test_pid, {:shutdown_controller_closed, self()})
+          else
+            shutdown_controller(test_pid, relay_ref, pid, false)
+          end
+
+        :cancel ->
+          if is_pid(await_pid) do
+            send(await_pid, :shutdown_cancelled)
+            send(test_pid, {:shutdown_controller_closed, self()})
+          else
+            shutdown_controller(test_pid, relay_ref, nil, true)
+          end
+
+        {:DOWN, ^relay_ref, :process, _relay, _reason} ->
+          send(test_pid, {:shutdown_controller_closed, self()})
+      end
+    end
+  end
+
   defmodule ApprovalRuntime do
     @behaviour Jido.Cli.Runtime
 
@@ -505,7 +579,10 @@ defmodule Jido.Cli.TuiTest do
       Task.async(fn ->
         Tui.run(
           runtime: FakeRuntime,
-          runtime_startup: fn -> {:error, :boot_failed} end,
+          runtime_startup: fn ->
+            send(test_pid, {:failing_runtime_owner, self()})
+            {:error, :boot_failed}
+          end,
           terminal_adapter: FakeAdapter,
           terminal_adapter_opts: [test_pid: test_pid],
           session_opts: [test_pid: test_pid]
@@ -514,13 +591,16 @@ defmodule Jido.Cli.TuiTest do
 
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, first_frame}
+    assert_receive {:failing_runtime_owner, runtime_owner}
     assert first_frame =~ "starting runtime"
     assert_frame_contains("startup failed · Esc exits")
     refute_receive :session_started, 50
 
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert {:error, :boot_failed} = Task.await(task)
+    refute Process.alive?(runtime_owner)
     assert_receive :terminal_closed
+    refute_receive :terminal_closed, 50
   end
 
   test "closes runtime resources after a normal exit" do
@@ -545,6 +625,101 @@ defmodule Jido.Cli.TuiTest do
     assert :ok = Task.await(task)
     assert_receive :runtime_session_closed
     assert_receive :terminal_closed
+  end
+
+  test "EOF cancels, awaits a terminal result, and closes every child once" do
+    {task, owner, ref, runtime_owner} = start_shutdown_tui()
+    send_prompt(owner, ref)
+
+    assert_receive {:shutdown_turn_started, start_pid, relay_pid, controller, "hello"}
+    assert_receive {:shutdown_await_started, await_pid}
+    send(owner, {:jido_terminal, ref, :eof})
+
+    assert_receive {:shutdown_cancel_called, cancel_pid}
+    assert_receive {:shutdown_controller_closed, ^controller}
+    assert_receive {:shutdown_terminal_result, ^await_pid}
+    assert_receive {:shutdown_session_closed, close_worker}
+    assert :ok = Task.await(task, 1_000)
+    assert_receive :terminal_closed
+
+    for pid <- [start_pid, relay_pid, controller, await_pid, cancel_pid, close_worker, runtime_owner] do
+      refute Process.alive?(pid)
+    end
+
+    refute_receive {:shutdown_session_closed, _pid}, 50
+    refute_receive :terminal_closed, 50
+  end
+
+  test "a draw failure cancels active work before resource cleanup" do
+    {:ok, fail_control} = Agent.start_link(fn -> false end)
+    {task, owner, ref, runtime_owner} = start_shutdown_tui(fail_control: fail_control)
+    send_prompt(owner, ref)
+
+    assert_receive {:shutdown_turn_started, _start_pid, _relay_pid, _controller, "hello"}
+    assert_receive {:shutdown_await_started, await_pid}
+    Agent.update(fail_control, fn _current -> true end)
+    send(owner, {:jido_terminal, ref, {:resize, 41, 10}})
+
+    assert_receive {:shutdown_cancel_called, _cancel_pid}
+    assert_receive {:shutdown_terminal_result, ^await_pid}
+    assert_receive {:shutdown_session_closed, _runtime_owner}
+    assert {:error, :draw_failed} = Task.await(task, 1_000)
+    assert_receive :terminal_closed
+    refute Process.alive?(runtime_owner)
+    Agent.stop(fail_control)
+  end
+
+  test "a blocked startup owner is stopped within the shutdown bound" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          runtime_startup: fn ->
+            send(test_pid, {:blocked_runtime_owner, self()})
+            receive do: (:never -> :ok)
+          end,
+          shutdown_timeout_ms: 50,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+    assert_receive {:blocked_runtime_owner, runtime_owner}
+    send(owner, {:jido_terminal, ref, :eof})
+
+    assert :ok = Task.await(task, 500)
+    refute Process.alive?(runtime_owner)
+    assert_receive :terminal_closed
+    refute_receive :terminal_closed, 50
+  end
+
+  test "a blocked cancel call and await worker are killed after the bound" do
+    {task, owner, ref, runtime_owner} =
+      start_shutdown_tui([],
+        shutdown_timeout_ms: 80,
+        shutdown_cancel_timeout_ms: 20,
+        session_opts: [shutdown_mode: :block_cancel]
+      )
+
+    send_prompt(owner, ref)
+    assert_receive {:shutdown_turn_started, _start_pid, relay, controller, "hello"}
+    assert_receive {:shutdown_await_started, await_pid}
+    send(owner, {:jido_terminal, ref, :eof})
+
+    assert_receive {:shutdown_cancel_blocked, cancel_pid}
+    assert_receive {:shutdown_controller_closed, ^controller}
+    assert_receive {:shutdown_session_closed, close_worker}
+    assert :ok = Task.await(task, 500)
+    assert_receive :terminal_closed
+
+    for pid <- [relay, controller, await_pid, cancel_pid, close_worker, runtime_owner] do
+      refute Process.alive?(pid)
+    end
   end
 
   test "shows bounded coding review returned by the runtime" do
@@ -830,6 +1005,33 @@ defmodule Jido.Cli.TuiTest do
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     {task, owner, ref}
+  end
+
+  defp start_shutdown_tui(adapter_opts \\ [], tui_opts \\ []) do
+    test_pid = self()
+    session_opts = [test_pid: test_pid] |> Keyword.merge(Keyword.get(tui_opts, :session_opts, []))
+
+    opts =
+      [
+        runtime: ShutdownRuntime,
+        shutdown_timeout_ms: 400,
+        terminal_adapter: FakeAdapter,
+        terminal_adapter_opts: Keyword.put(adapter_opts, :test_pid, test_pid),
+        session_opts: session_opts,
+        turn_opts: [test_pid: test_pid]
+      ]
+      |> Keyword.merge(tui_opts)
+      |> Keyword.put(:session_opts, session_opts)
+
+    task =
+      Task.async(fn ->
+        Tui.run(opts)
+      end)
+
+    assert_receive {:shutdown_session_opened, runtime_owner}, 500
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+    {task, owner, ref, runtime_owner}
   end
 
   defp send_prompt(owner, ref) do
