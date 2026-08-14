@@ -5,7 +5,8 @@
     "jido_console-m2e10"
   ],
   "blocks": [
-    "jido_console-m2e13"
+    "jido_console-m2e13",
+    "jido_console-m2e34"
   ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e12-add-session-supervision-topology.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E12: Add the Session Supervision Topology\n\n## Goal\n\nStart and stop local semantic sessions through one explicit, supervised application topology.\n\n## Scope\n\n- Add the Console application supervisor for session infrastructure.\n- Add a safe named session registry without creating atoms from untrusted session IDs.\n- Add a dynamic supervisor for one temporary session server per live session.\n- Define session startup, readiness, failure, normal stop, and owner-exit behavior.\n- Make concurrent requests for one session resolve to one server.\n- Remove session processes and stale registry state after termination.\n- Keep the topology local and process-lifetime only.\n\n## Out of Scope\n\n- Session state ownership and event reduction\n- Restart-safe session recovery\n- Durable input receipts or durable watermarks\n- Remote or multi-user supervision\n- Managed executors\n\n## Dependencies\n\nThis epic depends on M2-E04 for generated lifecycle protocol types and on M2-E10 for the renderer-neutral session state definition.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the application supervisor, registry, dynamic supervisor, lifecycle contracts, and focused tests. It must not implement client delivery or restart recovery.\n\n## Acceptance Checks\n\n- The application supervisor starts the registry and dynamic session supervisor in a documented order.\n- One live session ID maps to one supervised session server.\n- Concurrent session startup does not create duplicate owners.\n- Untrusted session IDs do not become dynamic atoms.\n- Normal stop, owner exit, and session crash remove the session process and registry entry.\n- Process-lifetime behavior is clearly separated from application-restart recovery.\n\n## Proof Artifacts\n\n- Supervision tree and ownership diagram\n- Session registry identity rules\n- Startup and concurrent-attach results\n- Normal-stop and crash-cleanup results\n- Process-lifetime limitation record\n\n## Milestone Traceability\n\nThis epic supplies the supervised topology required before the session server can own live semantic state and client delivery.",
@@ -20,5 +21,5 @@
   "status": "open",
   "title": "M2-E12: Add the Session Supervision Topology",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:29Z"
+  "updated_at": "2026-08-14T20:08:43Z"
 }
