@@ -14,13 +14,14 @@
   "id": "jido_console-m1e19",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
   "status": "open",
   "title": "M1-E19: Add TUI Model and Profile Selection",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:12Z"
+  "updated_at": "2026-08-14T21:21:13Z"
 }
