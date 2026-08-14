@@ -48,12 +48,12 @@ publish with a local path dependency or a moving Git branch.
 Run the package gate before opening a pull request:
 
 ```bash
-mix quality
+mix precommit
 mix test --cover
 ```
 
-`mix quality` runs, in order: `format --check-formatted`,
-`compile --warnings-as-errors`, `credo --min-priority higher`, `dialyzer`, and
+`mix precommit` runs, in order: `format --check-formatted`,
+`compile --warnings-as-errors`, `credo`, `dialyzer`, and
 `doctor --raise`.
 
 Git hooks never auto-install. Install them explicitly when you want them:
