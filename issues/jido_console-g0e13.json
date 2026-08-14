@@ -11,6 +11,7 @@
     "jido_console-g0e14",
     "jido_console-g0e15"
   ],
+  "closed_at": "2026-08-14T21:25:08Z",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/00-establish-release-readiness/epics/g0-e13-milestone-1-delivery-graph.md`\nRoadmap version: `1.0.5`\n\n# G0-E13: Create the Milestone 1 Delivery Graph\n\n## Goal\n\nCreate and link the owned work graph that controls Milestone 1 delivery.\n\n## Scope\n\n- Create and link the Milestone 1 GitHub milestone.\n- Create and link one or more Milestone 1 Beadwork epics.\n- Link all Milestone 1 Beadwork tasks.\n- Require an owner, effort class, dependency, readiness state, target release, and proof artifact for each task.\n- Identify the Milestone 1 critical path and merge order.\n- Add a stable repository manifest that stores the external identifiers.\n- Define a read-only Beadwork export with a URI, revision, time, and digest.\n- Define the maximum acceptable age for a Gate 0 export.\n- Keep Beadwork as the source of truth for task fields and delivery state.\n\n## Out of Scope\n\n- Milestone 1 implementation\n- A second task-status system in Markdown\n- Completion claims for planned proof artifacts\n- Gate 0 traceability code from G0-E14\n\n## Dependencies\n\nThis epic depends on G0-E03, G0-E09, G0-E10, and G0-E11. The graph must include the golden proof target, product claim, Jidoka plan, Tilde boundary, and planned safety controls.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. External records can be created before the pull request. The pull request adds their stable links, identifier manifest, export contract, and critical-path reference.\n\n## Acceptance Checks\n\n- A reviewer can go from Milestone 1 to each linked epic and task.\n- Every task has all six required delivery fields.\n- Dependencies have no unknown item or cycle.\n- The graph shows one clear critical path and merge order.\n- Planned proof links have stable identifiers and named producers.\n- Markdown does not copy mutable task status from Beadwork.\n- The read-only export identifies its revision, time, and digest.\n- The export URI and evidence contain no access token or credential.\n- The export is audit evidence. It is not an editable local task system.\n\n## Proof Artifacts\n\n- GitHub milestone link and identifier\n- Beadwork epic and task links\n- Machine-readable delivery graph manifest\n- Read-only Beadwork export reference, revision, and digest\n- Critical-path reference\n- Required-field audit\n\n## Milestone Traceability\n\nThis epic covers the linked Milestone 1 milestone, Beadwork graph, task fields, and critical path in Gate 0.",
   "id": "jido_console-g0e13",
@@ -20,8 +21,8 @@
     "one-pr"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "G0-E13: Create the Milestone 1 Delivery Graph",
   "type": "epic",
-  "updated_at": "2026-08-14T21:20:15Z"
+  "updated_at": "2026-08-14T21:25:08Z"
 }
