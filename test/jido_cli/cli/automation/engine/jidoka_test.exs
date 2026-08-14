@@ -264,13 +264,13 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
   test "uses only each sequence step operation results for assertions" do
     llm = fn intent, journal, _context ->
       messages = intent.payload |> get_key(:prompt) |> get_key(:messages, [])
+      current_user_message = current_user_message(messages)
 
       cond do
-        Enum.any?(messages, &(get_key(&1, :content, "") =~ "Call lookup")) and
-            count_results(journal, :llm) == 0 ->
+        current_user_message =~ "Call lookup" and count_results(journal, :llm) == 0 ->
           {:ok, %{type: :operation, name: "lookup", arguments: %{}}}
 
-        Enum.any?(messages, &(get_key(&1, :content, "") =~ "Call lookup")) ->
+        current_user_message =~ "Call lookup" ->
           {:ok, %{type: :final, content: "lookup done"}}
 
         true ->
@@ -382,9 +382,10 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
   test "maps a later sequence hibernation and stops the remaining turns" do
     llm = fn intent, journal, _context ->
       messages = intent.payload |> get_key(:prompt) |> get_key(:messages, [])
+      current_user_message = current_user_message(messages)
 
       cond do
-        Enum.any?(messages, &(get_key(&1, :content, "") =~ "First")) ->
+        current_user_message =~ "First" ->
           {:ok, %{type: :final, content: "first complete"}}
 
         count_results(journal, :llm) == 0 ->
@@ -729,6 +730,13 @@ defmodule Jido.Cli.Automation.Engine.JidokaTest do
 
   defp get_key(map, key, default \\ nil) do
     Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+  end
+
+  defp current_user_message(messages) do
+    case messages |> Enum.filter(&(get_key(&1, :role) in [:user, "user"])) |> List.last() do
+      nil -> ""
+      message -> get_key(message, :content, "")
+    end
   end
 
   defp wait_for_cancellation(_context, 0), do: {:error, :cancellation_not_received}

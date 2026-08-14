@@ -78,7 +78,8 @@ defmodule Jido.Cli.Release.Entry do
       probe_mode: :workflow,
       probe_workspace: probe_option(opts, :probe_workspace, "JIDO_RELEASE_TUI_PROBE_WORKSPACE"),
       probe_expected: probe_option(opts, :probe_expected, "JIDO_RELEASE_TUI_PROBE_EXPECTED"),
-      probe_log: probe_option(opts, :probe_log, "JIDO_RELEASE_TUI_PROBE_LOG")
+      probe_log: probe_option(opts, :probe_log, "JIDO_RELEASE_TUI_PROBE_LOG"),
+      probe_verifier: probe_verifier(opts)
     ]
   end
 
@@ -100,6 +101,15 @@ defmodule Jido.Cli.Release.Entry do
     case Integer.parse(to_string(value)) do
       {delay, ""} when delay >= 0 and delay <= 10_000 -> delay
       _other -> 400
+    end
+  end
+
+  defp probe_verifier(opts) do
+    case probe_option(opts, :probe_verifier, "JIDO_RELEASE_TUI_PROBE_VERIFIER") do
+      nil -> :mix_test
+      "mix_test" -> :mix_test
+      "private_runtime" -> :private_runtime
+      other -> other
     end
   end
 

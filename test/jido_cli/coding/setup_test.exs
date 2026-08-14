@@ -52,7 +52,18 @@ defmodule Jido.Cli.Coding.SetupTest do
 
   test "can disable or replace each default tool through trusted host options", %{root: root} do
     changed = %{
-      operation: Operation.new!(name: "coding.read", idempotency: :pure),
+      operation:
+        Operation.new!(
+          name: "coding.read",
+          idempotency: :pure,
+          metadata: %{
+            "parameters_schema" => %{
+              "type" => "object",
+              "properties" => %{},
+              "additionalProperties" => false
+            }
+          }
+        ),
       handler: fn _, _ -> {:ok, :replacement} end
     }
 

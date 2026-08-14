@@ -1,7 +1,7 @@
 defmodule CodingScenario.Oracle do
   @moduledoc false
 
-  @fixture_root Path.expand("../fixtures/coding/rate_limiter/v1", __DIR__)
+  @fixture_root Path.expand("../../../test/fixtures/coding/rate_limiter/v1", __DIR__)
   @git_env [
     {"GIT_AUTHOR_NAME", "Jidoka Fixture"},
     {"GIT_AUTHOR_EMAIL", "fixture@example.invalid"},
@@ -62,6 +62,14 @@ defmodule CodingScenario.Oracle do
   end
 
   @doc false
+  @spec expected_content!(String.t()) :: String.t()
+  def expected_content!(path) when is_binary(path) do
+    @fixture_root
+    |> safe_join!(Path.join("expected", path) <> ".fixture")
+    |> File.read!()
+  end
+
+  @doc false
   @spec valid_operations(map()) :: [map()]
   def valid_operations(scenario \\ scenario!()) do
     get_in(scenario, ["operations", "requirements"])
@@ -118,6 +126,37 @@ defmodule CodingScenario.Oracle do
   end
 
   def verify(_fixture, _operations, _claims), do: {:error, [:invalid_oracle_input]}
+
+  @doc false
+  @spec verify_observed(fixture(), [map()], map(), map()) :: {:ok, map()} | {:error, [term()]}
+  def verify_observed(fixture, operations, claims, verification)
+      when is_list(operations) and is_map(claims) and is_map(verification) do
+    observed = observe!(fixture)
+    expected_command = get_in(fixture, [:scenario, "repository", "required_verification", "command"])
+
+    errors =
+      fixture
+      |> preflight_errors(observed, operations, claims)
+      |> add_error(
+        verification != %{
+          "command" => expected_command,
+          "runner" => "private_runtime",
+          "status" => "passed"
+        },
+        {:invalid_observed_verification, verification}
+      )
+      |> Enum.uniq()
+
+    case errors do
+      [] -> {:ok, Map.put(observed, "verification", verification)}
+      _errors -> {:error, errors}
+    end
+  rescue
+    error -> {:error, [{:oracle_observation_failed, Exception.message(error)}]}
+  end
+
+  def verify_observed(_fixture, _operations, _claims, _verification),
+    do: {:error, [:invalid_oracle_input]}
 
   defp preflight_errors(%{scenario: scenario}, observed, operations, claims) do
     []

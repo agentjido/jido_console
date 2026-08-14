@@ -1,8 +1,9 @@
 defmodule Jido.Cli.Release.ToolingTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Cli.Release.{Acceptance, Artifact, LicenseAudit, Local, OfflineProfile, ProbeRuntime}
+  alias CodingScenario.Oracle
   alias Jido.Cli.Automation.Replay
+  alias Jido.Cli.Release.{Acceptance, Artifact, LicenseAudit, Local, OfflineProfile, ProbeRuntime}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-release-tooling-#{System.unique_integer([:positive])}")
@@ -93,5 +94,40 @@ defmodule Jido.Cli.Release.ToolingTest do
     assert {:ok, ^session, "Release probe completed."} = ProbeRuntime.await(request, [])
     assert :ok = ProbeRuntime.close_session(session)
     assert [_one_turn] = log |> File.read!() |> String.split("\n", trim: true)
+  end
+
+  test "the workflow probe verifies inside the private runtime", %{root: root} do
+    fixture = Oracle.materialize!(Path.join(root, "repository"))
+    expected = Path.join(root, "expected.ex")
+    log = Path.join(root, "workflow.jsonl")
+    File.write!(expected, Oracle.expected_content!("lib/rate_limiter.ex"))
+
+    assert {:ok, session} =
+             ProbeRuntime.start_session(Jido.Cli.DefaultAgent,
+               probe_mode: :workflow,
+               probe_workspace: fixture.root,
+               probe_expected: expected,
+               probe_log: log,
+               probe_verifier: :private_runtime
+             )
+
+    assert {:ok, first} = ProbeRuntime.start_turn(session, "inspect", self(), [])
+    assert %{status: :ok} = ProbeRuntime.await(first, [])
+    assert {:ok, second} = ProbeRuntime.start_turn(session, "implement", self(), [])
+    pending = ProbeRuntime.await(second, [])
+    assert %{status: :pending_review, pending_reviews: [review]} = pending
+    assert %{status: :ok, approval: :approved} = ProbeRuntime.approve(pending, review, stream_to: self())
+    assert {:ok, third} = ProbeRuntime.start_turn(session, "verify", self(), [])
+    assert %{status: :ok, raw: "private runtime behavior checks passed"} = ProbeRuntime.await(third, [])
+    assert :ok = ProbeRuntime.close_session(session)
+
+    records = log |> File.read!() |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+
+    assert %{
+             "command" => "mix test",
+             "event" => "verification",
+             "runner" => "private_runtime",
+             "status" => "passed"
+           } in records
   end
 end

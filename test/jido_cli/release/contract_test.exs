@@ -87,6 +87,7 @@ defmodule Jido.Cli.Release.ContractTest do
       version: @version,
       target: @target,
       identity: %{elixir: "1.20.2", otp: "28", jidoka: "0.9.1"},
+      jidoka_ref: String.duplicate("b", 40),
       source: %{commit: String.duplicate("a", 40), dirty: false},
       source_date_epoch: 1_700_000_000
     )

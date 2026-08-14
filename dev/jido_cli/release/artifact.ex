@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Release.Artifact do
   @moduledoc "Builds one deterministic macOS ARM64 package with a private OTP runtime."
 
-  alias Jido.Cli.Release.{Contract, LicenseAudit}
+  alias Jido.Cli.Release.{Contract, CrossRepo, LicenseAudit}
 
   @target "darwin-arm64"
   @runtime_apps ~w(time_zone_info extractous_ex req_llm llm_db)
@@ -51,6 +51,7 @@ defmodule Jido.Cli.Release.Artifact do
         target: @target,
         identity: identity,
         source: source,
+        jidoka_ref: CrossRepo.pinned_ref!(),
         source_date_epoch: source_date_epoch,
         files: files,
         runtime_data: runtime_data
@@ -182,7 +183,8 @@ defmodule Jido.Cli.Release.Artifact do
         "toolchain_sha256" => sha256_file(".tool-versions"),
         "elixir" => identity.elixir,
         "otp" => identity.otp,
-        "jidoka" => identity.jidoka
+        "jidoka" => identity.jidoka,
+        "jidoka_ref" => outputs.metadata["runtime"]["jidoka_ref"]
       },
       "trust" => outputs.metadata["trust"],
       "distribution" => outputs.metadata["distribution"]

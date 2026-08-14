@@ -1,7 +1,7 @@
 defmodule Jido.Cli.Release.Local do
   @moduledoc "Runs the complete local macOS ARM64 release candidate flow."
 
-  alias Jido.Cli.Release.{Artifact, Contract}
+  alias Jido.Cli.Release.{Acceptance, Artifact, Contract, CrossRepo}
 
   @output_names ~w(
     acceptance.json
@@ -35,7 +35,7 @@ defmodule Jido.Cli.Release.Local do
         )
 
       acceptance =
-        Jido.Cli.Release.Acceptance.run!(artifact.archive,
+        Acceptance.run!(artifact.archive,
           version: artifact.version,
           target: artifact.target,
           sha256: artifact.archive_sha256,
@@ -86,6 +86,10 @@ defmodule Jido.Cli.Release.Local do
       IO.puts("release source gate: #{name}")
       run!(command, args, project_root, env)
     end)
+
+    IO.puts("release source gate: cross-repository Jidoka compatibility")
+    _evidence = CrossRepo.run!(project_root)
+    IO.puts("release source gate: cross-repository Jidoka compatibility passed")
   end
 
   defp promote!(candidate, artifact, project_root) do

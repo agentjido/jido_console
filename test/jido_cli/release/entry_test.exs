@@ -89,8 +89,15 @@ defmodule Jido.Cli.Release.EntryTest do
              probe_mode: :workflow,
              probe_workspace: "/fixture/workspace",
              probe_expected: "/fixture/expected.ex",
-             probe_log: "/fixture/workflow.jsonl"
+             probe_log: "/fixture/workflow.jsonl",
+             probe_verifier: :mix_test
            ]
+
+    private_opts = Keyword.put(workflow_opts, :probe_verifier, "private_runtime")
+    assert 0 = Entry.run([], private_opts)
+    assert_receive {:sleep, 12}
+    assert_receive {:tui, [], private_tui_opts}
+    assert private_tui_opts[:session_opts][:probe_verifier] == :private_runtime
 
     assert 1 = Entry.run([], Keyword.put(common, :tui_probe, "failure"))
     assert_receive {:sleep, 12}

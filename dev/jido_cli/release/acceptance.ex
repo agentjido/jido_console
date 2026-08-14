@@ -1,7 +1,8 @@
 defmodule Jido.Cli.Release.Acceptance do
   @moduledoc "Validates and benchmarks the exact final release archive."
 
-  alias Jido.Cli.Release.{Artifact, Contract}
+  alias CodingScenario.Oracle
+  alias Jido.Cli.Release.{Artifact, Contract, CrossRepo}
 
   @warm_runs 20
   @limits_ms %{
@@ -41,6 +42,9 @@ defmodule Jido.Cli.Release.Acceptance do
 
         if metadata["version"] != expected_version, do: raise("wrong metadata version")
         if metadata["target"] != expected_target, do: raise("wrong metadata target")
+
+        if get_in(metadata, ["runtime", "jidoka_ref"]) != CrossRepo.pinned_ref!(),
+          do: raise("artifact Jidoka ref does not match the tested dependency pin")
       end)
 
       gate!("internal file inventory", fn -> validate_file_inventory!(root, metadata) end)
@@ -52,6 +56,11 @@ defmodule Jido.Cli.Release.Acceptance do
       tui = gate!("paint-first TUI", fn -> tui_evidence!(bin, isolation) end)
       read_only = gate!("read-only installation", fn -> read_only_evidence!(root, bin, expected_version) end)
 
+      coding =
+        gate!("external coding workflow", fn ->
+          coding_workflow_evidence!(root, bin, isolation)
+        end)
+
       evidence = %{
         "schema" => "jido.acceptance",
         "schema_version" => 1,
@@ -62,6 +71,7 @@ defmodule Jido.Cli.Release.Acceptance do
         "sha256" => expected_sha256,
         "version" => expected_version,
         "target" => expected_target,
+        "jidoka_ref" => metadata["runtime"]["jidoka_ref"],
         "archive_tested" => true,
         "isolated_path_features" => ["spaces", "non_ascii"],
         "path" => %{"value" => "/usr/bin:/bin", "erl" => false, "elixir" => false, "mix" => false},
@@ -70,6 +80,7 @@ defmodule Jido.Cli.Release.Acceptance do
         "commands" => commands,
         "tui" => tui,
         "read_only_installation" => read_only,
+        "coding_workflow" => coding,
         "gates" => [
           "archive checksum",
           "metadata contract",
@@ -79,7 +90,8 @@ defmodule Jido.Cli.Release.Acceptance do
           "startup performance",
           "packaged commands",
           "paint-first TUI",
-          "read-only installation"
+          "read-only installation",
+          "external coding workflow"
         ]
       }
 
@@ -311,6 +323,187 @@ defmodule Jido.Cli.Release.Acceptance do
       do: raise("read-only package did not run: #{output}")
 
     %{"passed" => true, "package_writable" => false}
+  end
+
+  defp coding_workflow_evidence!(package_root, bin, isolation) do
+    workspace = Path.join(isolation, "external-writable-workspace")
+    expected = Path.join(isolation, "expected-rate-limiter.ex")
+    log = Path.join(isolation, "coding-workflow.jsonl")
+    trap_dir = Path.join(isolation, "blocked-system-runtime")
+    trap_log = Path.join(isolation, "blocked-system-runtime.log")
+    fixture = Oracle.materialize!(workspace)
+    prompts = Enum.map(fixture.scenario["turns"], & &1["prompt"])
+
+    File.write!(expected, Oracle.expected_content!("lib/rate_limiter.ex"))
+    install_runtime_traps!(trap_dir)
+
+    script = """
+    encoding system utf-8
+    set timeout 45
+    set stty_init "rows 30 columns 100"
+    log_user 0
+    spawn -noecho $env(JIDO_BIN)
+    expect {
+      -re {idle .* Enter sends} {}
+      timeout {puts "missing initial idle frame"; exit 2}
+      eof {puts "early executable exit"; exit 3}
+    }
+    send "\\033\\[200~$env(JIDO_PROBE_PROMPT_1)\\033\\[201~\\r"
+    expect {
+      -re {Inspected café λ source and tests\\.} {}
+      timeout {puts "missing inspection result"; exit 4}
+    }
+    send "\\033\\[200~$env(JIDO_PROBE_PROMPT_2)\\033\\[201~\\r"
+    expect {
+      -re {Review required} {}
+      timeout {puts "missing approval review"; exit 5}
+    }
+    send "a"
+    expect {
+      -re {Implemented café λ rate limiter\\.} {}
+      timeout {puts "missing approved result"; exit 6}
+    }
+    send "\\033\\[200~$env(JIDO_PROBE_PROMPT_3)\\033\\[201~\\r"
+    expect {
+      -re {Verification passed\\. Repository review is ready\\.} {}
+      -re {error .*} {puts "verification failed: $expect_out(0,string)"; exit 7}
+      timeout {puts "missing verification result: $expect_out(buffer)"; exit 7}
+    }
+    expect {
+      -re {Git diff} {}
+      timeout {puts "missing Git review"; exit 8}
+    }
+    expect {
+      -re {idle .* Enter sends} {}
+      timeout {puts "missing idle state after verification"; exit 9}
+    }
+    send "\\033"
+    expect {
+      -exact "\\033\\[?2004l\\033\\[0m\\033\\[?25h\\033\\[?1049l" {}
+      timeout {puts "missing terminal cleanup"; exit 10}
+    }
+    expect eof
+    set wait_result [wait]
+    if {[llength $wait_result] != 4 || [lindex $wait_result 2] != 0 || [lindex $wait_result 3] != 0} {
+      puts "executable failed: $wait_result"
+      exit 11
+    }
+    puts "workflow=passed"
+    """
+
+    {output, status} =
+      System.cmd(
+        "/usr/bin/env",
+        isolated_command(
+          "/usr/bin/expect",
+          ["-c", script],
+          %{
+            "JIDO_BIN" => bin,
+            "JIDO_RELEASE_TUI_PROBE" => "workflow",
+            "JIDO_RELEASE_TUI_PROBE_DELAY_MS" => "25",
+            "JIDO_RELEASE_TUI_PROBE_WORKSPACE" => workspace,
+            "JIDO_RELEASE_TUI_PROBE_EXPECTED" => expected,
+            "JIDO_RELEASE_TUI_PROBE_LOG" => log,
+            "JIDO_RELEASE_TUI_PROBE_VERIFIER" => "private_runtime",
+            "JIDO_PROBE_PROMPT_1" => Enum.at(prompts, 0),
+            "JIDO_PROBE_PROMPT_2" => Enum.at(prompts, 1),
+            "JIDO_PROBE_PROMPT_3" => Enum.at(prompts, 2),
+            "JIDO_RUNTIME_TRAP_LOG" => trap_log,
+            "PATH" => trap_dir <> ":/usr/bin:/bin"
+          }
+        ),
+        cd: workspace,
+        stderr_to_stdout: true
+      )
+
+    if status != 0 or not String.contains?(output, "workflow=passed") do
+      raise "packaged coding workflow failed with status #{status}: #{output}"
+    end
+
+    if File.exists?(trap_log) do
+      raise "packaged coding workflow invoked a blocked system runtime: #{File.read!(trap_log)}"
+    end
+
+    records = read_jsonl!(log)
+    operations = records |> Enum.filter(&(&1["event"] == "operation")) |> Enum.map(& &1["operation"])
+
+    verification_record =
+      Enum.find(records, &(&1["event"] == "verification")) ||
+        raise "packaged coding workflow did not record verification"
+
+    verification = Map.drop(verification_record, ["event"])
+
+    unless records |> Enum.filter(&(&1["event"] == "turn_started")) |> length() == 3,
+      do: raise("packaged coding workflow did not run exactly three turns")
+
+    unless Enum.any?(records, &(&1 == %{"event" => "review", "decision" => "approved"})),
+      do: raise("packaged coding workflow did not approve the edit")
+
+    unless List.last(records) == %{"event" => "session_closed"},
+      do: raise("packaged coding workflow did not close its session")
+
+    {:ok, oracle} =
+      Oracle.verify_observed(
+        fixture,
+        operations,
+        Oracle.expected_claims(fixture),
+        verification
+      )
+
+    writable_package_paths = writable_paths(package_root)
+
+    if writable_package_paths != [],
+      do: raise("packaged coding workflow changed package permissions: #{inspect(writable_package_paths)}")
+
+    unless writable?(workspace), do: raise("external coding workspace is not writable")
+
+    if String.starts_with?(workspace, package_root <> "/"),
+      do: raise("coding workspace is inside the read-only package")
+
+    %{
+      "passed" => true,
+      "provider_calls" => false,
+      "workspace_writable" => writable?(workspace),
+      "workspace_outside_package" => not String.starts_with?(workspace, package_root <> "/"),
+      "package_writable" => false,
+      "system_toolchain" => %{"blocked" => ["erl", "elixir", "mix"], "invocations" => []},
+      "verification" => verification,
+      "repository_oracle" => "passed",
+      "changed_paths" => oracle["changed_paths"],
+      "before_digest" => oracle["before_digest"],
+      "after_digest" => oracle["after_digest"]
+    }
+  end
+
+  defp read_jsonl!(path) do
+    path
+    |> File.read!()
+    |> String.split("\n", trim: true)
+    |> Enum.map(&Jason.decode!/1)
+  end
+
+  defp install_runtime_traps!(directory) do
+    File.mkdir_p!(directory)
+
+    Enum.each(["erl", "elixir", "mix"], fn name ->
+      path = Path.join(directory, name)
+
+      File.write!(
+        path,
+        "#!/bin/sh\nprintf '%s\\n' '#{name}' >> \"$JIDO_RUNTIME_TRAP_LOG\"\nexit 97\n"
+      )
+
+      File.chmod!(path, 0o755)
+    end)
+  end
+
+  defp writable?(path), do: Bitwise.band(File.stat!(path).mode, 0o222) != 0
+
+  defp writable_paths(root) do
+    [root | Path.wildcard(Path.join(root, "**/*"), match_dot: true)]
+    |> Enum.filter(&writable?/1)
+    |> Enum.map(&Path.relative_to(&1, root))
+    |> Enum.sort()
   end
 
   defp command_samples(bin, args, count) do

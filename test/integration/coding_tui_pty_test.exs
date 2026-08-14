@@ -56,7 +56,7 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     {output, status} =
       System.cmd("mix", ["escript.build"],
         cd: source_root,
-        env: [{"MIX_ENV", "prod"}],
+        env: [{"JIDO_CLI_JIDOKA_PATH", nil}, {"MIX_ENV", "prod"}],
         stderr_to_stdout: true
       )
 
@@ -91,9 +91,12 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     |> Enum.reject(&(&1 in ["_build", "deps", "jido"]))
     |> Enum.each(fn relative ->
       source = Path.join(@project_root, relative)
-      target = Path.join(destination, relative)
-      File.mkdir_p!(Path.dirname(target))
-      File.cp!(source, target)
+
+      if File.regular?(source) do
+        target = Path.join(destination, relative)
+        File.mkdir_p!(Path.dirname(target))
+        File.cp!(source, target)
+      end
     end)
   end
 

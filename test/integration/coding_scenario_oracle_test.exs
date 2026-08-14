@@ -37,6 +37,26 @@ defmodule CodingScenario.OracleTest do
     assert evidence["verification"]["output"] =~ "Result: 2 passed"
   end
 
+  test "accepts private-runtime verification evidence without a system command", %{tmp_dir: tmp_dir} do
+    fixture = completed_fixture(tmp_dir)
+
+    verification = %{
+      "command" => "mix test",
+      "runner" => "private_runtime",
+      "status" => "passed"
+    }
+
+    assert {:ok, evidence} =
+             Oracle.verify_observed(
+               fixture,
+               Oracle.valid_operations(),
+               Oracle.expected_claims(fixture),
+               verification
+             )
+
+    assert evidence["verification"] == verification
+  end
+
   test "rejects an extra repository change", %{tmp_dir: tmp_dir} do
     fixture = completed_fixture(tmp_dir)
     File.write!(Path.join(fixture.root, "NOTES.md"), "not allowed\n")

@@ -21,6 +21,7 @@ defmodule Jido.Cli.Release.Contract do
   @non_empty_string Zoi.string() |> Zoi.regex(~r/\S/)
   @version_string Zoi.string() |> Zoi.regex(~r/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
   @digest_string Zoi.string() |> Zoi.regex(~r/^[0-9a-f]{64}$/)
+  @commit_string Zoi.string() |> Zoi.regex(~r/^[0-9a-f]{40}$/)
   @file_schema Zoi.map(
                  %{
                    "path" => @non_empty_string,
@@ -75,6 +76,7 @@ defmodule Jido.Cli.Release.Contract do
                            %{
                              "elixir" => @non_empty_string,
                              "jidoka" => @non_empty_string,
+                             "jidoka_ref" => @commit_string,
                              "otp" => @non_empty_string
                            },
                            unrecognized_keys: :error
@@ -156,7 +158,8 @@ defmodule Jido.Cli.Release.Contract do
       "runtime" => %{
         "elixir" => Map.fetch!(identity, :elixir),
         "otp" => Map.fetch!(identity, :otp),
-        "jidoka" => Map.fetch!(identity, :jidoka)
+        "jidoka" => Map.fetch!(identity, :jidoka),
+        "jidoka_ref" => Keyword.fetch!(attrs, :jidoka_ref)
       },
       "source" => %{
         "commit" => Map.fetch!(source, :commit),

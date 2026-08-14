@@ -8,7 +8,7 @@ defmodule Jido.Cli.Release.ProbeRuntime do
 
   defmodule Session do
     @moduledoc false
-    @enforce_keys [:mode, :state, :workspace, :expected, :log]
+    @enforce_keys [:mode, :state, :workspace, :expected, :log, :verifier]
     defstruct @enforce_keys
 
     @type t :: %__MODULE__{
@@ -16,7 +16,8 @@ defmodule Jido.Cli.Release.ProbeRuntime do
             state: pid(),
             workspace: String.t() | nil,
             expected: String.t() | nil,
-            log: String.t() | nil
+            log: String.t() | nil,
+            verifier: :mix_test | :private_runtime
           }
   end
 
@@ -46,7 +47,8 @@ defmodule Jido.Cli.Release.ProbeRuntime do
          state: state,
          workspace: paths.workspace,
          expected: paths.expected,
-         log: paths.log
+         log: paths.log,
+         verifier: paths.verifier
        }}
     end
   end
@@ -109,7 +111,13 @@ defmodule Jido.Cli.Release.ProbeRuntime do
           "status" => "passed"
         })
 
-        record(request.session, %{"event" => "verification", "status" => "passed"})
+        record(request.session, %{
+          "command" => "mix test",
+          "event" => "verification",
+          "runner" => verification_runner(request.session.verifier),
+          "status" => "passed"
+        })
+
         emit_verification_finished(request)
 
         result(request, :ok,
@@ -198,7 +206,8 @@ defmodule Jido.Cli.Release.ProbeRuntime do
      %{
        workspace: nil,
        expected: nil,
-       log: optional_path(Keyword.get(opts, :probe_log))
+       log: optional_path(Keyword.get(opts, :probe_log)),
+       verifier: :mix_test
      }}
   end
 
@@ -206,12 +215,14 @@ defmodule Jido.Cli.Release.ProbeRuntime do
     workspace = absolute_path(Keyword.get(opts, :probe_workspace))
     expected = absolute_path(Keyword.get(opts, :probe_expected))
     log = absolute_path(Keyword.get(opts, :probe_log))
+    verifier = Keyword.get(opts, :probe_verifier, :mix_test)
 
     cond do
       is_nil(workspace) or not File.dir?(workspace) -> {:error, :release_probe_workspace_missing}
       is_nil(expected) or not File.regular?(expected) -> {:error, :release_probe_expected_file_missing}
       is_nil(log) or not File.dir?(Path.dirname(log)) -> {:error, :release_probe_log_directory_missing}
-      true -> {:ok, %{workspace: workspace, expected: expected, log: log}}
+      verifier not in [:mix_test, :private_runtime] -> {:error, :release_probe_verifier_invalid}
+      true -> {:ok, %{workspace: workspace, expected: expected, log: log, verifier: verifier}}
     end
   end
 
@@ -404,7 +415,7 @@ defmodule Jido.Cli.Release.ProbeRuntime do
     end
   end
 
-  defp verify_workspace(%Request{} = request) do
+  defp verify_workspace(%Request{session: %Session{verifier: :mix_test}} = request) do
     case System.cmd("mix", ["test"],
            cd: request.session.workspace,
            env: [{"MIX_ENV", "test"}],
@@ -414,8 +425,64 @@ defmodule Jido.Cli.Release.ProbeRuntime do
       {output, status} -> {:error, {:release_probe_verification_failed, status, output}}
     end
   rescue
-    error -> {:error, {:release_probe_verification_crashed, Exception.message(error)}}
+    error ->
+      location = __STACKTRACE__ |> List.first() |> Exception.format_stacktrace_entry()
+      {:error, {:release_probe_verification_crashed, "#{location}: #{Exception.message(error)}"}}
   end
+
+  defp verify_workspace(%Request{session: %Session{verifier: :private_runtime}} = request) do
+    source = Path.join(request.session.workspace, "lib/rate_limiter.ex")
+
+    case Application.ensure_all_started(:elixir) do
+      {:ok, _applications} -> compile_and_check(source)
+      {:error, reason} -> {:error, {:release_probe_verification_failed, {:elixir_start_failed, reason}}}
+    end
+  rescue
+    error ->
+      location = __STACKTRACE__ |> List.first() |> Exception.format_stacktrace_entry()
+      {:error, {:release_probe_verification_crashed, "#{location}: #{Exception.message(error)}"}}
+  catch
+    kind, reason -> {:error, {:release_probe_verification_crashed, {kind, reason}}}
+  end
+
+  defp compile_and_check(source) do
+    compiled = Code.compile_file(source)
+
+    try do
+      with {module, _bytecode} when is_atom(module) <- List.keyfind(compiled, RateLimiter, 0),
+           :ok <- check_rate_limiter_behaviour(module) do
+        {:ok, "private runtime behavior checks passed"}
+      else
+        nil -> {:error, {:release_probe_verification_failed, :rate_limiter_module_missing}}
+        {:error, reason} -> {:error, {:release_probe_verification_failed, reason}}
+      end
+    after
+      Enum.each(compiled, fn {module, _bytecode} ->
+        :code.purge(module)
+        :code.delete(module)
+      end)
+    end
+  end
+
+  defp check_rate_limiter_behaviour(module) do
+    limiter = module.new(2, 1_000)
+
+    with {:ok, limiter} <- module.allow(limiter, :api, 100),
+         {:ok, limiter} <- module.allow(limiter, :api, 900),
+         {:error, :rate_limited, ^limiter} <- module.allow(limiter, :api, 999),
+         other_key = module.new(1, 1_000),
+         {:ok, other_key} <- module.allow(other_key, :api, 999),
+         {:ok, other_key} <- module.allow(other_key, :admin, 999),
+         {:error, :rate_limited, other_key} <- module.allow(other_key, :api, 999),
+         {:ok, _reset} <- module.allow(other_key, :api, 1_000) do
+      :ok
+    else
+      result -> {:error, {:unexpected_rate_limiter_result, result}}
+    end
+  end
+
+  defp verification_runner(:mix_test), do: "system_mix"
+  defp verification_runner(:private_runtime), do: "private_runtime"
 
   defp git_review(%Session{} = session) do
     {patch, 0} =
