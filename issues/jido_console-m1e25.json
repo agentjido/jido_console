@@ -11,6 +11,7 @@
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e25-ship-homebrew-channel.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E25: Prepare the Homebrew Channel\n\n## Goal\n\nMake the v0.1 macOS ARM64 release installable and maintainable through\nHomebrew.\n\n## Scope\n\n- Add a Homebrew formula for the exact tested payload from M1-E24.\n- Verify the archive checksum before Homebrew installs it.\n- Verify install and first run on clean supported macOS ARM64.\n- Verify update and removal through the Homebrew lifecycle.\n- Preserve the native payload version, license, checksums, and provenance.\n- Record the formula revision and lifecycle evidence used for the support claim.\n\n## Out of Scope\n\n- Native payload creation owned by M1-E23.\n- Direct archive packaging owned by M1-E24.\n- npm packaging or publication.\n- Homebrew support for another platform or architecture.\n- A formula that builds the product from source during installation.\n- Production publication, which M1-E30 owns.\n\n## Dependencies\n\nThis epic depends on M1-E24. It uses the verified direct-archive payload and\nits lifecycle contract as the Homebrew source artifact.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the\nHomebrew formula and its macOS ARM64 install, first-run, update, and removal\ntests. It must not add npm channel behavior or change the native payload.\n\n## Acceptance Checks\n\n- The formula references the exact tested payload and its checksum.\n- Homebrew installs the product on clean supported macOS ARM64.\n- First run succeeds without an existing Elixir or Erlang toolchain.\n- Update installs the declared new version and does not select an untested\n  payload.\n- Removal follows the documented Homebrew and user-data behavior.\n- The installed artifact reports the expected version and license.\n- The formula does not compile Erlang or Elixir or download a replacement\n  runtime during installation.\n- Lifecycle evidence is redacted, repeatable, and tied to the formula revision.\n\n## Proof Artifacts\n\n- Homebrew formula and revision\n- Payload and checksum reference\n- Clean macOS ARM64 install result\n- First-run result\n- Update result\n- Removal result\n- Redacted Homebrew lifecycle evidence\n\n## Milestone Traceability\n\nThis epic covers the Homebrew cell in the v0.1 platform and channel matrix and\nits install, first-run, update, and removal evidence.",
   "id": "jido_console-m1e25",
   "labels": [
+    "effort:medium",
     "milestone-1",
     "one-pr",
     "readiness:planned",
@@ -21,5 +22,5 @@
   "status": "open",
   "title": "M1-E25: Prepare the Homebrew Channel",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:16Z"
+  "updated_at": "2026-08-14T21:21:22Z"
 }
