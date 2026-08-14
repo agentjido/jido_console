@@ -4,7 +4,8 @@
     "jido_console-m2e26"
   ],
   "blocks": [
-    "jido_console-m2e31"
+    "jido_console-m2e31",
+    "jido_console-m2e34"
   ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e27-migrate-tui-session-client.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E27: Migrate the TUI to Session.Client\n\n## Goal\n\nMake the terminal UI a `Session.Client` of the supervised semantic session.\n\n## Scope\n\n- Replace TUI ownership of a Jidoka session and turn workers with the `Session.Client` contract.\n- Preserve renderer-only local state, including input drafts, terminal dimensions, and cursor state.\n- Support TUI detach and reattach while work continues in the session.\n- Render ordered semantic events, snapshots, gaps, and outcomes through the client contract.\n\n## Out of Scope\n\n- A second TUI session or turn ownership path.\n- Durable input receipt or application-restart recovery.\n- LiveView, SSH, and remote clients.\n- Changes to automation, text, or JSON clients.\n\n## Dependencies\n\nThis epic depends on M2-E26 for the completed `Session.Client` API and reusable behavior suite.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request migrates the TUI client only. It must not migrate another current client or add a compatibility shim for the old TUI-owned session path.\n\n## Acceptance Checks\n\n- The TUI uses `Session.Client` for commands, attachment, delivery, acknowledgement, snapshots, and gaps.\n- The TUI can detach during active work and reattach to the same session without stopping the work.\n- Input drafts, terminal dimensions, and renderer state remain local to the TUI client.\n- The TUI observes the same ordered semantic outcomes after reattachment.\n- TUI reducer, terminal, and cleanup tests pass.\n\n## Proof Artifacts\n\n- TUI-to-session client contract result.\n- Detach and reattach transcript.\n- Local-state isolation result.\n- Ordered event and snapshot evidence.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 migration of the current terminal UI to `Session.Client`.",
@@ -19,5 +20,5 @@
   "status": "open",
   "title": "M2-E27: Migrate the TUI to Session.Client",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:39Z"
+  "updated_at": "2026-08-14T20:08:47Z"
 }
