@@ -4,11 +4,12 @@ type: epic
 title: Record Tilde source governance
 status: proposed
 milestone: gate-0
+beadwork_id: jido_console-g0e11
 depends_on: []
 release: none
 delivery_unit: one_pull_request
 introduced_in: 1.0.3
-last_updated_in: 1.0.3
+last_updated_in: 1.0.5
 ---
 
 # G0-E11: Record Tilde Source Governance

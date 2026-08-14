@@ -4,11 +4,12 @@ type: epic
 title: Define the first-user support claim
 status: proposed
 milestone: gate-0
+beadwork_id: jido_console-g0e09
 depends_on: []
 release: none
 delivery_unit: one_pull_request
 introduced_in: 1.0.3
-last_updated_in: 1.0.3
+last_updated_in: 1.0.5
 ---
 
 # G0-E09: Define the First-User Support Claim

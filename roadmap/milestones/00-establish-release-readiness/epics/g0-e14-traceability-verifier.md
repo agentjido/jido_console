@@ -4,11 +4,12 @@ type: epic
 title: Enforce delivery traceability
 status: proposed
 milestone: gate-0
+beadwork_id: jido_console-g0e14
 depends_on: [G0-E13]
 release: none
 delivery_unit: one_pull_request
 introduced_in: 1.0.3
-last_updated_in: 1.0.3
+last_updated_in: 1.0.5
 ---
 
 # G0-E14: Enforce Delivery Traceability

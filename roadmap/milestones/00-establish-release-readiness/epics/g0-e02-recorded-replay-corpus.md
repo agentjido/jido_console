@@ -4,11 +4,12 @@ type: epic
 title: Capture the recorded replay corpus
 status: proposed
 milestone: gate-0
+beadwork_id: jido_console-g0e02
 depends_on: [G0-E01]
 release: none
 delivery_unit: one_pull_request
 introduced_in: 1.0.3
-last_updated_in: 1.0.3
+last_updated_in: 1.0.5
 ---
 
 # G0-E02: Capture the Recorded Replay Corpus

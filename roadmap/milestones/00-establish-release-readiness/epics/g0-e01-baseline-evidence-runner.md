@@ -4,11 +4,12 @@ type: epic
 title: Establish the baseline evidence runner
 status: proposed
 milestone: gate-0
+beadwork_id: jido_console-g0e01
 depends_on: []
 release: none
 delivery_unit: one_pull_request
 introduced_in: 1.0.3
-last_updated_in: 1.0.3
+last_updated_in: 1.0.5
 ---
 
 # G0-E01: Establish the Baseline Evidence Runner

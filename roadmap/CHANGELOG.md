@@ -4,6 +4,18 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.5] - 2026-08-14
+
+### Added
+
+- Link each Gate 0 epic to its imported Beadwork epic identifier.
+- Add the Beadwork identifiers to the Gate 0 epic index.
+
+### Changed
+
+- Use the `jido_console` prefix for new Beadwork records while preserving the
+  closed legacy `jido_cli` records.
+
 ## [1.0.4] - 2026-08-14
 
 ### Added

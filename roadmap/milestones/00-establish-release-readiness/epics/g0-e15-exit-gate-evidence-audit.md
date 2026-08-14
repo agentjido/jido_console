@@ -4,11 +4,12 @@ type: epic
 title: Audit the Gate 0 exit evidence
 status: proposed
 milestone: gate-0
+beadwork_id: jido_console-g0e15
 depends_on: [G0-E01, G0-E02, G0-E03, G0-E04, G0-E05, G0-E06, G0-E07, G0-E08, G0-E09, G0-E10, G0-E11, G0-E12, G0-E13, G0-E14]
 release: none
 delivery_unit: one_pull_request
 introduced_in: 1.0.3
-last_updated_in: 1.0.3
+last_updated_in: 1.0.5
 ---
 
 # G0-E15: Audit the Gate 0 Exit Evidence

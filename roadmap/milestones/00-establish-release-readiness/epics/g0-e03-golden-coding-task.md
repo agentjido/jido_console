@@ -4,11 +4,12 @@ type: epic
 title: Freeze the golden coding task
 status: proposed
 milestone: gate-0
+beadwork_id: jido_console-g0e03
 depends_on: [G0-E01, G0-E02]
 release: none
 delivery_unit: one_pull_request
 introduced_in: 1.0.3
-last_updated_in: 1.0.3
+last_updated_in: 1.0.5
 ---
 
 # G0-E03: Freeze the Golden Coding Task
