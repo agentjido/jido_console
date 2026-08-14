@@ -1,6 +1,6 @@
 # Jido Console Roadmap
 
-Roadmap version: **1.0.3**
+Roadmap version: **1.0.4**
 
 Roadmap status: **proposed**
 

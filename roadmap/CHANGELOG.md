@@ -4,6 +4,14 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.4] - 2026-08-14
+
+### Added
+
+- Add a Mermaid diagram that shows the dependency of each Gate 0 epic.
+- Show the direct dependency from every prior Gate 0 epic to the final
+  exit-gate audit.
+
 ## [1.0.3] - 2026-08-14
 
 ### Added

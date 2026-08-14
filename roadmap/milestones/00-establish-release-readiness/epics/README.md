@@ -24,6 +24,62 @@ The epic files define scope, epic dependencies, acceptance checks, and proof. Be
 | [G0-E14 Traceability verifier](g0-e14-traceability-verifier.md) | One automated check rejects incomplete or broken delivery links. | G0-E13 |
 | [G0-E15 Exit-gate evidence audit](g0-e15-exit-gate-evidence-audit.md) | One final audit records the Gate 0 decision from clean-state evidence. | G0-E01 through G0-E14 |
 
+## Dependency Diagram
+
+Solid arrows show normal epic dependencies. Dashed arrows show that the final audit directly depends on each prior epic.
+
+```mermaid
+flowchart TB
+    E01["G0-E01<br/>Baseline runner"]
+    E02["G0-E02<br/>Replay corpus"]
+    E03["G0-E03<br/>Golden task"]
+    E04["G0-E04<br/>TUI reducer and layout"]
+    E05["G0-E05<br/>TUI terminal and endurance"]
+    E06["G0-E06<br/>File-boundary fixtures"]
+    E07["G0-E07<br/>Runtime-boundary fixtures"]
+    E08["G0-E08<br/>Release measures"]
+    E09["G0-E09<br/>First-user claim"]
+    E10["G0-E10<br/>Jidoka readiness"]
+    E11["G0-E11<br/>Tilde governance"]
+    E12["G0-E12<br/>Workflow controls"]
+    E13["G0-E13<br/>Delivery graph"]
+    E14["G0-E14<br/>Traceability verifier"]
+    E15["G0-E15<br/>Exit-gate audit"]
+
+    E01 --> E02
+    E01 --> E03
+    E02 --> E03
+    E01 --> E04
+    E01 --> E05
+    E04 --> E05
+    E01 --> E06
+    E13 --> E06
+    E01 --> E07
+    E06 --> E07
+    E01 --> E08
+    E01 --> E10
+    E03 --> E13
+    E09 --> E13
+    E10 --> E13
+    E11 --> E13
+    E13 --> E14
+
+    E01 -.-> E15
+    E02 -.-> E15
+    E03 -.-> E15
+    E04 -.-> E15
+    E05 -.-> E15
+    E06 -.-> E15
+    E07 -.-> E15
+    E08 -.-> E15
+    E09 -.-> E15
+    E10 -.-> E15
+    E11 -.-> E15
+    E12 -.-> E15
+    E13 -.-> E15
+    E14 -.-> E15
+```
+
 ## Merge Plan
 
 1. Merge G0-E01 and G0-E12 first. They can run in parallel.
