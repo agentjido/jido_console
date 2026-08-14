@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-g0e01",
     "jido_console-g0e02",
@@ -29,8 +29,8 @@
     "one-pr"
   ],
   "priority": 2,
-  "status": "open",
+  "status": "in_progress",
   "title": "G0-E15: Audit the Gate 0 Exit Evidence",
   "type": "epic",
-  "updated_at": "2026-08-14T19:15:46Z"
+  "updated_at": "2026-08-14T22:03:28Z"
 }
