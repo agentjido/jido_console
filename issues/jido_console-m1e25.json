@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m1e24"
   ],
@@ -20,5 +20,5 @@
   "status": "open",
   "title": "M1-E25: Prepare the Homebrew Channel",
   "type": "epic",
-  "updated_at": "2026-08-14T19:21:39Z"
+  "updated_at": "2026-08-14T21:21:15Z"
 }
