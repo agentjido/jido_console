@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-m1e30"
+  ],
   "blocks": [],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e01-land-ordered-jidoka-async-events.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E01: Land the Ordered Jidoka Async Event Contract\n\n## Goal\n\nMake one Jidoka request emit one valid ordered event stream.\n\n## Scope\n\n- Deliver one external Jidoka pull request for the async event contract.\n- Define one sequence owner for each request.\n- Emit contiguous per-request event order.\n- Emit one terminal event for each request.\n- Define race behavior for completion, cancellation, timeout, and owner exit.\n- Reject or classify an event that cannot be assigned to the request sequence.\n- Add deterministic tests for event races and terminal-event rules.\n\n## Out of Scope\n\n- Jido Console protocol or event projection.\n- Console session ownership.\n- Request-controller cleanup from M2-E02.\n- Durable event storage or restart-safe input.\n\n## Dependencies\n\nThis epic depends on M1-E30 for the published v0.1 source, release record, and approved Jidoka dependency baseline.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one external Jidoka pull request. The pull request contains the one-sequence-owner contract, event ordering, terminal-event behavior, race handling, and tests. It must not contain Jido Console integration.\n\n## Acceptance Checks\n\n- Each request has one sequence owner.\n- Events for one request have contiguous, deterministic order.\n- Each request has exactly one terminal event.\n- Completion, cancellation, timeout, and owner-exit races produce one valid terminal result.\n- A late or duplicate event cannot create a second terminal result.\n- The contract result is deterministic without a live provider.\n\n## Proof Artifacts\n\n- External Jidoka pull request link.\n- Ordered event contract and sequence-owner record.\n- Race test results.\n- Terminal-event uniqueness result.\n- Immutable source and release identity.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to land the additive Jidoka fix for one ordered async event stream before Console integration.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "M2-E01: Land the Ordered Jidoka Async Event Contract",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:07Z"
+  "updated_at": "2026-08-14T20:08:23Z"
 }
