@@ -14,5 +14,6 @@
   "priority": 2,
   "status": "open",
   "title": "M2-E19: Add Exact Worker Drain",
-  "type": "task"
+  "type": "epic",
+  "updated_at": "2026-08-14T20:08:12Z"
 }
