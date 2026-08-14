@@ -6,7 +6,7 @@ status: proposed
 depends_on: [milestone-1]
 release: v0.2
 introduced_in: 0.1.0
-last_updated_in: 1.0.2
+last_updated_in: 1.0.7
 ---
 
 # Milestone 2: Ship the Semantic and Supervised Session Plane
@@ -20,6 +20,10 @@ Make every current surface a client of one supervised, renderer-neutral session 
 The TUI, automation, text, and JSON surfaces use one versioned session protocol and one ordered semantic state. A client can exit and attach again while the application and session stay alive.
 
 This milestone combines the former semantic-core, session-owner, and client-conversion milestones. Internal stages belong in Beadwork and do not make separate releases.
+
+## Generated Epics
+
+The [Milestone 2 epic index](epics/README.md) splits this milestone into 35 epics. Each epic is the scope for exactly one pull request.
 
 ## Work
 

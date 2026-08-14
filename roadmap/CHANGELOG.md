@@ -4,6 +4,27 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.7] - 2026-08-14
+
+### Added
+
+- Add 35 generated epics for Milestone 2 under its milestone directory.
+- Give each Milestone 2 epic one pull request boundary, acceptance checks,
+  proof artifacts, dependencies, and milestone traceability.
+- Add a Mermaid diagram that shows the complete Milestone 2 dependency order.
+- Add one Beadwork identifier for each Milestone 2 epic.
+
+### Changed
+
+- Link the Milestone 2 milestone to its generated epic index.
+- Split the former four broad Milestone 2 groups into reviewable
+  one-pull-request delivery units without a change to the milestone outcome or
+  exit gate.
+- Keep the Jidoka fixes, Console protocol, session ownership, client delivery,
+  and current-client migrations in separate pull requests.
+- Keep production-candidate proof, release audit, and protected publication in
+  separate pull requests.
+
 ## [1.0.6] - 2026-08-14
 
 ### Added
