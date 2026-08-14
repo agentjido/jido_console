@@ -4,7 +4,9 @@
     "jido_console-m2e13",
     "jido_console-m2e15"
   ],
-  "blocks": [],
+  "blocks": [
+    "jido_console-m2e26"
+  ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e16-separate-steering-and-follow-up.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E16: Separate Steering from Follow-Up Input\n\n## Goal\n\nKeep active-run steering and next-run follow-up input in separate queues with clear operations.\n\n## Scope\n\n- Define distinct queue types for active-run steering and queued follow-up input.\n- Add operations to show, add, remove, and consume each queue independently.\n- Bind each queue item to the session, run, client, input, and process-lifetime identity.\n- Preserve deterministic order within each queue.\n- Prevent steering from becoming an accidental next-run prompt.\n- Prevent follow-up input from changing the active run unless an explicit control accepts it.\n- Project queue state and terminal outcomes through the semantic protocol.\n\n## Out of Scope\n\n- Restart-safe queue persistence\n- Durable input receipts\n- Multi-agent lanes or shared worktree queues\n- Client delivery backpressure\n- A new model or tool execution policy\n\n## Dependencies\n\nThis epic depends on M2-E13 for the session owner and queue authority and M2-E15 for process-lifetime input identity and admission.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the two queue models, operations, identity checks, and focused tests. It must not add persistent queue recovery or a second session owner.\n\n## Acceptance Checks\n\n- Steering and follow-up input use separate queues and separate operations.\n- Show, add, remove, and consume operations cannot cross queue boundaries.\n- Queue items retain session, run, client, and input identity.\n- Queue order is deterministic during one application lifetime.\n- Steering cannot become a follow-up prompt without an explicit operation.\n- Follow-up input cannot mutate an active run without an explicit control.\n\n## Proof Artifacts\n\n- Steering and follow-up queue schema\n- Queue operation and identity matrix\n- Cross-queue denial results\n- Ordering and lifecycle results\n- Semantic projection examples\n\n## Milestone Traceability\n\nThis epic implements the distinct active-run and next-run input paths required by the Milestone 2 session owner.",
   "id": "jido_console-m2e16",
@@ -18,5 +20,5 @@
   "status": "open",
   "title": "M2-E16: Separate Steering from Follow-Up Input",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:30Z"
+  "updated_at": "2026-08-14T20:08:36Z"
 }
