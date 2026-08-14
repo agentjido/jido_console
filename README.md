@@ -1,490 +1,115 @@
-# jido_cli
+# Jido CLI
 
-A small terminal and automation harness for
-[Jidoka](https://github.com/agentjido/jidoka). The Mix package is `jido_cli`.
-The executable is `jido`.
+> [!WARNING]
+> This project is in active development. It is not a supported production
+> release. Commands, data contracts, and internal APIs can change.
 
-This package uses Jidoka for agent import, execution, sessions, and deterministic
-assertions. It does not use `jido_eval`.
+`jido_cli` is the terminal and automation client for
+[Jidoka](https://github.com/agentjido/jidoka). The executable is `jido`.
 
-## Installation
+This repository is primarily for developers who want to test changes and
+submit pull requests. There is no supported package installation or Homebrew
+flow yet.
 
-The release artifact is a target-specific package with a private Erlang/OTP
-runtime. Homebrew distribution is planned but is not implemented yet.
+## Scope
 
-The `jido_cli` Mix package also carries Hex metadata for programs that depend on
-the harness programmatically:
+The CLI owns:
 
-```elixir
-def deps do
-  [
-    {:jido_cli, "~> 0.1.0"}
-  ]
-end
+- command parsing and data-only YAML or JSON input;
+- the interactive terminal UI;
+- scenario and evaluation-matrix planning;
+- JSONL output, artifacts, and exit status;
+- local release assembly and acceptance tests.
+
+Jidoka owns agent execution, sessions, effects, cancellation, execution
+environments, and runtime state. CLI code must use public Jidoka APIs. It must
+not depend on Jidoka internals.
+
+The project does not include a daemon or service. It does not publish, sign,
+notarize, or update Homebrew.
+
+## Set up a development checkout
+
+Install the Erlang and Elixir versions in `.tool-versions`, then run:
+
+```sh
+mix deps.get
+mix test
 ```
 
-## Build
+The normal build uses a pinned Jidoka Git commit. To test a local Jidoka
+checkout, use an explicit path in development or test only:
 
-The supported local release build uses the exact Erlang and Elixir versions in
-`.tool-versions`. The source build uses an exact Jidoka commit from GitHub. It
-does not need a sibling Jidoka checkout and does not use an unreleased Hex
-package.
+```sh
+JIDO_CLI_JIDOKA_PATH=../jidoka mix deps.get
+JIDO_CLI_JIDOKA_PATH=../jidoka mix test
+```
 
-Validate source, enforce at least 80% unit coverage for production code, build
-the developer escript, and smoke-test its fast commands with one command:
+Do not use this override in CI or release builds.
+
+## Run from source
+
+Build the developer executable:
+
+```sh
+MIX_ENV=prod mix escript.build
+./jido --help
+```
+
+To test the terminal UI with a provider, create a private `.env` file:
+
+```sh
+cp .env.example .env
+chmod 600 .env
+./jido
+```
+
+Never commit credentials. Tests must not call live providers.
+
+## Before you submit a pull request
+
+Read `AGENTS.md` and [CONTRIBUTING.md](CONTRIBUTING.md). Keep the change small
+and include tests for changed behavior.
+
+Run the complete gate:
 
 ```sh
 mix jido.check
 ```
 
-Create and test the complete local macOS ARM64 candidate with one command:
+This command checks locked dependencies, formatting, compilation warnings,
+Credo, Dialyzer, documentation, specs, test coverage, generated docs, and the
+production escript fast path.
+
+Pull requests must:
+
+- keep agent, scenario, and suite files data-only;
+- validate external input with Zoi at the correct boundary;
+- preserve `jido.case-result` as the automation JSONL boundary;
+- keep status `0` for success, `1` for execution failure, and `64` for usage or
+  configuration errors;
+- use injected test dependencies and deterministic fixtures;
+- use a Conventional Commit title.
+
+If a change affects release code, test a non-publishable local macOS ARM64
+candidate:
 
 ```sh
-mix jido.release
+mix jido.release --allow-dirty
 ```
 
-The command rejects a dirty worktree. For local development tests, use
-`mix jido.release --allow-dirty`. This marks the metadata as dirty and not
-publishable. Output is under `dist/`. The command does not sign, notarize,
-upload, publish, or change Homebrew.
+This command writes to `dist/`. It does not publish or update Homebrew.
 
-After extraction, run `bin/jido`. It always uses the private runtime under
-`libexec`; Erlang and Elixir are not required on `PATH`.
-
-For a developer escript only, use `MIX_ENV=prod mix escript.build`. The escript
-is not the selected release package.
-
-## Interactive use
-
-Set the provider credential for the built-in agent. Then, start the terminal UI:
-
-```sh
-export OPENAI_API_KEY=...
-./jido
-```
-
-The CLI also loads provider credentials from `.env` in its current directory.
-The host process environment has precedence. The CLI accepts only known
-provider credential names from this file and requires private file permissions:
-
-```sh
-cp .env.example .env
-chmod 600 .env
-```
-
-The terminal UI requires Erlang/OTP 28 or newer for raw terminal input.
-Press Ctrl-C during a turn to request cancellation through Jidoka. If the turn
-has already completed, its completed answer stays in the transcript. Press
-Ctrl-C or Escape while the UI is idle to exit.
-
-### Default coding setup
-
-Interactive use enables the removable `jido.coding_pack` extension by default.
-The trusted default execution-profile ID is `coding.default`. The first-run
-setup enables bounded workspace read and search tools. A host can add reviewed
-write, shell, Git, and verification ports through trusted configuration. Agent
-or project data cannot name an Elixir module, command, adapter, image, mount, or
-network rule.
-
-Use a different trusted pack or profile ID, or disable the pack:
-
-```sh
-./jido --coding-pack acme.coding_pack --coding-profile restricted
-./jido --coding-pack disabled
-```
-
-`--project-root DIR` selects the trusted workspace root. A host embedding the
-CLI can also set `:coding_pack`, `:coding_profile`, `:project_root`,
-`:coding_access`, and bounded `:coding_limits`. Command options take precedence
-over application defaults. A replacement pack ID resolves through the same
-trusted extension-record and project-trust path as an explicit agent request.
-Default tools remain independently replaceable or removable by trusted tool
-IDs.
-
-At session start, the CLI loads project instruction files through
-`Jidoka.CodingPack`. It shows each loaded relative path and scope in the TUI.
-Root instructions load before more specific nested instructions. Instruction
-content and SHA-256 provenance enter the same data-only Jidoka context used by
-coding operations.
-
-Use `@relative/path` to attach a bounded UTF-8 file to one interactive turn.
-Use `\@` for a literal at sign. A unique basename can resolve through bounded
-workspace search. An ambiguous, missing, ignored, binary, oversized, denied, or
-outside-root mention shows an error and does not submit the turn. File mentions
-do not use a shell and cannot bypass workspace ignore or path rules. Automated
-scenario input does not use fuzzy file mentions; it must give explicit data.
-
-After a coding turn, the TUI shows a read-only review section. An edit record
-shows its relative path, action, before and after digests, structural line
-counts, status, and checkpoint reference. A Git review shows bounded file facts
-and at most 8,192 bytes of portable patch text. Binary and truncated results are
-marked. The CLI keeps at most 50 review records and also limits visible rows to
-the terminal size.
-
-The stable review states are `changed`, `no_change`, `conflict`, `interrupted`,
-`restored`, `restore_failed`, `failed`, and `cancelled`. Sensitive paths and
-patches are redacted. A checkpoint is recovery evidence only. The TUI does not
-restore a checkpoint, accept a change, read a changed file, or run a Git
-command. Malformed and unsafe review data is not shown.
-
-### Trusted local-folder coding
-
-The `coding.local` profile is an explicit development profile. It requires one
-`--project-root` and confines every file and command operation to that canonical
-folder. It enables read, search, edit, write, read-only Git review, and one
-fixed `mix-test` verifier. It does not give the model an arbitrary shell.
-
-The profile uses `openai:gpt-4.1-mini` by default with temperature 0,
-4,000 maximum output tokens, at most 12 model calls, one operation at a time,
-and a 180-second turn limit. `--model` can select another configured provider
-model.
-
-Prepare and run the included isolated scenario:
-
-The build command below uses the checked-out Jidoka workspace for integration
-testing. The normal dependency remains the pinned GitHub revision.
-
-```sh
-mix jido.scenario.prepare --force
-JIDO_CLI_JIDOKA_PATH=../jidoka mix escript.build
-./jido \
-  --coding-profile coding.local \
-  --project-root .jido/scenarios/rate_limiter \
-  --model openai:gpt-4.1-mini
-```
-
-Submit this prompt:
+## Repository layout
 
 ```text
-Read AGENTS.md and SCENARIO.md. Fix the defect with the smallest change. Do not
-change tests. Run coding.verify with helper_id mix-test. Review coding.git_status
-and coding.git_diff before you report completion.
+lib/jido_cli/cli/       CLI, automation, and TUI code
+lib/jido_cli/coding/    Trusted local coding integration
+lib/jido_cli/terminal/  Terminal input and rendering adapters
+dev/                    Development and local release tasks
+test/                   Deterministic tests
+examples/               Data-only agents, scenarios, and suites
+release/                Local packaging policy and evidence rules
 ```
 
-## Run one input or scenario
-
-Use a text file or standard input for one turn:
-
-```sh
-./jido run --agent examples/agents/concise.yml --input prompt.md
-printf 'Summarize this text.' | ./jido run --agent examples/agents/concise.yml --input -
-```
-
-Use a scenario file for one or more ordered turns:
-
-```sh
-./jido run \
-  --agent examples/agents/concise.yml \
-  --scenario examples/evals/scenarios/project_memory.yml \
-  --output .jido/runs/project-memory
-```
-
-Each automated cell gets one new Jidoka session. All turns in that cell use the
-same session and the same agent state. A different agent, model, scenario, or
-trial gets a different session. Thus, data cannot move between matrix cells.
-
-A scenario can put input and context in the YAML file or in a relative file:
-
-```yaml
-version: 1
-scenario:
-  id: project_memory
-  context:
-    value:
-      customer: acme
-  turns:
-    - id: store
-      input:
-        text: The project name is Atlas. Confirm that you stored it.
-      assertions:
-        contains: Atlas
-    - id: recall
-      input:
-        text: What is the project name? Include only the name.
-      assertions:
-        equals: Atlas
-```
-
-The supported assertions are `contains`, `equals`, and `operation_called`.
-Assertions on a turn apply only to that turn. An operation call from an earlier
-turn cannot pass an assertion on a later turn.
-
-Use `--model PROVIDER:MODEL` to replace the model in one agent file. Use
-`--runtime-profile ID` to select a trusted runtime profile that the host
-application registered. Scenario and agent files cannot load Elixir modules.
-
-Agent and scenario files can select only a profile ID:
-
-```yaml
-agent:
-  id: concise
-  model: openai:gpt-4o-mini
-  execution_profile: restricted
-```
-
-```yaml
-scenario:
-  id: project_memory
-  execution_profile: network-disabled
-  request:
-    input: Remember Atlas.
-```
-
-The CLI uses this fixed order: command `--runtime-profile`, scenario profile,
-agent profile, suite default, then no profile. A suite default is under
-`suite.run.execution_profile`. `--runtime-profile` is also valid for `eval`.
-
-The host must configure `:execution_profile_resolver` with a trusted Jidoka
-resolver function or module. The resolver maps the ID to a host-owned security
-profile and adapter registration. Agent, scenario, and suite files cannot set
-commands, images, mounts, network rules, adapter modules, backend options, or
-runtime option maps. Invalid and unknown profiles fail before artifact output
-starts and return exit status 64.
-
-### Offline capability replay
-
-A trusted execution-profile registration can select a pinned Jidoka capability
-fixture. Put this data in the host-owned registration `metadata`, not in an
-agent, scenario, or suite file:
-
-```elixir
-metadata: %{
-  "jido_cli.replay" => %{
-    "mode" => "replay",
-    "fixture_path" => "/trusted/fixtures/offline.json",
-    "fixture_digest" => "sha256:...",
-    "compatibility" => %{"agent" => "support-v1"}
-  }
-}
-```
-
-The host can use `fixture_json` instead of `fixture_path`, but it cannot use
-both. Jidoka verifies the fixture schema and digest. The CLI also checks the
-pinned digest and an 8 MB default size limit before it creates an output
-directory or starts a cell. A host can set a lower
-`:max_replay_fixture_bytes` limit. Data files can select only the trusted
-profile ID. Raw fixture paths, JSON, digests, commands, and replay options in
-data files are rejected.
-
-Each replay cell gets an isolated player and no live model, operation, policy,
-or execution-environment call. The player must match all calls in order and
-consume the full fixture. A missing, changed, reordered, or unused call gives a
-valid cell error and exit status 1. A missing, malformed, oversized, unpinned,
-or incompatible trusted fixture is a configuration error and gives exit status
-64 before artifact mutation.
-
-The manifest and each case result have `capability_replay` evidence. `mode` is
-`live` or `replay`; live cells use `not_replayed`. Replay results include the
-fixture schema and digest, matched and total call counts, recorded-evidence
-status, and a bounded mismatch summary. They do not include the fixture path,
-raw entries, or secret response fields. Recorded provider or tool errors can be
-fully matched while the cell execution status remains an error. A replay
-profile reports execution-environment status `recorded`; it does not claim
-current live enforcement.
-
-The repository includes `examples/evals/offline/suite.yml` and a pinned fixture.
-After the host registers `offline-example` with that fixture, this command does
-not need a provider credential:
-
-```sh
-./jido eval examples/evals/offline/suite.yml
-```
-
-The CLI does not have a fixture-recording command. Record fixtures through the
-public Jidoka capability API, review and redact them, and then pin their digest
-in trusted host configuration.
-
-For a live profiled automation cell, the CLI passes only the resolved public data to
-Jidoka. Jidoka owns one environment manager for all ordered turns in that cell.
-It acquires and releases transient handles for each turn, and it closes the
-environment after completion, error, or cancellation. The CLI does not inspect
-or store an adapter handle.
-
-## Run an evaluation suite
-
-An evaluation suite creates this matrix:
-
-`agents x models x scenarios x repeats`
-
-Run the included example:
-
-```sh
-export OPENAI_API_KEY=...
-export ANTHROPIC_API_KEY=...
-./jido eval examples/evals/smoke.yml --output .jido/runs/smoke
-```
-
-The suite can set a maximum job count. A job is one complete matrix cell, not
-one turn. Turns in a cell always run in order.
-
-```yaml
-version: 1
-suite:
-  id: smoke
-  agents:
-    - key: concise
-      file: ../agents/concise.yml
-    - key: explanatory
-      file: ../agents/explanatory.yml
-  scenarios:
-    - scenarios/project_memory.yml
-  models:
-    - key: openai-mini
-      ref: openai:gpt-4o-mini
-    - key: claude-haiku
-      ref: anthropic:claude-3-5-haiku-latest
-  matrix:
-    repeats: 2
-  run:
-    jobs: 4
-    execution_profile: restricted
-```
-
-All relative paths start at the file that contains the path. You can also use a
-model entry with `source: agent` to keep the model from each agent file.
-
-### Automation limits
-
-Every suite uses trusted runtime ceilings. A suite can reduce a ceiling under
-`run.limits`; it cannot raise one:
-
-```yaml
-run:
-  jobs: 4
-  limits:
-    max_cells: 100
-    max_turns_per_cell: 8
-    cell_timeout_ms: 120000
-    suite_timeout_ms: 900000
-    max_total_tokens: 250000
-    max_total_cost: 25.0
-    provider_concurrency:
-      openai: 2
-      anthropic: 1
-```
-
-The host can set lower trusted values with `:automation_limit_ceiling`. The
-default ceilings are 10,000 cells, 100 turns per cell, five minutes per cell,
-one hour per suite, 10 million reported tokens, and 1,000 units of reported
-provider cost. The default provider concurrency is `run.jobs`. All values must
-be positive. Unknown values, unsafe values, an oversized matrix, and a request
-above a host ceiling fail with exit status 64 before artifact creation.
-
-Cells use both the total job limit and the limit for their model provider. The
-admission order is deterministic. A cell and its model, tool, extension, and
-execution-environment calls use the applied cell deadline. A suite deadline or
-reported usage budget stops new admission. Active cells finish by default. A
-trusted host can set `:cancel_active_on_limit` when it must cancel them.
-
-The manifest, case results, and summary contain `runtime_limits` evidence. It
-separates requested, applied, observed, and exceeded values. Provider usage is
-reported evidence; the CLI does not look up prices. A provider that does not
-report a usage fact cannot add that fact to the observed budget. A runtime
-limit reached during execution gives exit status 1 and lists cells that did not
-start.
-
-## Output contract
-
-Automated commands write one `jido.case-result` JSON object per physical line
-to standard output. Diagnostics use standard error. A failed assertion or an
-execution error gives exit status 1. A cancelled run also gives exit status 1.
-A command or configuration error gives exit status 64.
-
-The executable changes `SIGTERM` into a cooperative cancellation request. The
-run stops the admission of new cells. Each started cell still writes one case
-result. A cancelled active cell has execution status `cancelled`. The summary
-lists the cell identifiers that did not start in `not_started`. This behavior
-also applies when a host injects another cancellation source.
-
-When `--output DIR` or `run.output` is set, the directory must be new or empty.
-The command writes:
-
-```text
-DIR/
-  manifest.json
-  lifecycle.json
-  results.jsonl
-  summary.json
-  by-agent/<agent-key>.jsonl
-```
-
-Each record has stable run, cell, sequence, agent, scenario, model, and trial
-fields. It also has one result for each turn, usage data, assertion results, and
-portable error data. Concurrent cells can finish in any order. Use `sequence`
-or `cell_id` to align records from separate runs.
-
-Each case has an `execution_environment` value. An unprofiled cell uses only
-`{"status":"not_requested"}`. A profiled cell keeps these facts separate:
-
-| Field | Meaning |
-| --- | --- |
-| `requested` | Profile ID, capability IDs, and a digest of the data-only request |
-| `resolved` | Trusted profile ID, profile digest, and registration fingerprint |
-| `binding` | Redacted binding fingerprint, revision, and state |
-| `confirmed` | Adapter-confirmed backend, isolation, network, workspace, image digest, limits, and checkpoint support |
-| `lifecycle` | Confirmed or failed checkpoint, restore, fork, close, and cleanup facts |
-
-The status is `not_requested`, `resolved`, `rejected`, `open_failed`,
-`enforced`, `closed`, `close_failed`, or `cleanup_failed`. A request is never
-reported as enforced unless Jidoka returns confirmed evidence. Manifest cells
-contain only requested and resolved identity facts. Case records contain final
-confirmed facts. The same case record is copied to `results.jsonl` and the
-matching `by-agent` file.
-
-`manifest.json` is immutable source and plan provenance. `lifecycle.json` is
-created with status `running` and is replaced atomically as work changes. Its
-terminal status is `completed`, `failed`, `cancelled`, or `incomplete`.
-`summary.json` is also written through a temporary file and an atomic rename.
-The lifecycle lists each planned, started, completed, failed, cancelled, and
-missing cell by `cell_id` and `sequence`. A completed cell has a full record in
-both aggregate and per-agent artifacts. Failed and cancelled cells are subsets
-of the completed list.
-
-If standard output fails, the run stops further standard output writes. It
-keeps complete file records when possible and marks the directory incomplete.
-If `results.jsonl` or a per-agent write fails, the CLI does not write that case
-to standard output. Each JSONL update replaces the file atomically, so a
-surviving file cannot end with a partial physical line. A per-agent failure can
-leave a complete aggregate record; the lifecycle still marks the run
-incomplete. `primary_error` records the run failure, and
-`finalization_errors` records artifact failures in portable form. These fields
-do not contain runtime handles or provider-private values.
-
-All artifact files use mode `0600`. A rejected nonempty output directory is not
-changed. The CLI does not resume or repair an incomplete directory. Consumers
-can read its complete JSONL lines and use `lifecycle.json` to find missing
-cells.
-
-These fields never contain credentials, commands, host paths, adapter options,
-provider handles, resource references, or provider-private metadata. Digests
-and fingerprints give stable cross-references without exposing these values.
-
-The CLI validates every case result before it writes the JSONL line. It also
-validates the version 1 manifest before it creates the output directory and the
-version 1 summary before it writes `summary.json`. The schemas require JSON
-data, known status values, and nonnegative counts and times. Process values,
-functions, ports, references, and non-string JSON map keys are invalid.
-
-Version 1 producers can add data only in a documented optional field or in an
-`extensions` entry. Extension identifiers must have a namespace, such as
-`acme.metrics`. Version 1 readers ignore unknown optional fields. They reject a
-missing required field or an invalid value. This rule lets a newer producer add
-optional data without changing the meaning of an existing field.
-
-The CLI does not include compare or validate commands. Keep the raw JSONL files
-as the integration boundary. A benchmark tool can group records by the matrix
-fields and compare separate run directories.
-
-## Homebrew packaging
-
-Build artifacts depend on the Erlang/OTP major version. Build one artifact for
-each supported platform and OTP combination. Publish a checksum for each
-artifact. Install it with an Erlang runtime dependency:
-
-```ruby
-depends_on "erlang"
-
-def install
-  bin.install "jido"
-end
-```
+Licensed under Apache-2.0. See `LICENSE`.
