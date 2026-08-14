@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-m2e11"
+  ],
   "blocks": [],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e22-return-typed-command-effects.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E22: Return Typed Command Effects\n\n## Goal\n\nReturn command meaning as typed effects and keep it separate from each client's\npresentation outcome.\n\n## Scope\n\n- Define the typed effect result for a semantic command.\n- Represent accepted, rejected, deferred, failed, and no-effect command\n  outcomes with explicit types.\n- Keep command meaning independent of TUI, automation, text, and JSON rendering.\n- Bind effects to the command identity, session, run, request, and provenance.\n- Preserve bounded unknown effect data without granting authority.\n- Return a stable effect envelope that clients can render or transform.\n- Keep permission requirements available to the permission life cycle.\n\n## Out of Scope\n\n- The command and client declaration registry owned by M2-E21.\n- Permission request, response, expiry, and cancellation transitions owned by\n  M2-E24.\n- Model content and structured view details owned by M2-E23.\n- Client adapter migration.\n\n## Dependencies\n\nThis epic depends on M2-E11 for semantic reduction and outcome behavior\nand M2-E21 for the single command and client registry.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds typed\ncommand effects, effect validation, provenance binding, and deterministic\neffect tests. It must not add renderer adapters, model-content formatting, or\nthe permission state machine.\n\n## Acceptance Checks\n\n- Every command result has a typed effect or an explicit no-effect result.\n- Accepted, rejected, deferred, and failed effects are distinct and stable.\n- Effect meaning is identical across client surfaces.\n- An effect is bound to its command, session, run, request, and provenance.\n- Unknown bounded effect data cannot grant authority.\n- Permission requirements remain available without embedding client rendering.\n- Deterministic tests cover each effect outcome and invalid effect data.\n\n## Proof Artifacts\n\n- Typed command-effect schema\n- Effect outcome and validation table\n- Provenance-bound effect examples\n- Unknown-data safety results\n- Cross-surface effect equivalence tests\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to return typed command effects\nand to separate command meaning from client outcomes.",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "M2-E22: Return Typed Command Effects",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:13Z"
+  "updated_at": "2026-08-14T20:08:33Z"
 }
