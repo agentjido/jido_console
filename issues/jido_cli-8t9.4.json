@@ -2,14 +2,16 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-14T00:18:42Z",
+  "close_reason": "Phase 3 complete: stable interactive runtime identity, async effects, checked per-turn state, live tools and approvals, hardened editor/transcript/attachments/layout, and bounded resource shutdown are implemented and validated.",
   "created": "2026-08-13T20:13:43Z",
   "description": "Give jido_cli stable request identity, non-blocking work, per-turn state, live tool activity, approval handling, safe transcript UX, and bounded shutdown.",
   "id": "jido_cli-8t9.4",
   "labels": [],
   "parent": "jido_cli-8t9",
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Phase 3: Build the interactive coding TUI state machine",
   "type": "epic",
-  "updated_at": "2026-08-13T23:05:08Z"
+  "updated_at": "2026-08-14T00:18:42Z"
 }
