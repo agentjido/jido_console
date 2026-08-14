@@ -84,6 +84,7 @@ defmodule Jido.Cli.MixProject do
       extras: [
         "README.md",
         "guides/extensions.md",
+        "guides/multi-turn-coding.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md"
       ]

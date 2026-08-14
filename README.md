@@ -66,6 +66,9 @@ chmod 600 .env
 
 Never commit credentials. Tests must not call live providers.
 
+For the current multi-turn local coding path, read
+[Multi-Turn Coding Development](guides/multi-turn-coding.md).
+
 ## Before you submit a pull request
 
 Read `AGENTS.md` and [CONTRIBUTING.md](CONTRIBUTING.md). Keep the change small
