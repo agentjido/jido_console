@@ -5,7 +5,8 @@
     "jido_console-m2e05"
   ],
   "blocks": [
-    "jido_console-m2e09"
+    "jido_console-m2e09",
+    "jido_console-m2e14"
   ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e06-pin-and-prove-jidoka-integration.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E06: Pin and Prove the Milestone 2 Jidoka Integration\n\n## Goal\n\nPin the approved Jidoka release and prove that Console uses only the approved integration contracts.\n\n## Scope\n\n- Update the Console dependency to one immutable approved Jidoka source.\n- Record the exact source identity in the lock and release evidence.\n- Integrate the ordered event and controller-cleanup contracts through documented facades.\n- Integrate the portable projection contract through its documented root facade.\n- Run Jidoka compatibility, parity, and public-boundary checks.\n- Reject local paths, moving branches, and unspecified sources in production builds.\n\n## Out of Scope\n\n- New Jidoka implementation changes.\n- Console session-server or client behavior.\n- Private Jidoka runtime or adapter access.\n- Durable session recovery.\n\n## Dependencies\n\nThis epic depends on M2-E02 for controller cleanup and M2-E05 for the portable projection contract.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one Jido Console pull request. The pull request changes only the pinned Jidoka source, documented Console facades, compatibility checks, and integration evidence.\n\n## Acceptance Checks\n\n- Production dependency resolution names one immutable Jidoka source.\n- A production build rejects a local path, moving branch, or unspecified Jidoka source.\n- Console source uses the ordered event and projection contracts through documented facades.\n- Compatibility tests pass for ordered events, controller cleanup, handles, and projection data.\n- The public-boundary scan finds no private Jidoka runtime use.\n- Release evidence records the exact Jidoka source identity.\n\n## Proof Artifacts\n\n- Dependency lock and immutable source record.\n- Jidoka compatibility results.\n- Console parity results.\n- Public-boundary scan result.\n- Release integration record.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to complete the approved Jidoka integration in Console before the supervised session owner uses it.",
@@ -20,5 +21,5 @@
   "status": "open",
   "title": "M2-E06: Pin and Prove the Milestone 2 Jidoka Integration",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:26Z"
+  "updated_at": "2026-08-14T20:08:29Z"
 }
