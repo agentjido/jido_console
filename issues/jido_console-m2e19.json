@@ -1,0 +1,18 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e19-add-exact-worker-drain.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E19: Add Exact Worker Drain\n\n## Goal\n\nTrack queued and active work and prove exact worker drain before a session\nreports completion.\n\n## Scope\n\n- Track queued work and active work by exact process-lifetime identity.\n- Define the states for queued, active, draining, drained, and failed work.\n- Define exact drain completion for every active work item and its owned worker\n  tree.\n- Keep queued work separate from active worker state.\n- Report a failed drain when an owned worker or descendant cannot be accounted\n  for.\n- Bind drain results to the session, run, request, and worker identities.\n- Do not estimate drain duration or expose a time estimate as a completion\n  result.\n\n## Out of Scope\n\n- Graceful cancellation policy and force-kill control from M2-E20.\n- Remote or durable worker recovery.\n- Client adapter migration.\n- A claim that process state survives an application restart.\n\n## Dependencies\n\nThis epic depends on M2-E14 for the supervised model and tool worker boundary\nand identity-bound worker results.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the\nqueued and active work registry, exact drain state and result, worker identity\nchecks, and deterministic drain tests. It must not add two-stage cancellation\ncontrol or migrate a client adapter.\n\n## Acceptance Checks\n\n- Every queued and active work item has a session, run, request, and worker\n  identity.\n- The session can distinguish queued, active, draining, drained, and failed\n  work.\n- Drain completes only after every owned worker and descendant has stopped or\n  has an explicit failed-drain result.\n- A worker from another session or run cannot satisfy the current drain.\n- A missing or unknown descendant fails the drain result closed.\n- Drain results do not contain a duration estimate.\n- Deterministic tests cover normal drain, nested workers, unknown descendants,\n  duplicate results, and cross-session results.\n\n## Proof Artifacts\n\n- Worker and work-state identity schema\n- Exact drain state transition table\n- Normal and failed drain manifests\n- Nested-worker and unknown-descendant test results\n- Cross-session identity rejection results\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to track queued and active work\nand to define exact worker-drain behavior. It provides the drain evidence for\nthe graceful cancellation and worker-failure exit gates.",
+  "id": "jido_console-m2e19",
+  "labels": [
+    "milestone-2",
+    "roadmap",
+    "one-pr",
+    "v0.2"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M2-E19: Add Exact Worker Drain",
+  "type": "task"
+}

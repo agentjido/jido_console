@@ -1,0 +1,18 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e14-run-model-and-tool-work-in-workers.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E14: Run Model and Tool Work in Supervised Workers\n\n## Goal\n\nRun model and tool work outside the session owner with typed, identity-bound results and controlled failure behavior.\n\n## Scope\n\n- Start model and tool work in supervised workers owned by the session lifecycle.\n- Keep model calls, tool execution, streaming, and worker cleanup outside the session-server process.\n- Use and validate the M2-E07 worker, run, turn, step, effect, request, and session identities.\n- Convert worker events and terminal results into the M2 semantic protocol.\n- Monitor worker completion, failure, timeout, and owner exit and return typed lifecycle results.\n- Isolate a worker failure from unrelated session state and attached clients.\n- Keep worker inputs and results data-only at the session boundary.\n\n## Out of Scope\n\n- New model or tool capabilities\n- Remote or managed workers\n- Application-restart recovery\n- Durable worker journals or input receipts\n- Multi-agent child ownership\n- Exact drain and two-stage cancellation behavior from M2-E19 and M2-E20\n\n## Dependencies\n\nThis epic depends on M2-E06 for the approved Jidoka request and projection contracts and on M2-E13 for the session-owner delegation boundary.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds supervised model and tool workers, use of the existing identity types, typed result handling, failure isolation, and focused tests. It must not redefine identity, add drain or cancellation policy, move worker ownership into clients, or add a remote executor.\n\n## Acceptance Checks\n\n- Model and tool work does not execute in the session-server process.\n- Every worker result is bound to session, run, turn, step, effect, and request identity.\n- A stale, duplicate, or cross-session result cannot resolve current work.\n- Normal completion, failure, timeout, and owner exit produce one typed worker result and leave no untracked worker.\n- A worker failure does not corrupt unrelated session history or cancel unrelated work.\n- Attached clients receive semantic terminal outcomes, not raw worker state.\n\n## Proof Artifacts\n\n- Worker ownership and identity matrix\n- Worker lifecycle and cleanup results\n- Stale and duplicate result denial results\n- Failure-isolation report\n- Semantic projection result for model and tool outcomes\n\n## Milestone Traceability\n\nThis epic provides the supervised worker boundary needed by the Milestone 2 session owner and current clients.",
+  "id": "jido_console-m2e14",
+  "labels": [
+    "milestone-2",
+    "roadmap",
+    "one-pr",
+    "v0.2"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M2-E14: Run Model and Tool Work in Supervised Workers",
+  "type": "task"
+}

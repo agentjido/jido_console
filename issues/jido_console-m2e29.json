@@ -1,0 +1,18 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e29-migrate-text-session-client.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E29: Migrate Text Output to Session.Client\n\n## Goal\n\nMake human-readable text output a `Session.Client` projection.\n\n## Scope\n\n- Add a plain human-text projection through `Session.Client`.\n- Render ordered semantic outcomes without renderer state in the shared session.\n- Define concise text for commands, progress, outcomes, gaps, and errors.\n- Keep text output separate from JSONL automation output.\n\n## Out of Scope\n\n- Terminal control sequences or interactive TUI rendering.\n- JSON output or automation output changes.\n- A new command protocol.\n- Remote transports.\n\n## Dependencies\n\nThis epic depends on M2-E26 for the completed `Session.Client` API and reusable behavior suite.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds or migrates the human-text client only.\n\n## Acceptance Checks\n\n- Text output consumes only `Session.Client` data and outcomes.\n- Text output contains no renderer-local state, PIDs, references, functions, or raw runtime terms.\n- Ordered outcomes, gaps, and errors have deterministic human-readable text.\n- Text client tests pass without a terminal device.\n\n## Proof Artifacts\n\n- Text client contract fixture.\n- Ordered text transcript.\n- Gap and error projection fixture.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 migration of plain human text output to `Session.Client`.",
+  "id": "jido_console-m2e29",
+  "labels": [
+    "milestone-2",
+    "roadmap",
+    "one-pr",
+    "v0.2"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M2-E29: Migrate Text Output to Session.Client",
+  "type": "task"
+}

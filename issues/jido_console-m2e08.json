@@ -1,0 +1,18 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e08-classify-console-events.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E08: Classify Console Events\n\n## Goal\n\nGive every Console event stable ordering, storage, sensitivity, origin, and trust data.\n\n## Scope\n\n- Define the monotonic session-sequence field and allocation rule for each Console event.\n- Assign a durability class.\n- Assign a sensitivity class.\n- Assign an origin record.\n- Assign trust data that describes evidence and policy state.\n- Preserve process-lifetime identities on event records.\n- Define event validation and classification errors.\n- Keep origin as descriptive data and never use it as authority.\n- Keep event records JSON-compatible and free of raw runtime structures.\n- Reserve live sequence allocation for the owning session server.\n\n## Out of Scope\n\n- Durable event storage.\n- Jidoka projection implementation.\n- Client delivery and replay transport.\n- Authority grants from event origin.\n\n## Dependencies\n\nThis epic depends on M2-E04 for generated protocol types and M2-E07 for process-lifetime identities.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds event classification, validation, sequence rules, and fixture tests. It must not add durable storage or client delivery.\n\n## Acceptance Checks\n\n- Every admitted Console event has one monotonic session sequence that the session owner allocates.\n- Every event has durability, sensitivity, origin, and trust data.\n- Event identity preserves the related process-lifetime identities.\n- Invalid sequence or classification data fails clearly.\n- Origin data cannot grant authority or bypass policy.\n- Event records contain no PIDs, references, functions, or raw runtime structures.\n- Event fixtures validate through the generated protocol validators.\n- Event classification code cannot keep or allocate live session sequence state.\n\n## Proof Artifacts\n\n- Console event schema and classification matrix.\n- Sequence and identity fixture results.\n- Durability and sensitivity classification results.\n- Origin-no-authority test result.\n- Raw-runtime exclusion scan.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to give each Console event a monotonic sequence, durability class, sensitivity class, origin, and trust data.",
+  "id": "jido_console-m2e08",
+  "labels": [
+    "milestone-2",
+    "roadmap",
+    "one-pr",
+    "v0.2"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M2-E08: Classify Console Events",
+  "type": "task"
+}
