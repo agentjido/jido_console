@@ -1,0 +1,27 @@
+{
+  "assignee": "",
+  "blocked_by": [
+    "jido_console-m1e13",
+    "jido_console-m1e14"
+  ],
+  "blocks": [
+    "jido_console-m1e21",
+    "jido_console-m1e22",
+    "jido_console-m1e28",
+    "jido_console-m1e29"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e15-enforce-file-boundaries.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E15: Enforce File and Symbolic-Link Boundaries\n\n## Goal\n\nRestrict file access to declared roots and fail safely on boundary escape attempts.\n\n## Scope\n\n- Restrict access to the declared workspace, toolchain, artifact, and temporary roots.\n- Normalize and validate every path before access.\n- Reject paths outside the declared roots.\n- Reject symbolic-link escape for files and directories.\n- Deny access to undeclared host files.\n- Add a controlled canary secret and verify that its contents never leave the fixture.\n- Record redacted enforcement evidence for allowed and denied operations.\n\n## Out of Scope\n\n- Network enforcement.\n- Child-process tree ownership.\n- Trusted-workspace behavior beyond its explicit warning.\n- Real operator credentials or real host files in tests.\n\n## Dependencies\n\nThis epic depends on M1-E13 for the restricted profile and M1-E14 for the isolated process environment.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request implements declared-root checks, symbolic-link checks, canary-secret denial, and deterministic hostile-boundary tests.\n\n## Acceptance Checks\n\n- Access inside each declared root succeeds when the operation is allowed.\n- Access outside a declared root fails before the operation reaches the host file.\n- File and directory symbolic-link escapes fail safely.\n- A canary secret outside the declared roots cannot be read or disclosed.\n- Path normalization cannot bypass the root check.\n- Reports contain no canary contents, credential values, unstable process identifiers, or private host paths.\n- The Gate 0 hostile file-boundary fixtures pass with the restricted adapter.\n\n## Proof Artifacts\n\n- Declared-root policy and path-normalization record.\n- Allowed and denied file-operation results.\n- Symbolic-link escape results.\n- Redacted canary-secret result.\n- Gate 0 hostile file-boundary report.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 requirement to restrict file access to declared roots, reject symbolic-link escape, and protect canary secrets.",
+  "id": "jido_console-m1e15",
+  "labels": [
+    "milestone-1",
+    "roadmap",
+    "one-pr",
+    "v0.1"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M1-E15: Enforce File and Symbolic-Link Boundaries",
+  "type": "epic",
+  "updated_at": "2026-08-14T19:15:46Z"
+}

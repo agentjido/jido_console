@@ -1,0 +1,29 @@
+{
+  "assignee": "",
+  "blocked_by": [
+    "jido_console-m1e02",
+    "jido_console-m1e06"
+  ],
+  "blocks": [
+    "jido_console-m1e09",
+    "jido_console-m1e10",
+    "jido_console-m1e11",
+    "jido_console-m1e12",
+    "jido_console-m1e14",
+    "jido_console-m1e29"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e08-resolve-credentials-and-diagnose.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E08: Resolve Credentials and Add Diagnostics\n\n## Goal\n\nResolve provider credentials from declared sources and give users safe authentication and health diagnostics.\n\n## Scope\n\n- Define the stable credential source contract for each supported provider.\n- Resolve credentials only from declared sources and only for the requested operation.\n- Give host variables precedence over an explicitly selected private environment file.\n- Add `jido auth status`, `jido auth doctor`, and `jido doctor`.\n- Report missing, invalid, or unusable credentials without showing their values.\n- Keep credentials out of command arguments, configuration, durable state, events, logs, traces, artifacts, and session data.\n- Bind diagnostics to the exact model catalog identity and provider contract context.\n\n## Out of Scope\n\n- Adding provider support claims\n- Storing credential values in Jido Home\n- Accepting API keys in command arguments\n- Automatic provider fallback\n- Credential management for remote or multi-user operation\n\n## Dependencies\n\nThis epic depends on M1-E02 for the Jido Home and local configuration boundary and M1-E06 for exact provider and model identities.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds credential resolution, redacted diagnostics, and focused tests. It must not print, persist, or publish credential values.\n\n## Acceptance Checks\n\n- Each provider resolves credentials only from its declared source contract.\n- Host variables take precedence over a selected private environment file.\n- No command accepts a credential value through an argument.\n- Status, doctor output, errors, logs, events, traces, artifacts, and session data contain no credential value.\n- Missing and invalid credentials return stable, actionable, redacted reasons.\n- Diagnostics do not perform an unbounded provider call or change the selected model.\n\n## Proof Artifacts\n\n- Credential source and precedence table\n- Redacted resolution and diagnostics results\n- Negative tests for argument, configuration, log, and artifact leakage\n- `jido auth status`, `jido auth doctor`, and `jido doctor` result examples\n\n## Milestone Traceability\n\nThis epic supplies the credential and diagnostics controls required before the Milestone 1 provider and offline policy gates can run.",
+  "id": "jido_console-m1e08",
+  "labels": [
+    "milestone-1",
+    "roadmap",
+    "one-pr",
+    "v0.1"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M1-E08: Resolve Credentials and Add Diagnostics",
+  "type": "epic",
+  "updated_at": "2026-08-14T19:15:46Z"
+}

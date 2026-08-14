@@ -1,0 +1,26 @@
+{
+  "assignee": "",
+  "blocked_by": [
+    "jido_console-m1e15",
+    "jido_console-m1e17",
+    "jido_console-m1e21"
+  ],
+  "blocks": [
+    "jido_console-m1e28",
+    "jido_console-m1e29"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e22-review-and-revert-effects.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E22: Review, Reject, and Revert Current-Run Effects\n\n## Goal\n\nGive the user an exact effect review and a safe current-run revert path.\n\n## Scope\n\n- Record the workspace state before a coding run.\n- Show the exact files and normalized effects proposed by the run.\n- Require the bound approval before an effect is applied.\n- Leave the workspace unchanged after a rejected effect.\n- Record the accepted effects and exact resulting diff.\n- Revert only the effects from the current run.\n- Preserve unrelated user changes that existed before or outside the current run.\n- Report an incomplete or unsafe revert without claiming success.\n\n## Out of Scope\n\n- Full session history or durable resume.\n- Reverting unrelated user changes.\n- A claim that trusted-workspace mode is a sandbox.\n- Automatic retry of an uncertain unsafe effect.\n\n## Dependencies\n\nThis epic depends on M1-E15 for file-boundary identity, M1-E17 for process ownership, and M1-E21 for exact effect approval.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds effect snapshots, review output, rejection handling, current-run revert, and deterministic workspace tests.\n\n## Acceptance Checks\n\n- The review shows the exact proposed paths, operations, and normalized parameters.\n- A rejected effect leaves the workspace unchanged.\n- The accepted result records the exact current-run diff.\n- Current-run revert restores the recorded pre-run state for current-run changes.\n- Revert preserves unrelated changes that were present before the run or outside the run.\n- A path-boundary or approval mismatch prevents the effect from being applied.\n- An incomplete revert returns a failure result and does not claim a clean workspace.\n- Repeated review and revert operations do not apply or remove another run's effects.\n\n## Proof Artifacts\n\n- Pre-run workspace manifest.\n- Exact effect review transcript.\n- Rejection and unchanged-workspace result.\n- Accepted diff record.\n- Current-run revert result preserving unrelated changes.\n- Incomplete-revert failure result.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 requirement to review exact effects, keep rejection safe, and revert the current-run patch without changing unrelated workspace work.",
+  "id": "jido_console-m1e22",
+  "labels": [
+    "milestone-1",
+    "roadmap",
+    "one-pr",
+    "v0.1"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M1-E22: Review, Reject, and Revert Current-Run Effects",
+  "type": "epic",
+  "updated_at": "2026-08-14T19:15:46Z"
+}

@@ -1,0 +1,26 @@
+{
+  "assignee": "",
+  "blocked_by": [
+    "jido_console-m1e13",
+    "jido_console-m1e18"
+  ],
+  "blocks": [
+    "jido_console-m1e20",
+    "jido_console-m1e28",
+    "jido_console-m1e29"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e19-add-tui-model-profile-selection.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E19: Add TUI Model and Profile Selection\n\n## Goal\n\nLet a user select the model and execution profile before work starts.\n\n## Scope\n\n- Add `/model` selection to the TUI.\n- Add `/profile` selection to the TUI.\n- Show the selected model, provider, support tier, and effective settings before work starts.\n- Show the effective restricted or trusted-workspace profile and its warning.\n- Reject an unavailable model or profile before a turn starts.\n- Keep model and profile selection out of durable tool or credential data.\n- Preserve current TUI input, output, cancellation, and exit behavior.\n\n## Out of Scope\n\n- Provider fallback consent.\n- Exact effect approval.\n- New provider support contracts.\n- Session ownership and durable resume.\n\n## Dependencies\n\nThis epic depends on M1-E13 for the profile contract and M1-E18 for model command and support data.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds TUI model/profile actions, effective-setting display, and deterministic interaction tests.\n\n## Acceptance Checks\n\n- `/model` lists only models allowed by the support catalog.\n- `/profile` lists only profiles allowed by the local policy.\n- The TUI shows the effective model and settings before work starts.\n- The TUI labels trusted-workspace mode as not a sandbox.\n- An unavailable model or profile prevents the turn from starting.\n- A changed selection is visible in the run configuration and is not applied silently.\n- Existing TUI input, cancellation, cleanup, and exit-status contracts pass.\n\n## Proof Artifacts\n\n- `/model` interaction transcript.\n- `/profile` interaction transcript.\n- Effective-setting display result.\n- Invalid-selection denial result.\n- TUI compatibility and cleanup test results.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 requirement to add `/model` and `/profile` selection and to show the effective model and settings before work starts.",
+  "id": "jido_console-m1e19",
+  "labels": [
+    "milestone-1",
+    "roadmap",
+    "one-pr",
+    "v0.1"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M1-E19: Add TUI Model and Profile Selection",
+  "type": "epic",
+  "updated_at": "2026-08-14T19:15:46Z"
+}

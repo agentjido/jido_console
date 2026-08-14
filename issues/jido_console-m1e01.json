@@ -1,0 +1,27 @@
+{
+  "assignee": "",
+  "blocked_by": [
+    "jido_console-g0e15"
+  ],
+  "blocks": [
+    "jido_console-m1e02",
+    "jido_console-m1e03",
+    "jido_console-m1e05",
+    "jido_console-m1e23",
+    "jido_console-m1e29"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e01-rename-product-identity.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E01: Rename the Product Identity and Preserve Interfaces\n\n## Goal\n\nMake `jido_console` the product, package, application, and namespace identity while keeping the user-facing `jido` command stable.\n\n## Scope\n\n- Rename the repository and package identity to `jido_console`.\n- Rename the OTP application to `:jido_console`.\n- Rename the main namespace to `Jido.Console`.\n- Update build, release, package, documentation, and test references that must use the new identity.\n- Keep the `jido` command name.\n- Preserve the current command, automation, JSONL, artifact, signal, and exit-status contracts.\n- Add compatibility checks for the preserved interfaces.\n\n## Out of Scope\n\n- New model, provider, credential, or execution behavior.\n- Jido home storage rules.\n- Changes to the Jidoka runtime.\n- Changes to the user-facing command grammar.\n\n## Dependencies\n\nThis epic depends on G0-E15, which authorizes Milestone 1 work after the Gate 0 exit audit.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request changes the product identity and proves the preserved interfaces. It must not add a new Milestone 1 feature.\n\n## Acceptance Checks\n\n- The project builds and starts with package identity `jido_console` and OTP application `:jido_console`.\n- Production modules use the `Jido.Console` namespace where the product namespace is required.\n- The installed executable remains named `jido`.\n- Existing command, automation, JSONL, artifact, signal, and exit-status contract tests pass without an unapproved format change.\n- Release metadata and documentation do not claim the old product identity.\n- No production path depends on a stale `jido_cli` application or namespace identity.\n\n## Proof Artifacts\n\n- Clean build and application-start result.\n- Product identity and namespace inventory.\n- Preserved interface contract results.\n- Release metadata and executable identity result.\n- Stale-identity scan result.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 work to rename the repository, package, OTP application, and namespace while preserving the `jido` command and current automation interfaces.",
+  "id": "jido_console-m1e01",
+  "labels": [
+    "milestone-1",
+    "roadmap",
+    "one-pr",
+    "v0.1"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M1-E01: Rename the Product Identity and Preserve Interfaces",
+  "type": "epic",
+  "updated_at": "2026-08-14T19:15:46Z"
+}

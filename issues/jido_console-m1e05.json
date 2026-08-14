@@ -1,0 +1,29 @@
+{
+  "assignee": "",
+  "blocked_by": [
+    "jido_console-m1e01",
+    "jido_console-m1e04"
+  ],
+  "blocks": [
+    "jido_console-m1e06",
+    "jido_console-m1e07",
+    "jido_console-m1e13",
+    "jido_console-m1e21",
+    "jido_console-m1e23",
+    "jido_console-m1e29"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e05-integrate-versioned-jidoka.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E05: Integrate the Approved Versioned Jidoka Release\n\n## Goal\n\nUse the approved Jidoka release through stable, documented facades in Jido Console.\n\n## Scope\n\n- Replace the pre-Milestone 1 Jidoka source with the approved immutable release or package.\n- Pin the exact Jidoka source identity in project and release metadata.\n- Update the Console adapter to use only the approved public policy and execution-adapter contracts.\n- Preserve the Console public boundary and existing runtime behavior while integrating the new contracts.\n- Run the compatibility, parity, and public-boundary checks required by Gate 0.\n- Document the supported Jidoka version and known compatibility limits.\n\n## Out of Scope\n\n- Mutable branch dependencies or local path dependencies in production.\n- Private Jidoka runtime or adapter internals in Console.\n- New restricted policy behavior beyond the integrated contracts.\n- Durable session recovery or remote execution.\n\n## Dependencies\n\nThis epic depends on M1-E01 for the new application identity and M1-E04 for the landed additive Jidoka contracts.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request updates the pinned dependency, Console facades, compatibility checks, and release documentation. It must not add unrelated provider or packaging work.\n\n## Acceptance Checks\n\n- Production dependency resolution names one immutable approved Jidoka source.\n- Production builds reject a local path, moving branch, or unspecified Jidoka source.\n- Console source uses only documented Jidoka client, policy, and execution-adapter facades.\n- The Jidoka compatibility contract passes against the pinned release.\n- Current parity and public-boundary checks pass against the pinned release.\n- Release metadata records the exact Jidoka version and source identity.\n\n## Proof Artifacts\n\n- Dependency lock and immutable source record.\n- Jidoka compatibility contract result.\n- Console parity result.\n- Public API boundary scan result.\n- Release metadata showing the approved Jidoka identity.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 work to use an approved versioned Jidoka release or package and to pass its compatibility contract without following a mutable branch.",
+  "id": "jido_console-m1e05",
+  "labels": [
+    "milestone-1",
+    "roadmap",
+    "one-pr",
+    "v0.1"
+  ],
+  "priority": 2,
+  "status": "open",
+  "title": "M1-E05: Integrate the Approved Versioned Jidoka Release",
+  "type": "epic",
+  "updated_at": "2026-08-14T19:15:46Z"
+}
