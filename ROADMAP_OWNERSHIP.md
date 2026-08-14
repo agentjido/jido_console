@@ -1,10 +1,11 @@
-# Roadmap Item Ownership
+# Backlog Item Ownership
 
-Roadmap ownership keeps work small and prevents long reservations.
+Backlog ownership keeps work small and prevents long reservations. A milestone
+contains epics. An epic can contain several backlog items and pull requests.
 
 ## Claim an Item
 
-1. Select a roadmap item that a maintainer has marked ready.
+1. Select a backlog item that a maintainer has marked ready.
 2. Confirm that the item has no active owner or open pull request.
 3. Comment `I own this for the next 12 hours` on its tracking issue.
 

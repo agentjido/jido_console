@@ -6,30 +6,32 @@
 
 ## Help Build Jido Console
 
-Start with the [roadmap](ROADMAP.md) and the
+Start with the [roadmap](roadmap/README.md) and the
 [contribution guide](CONTRIBUTING.md). The roadmap is open for review. Each
-ready epic maps to one pull request.
+ready backlog item should map to one pull request.
 
 ### Major Roadmap Items
 
-- [ ] Preserve and publish the current baseline.
-- [ ] Establish the Jido Console identity, local paths, and release channels.
-- [ ] Add a renderer-neutral semantic session core.
-- [ ] Add supervised sessions that clients can attach to.
-- [ ] Move terminal, automation, text, and JSON to one client protocol.
-- [ ] Add durable session resume and recovery.
-- [ ] Add a shared web workbench and declared shared resources.
-- [ ] Add controlled local, isolated, and remote execution.
-- [ ] Add reviewed live extension, recovery, and rollback.
+- [ ] Establish repeatable release readiness.
+- [ ] Ship the trustworthy local multi-model kernel.
+- [ ] Ship the supervised semantic session plane.
+- [ ] Add durable resume, fork, and audit.
+- [ ] Add supervised multi-agent worktree lanes.
+- [ ] Add the local LiveView workbench.
+- [ ] Add isolated local executors.
+- [ ] Add managed and remote executors.
+- [ ] Add authenticated remote web and SSH access.
+- [ ] Add multi-user collaboration.
+- [ ] Add controlled live extension.
 
-Read the [full roadmap](ROADMAP.md) for the order and architecture rules.
+Read the [full roadmap](roadmap/README.md) for the order and architecture rules.
 
 ### Ways to Get Involved
 
 - [Join the Jido Discord](https://jido.run/discord) to meet the community.
 - [Start a Discussion](https://github.com/agentjido/jido_console/discussions/new/choose)
   to ask a question or propose an idea.
-- Own a ready epic and its pull request. Read the
+- Own a ready backlog item and its pull request. Read the
   [12-hour reservation policy](ROADMAP_OWNERSHIP.md) first.
 - Give roadmap feedback in
   [Discussions](https://github.com/agentjido/jido_console/discussions).
