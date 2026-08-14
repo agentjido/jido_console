@@ -15,8 +15,9 @@
   "id": "jido_console-m1e01",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
