@@ -18,13 +18,14 @@
   "id": "jido_console-m1e09",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
   "status": "open",
   "title": "M1-E09: Enforce Capability and Offline Policy",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:07Z"
+  "updated_at": "2026-08-14T21:21:08Z"
 }
