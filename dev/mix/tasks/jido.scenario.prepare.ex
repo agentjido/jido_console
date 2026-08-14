@@ -9,7 +9,7 @@ defmodule Mix.Tasks.Jido.Scenario.Prepare do
   def run(args) do
     force? = "--force" in args
     package_root = Path.expand("../../..", __DIR__)
-    source = Path.join(package_root, "examples/coding_scenarios/rate_limiter")
+    source = Path.join(package_root, "release/fixtures/coding/rate_limiter")
     target = Path.join(package_root, ".jido/scenarios/rate_limiter")
 
     with :ok <- prepare_target(target, force?),

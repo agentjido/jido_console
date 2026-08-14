@@ -84,7 +84,6 @@ defmodule Jido.Cli.MixProject do
       extras: [
         "README.md",
         "ROADMAP.md",
-        "ROADMAP_OWNERSHIP.md",
         "guides/extensions.md",
         "guides/multi-turn-coding.md",
         "CHANGELOG.md",

@@ -36,7 +36,7 @@ defmodule Jido.Cli.Release.Artifact do
     copy_file!(Path.join(project_root, "rel/bin/jido"), Path.join(package_root, "bin/jido"))
     File.chmod!(Path.join(package_root, "bin/jido"), 0o755)
     copy_file!(Path.join(project_root, "LICENSE"), Path.join(package_root, "LICENSE"))
-    copy_offline_example!(project_root, package_root)
+    copy_offline_suite!(project_root, package_root)
 
     components = LicenseAudit.audit!(release_root, project_root)
     File.write!(Path.join(package_root, "THIRD_PARTY_NOTICES"), LicenseAudit.notices(components))
@@ -277,8 +277,8 @@ defmodule Jido.Cli.Release.Artifact do
     end
   end
 
-  defp copy_offline_example!(project_root, package_root) do
-    source = Path.join(project_root, "examples/evals/offline")
+  defp copy_offline_suite!(project_root, package_root) do
+    source = Path.join(project_root, "release/fixtures/offline")
     target = Path.join(package_root, "share/jido/offline")
     copy_tree!(source, target)
   end

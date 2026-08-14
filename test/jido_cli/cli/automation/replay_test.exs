@@ -229,8 +229,8 @@ defmodule Jido.Cli.Automation.ReplayTest do
     refute File.exists?(bad_output)
   end
 
-  test "the committed offline example runs without a provider capability" do
-    fixture_path = "examples/evals/offline/fixture.json"
+  test "the committed offline release fixture runs without a provider capability" do
+    fixture_path = "priv/release/offline_fixture.json"
     {:ok, fixture} = fixture_path |> File.read!() |> Fixture.decode_json()
     resolver = profile_resolver(Path.expand(fixture_path), fixture.digest)
     {:ok, stdout} = StringIO.open("")
@@ -238,7 +238,7 @@ defmodule Jido.Cli.Automation.ReplayTest do
 
     assert :ok =
              Jido.Cli.run(
-               ["eval", "examples/evals/offline/suite.yml"],
+               ["eval", "release/fixtures/offline/suite.yml"],
                execution_profile_resolver: resolver,
                runtime_opts: [
                  llm: fn _intent, _journal, _context ->

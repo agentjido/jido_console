@@ -1,61 +1,76 @@
 # Jido Console
 
 > [!WARNING]
-> Jido Console is in active development. It is not ready for use. There is no
-> stable release, installation path, API, or data format yet.
+> Jido Console is in active development. It does not have a stable public
+> release, installation contract, API, or data format.
 
-## Help Build Jido Console
+Jido Console is a BEAM-native local coding harness built on
+[Jidoka](https://github.com/agentjido/jidoka). It provides an interactive
+terminal and deterministic automation for agent runs and evaluations.
 
-Start with the [roadmap](roadmap/README.md) and the
-[contribution guide](CONTRIBUTING.md). The roadmap is open for review. Each
-directory in `roadmap/milestones/` contains one milestone item.
+The product target is Jido Console. The current implementation still uses the
+legacy `jido_cli` package, `:jido_cli` application, and `Jido.Cli` namespace.
+The first release milestone owns that rename. The user command remains `jido`.
 
-### Major Roadmap Items
+## Current Capabilities
 
-- [ ] [Establish repeatable release readiness](roadmap/milestones/00-establish-release-readiness/milestone.md).
-- [ ] [Ship the trustworthy local multi-model kernel](roadmap/milestones/01-ship-trustworthy-local-kernel/milestone.md).
-- [ ] [Ship the supervised semantic session plane](roadmap/milestones/02-ship-supervised-session-plane/milestone.md).
-- [ ] [Add durable resume, fork, and audit](roadmap/milestones/03-add-durable-resume/milestone.md).
-- [ ] [Add supervised multi-agent worktree lanes](roadmap/milestones/04-add-supervised-multi-agent-work/milestone.md).
-- [ ] [Add the local LiveView workbench](roadmap/milestones/05-add-local-liveview-workbench/milestone.md).
-- [ ] [Add isolated local executors](roadmap/milestones/06-add-isolated-local-executors/milestone.md).
-- [ ] [Add managed and remote executors](roadmap/milestones/07-add-managed-and-remote-executors/milestone.md).
-- [ ] [Add authenticated remote web and SSH access](roadmap/milestones/08-add-authenticated-remote-access/milestone.md).
-- [ ] [Add multi-user collaboration](roadmap/milestones/09-add-multi-user-collaboration/milestone.md).
-- [ ] [Add controlled live extension](roadmap/milestones/10-add-controlled-live-extension/milestone.md).
+- Start the interactive terminal with `jido`.
+- Run one agent input or scenario with `jido run`.
+- Run an evaluation suite with `jido eval`.
+- Write versioned JSONL results and run artifacts.
+- Use the restricted local coding profile during development.
+- Build and test a macOS ARM64 release candidate with the local release tools.
 
-Read the [full roadmap](roadmap/README.md) for the order and architecture rules.
+## Develop Locally
 
-### Ways to Get Involved
+```sh
+mix deps.get
+mix jido.check
+./jido --help
+```
 
-- [Join the Jido Discord](https://jido.run/discord) to meet the community.
-- [Start a Discussion](https://github.com/agentjido/jido_console/discussions/new/choose)
-  to ask a question or propose an idea.
-- Own a scoped implementation issue for a ready milestone. Read the
-  [12-hour reservation policy](ROADMAP_OWNERSHIP.md) first.
-- Give roadmap feedback in
-  [Discussions](https://github.com/agentjido/jido_console/discussions).
-- Test the current work and report failures in a
-  [bug Discussion](https://github.com/agentjido/jido_console/discussions/new?category=q-a).
+Use `mix precommit` and `mix test --cover` before a pull request. See the
+[contribution guide](CONTRIBUTING.md) for dependency and quality rules.
 
-Jido Console collects no usage data or telemetry. A useful bug report includes
-the operating system, architecture, OTP and Elixir versions, commit ID, exact
-steps, expected result, actual result, and sanitized output. Add a small
-reproduction when possible. Never include credentials.
+## Roadmap and Work Ownership
+
+The [roadmap guide](ROADMAP.md) links the canonical roadmap, milestone
+definitions, change history, and 12-hour ownership policy. Each milestone has
+one `milestone.md`. Epics will be generated under the owning milestone.
+
+The roadmap is open for review. Use
+[GitHub Discussions](https://github.com/agentjido/jido_console/discussions) for
+product and scope changes. Use a scoped implementation issue for code work.
+
+## Repository Layout
+
+| Path | Purpose |
+| --- | --- |
+| `lib/` | Product code that is compiled in all environments |
+| `dev/` | Developer and test-only Mix tasks, release assembly, and acceptance tooling |
+| `release/` | Controlled release policy, packaging, and acceptance inputs |
+| `rel/` | Source launcher and package overlay files used by the native artifact builder |
+| `priv/release/` | Runtime release data loaded through the OTP application private directory |
+| `examples/` | Public runnable agent and evaluation examples |
+| `roadmap/` | Canonical roadmap, milestone definitions, and roadmap changelog |
+| `test/` | Unit, integration, terminal, automation, and release contract tests |
+
+The `release/`, `rel/`, `priv/release/`, and `dev/` directories have different
+active roles. The release tools use all four. Controlled fixtures stay under
+`release/fixtures/`; `examples/` contains only user-facing samples.
 
 ## Jido, Jidoka, and Jido Console
 
 | Project | Role |
 | --- | --- |
-| [Jido](https://github.com/agentjido/jido) | The Elixir framework and core building blocks for autonomous agents. |
-| [Jidoka](https://github.com/agentjido/jidoka) | The runtime for agent sessions, execution, effects, cancellation, and recovery. |
-| Jido Console | The user-facing control plane for terminal, automation, web, SSH, text, and JSON clients. |
+| [Jido](https://github.com/agentjido/jido) | Elixir framework and core agent building blocks |
+| [Jidoka](https://github.com/agentjido/jidoka) | Runtime for sessions, effects, tools, cancellation, and recovery |
+| Jido Console | User-facing terminal, automation, and future multi-client control plane |
 
 Jidoka owns agent execution truth. Jido Console owns user-visible session truth.
-A client presents session state. It does not own that state.
+A renderer or transport does not own either source of truth.
 
-Jido Console is intended to run supported models, keep work alive, isolate
-tools, show effects, compare results, and recover sessions without loss of
-accepted work.
+Jido Console collects no usage data or telemetry. Never include credentials in
+bug reports, logs, artifacts, examples, or fixtures.
 
 Licensed under Apache-2.0. See [LICENSE](LICENSE).

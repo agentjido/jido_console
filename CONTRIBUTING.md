@@ -1,9 +1,11 @@
-# Contributing To Jido CLI
+# Contributing to Jido Console
 
-`jido_cli` follows the Jido ecosystem package quality standards.
+The current `jido_cli` implementation follows the Jido ecosystem package
+quality standards.
 
 - keep library code in `lib/`;
 - keep runnable agent and scenario examples in `examples/`;
+- keep controlled release fixtures in `release/fixtures/`;
 - validate command input through the `Jido.Cli.Automation.Command` Zoi schema;
 - normalize user-facing errors through `Jido.Cli.Error`;
 - keep automated output as the stable `jido.case-result` JSONL contract.

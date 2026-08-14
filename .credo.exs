@@ -24,7 +24,6 @@
         included: [
           "lib/",
           "dev/",
-          "examples/coding_scenarios/",
           "release/",
           "src/",
           "test/",
