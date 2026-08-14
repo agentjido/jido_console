@@ -39,7 +39,21 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     end
   end
 
-  setup_all do
+  setup do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "jido-coding-tui-#{System.pid()}-#{System.unique_integer([:positive, :monotonic])}"
+      )
+
+    File.mkdir_p!(root)
+    fixture = Oracle.materialize!(Path.join(root, "repository"))
+    log = Path.join(root, "workflow.jsonl")
+    on_exit(fn -> File.rm_rf!(root) end)
+    {:ok, fixture: fixture, log: log}
+  end
+
+  defp build_executable! do
     build_root =
       Path.join(
         System.tmp_dir!(),
@@ -64,21 +78,7 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     end
 
     on_exit(fn -> File.rm_rf!(build_root) end)
-    {:ok, executable: executable}
-  end
-
-  setup do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "jido-coding-tui-#{System.pid()}-#{System.unique_integer([:positive, :monotonic])}"
-      )
-
-    File.mkdir_p!(root)
-    fixture = Oracle.materialize!(Path.join(root, "repository"))
-    log = Path.join(root, "workflow.jsonl")
-    on_exit(fn -> File.rm_rf!(root) end)
-    {:ok, fixture: fixture, log: log}
+    executable
   end
 
   defp copy_project!(destination) do
@@ -126,7 +126,7 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     assert inspect_frame =~ "coding.read"
 
     send_event(owner, ref, {:resize, 60, 18})
-    resize_frame = assert_frame("idle · Enter sends")
+    resize_frame = assert_frame(["idle · Enter sends", "\e[18;3H"])
     assert resize_frame =~ " Jido " <> String.duplicate("─", 54) <> "\e[K"
     assert resize_frame =~ "\e[18;3H"
 
@@ -160,12 +160,13 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     assert_workflow_evidence(fixture, log)
   end
 
+  @tag :expect
   test "drives the same coding flow through a compiled executable and real PTY", %{
-    executable: executable,
     fixture: fixture,
     log: log
   } do
     expect = System.find_executable("expect") || flunk("expect is required for the PTY contract")
+    executable = build_executable!()
 
     {output, status} =
       System.cmd(expect, ["-c", expect_script()],
@@ -203,19 +204,20 @@ defmodule Jido.Cli.CodingTuiPtyTest do
 
   defp assert_frame(expected, timeout \\ 5_000) do
     deadline = System.monotonic_time(:millisecond) + timeout
-    await_frame(expected, deadline, "")
+    await_frame(List.wrap(expected), deadline, "")
   end
 
-  defp await_frame(expected, deadline, latest) do
+  defp await_frame(expected_parts, deadline, latest) do
     remaining = max(deadline - System.monotonic_time(:millisecond), 0)
 
     receive do
       {:coding_frame, frame} ->
-        if String.contains?(frame, expected),
+        if Enum.all?(expected_parts, &String.contains?(frame, &1)),
           do: frame,
-          else: await_frame(expected, deadline, frame)
+          else: await_frame(expected_parts, deadline, frame)
     after
-      remaining -> flunk("frame did not contain #{inspect(expected)}; latest frame: #{inspect(latest)}")
+      remaining ->
+        flunk("frame did not contain #{inspect(expected_parts)}; latest frame: #{inspect(latest)}")
     end
   end
 
