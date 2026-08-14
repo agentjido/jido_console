@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m1e07",
     "jido_console-m1e08",
@@ -23,5 +23,5 @@
   "status": "open",
   "title": "M1-E11: Qualify Anthropic Support",
   "type": "epic",
-  "updated_at": "2026-08-14T19:15:46Z"
+  "updated_at": "2026-08-14T21:21:08Z"
 }
