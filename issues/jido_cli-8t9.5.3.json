@@ -6,14 +6,16 @@
   "blocks": [
     "jido_cli-8t9.5.5"
   ],
+  "closed_at": "2026-08-14T00:50:36Z",
+  "close_reason": "Completed in Jidoka commit 58905414. Added sanitized OpenAI, Anthropic, and Google native and JSON-fallback fixtures; offline coverage for single, parallel, dependent, streamed, invalid, truncated, timeout, rate-limit, and authentication cases; and an opt-in live suite with call, cost, time, and concurrency bounds. Focused tests passed with seeds 0-3. Full Jidoka suite: 729 passed, 42 excluded.",
   "created": "2026-08-13T20:14:28Z",
   "description": "Repository: Jidoka. Add sanitized native and JSON-fallback fixtures for OpenAI, Anthropic, and Google, plus optional tagged live tests. Acceptance: single, parallel, dependent, streamed, invalid, truncated, timeout, rate-limit, and authentication cases normalize correctly; live tests enforce cost, call, time, and concurrency limits.",
   "id": "jido_cli-8t9.5.3",
   "labels": [],
   "parent": "jido_cli-8t9.5",
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Add provider-contract fixtures and bounded live tests",
   "type": "task",
-  "updated_at": "2026-08-14T00:37:44Z"
+  "updated_at": "2026-08-14T00:50:36Z"
 }
