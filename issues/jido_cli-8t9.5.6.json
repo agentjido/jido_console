@@ -4,14 +4,16 @@
     "jido_cli-8t9.5.5"
   ],
   "blocks": [],
+  "closed_at": "2026-08-14T13:34:14Z",
+  "close_reason": "Documented and validated repeated Session.chat conversations, coding tool protocol, limits, recovery, TUI states, schema versions, and local artifact checks in commits ca49f2f and 348f7b52.",
   "created": "2026-08-13T20:14:29Z",
   "description": "Repositories: Jidoka and jido_cli. Make repeated Session.chat calls the main conversation example and document tool protocols, limits, recovery, local coding profile, TUI states, and local artifact validation. Acceptance: examples execute; schema-version notes are correct; docs state that Brew, signing, notarization, publication, and daemon work are out of scope.",
   "id": "jido_cli-8t9.5.6",
   "labels": [],
   "parent": "jido_cli-8t9.5",
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Update multi-turn and multi-tool developer documentation",
   "type": "task",
-  "updated_at": "2026-08-14T13:20:29Z"
+  "updated_at": "2026-08-14T13:34:14Z"
 }
