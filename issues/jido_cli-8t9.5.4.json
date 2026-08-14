@@ -9,14 +9,16 @@
   "blocks": [
     "jido_cli-8t9.5.5"
   ],
+  "closed_at": "2026-08-14T01:45:33Z",
+  "close_reason": "Implemented commit 833a7a3. Provider-free four-turn TUI and compiled macOS PTY tests cover tool activity, approval, retry, cancellation, resize, Unicode, bracketed paste, reviews, clean exit, and exact repository state. Full suite: 292 passed. Quality, Credo, Dialyzer, and Doctor passed.",
   "created": "2026-08-13T20:14:29Z",
   "description": "Repository: jido_cli. Drive two or more prompts through the coding TUI and compiled executable with provider-free fixtures. Acceptance: tool activity, approval, retry, cancellation, resize, Unicode, bracketed paste, review display, clean exit, and final repository state pass.",
   "id": "jido_cli-8t9.5.4",
   "labels": [],
   "parent": "jido_cli-8t9.5",
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Add deterministic TUI and PTY coding tests",
   "type": "task",
-  "updated_at": "2026-08-14T00:50:50Z"
+  "updated_at": "2026-08-14T01:45:33Z"
 }
