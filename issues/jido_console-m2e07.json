@@ -6,7 +6,8 @@
   "blocks": [
     "jido_console-m2e08",
     "jido_console-m2e13",
-    "jido_console-m2e15"
+    "jido_console-m2e15",
+    "jido_console-m2e17"
   ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e07-define-process-lifetime-identities.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E07: Define Process-Lifetime Identities\n\n## Goal\n\nBind every live session operation to the exact process-lifetime identity that owns it.\n\n## Scope\n\n- Define session identity.\n- Define action identity.\n- Define turn identity.\n- Define lane identity.\n- Define step identity.\n- Define request identity.\n- Define approval identity.\n- Define control identity.\n- Define client identity.\n- Define model-invocation identity across provider, model, variant, generation settings, execution profile, prompt, tool schema, skill schema, and fallback attempt.\n- Keep credential values out of every identity.\n- Bind identity to the owning process lifetime and session.\n- Reject stale, repeated, and cross-session results before they resolve current work.\n\n## Out of Scope\n\n- Durable identities after application restart.\n- Session-server implementation.\n- Client delivery and acknowledgement.\n- Multi-agent child-session identity.\n\n## Dependencies\n\nThis epic depends on M2-E04 for generated protocol types and validators.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request defines identity types, ownership bindings, result admission checks, and deterministic stale-result tests. It must not add restart-safe receipts.\n\n## Acceptance Checks\n\n- Each listed identity type has a stable format and owner.\n- A result is accepted only when its identity matches the live process and session.\n- A stale result cannot resolve current work.\n- A repeated result cannot create a second outcome or event.\n- A cross-session result is rejected.\n- Identity checks do not infer authority from host, origin, or transport.\n- Identity data is bounded and safe for the protocol.\n- Model invocation identity names the complete effective invocation without a credential value.\n\n## Proof Artifacts\n\n- Process-lifetime identity schema.\n- Identity ownership matrix.\n- Stale-result rejection results.\n- Repeated-result rejection results.\n- Cross-session rejection results.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to bind actions, turns, lanes, requests, approvals, controls, clients, and model invocations to exact process-lifetime identities.",
@@ -21,5 +22,5 @@
   "status": "open",
   "title": "M2-E07: Define Process-Lifetime Identities",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:30Z"
+  "updated_at": "2026-08-14T20:08:31Z"
 }
