@@ -13,13 +13,14 @@
   "id": "jido_console-m1e03",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
   "status": "open",
   "title": "M1-E03: Control Local Process Status and Shutdown",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:04Z"
+  "updated_at": "2026-08-14T21:21:05Z"
 }
