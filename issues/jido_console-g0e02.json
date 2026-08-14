@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-g0e01"
   ],
@@ -16,8 +16,8 @@
     "one-pr"
   ],
   "priority": 2,
-  "status": "open",
+  "status": "in_progress",
   "title": "G0-E02: Capture the Recorded Replay Corpus",
   "type": "epic",
-  "updated_at": "2026-08-14T19:03:20Z"
+  "updated_at": "2026-08-14T20:24:59Z"
 }
