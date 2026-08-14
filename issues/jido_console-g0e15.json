@@ -20,6 +20,8 @@
     "jido_console-m1e01",
     "jido_console-m1e04"
   ],
+  "closed_at": "2026-08-14T22:30:15Z",
+  "close_reason": "Final audit passed: two isolated baselines matched; all 14 Gate 0 validators passed; 15 work-item results and 21 exit checks are recorded; known risks remain linked to M1-E16 and M1-E17; no waiver or publish action.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/00-establish-release-readiness/epics/g0-e15-exit-gate-evidence-audit.md`\nRoadmap version: `1.0.5`\n\n# G0-E15: Audit the Gate 0 Exit Evidence\n\n## Goal\n\nRecord one final Gate 0 decision from the complete merged evidence set.\n\n## Scope\n\n- Run the complete baseline two times from isolated clean state.\n- Confirm semantic equality and clean escript and OTP release builds.\n- Confirm version, help, production PTY, and required Jidoka parity results.\n- Confirm provider-free replay and divergence results.\n- Confirm all hostile fixtures have controlled results and Milestone 1 links. A known-risk result is evidence of a current risk. It is not proof of safe denial. A canary disclosure fails the audit.\n- Confirm the Jidoka plan, Tilde boundary, delivery graph, and traceability result.\n- Record the validated Beadwork export URI, revision, time, and digest.\n- Confirm release measurements, the first-user claim, and workflow controls exist.\n- Record pass, fail, blocked, and waived results without changing evidence.\n\n## Out of Scope\n\n- Product changes\n- A release or publish action\n- Repair of a failed check\n- Milestone 1 implementation\n\n## Dependencies\n\nThis epic depends on G0-E01 through G0-E14 and merges last.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the final evidence manifest and decision record only. A failed check must return to its owning epic or a new approved corrective epic.\n\n## Acceptance Checks\n\n- Every Gate 0 work item has a linked result.\n- Every Gate 0 exit check has a current result from the declared source identity.\n- The two clean runs have the same semantic result.\n- No required result is missing, stale, or from an untracked source state.\n- The Beadwork export revision, digest, and freshness check match the traceability result.\n- A waiver names its authority, reason, limit, and end condition and cannot hide an exit-gate failure.\n- The final record gives one explicit decision: pass, fail, or blocked.\n- The audit does not publish a product release.\n\n## Proof Artifacts\n\n- Final Gate 0 evidence manifest\n- Two clean-run identities and comparison result\n- Exit-check result matrix\n- Open-risk and waiver record\n- Gate 0 decision record\n\n## Milestone Traceability\n\nThis epic audits all Gate 0 work and exit requirements. It authorizes Milestone 1 work only when the exit gate passes.",
   "id": "jido_console-g0e15",
@@ -29,8 +31,8 @@
     "one-pr"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "G0-E15: Audit the Gate 0 Exit Evidence",
   "type": "epic",
-  "updated_at": "2026-08-14T22:03:28Z"
+  "updated_at": "2026-08-14T22:30:15Z"
 }
