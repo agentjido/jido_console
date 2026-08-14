@@ -56,6 +56,46 @@
   `roadmap/milestones/<name>/milestone.md`. Generated epics belong under the
   owning milestone. Do not add a separate Markdown backlog.
 
+## Beadwork Work Management
+
+- Use `bw` for implementation work, owners, task dependencies, estimates, and
+  delivery status.
+- Run `bw prime` before issue-scoped implementation work. Use `bw ready` to
+  find unblocked work and `bw show <id>` to inspect one item.
+- Beadwork is already initialized on the `beadwork` branch. Do not run
+  `bw init --force` and do not edit files on that branch by hand.
+- New issue IDs use the `jido_console` prefix. Keep closed legacy `jido_cli`
+  records for history.
+- The roadmap owns milestone goals, outcomes, work boundaries, exclusions,
+  exit gates, release effects, epic scopes, and epic dependencies.
+- Each generated epic file records its Beadwork issue in `beadwork_id`. Keep
+  that identifier and its Beadwork record consistent.
+- Each generated epic is delivered in exactly one pull request. Do not combine
+  two generated epics in one pull request or split one epic across pull
+  requests without an approved roadmap change.
+- Use `bw dep add <blocker> blocks <blocked>` for task dependencies. Make the
+  Beadwork graph match the `depends_on` data in the owning epic files.
+- Use `bw start <id>` when implementation starts. Reference the ID in the
+  implementation commit. Use `bw close <id>` only after its acceptance checks
+  pass.
+- Beadwork commands commit issue data to the `beadwork` branch. Do not include
+  unrelated product files in those commits.
+- `bw sync` can fetch, rebase, and push Beadwork data. Run it only when the
+  task includes remote synchronization.
+- Preserve unrelated worktree changes. Do not stop only because the worktree
+  contains changes that are outside the selected issue.
+
+Useful commands:
+
+```sh
+bw prime
+bw ready
+bw blocked
+bw show <id>
+bw list --all --label gate-0
+bw export
+```
+
 ## Deterministic Tests
 
 - Inject engines, clocks, identifiers, and IO devices through options such as
