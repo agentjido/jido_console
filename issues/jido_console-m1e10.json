@@ -14,6 +14,7 @@
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e10-qualify-openai-support.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E10: Qualify OpenAI Support\n\n## Goal\n\nQualify the declared OpenAI models for the exact v0.1 capabilities and limits that Jido Console supports.\n\n## Scope\n\n- Select the OpenAI models and capabilities covered by the v0.1 support claim.\n- Run the provider contract harness for each declared model and capability.\n- Verify credential resolution, capability preflight, offline denial, cancellation, timeout, usage, cost, prompt-cache, and error behavior.\n- Record exact model identities, contract versions, results, known gaps, and support limits.\n- Publish the OpenAI support evidence in the model catalog and release evidence set.\n\n## Out of Scope\n\n- OpenAI models without declared contract evidence\n- A general provider abstraction redesign\n- Silent model fallback\n- Changes to credential storage or diagnostics\n- Support for later releases\n\n## Dependencies\n\nThis epic depends on M1-E07 for provider contract results, M1-E08 for credential controls, and M1-E09 for capability and offline policy.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds OpenAI-specific qualification records, fixtures, and focused checks. It must not change another provider's support claim.\n\n## Acceptance Checks\n\n- Each claimed OpenAI model has passing evidence for every claimed capability.\n- A missing, failed, or blocked contract keeps the model out of the supported tier.\n- Credential values are absent from all qualification output and artifacts.\n- Offline mode blocks OpenAI model network calls.\n- Capability preflight and fallback consent rules pass for OpenAI models.\n- Known gaps and limits are visible beside each support claim.\n\n## Proof Artifacts\n\n- OpenAI model qualification matrix\n- Contract harness results and source identities\n- Credential and offline-policy results\n- Known-gap and support-limit record\n\n## Milestone Traceability\n\nThis epic provides the OpenAI support evidence for the Milestone 1 provider and model exit gates.",
   "id": "jido_console-m1e10",
   "labels": [
+    "effort:medium",
     "milestone-1",
     "one-pr",
     "readiness:planned",
@@ -24,5 +25,5 @@
   "status": "open",
   "title": "M1-E10: Qualify OpenAI Support",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:08Z"
+  "updated_at": "2026-08-14T21:21:20Z"
 }
