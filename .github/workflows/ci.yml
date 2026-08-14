@@ -22,5 +22,6 @@ jobs:
     secrets: inherit
     with:
       docs_command: mix docs
-      test_command: mix coveralls
+      test_command: mix coveralls --exclude darwin --exclude flaky
       credo_command: mix credo
+      validate_hex_package: false

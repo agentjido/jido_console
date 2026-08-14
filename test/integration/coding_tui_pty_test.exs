@@ -49,7 +49,6 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     File.mkdir_p!(build_root)
     source_root = Path.join(build_root, "source")
     copy_project!(source_root)
-    File.ln_s!(Path.join(@project_root, "_build"), Path.join(source_root, "_build"))
     File.ln_s!(Path.join(@project_root, "deps"), Path.join(source_root, "deps"))
     executable = Path.join(source_root, "jido")
 

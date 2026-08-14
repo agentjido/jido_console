@@ -142,6 +142,7 @@ defmodule Jido.Cli.Terminal.OTPTest do
   defp adapter_opts(test_pid, sizes) do
     [
       escape_timeout_ms: 1,
+      otp_release: fn -> "28" end,
       read: fn -> receive do: (_message -> :eof) end,
       resize_interval_ms: 60_000,
       size: fn -> Agent.get(sizes, & &1) end,

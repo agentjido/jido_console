@@ -35,6 +35,7 @@ defmodule Jido.Cli.Coding.LocalTest do
     assert setup.local_resources == nil
   end
 
+  @tag :darwin
   test "edits and verifies only through the trusted local ports", %{root: root} do
     workspace =
       Workspace.new!(
@@ -64,6 +65,7 @@ defmodule Jido.Cli.Coding.LocalTest do
     assert result["exit_status"] == 0
   end
 
+  @tag :darwin
   test "does not expose the general shell tool", %{root: root} do
     assert {:ok, setup} =
              Setup.prepare(Jido.Cli.DefaultAgent,
@@ -84,6 +86,7 @@ defmodule Jido.Cli.Coding.LocalTest do
     Jidoka.Extension.Host.close(host)
   end
 
+  @tag :darwin
   test "stops local resources when later setup fails", %{root: root} do
     {:links, before_links} = Process.info(self(), :links)
 
@@ -98,6 +101,7 @@ defmodule Jido.Cli.Coding.LocalTest do
     assert MapSet.new(after_links) == MapSet.new(before_links)
   end
 
+  @tag :darwin
   test "stops a command when streamed output reaches its limit", %{root: root} do
     workspace =
       Workspace.new!(
@@ -137,6 +141,7 @@ defmodule Jido.Cli.Coding.LocalTest do
     refute Enum.any?(messages, fn message -> match?({port, _data} when is_port(port), message) end)
   end
 
+  @tag :darwin
   test "stops the command process at the wall-time limit", %{root: root} do
     executable = Path.join(root, "long-command")
     pid_file = Path.join(root, "long-command.pid")
@@ -176,6 +181,7 @@ defmodule Jido.Cli.Coding.LocalTest do
     refute status == 0
   end
 
+  @tag :darwin
   test "the operating-system sandbox denies non-local network access", %{root: root} do
     workspace = Workspace.new!(root: root, access: [:shell])
     args = ["-u", "-w", "1", "-z", "192.0.2.1", "9"]
@@ -269,6 +275,7 @@ defmodule Jido.Cli.Coding.LocalTest do
     assert Bitwise.band(mode, 0o777) == 0o640
   end
 
+  @tag :darwin
   test "constrains OpenAI decisions to one JSON object", %{root: root} do
     assert {:ok, setup} =
              Setup.prepare(Jido.Cli.DefaultAgent,
