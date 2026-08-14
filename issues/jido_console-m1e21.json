@@ -16,13 +16,14 @@
   "id": "jido_console-m1e21",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
   "status": "open",
   "title": "M1-E21: Bind Approval to Exact Effects",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:13Z"
+  "updated_at": "2026-08-14T21:21:14Z"
 }
