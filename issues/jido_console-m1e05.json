@@ -17,13 +17,14 @@
   "id": "jido_console-m1e05",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
   "status": "open",
   "title": "M1-E05: Integrate the Approved Versioned Jidoka Release",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:05Z"
+  "updated_at": "2026-08-14T21:21:06Z"
 }
