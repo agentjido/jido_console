@@ -11,6 +11,7 @@
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e04-land-jidoka-execution-contracts.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E04: Land the Jidoka Policy and Execution Contracts\n\n## Goal\n\nAdd the Jidoka contracts that the restricted v0.1 path needs before Console integration.\n\n## Scope\n\n- Deliver one external Jidoka pull request with additive policy contracts.\n- Deliver the execution-adapter contracts needed by the restricted local path.\n- Define policy requests, decisions, capability data, enforcement evidence, cancellation, and cleanup results required by the v0.1 boundary.\n- Define the compatibility contract for the additive release.\n- Link the external pull request and its proof to the Milestone 1 delivery graph.\n\n## Out of Scope\n\n- Jido Console integration.\n- A Jido Console dependency update.\n- Private Jidoka runtime or adapter internals in Console.\n- A mutable Jidoka branch or unversioned package.\n- New provider, model, or packaging behavior.\n\n## Dependencies\n\nThis epic depends on G0-E15 for the approved Jidoka blocker plan and Gate 0 exit decision.\n\n## Pull Request Boundary\n\nDeliver this epic through exactly one linked pull request in the Jidoka repository. The pull request must contain only the additive policy and execution-adapter contracts needed for the restricted v0.1 path. It must not contain Jido Console integration.\n\n## Acceptance Checks\n\n- The external pull request has one immutable source identity and one approved release target.\n- The policy contract represents allow, deny, consent-required, and unsupported decisions.\n- The execution-adapter contract represents explicit roots, environment, credentials, network, resources, cancellation, deadlines, and cleanup evidence.\n- The contract preserves bounded unknown data without granting authority.\n- The compatibility test passes for the required v0.1 contract.\n- The external pull request, owner, proof, and merge position are linked from the Milestone 1 graph.\n\n## Proof Artifacts\n\n- External Jidoka pull request link.\n- Immutable source and release identity.\n- Policy and execution-adapter contract schema.\n- Compatibility test result.\n- Additive API review result.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 work to land the additive Jidoka policy and execution-adapter contracts before Console integration.",
   "id": "jido_console-m1e04",
   "labels": [
+    "effort:large",
     "milestone-1",
     "one-pr",
     "readiness:planned",
@@ -21,5 +22,5 @@
   "status": "open",
   "title": "M1-E04: Land the Jidoka Policy and Execution Contracts",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:05Z"
+  "updated_at": "2026-08-14T21:21:23Z"
 }
