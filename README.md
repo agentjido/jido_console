@@ -1,5 +1,9 @@
 # Jido Console
 
+[![Website](https://img.shields.io/badge/website-jido.run-0f172a.svg)](https://jido.run)
+[![Ecosystem](https://img.shields.io/badge/ecosystem-jido.run-0ea5e9.svg)](https://jido.run/ecosystem)
+[![Discord](https://img.shields.io/badge/discord-join-5865F2.svg?logo=discord&logoColor=white)](https://jido.run/discord)
+
 > [!WARNING]
 > Jido Console is in active development. It does not have a stable public
 > release, installation contract, API, or data format.
@@ -11,6 +15,38 @@ terminal and deterministic automation for agent runs and evaluations.
 The product target is Jido Console. The current implementation still uses the
 legacy `jido_cli` package, `:jido_cli` application, and `Jido.Cli` namespace.
 The first release milestone owns that rename. The user command remains `jido`.
+
+## Join the Pre-Launch Review
+
+Jido Console is not ready for adopters. The current public work is to review
+the direction, improve the contributor path, and prepare the first milestones.
+
+| Your goal | Start here |
+| --- | --- |
+| Learn what we are building | Read [Current Capabilities](#current-capabilities). No Elixir setup is required. If the direction interests you, [star the repository](https://github.com/agentjido/jido_console) and [join Discord](https://jido.run/discord). |
+| Help as a contributor | Read [CONTRIBUTING.md](CONTRIBUTING.md), then ask in [Help and Q&A](https://github.com/agentjido/jido_console/discussions/categories/help-and-q-a) for a small task that is ready now. |
+| Review the product or architecture | Read the [roadmap](ROADMAP.md), then raise one clear question in [Roadmap and design](https://github.com/agentjido/jido_console/discussions/categories/roadmap-and-design). |
+
+The roadmap is proposed, and public implementation issues are not open yet.
+Confirm the scope in a Discussion before you change code.
+
+If you use a coding agent, start with this review prompt:
+
+```text
+I want to help with the Jido Console pre-launch review. Read @README.md,
+@CONTRIBUTING.md, and @ROADMAP.md. Do not change files. Find one small,
+useful improvement that matches the current roadmap. Explain the user impact,
+the files involved, and the questions that I must confirm with a maintainer.
+```
+
+After a maintainer confirms the task, give the agent a narrow implementation
+prompt:
+
+```text
+Implement only this confirmed Jido Console task: <task>. Read @AGENTS.md and
+@CONTRIBUTING.md first. Preserve unrelated changes. Run the checks that apply
+to the changed files, then show me the diff and the check results.
+```
 
 ## Current Capabilities
 
@@ -136,7 +172,8 @@ one `milestone.md`. Epics will be generated under the owning milestone.
 
 The roadmap is open for review. Use
 [GitHub Discussions](https://github.com/agentjido/jido_console/discussions) for
-product and scope changes. Use a scoped implementation issue for code work.
+product and scope changes. Public implementation issues are not open yet. Ask
+in a Discussion before you start code work.
 
 ## Repository Layout
 
