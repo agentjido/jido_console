@@ -183,7 +183,8 @@ Use `mix precommit` and `mix test --cover` before a pull request. See the
 
 The [roadmap guide](ROADMAP.md) links the canonical roadmap, milestone
 definitions, change history, and 12-hour ownership policy. Each milestone has
-one `milestone.md`. Epics will be generated under the owning milestone.
+one `milestone.md`. Generated epics live under the owning milestone. Each epic
+is delivered in one pull request.
 
 The roadmap is open for review. Use
 [GitHub Discussions](https://github.com/agentjido/jido_console/discussions) for

@@ -6,8 +6,9 @@ The canonical roadmap is in [`roadmap/README.md`](roadmap/README.md).
 - Roadmap history: [`roadmap/CHANGELOG.md`](roadmap/CHANGELOG.md)
 
 Each milestone directory contains one `milestone.md`. An approved milestone can
-generate several epics. Generated epics belong in an `epics/` directory under
-the owning milestone. Beadwork owns implementation tasks and delivery state.
+generate several epics. Each generated epic is delivered in one pull request.
+Generated epics belong in an `epics/` directory under the owning milestone.
+Beadwork owns implementation tasks, task dependencies, and delivery state.
 
 ## Change the Roadmap
 
@@ -18,8 +19,9 @@ milestone without an explicit roadmap decision.
 
 ## Own Scoped Work
 
-A milestone or generated epic can require several issues and pull requests. Do
-not reserve an entire milestone or epic for 12 hours.
+A milestone can require several epics and issues. Each generated epic has one
+scoped issue and one pull request. Do not reserve an entire milestone for 12
+hours.
 
 1. Select a scoped implementation issue for a ready milestone or generated
    epic.

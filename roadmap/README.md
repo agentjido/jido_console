@@ -1,6 +1,6 @@
 # Jido Console Roadmap
 
-Roadmap version: **1.0.2**
+Roadmap version: **1.0.3**
 
 Roadmap status: **proposed**
 
@@ -70,7 +70,7 @@ Gate 0 is a readiness milestone and does not make a release. Every numbered dire
 
 Each milestone depends on the prior milestone. A milestone can start only after its dependencies and readiness checks pass. Internal build stages belong in generated epics and Beadwork. They are not separate roadmap milestones.
 
-The `milestone.md` file is the roadmap milestone item. It owns the goal, outcome, work boundary, exclusions, exit gate, and release effect. Epics are generated from the approved milestone and live in its `epics/` directory. Beadwork owns implementation tasks, dependencies, assignment, and status.
+The `milestone.md` file is the roadmap milestone item. It owns the goal, outcome, work boundary, exclusions, exit gate, and release effect. Epics are generated from the approved milestone and live in its `epics/` directory. Each generated epic is delivered in one pull request. Beadwork owns implementation tasks, task dependencies, assignment, and status.
 
 ## Immediate Build Order
 

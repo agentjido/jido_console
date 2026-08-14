@@ -4,6 +4,24 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] - 2026-08-14
+
+### Added
+
+- Add 15 generated epics for Gate 0 under its milestone directory.
+- Give each Gate 0 epic one pull request boundary, acceptance checks, proof
+  artifacts, dependencies, and milestone traceability.
+- Add a final evidence-audit epic that closes Gate 0 after all other Gate 0
+  work merges.
+
+### Changed
+
+- Link the Gate 0 milestone to its generated epic index.
+- Split the former four broad Gate 0 groups into reviewable one-pull-request
+  delivery units without a change to the milestone outcome or exit gate.
+- Define one pull request as the delivery unit for each generated epic and keep
+  task dependencies and delivery status in Beadwork.
+
 ## [1.0.2] - 2026-08-14
 
 ### Changed

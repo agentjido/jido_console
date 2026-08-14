@@ -6,7 +6,7 @@ status: proposed
 depends_on: []
 release: none
 introduced_in: 0.1.0
-last_updated_in: 1.0.2
+last_updated_in: 1.0.3
 ---
 
 # Milestone Gate 0: Establish Release Readiness
@@ -20,6 +20,10 @@ Create a repeatable evidence base and an owned delivery graph before release wor
 The team can compare each change with a known Jido CLI baseline. It also knows the critical path, package boundaries, owners, and proof artifacts for Milestone 1.
 
 Gate 0 does not make a product release. Every numbered milestone after this gate is a release milestone.
+
+## Generated Epics
+
+The [Gate 0 epic index](epics/README.md) splits this milestone into 15 epics. Each epic is the scope for exactly one pull request.
 
 ## Work
 
