@@ -9,7 +9,8 @@
     "jido_console-m2e14",
     "jido_console-m2e15",
     "jido_console-m2e16",
-    "jido_console-m2e17"
+    "jido_console-m2e17",
+    "jido_console-m2e24"
   ],
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e13-make-session-server-the-owner.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E13: Make the Session Server the Runtime Owner\n\n## Goal\n\nMake one supervised session server the only owner of live history, runs, queues, controls, and event order.\n\n## Scope\n\n- Store one semantic session state and its active-run state in the session server.\n- Make the server the sole authority for event order, accepted input, control state, and live session identity.\n- Route commands, interactions, approvals, steering, follow-up input, and worker results through the server.\n- Validate actions, turns, lanes, requests, approvals, controls, clients, and results against the identity types from M2-E07.\n- Publish ordered semantic updates to the client-delivery boundary without retaining renderer state.\n- Reject stale, repeated, or cross-session results before they change state.\n- Define the delegation boundary that keeps model and tool work outside the server process.\n\n## Out of Scope\n\n- Client delivery backpressure and gap recovery\n- Application-restart recovery\n- Durable input receipts or a Console-to-Jidoka watermark\n- Multi-agent ownership and worktree lanes\n- Remote client authorization\n- Model and tool worker implementation from M2-E14\n\n## Dependencies\n\nThis epic depends on M2-E07 for process-lifetime identities, M2-E11 for semantic reduction and replay, and M2-E12 for the supervised session topology.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request moves live session ownership into the supervised session server and uses the existing identity contracts in lifecycle tests. It must not redefine identity types, implement model or tool workers, add restart-safe persistence, or add a new client transport.\n\n## Acceptance Checks\n\n- One session server is the only owner of live history, active runs, queues, controls, and event order.\n- Attached clients cannot create a second owner or mutate shared state directly.\n- Stale, repeated, and cross-session worker results are rejected.\n- Event order remains monotonic and follows the reducer contract.\n- A client can detach while the session remains alive and can attach again during the same application lifetime.\n- Client exit and session-server failure have explicit isolation and cleanup results.\n\n## Proof Artifacts\n\n- Session ownership and identity matrix\n- Live event-order result\n- Stale and cross-session result denial results\n- Detach and reattach result during one application lifetime\n- Client-exit and owner-failure isolation report\n\n## Milestone Traceability\n\nThis epic implements the canonical supervised session owner required by the Milestone 2 outcome.",
@@ -24,5 +25,5 @@
   "status": "open",
   "title": "M2-E13: Make the Session Server the Runtime Owner",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:31Z"
+  "updated_at": "2026-08-14T20:08:34Z"
 }
