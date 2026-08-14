@@ -8,6 +8,7 @@
     "jido_console-g0e07",
     "jido_console-g0e15"
   ],
+  "closed_at": "2026-08-14T21:31:45Z",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/00-establish-release-readiness/epics/g0-e06-hostile-file-boundary-fixtures.md`\nRoadmap version: `1.0.5`\n\n# G0-E06: Add Hostile File-Boundary Fixtures\n\n## Goal\n\nCreate controlled fixtures that show the current file-access boundary and its known risks.\n\n## Scope\n\n- Add a canary-secret fixture that never uses a real credential.\n- Add an undeclared file-access fixture outside the selected workspace.\n- Add symbolic-link escape cases for files and directories.\n- Run each case in an isolated temporary workspace.\n- Classify each result as denied, known risk, or not applicable.\n- Link each known risk to the Milestone 1 control that must close it.\n\n## Out of Scope\n\n- The network and child-process cases from G0-E07\n- Restricted-execution implementation\n- Real home-directory data or credentials\n- A claim that trusted-workspace mode is a sandbox\n\n## Dependencies\n\nThis epic depends on G0-E01 for the evidence result contract and G0-E13 for the Milestone 1 control links.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the file-boundary fixtures, runner, result classes, and focused tests.\n\n## Acceptance Checks\n\n- Fixtures use only controlled targets. They record denied, known-risk, or not-applicable results. A known-risk result records only a digest and the required Milestone 1 control.\n- Reports use canary digests and never include canary contents.\n- Each case has one explicit expected result class.\n- The runner detects an unexpected access result and fails with a clear reason.\n- Repeated runs start from the same fixture state.\n- Each known risk links to planned Milestone 1 work.\n\n## Proof Artifacts\n\n- File-boundary fixture manifest\n- Redacted result for each case\n- Isolation and cleanup result\n- Milestone 1 risk links\n\n## Milestone Traceability\n\nThis epic covers secret access, undeclared file access, and symbolic-link escape in the Gate 0 hostile-workspace requirement.",
   "id": "jido_console-g0e06",
@@ -17,8 +18,8 @@
     "one-pr"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "G0-E06: Add Hostile File-Boundary Fixtures",
   "type": "epic",
-  "updated_at": "2026-08-14T21:25:15Z"
+  "updated_at": "2026-08-14T21:31:45Z"
 }
