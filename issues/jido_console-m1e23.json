@@ -13,13 +13,14 @@
   "id": "jido_console-m1e23",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
   "status": "open",
   "title": "M1-E23: Build the Signed Native Payload",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:14Z"
+  "updated_at": "2026-08-14T21:21:15Z"
 }
