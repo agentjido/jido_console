@@ -19,7 +19,7 @@ defmodule Jido.Cli.MixProject do
         main_module: Jido.Cli,
         name: "jido",
         app: nil,
-        include_priv_for: [:extractous_ex, :llm_db, :req_llm, :time_zone_info]
+        include_priv_for: [:extractous_ex, :req_llm, :time_zone_info]
       ],
       name: "Jido CLI",
       description: @description,

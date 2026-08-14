@@ -50,6 +50,6 @@ MIX_ENV=prod mix escript.build
 ```
 
 The terminal UI requires Erlang/OTP 28 or newer for raw terminal input. The
-escript bundles BEAM dependencies and the `llm_db`, `req_llm`, and
-`time_zone_info` priv resources (see `include_priv_for` in `mix.exs`); it still
-needs a compatible Erlang/OTP install on the target machine.
+escript embeds the `llm_db` catalog at compile time. It bundles the `req_llm`
+and `time_zone_info` priv resources (see `include_priv_for` in `mix.exs`). It
+still needs a compatible Erlang/OTP install on the target machine.

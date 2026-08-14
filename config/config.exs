@@ -1,6 +1,9 @@
 import Config
 
 if config_env() == :prod do
+  # The escript cannot read archived dependency priv files as file-system paths.
+  config :llm_db, compile_embed: true
+
   config :jido_cli,
     execution_profile_resolver: Jido.Cli.Release.OfflineProfile
 end
