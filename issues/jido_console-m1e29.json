@@ -38,13 +38,14 @@
   "id": "jido_console-m1e29",
   "labels": [
     "milestone-1",
-    "roadmap",
     "one-pr",
+    "readiness:planned",
+    "roadmap",
     "v0.1"
   ],
   "priority": 2,
   "status": "open",
   "title": "M1-E29: Audit and Record the v0.1 Release Decision",
   "type": "epic",
-  "updated_at": "2026-08-14T21:21:17Z"
+  "updated_at": "2026-08-14T21:21:18Z"
 }
