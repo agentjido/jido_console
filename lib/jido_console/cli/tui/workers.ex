@@ -1,5 +1,8 @@
 defmodule Jido.Console.Tui.Workers do
-  @moduledoc false
+  @moduledoc """
+  Renderer-local effect tasks. They do not own a Jidoka session, queue, or
+  Console event order. Session ownership is `Jido.Console.Session.Client`.
+  """
 
   @relay_flush_timeout_ms 1_000
   @shutdown_timeout_ms 250
