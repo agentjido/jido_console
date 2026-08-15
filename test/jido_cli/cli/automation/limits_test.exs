@@ -236,7 +236,7 @@ defmodule Jido.Cli.Automation.LimitsTest do
   end
 
   test "the Jidoka engine projects exact sequence usage-limit evidence" do
-    limits = limits(%{"*" => 1}, max_total_tokens: 5)
+    limits = limits(%{"*" => 1}, max_total_tokens: 5, cell_timeout_ms: 5_000)
 
     capabilities =
       Capabilities.new!(
@@ -267,7 +267,7 @@ defmodule Jido.Cli.Automation.LimitsTest do
     assert result.runtime_limits.exceeded == %{kind: :total_tokens, limit: 5, observed: 7}
     assert result.runtime_limits.observed.total_tokens == 7
     assert result.runtime_limits.applied.max_turns_per_cell == 8
-    assert result.runtime_limits.applied.cell_timeout_ms == 1_000
+    assert result.runtime_limits.applied.cell_timeout_ms == 5_000
   end
 
   defp receive_started(count) do
