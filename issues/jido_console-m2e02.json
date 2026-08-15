@@ -17,9 +17,15 @@
     "one-pr",
     "v0.2"
   ],
+  "comments": [
+    {
+      "text": "Landed Jidoka controller cleanup on https://github.com/agentjido/jidoka/pull/57 at 960ac477. mix test test/jidoka/request_controller_cleanup_test.exs test/jidoka/event_order_test.exs passed 13 tests.",
+      "timestamp": "2026-08-15T23:26:49Z"
+    }
+  ],
   "priority": 2,
   "status": "in_progress",
   "title": "M2-E02: Stop Completed Jidoka Request Controllers",
   "type": "epic",
-  "updated_at": "2026-08-15T23:24:04Z"
+  "updated_at": "2026-08-15T23:26:49Z"
 }
