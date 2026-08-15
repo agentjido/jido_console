@@ -3,7 +3,7 @@ defmodule Jido.Console.Providers.Redaction do
 
   @secret_patterns [
     ~r/sk-[A-Za-z0-9_\-]{8,}/,
-    ~r/(?i)(api[_-]?key|authorization|bearer|token|secret)[=:\s]+\S+/,
+    ~r/(?i)(api[_-]?key|authorization|bearer|token|secret)\s*[=:]\s*\S+/,
     ~r/\/(?:Users|home)\/[^\/\s]+/
   ]
 

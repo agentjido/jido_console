@@ -6,6 +6,9 @@ defmodule Jido.Console do
     jido
     jido status
     jido stop [--name NAME]
+    jido auth status [--provider NAME] [--env-file FILE]
+    jido auth doctor [--provider NAME] [--env-file FILE]
+    jido doctor [--provider NAME] [--env-file FILE]
     jido run --agent FILE (--input FILE|- | --scenario FILE) [options]
     jido eval SUITE [options]
 
@@ -52,7 +55,12 @@ defmodule Jido.Console do
   defp dispatch_fast([flag]) when flag in ["--version", "-v"], do: print_version()
 
   defp dispatch_fast([command, flag])
-       when command in ["run", "eval", "status", "stop"] and flag in ["--help", "-h"],
+       when command in ["run", "eval", "status", "stop", "doctor", "auth"] and
+              flag in ["--help", "-h"],
+       do: print_help()
+
+  defp dispatch_fast(["auth", command, flag])
+       when command in ["status", "doctor"] and flag in ["--help", "-h"],
        do: print_help()
 
   defp dispatch_fast(_args), do: :continue
@@ -111,6 +119,12 @@ defmodule Jido.Console do
 
       ["stop" | rest] ->
         run_process_stop(rest, opts)
+
+      ["auth" | rest] ->
+        run_auth(rest, opts)
+
+      ["doctor" | rest] ->
+        run_doctor(rest, opts)
 
       _args ->
         run_interactive(args, opts)
@@ -203,6 +217,57 @@ defmodule Jido.Console do
   defp normalize_process_result({:error, reason}) do
     IO.puts(:stderr, "jido: #{format_error(reason)}")
     {:error, 1}
+  end
+
+  defp run_auth(["status" | rest], opts), do: run_auth_status(rest, opts)
+  defp run_auth(["doctor" | rest], opts), do: run_doctor(rest, opts)
+  defp run_auth(["--help"], _opts), do: print_help()
+  defp run_auth(["-h"], _opts), do: print_help()
+  defp run_auth(_args, _opts), do: usage_error()
+
+  defp run_auth_status(args, opts) do
+    with :ok <- Jido.Console.Auth.reject_credential_args(args),
+         {:ok, options} <- parse_auth_options(args) do
+      if Keyword.get(options, :help) do
+        print_help()
+      else
+        with {:ok, rows} <- Jido.Console.Auth.status(Keyword.merge(opts, options)) do
+          IO.write(Jido.Console.Auth.format_status(rows))
+        end
+      end
+    end
+    |> normalize_process_result()
+  end
+
+  defp run_doctor(args, opts) do
+    with :ok <- Jido.Console.Auth.reject_credential_args(args),
+         {:ok, options} <- parse_auth_options(args) do
+      if Keyword.get(options, :help) do
+        print_help()
+      else
+        with {:ok, report} <- Jido.Console.Auth.doctor(Keyword.merge(opts, options)) do
+          IO.write(Jido.Console.Auth.format_doctor(report))
+        end
+      end
+    end
+    |> normalize_process_result()
+  end
+
+  defp parse_auth_options(args) do
+    case OptionParser.parse(args,
+           strict: [help: :boolean, provider: :string, env_file: :string],
+           aliases: [h: :help]
+         ) do
+      {options, [], []} ->
+        if Keyword.get(options, :help) do
+          {:ok, [help: true]}
+        else
+          {:ok, Keyword.take(options, [:provider, :env_file])}
+        end
+
+      {_options, _args, _invalid} ->
+        {:error, :invalid_auth_options}
+    end
   end
 
   defp run_automation(args, opts) do
