@@ -1,11 +1,11 @@
 defmodule Jido.Console.Models.Catalog do
   @moduledoc """
-  Versioned model catalog schema, validation, and v0.1 entries.
+  Versioned model catalog schema, validation, and v0.1 support policy.
 
   An entry is rejected when the support tier is unknown, the identity is
   duplicated, required capability fields are missing, or a supported claim has
-  no contract evidence. Ollama stays in the beta tier until its beta contract
-  passes.
+  no contract evidence. LLMDB owns model metadata. Console configuration owns
+  the smaller allowlist, support tiers, contract evidence, and known gaps.
   """
 
   @revision "jido.models.v0.1"
@@ -37,7 +37,8 @@ defmodule Jido.Console.Models.Catalog do
           required(:cancellation) => feature(),
           required(:prompt_cache) => feature(),
           required(:known_gaps) => [String.t()],
-          required(:evidence_id) => String.t()
+          required(:evidence_id) => String.t(),
+          required(:metadata) => map()
         }
   @type t :: %{revision: String.t(), schema_version: pos_integer(), entries: [entry()]}
 
@@ -49,12 +50,105 @@ defmodule Jido.Console.Models.Catalog do
   @spec tiers() :: [atom()]
   def tiers, do: @tiers
 
-  @doc "Loads the built-in v0.1 catalog or a caller-supplied entry list."
+  @doc "Loads the configured v0.1 policy or a caller-supplied entry list."
   @spec load(keyword()) :: {:ok, t()} | {:error, term()}
   def load(opts \\ []) do
-    entries = Keyword.get_lazy(opts, :entries, &builtin_entries/0)
-    validate(entries)
+    case Keyword.fetch(opts, :entries) do
+      {:ok, entries} -> validate(entries)
+      :error -> load_policy(opts)
+    end
   end
+
+  defp load_policy(opts) do
+    policies = Keyword.get(opts, :model_policy, Application.get_env(:jido_console, :model_policy, []))
+    resolver = Keyword.get(opts, :model_resolver, &LLMDB.model/1)
+
+    with {:ok, entries} <- resolve_policies(policies, resolver) do
+      validate(entries)
+    end
+  end
+
+  defp resolve_policies([], resolver) when is_function(resolver, 1), do: {:error, :empty_model_policy}
+
+  defp resolve_policies(policies, resolver) when is_list(policies) and is_function(resolver, 1) do
+    policies
+    |> Enum.reduce_while([], fn policy, entries ->
+      case resolve_policy(policy, resolver) do
+        {:ok, entry} -> {:cont, [entry | entries]}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:error, _reason} = error -> error
+      entries -> {:ok, Enum.reverse(entries)}
+    end
+  end
+
+  defp resolve_policies(_policies, _resolver), do: {:error, :invalid_model_policy}
+
+  defp resolve_policy(policy, resolver) when is_map(policy) do
+    with {:ok, identity} <- policy_string(policy, :identity),
+         {:ok, provider, model} <- parse_identity(identity),
+         {:ok, tier} <- policy_tier(policy, identity),
+         {:ok, evidence_id} <- policy_string(policy, :evidence_id),
+         {:ok, contract_note} <- policy_string(policy, :contract_note),
+         {:ok, prompt_cache_note} <- policy_string(policy, :prompt_cache_note),
+         {:ok, known_gaps} <- policy_string_list(policy, :known_gaps),
+         {:ok, llm_model} <- resolve_model(resolver, identity),
+         :ok <- match_model_identity(llm_model, provider, model, identity),
+         :ok <- supported_model_executable(tier, llm_model, identity) do
+      {:ok,
+       policy_entry(
+         provider,
+         model,
+         tier,
+         evidence_id,
+         contract_note,
+         prompt_cache_note,
+         known_gaps,
+         llm_model
+       )}
+    end
+  end
+
+  defp resolve_policy(_policy, _resolver), do: {:error, :invalid_model_policy_entry}
+
+  defp resolve_model(resolver, identity) do
+    case resolver.(identity) do
+      {:ok, %LLMDB.Model{} = model} -> {:ok, model}
+      {:error, reason} -> {:error, {:model_metadata_unavailable, identity, reason}}
+      other -> {:error, {:invalid_model_metadata_result, identity, other}}
+    end
+  rescue
+    exception -> {:error, {:model_metadata_unavailable, identity, exception.__struct__}}
+  end
+
+  defp match_model_identity(%LLMDB.Model{} = llm_model, provider, model, identity) do
+    resolved_provider = Atom.to_string(llm_model.provider)
+    resolved_model = llm_model.provider_model_id || llm_model.model || llm_model.id
+
+    if {resolved_provider, resolved_model} == {provider, model},
+      do: :ok,
+      else: {:error, {:model_identity_mismatch, identity, resolved_provider <> ":" <> resolved_model}}
+  end
+
+  defp supported_model_executable(:supported, %LLMDB.Model{} = model, identity) do
+    cond do
+      model.retired ->
+        {:error, {:supported_model_retired, identity}}
+
+      model.catalog_only ->
+        {:error, {:supported_model_catalog_only, identity}}
+
+      get_in(model.execution || %{}, [:text, :supported]) != true ->
+        {:error, {:supported_model_not_executable, identity}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp supported_model_executable(_tier, _model, _identity), do: :ok
 
   @doc "Validates catalog entries and returns a revisioned catalog."
   @spec validate([map()]) :: {:ok, t()} | {:error, term()}
@@ -152,7 +246,8 @@ defmodule Jido.Console.Models.Catalog do
          {:ok, cost} <- required_map(entry, :cost),
          {:ok, cancellation} <- required_feature(entry, :cancellation),
          {:ok, prompt_cache} <- required_feature(entry, :prompt_cache),
-         {:ok, known_gaps} <- required_string_list(entry, :known_gaps) do
+         {:ok, known_gaps} <- required_string_list(entry, :known_gaps),
+         {:ok, metadata} <- optional_metadata(entry) do
       {:ok,
        %{
          provider: provider,
@@ -165,7 +260,8 @@ defmodule Jido.Console.Models.Catalog do
          cancellation: cancellation,
          prompt_cache: prompt_cache,
          known_gaps: known_gaps,
-         evidence_id: evidence_id
+         evidence_id: evidence_id,
+         metadata: metadata
        }}
     end
   end
@@ -257,6 +353,14 @@ defmodule Jido.Console.Models.Catalog do
     end
   end
 
+  defp optional_metadata(entry) do
+    case field(entry, :metadata) do
+      nil -> {:ok, %{source: :declared}}
+      value when is_map(value) -> {:ok, value}
+      _other -> {:error, {:invalid_field, :metadata, identity_of(entry)}}
+    end
+  end
+
   defp identity(provider, model), do: provider <> ":" <> model
 
   defp identity_of(entry) do
@@ -283,102 +387,113 @@ defmodule Jido.Console.Models.Catalog do
   defp evidence?(value) when is_binary(value), do: String.starts_with?(value, ["contract:", "harness:"])
   defp evidence?(_value), do: false
 
-  defp builtin_entries do
-    pending = fn note -> %{state: :unknown, evidence: nil, note: note} end
-
-    [
-      openai_gpt_4_1_mini(),
-      anthropic_claude_sonnet_4(),
-      google_gemini_2_5_flash(),
-      builtin(
-        "ollama",
-        "llama3.2",
-        :beta,
-        "pending:ollama-beta",
-        pending.("Ollama remains beta until its beta contract passes"),
-        ["Local-only beta. Not a v0.1 supported-tier claim."]
-      )
-    ]
+  defp parse_identity(identity) do
+    case String.split(identity, ":", parts: 2) do
+      [provider, model] when provider != "" and model != "" -> {:ok, provider, model}
+      _other -> {:error, {:invalid_model_identity, identity}}
+    end
   end
 
-  defp google_gemini_2_5_flash do
-    supported_entry(
-      provider: "google",
-      model: "gemini-2.5-flash",
-      evidence: "harness:google:gemini-2.5-flash",
-      note: "Recorded Google Gemini v0.1 contract",
-      limits: %{context_tokens: 1_048_576, output_tokens: 65_536},
-      prompt_cache_note: "Implicit prompt cache in the recorded Gemini contract",
-      known_gaps: [
-        "Recorded qualification does not call a live Gemini endpoint",
-        "Prompt cache is implicit and not separately configurable",
-        "Cost class is catalog metadata, not a live invoice"
-      ]
-    )
+  defp policy_string(policy, key) do
+    case field(policy, key) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _other -> {:error, {:invalid_model_policy_field, key}}
+    end
   end
 
-  defp anthropic_claude_sonnet_4 do
-    supported_entry(
-      provider: "anthropic",
-      model: "claude-sonnet-4-20250514",
-      evidence: "harness:anthropic:claude-sonnet-4-20250514",
-      note: "Recorded Anthropic v0.1 contract",
-      limits: %{context_tokens: 200_000, output_tokens: 64_000},
-      prompt_cache_note: "Explicit prompt cache breakpoints are supported in the recorded contract",
-      known_gaps: [
-        "Recorded qualification does not call a live Anthropic endpoint",
-        "Prompt-cache TTL follows the provider default",
-        "Cost class is catalog metadata, not a live invoice"
-      ]
-    )
+  defp policy_string_list(policy, key) do
+    case field(policy, key) do
+      values when is_list(values) ->
+        if Enum.all?(values, &(is_binary(&1) and &1 != "")),
+          do: {:ok, values},
+          else: {:error, {:invalid_model_policy_field, key}}
+
+      _other ->
+        {:error, {:invalid_model_policy_field, key}}
+    end
   end
 
-  defp openai_gpt_4_1_mini do
-    supported_entry(
-      provider: "openai",
-      model: "gpt-4.1-mini",
-      evidence: "harness:openai:gpt-4.1-mini",
-      note: "Recorded OpenAI v0.1 contract",
-      limits: %{context_tokens: 1_047_576, output_tokens: 32_768},
-      prompt_cache_note: "Automatic prompt cache; no explicit cache-control API",
-      known_gaps: [
-        "Recorded qualification does not call a live OpenAI endpoint",
-        "Prompt cache is automatic and not separately configurable",
-        "Cost class is catalog metadata, not a live invoice"
-      ]
-    )
+  defp policy_tier(policy, identity) do
+    case field(policy, :tier) do
+      tier when tier in @tiers -> {:ok, tier}
+      tier -> {:error, {:unknown_tier, tier, identity}}
+    end
   end
 
-  defp supported_entry(attrs) do
-    evidence = Keyword.fetch!(attrs, :evidence)
-    supported = %{state: :supported, evidence: evidence, note: Keyword.fetch!(attrs, :note)}
+  defp policy_entry(
+         provider,
+         model,
+         tier,
+         evidence_id,
+         contract_note,
+         prompt_cache_note,
+         known_gaps,
+         llm_model
+       ) do
+    feature = policy_feature(tier, evidence_id, contract_note)
 
-    %{
-      provider: Keyword.fetch!(attrs, :provider),
-      model: Keyword.fetch!(attrs, :model),
-      tier: :supported,
-      evidence_id: evidence,
-      capabilities: Map.new(@capability_keys, &{&1, supported}),
-      limits: Keyword.fetch!(attrs, :limits),
-      cost: %{class: :standard, currency: "USD"},
-      cancellation: supported,
-      prompt_cache: %{state: :supported, evidence: evidence, note: Keyword.fetch!(attrs, :prompt_cache_note)},
-      known_gaps: Keyword.fetch!(attrs, :known_gaps)
-    }
-  end
-
-  defp builtin(provider, model, tier, evidence_id, feature, known_gaps) do
     %{
       provider: provider,
       model: model,
       tier: tier,
       evidence_id: evidence_id,
       capabilities: Map.new(@capability_keys, &{&1, feature}),
-      limits: %{context_tokens: :unknown, output_tokens: :unknown},
-      cost: %{class: :unknown, currency: "USD"},
+      limits: model_limits(llm_model),
+      cost: model_cost(llm_model, tier),
       cancellation: feature,
-      prompt_cache: feature,
-      known_gaps: known_gaps
+      prompt_cache: policy_feature(tier, evidence_id, prompt_cache_note),
+      known_gaps: known_gaps ++ lifecycle_gaps(llm_model),
+      metadata: model_metadata(llm_model)
     }
   end
+
+  defp policy_feature(:supported, evidence_id, note),
+    do: %{state: :supported, evidence: evidence_id, note: note}
+
+  defp policy_feature(_tier, _evidence_id, note),
+    do: %{state: :unknown, evidence: nil, note: note}
+
+  defp model_limits(%LLMDB.Model{limits: limits}) when is_map(limits) do
+    %{
+      context_tokens: Map.get(limits, :context, :unknown),
+      output_tokens: Map.get(limits, :output, :unknown)
+    }
+  end
+
+  defp model_limits(_model), do: %{context_tokens: :unknown, output_tokens: :unknown}
+
+  defp model_cost(%LLMDB.Model{} = model, tier) do
+    currency = get_in(model.pricing || %{}, [:currency]) || "USD"
+    cost_class = if tier == :supported, do: :standard, else: :unknown
+
+    (model.cost || %{})
+    |> Map.put(:class, cost_class)
+    |> Map.put(:currency, currency)
+  end
+
+  defp model_metadata(%LLMDB.Model{} = model) do
+    %{
+      source: :llm_db,
+      deprecated: model.deprecated,
+      retired: model.retired,
+      lifecycle: model.lifecycle,
+      execution: model.execution
+    }
+  end
+
+  defp lifecycle_gaps(%LLMDB.Model{lifecycle: lifecycle, deprecated: true}) do
+    replacement = if is_map(lifecycle), do: Map.get(lifecycle, :replacement)
+    retirement = if is_map(lifecycle), do: Map.get(lifecycle, :retires_at)
+
+    [
+      "LLMDB marks this model deprecated" <>
+        optional_label("; replacement ", replacement) <>
+        optional_label("; retirement ", retirement)
+    ]
+  end
+
+  defp lifecycle_gaps(_model), do: []
+
+  defp optional_label(_prefix, value) when value in [nil, ""], do: ""
+  defp optional_label(prefix, value), do: prefix <> to_string(value)
 end

@@ -17,6 +17,9 @@ defmodule Jido.Console.Models.CommandsTest do
     assert output =~ "tier: supported"
     assert output =~ "capability.streaming: supported"
     assert output =~ "cancellation: supported"
+    assert output =~ "cost.input_per_million: 0.4"
+    assert output =~ "limits.context_tokens: 1047576"
+    assert output =~ "metadata.source: llm_db"
     assert output =~ "known_gaps:"
     refute output =~ "sk-"
 

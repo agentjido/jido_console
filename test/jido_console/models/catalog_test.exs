@@ -19,6 +19,7 @@ defmodule Jido.Console.Models.CatalogTest do
       assert is_map(entry.cancellation)
       assert is_map(entry.prompt_cache)
       assert is_list(entry.known_gaps)
+      assert entry.metadata.source == :llm_db
 
       if entry.provider in ["openai", "anthropic", "google"] do
         assert entry.tier == :supported
@@ -33,6 +34,30 @@ defmodule Jido.Console.Models.CatalogTest do
     assert {:ok, entry} = Models.show("ollama", "llama3.2")
     assert entry.tier == :beta
     assert entry.evidence_id == "pending:ollama-beta"
+  end
+
+  test "reads limits, prices, and lifecycle facts from LLMDB" do
+    assert {:ok, openai} = Models.show("openai", "gpt-4.1-mini")
+    assert openai.limits == %{context_tokens: 1_047_576, output_tokens: 32_768}
+    assert openai.cost.input == 0.4
+    assert openai.cost.output == 1.6
+    assert openai.metadata.source == :llm_db
+
+    assert {:ok, anthropic} = Models.show("anthropic", "claude-sonnet-4-20250514")
+    assert anthropic.metadata.deprecated
+    assert Enum.any?(anthropic.known_gaps, &String.starts_with?(&1, "LLMDB marks this model deprecated"))
+  end
+
+  test "fails closed when allowlisted model metadata is missing or not executable" do
+    policy = valid_policy("openai:gpt-test")
+
+    assert {:error, {:model_metadata_unavailable, "openai:gpt-test", :not_found}} =
+             Catalog.load(model_policy: [policy], model_resolver: fn _identity -> {:error, :not_found} end)
+
+    model = LLMDB.Model.new!(%{id: "gpt-test", provider: :openai})
+
+    assert {:error, {:supported_model_not_executable, "openai:gpt-test"}} =
+             Catalog.load(model_policy: [policy], model_resolver: fn _identity -> {:ok, model} end)
   end
 
   test "rejects an unknown tier, duplicate identity, and missing field" do
@@ -88,6 +113,17 @@ defmodule Jido.Console.Models.CatalogTest do
       cancellation: feature,
       prompt_cache: feature,
       known_gaps: ["none claimed"]
+    }
+  end
+
+  defp valid_policy(identity) do
+    %{
+      identity: identity,
+      tier: :supported,
+      evidence_id: "contract:test",
+      contract_note: "Test contract",
+      prompt_cache_note: "Test prompt cache contract",
+      known_gaps: []
     }
   end
 end
