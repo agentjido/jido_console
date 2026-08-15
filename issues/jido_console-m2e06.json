@@ -23,11 +23,15 @@
     {
       "text": "Milestone 2 prep on 2026-08-15: mix jido.check passes the local 465-test suite but fails the cross-repository Jidoka gate against the current sibling checkout. Observed mismatches: dependency source has no :github option, RestrictedContract is absent, Decision uses :require_consent instead of :consent_required, and Preflight cannot encode the old outcome. Resolve or supersede this evidence when M2-E06 pins and proves the approved Jidoka integration.",
       "timestamp": "2026-08-15T22:16:39Z"
+    },
+    {
+      "text": "Pinned Jidoka 6e63a992. Compatibility, dependency, and public-boundary tests passed.",
+      "timestamp": "2026-08-15T23:31:39Z"
     }
   ],
   "priority": 2,
   "status": "in_progress",
   "title": "M2-E06: Pin and Prove the Milestone 2 Jidoka Integration",
   "type": "epic",
-  "updated_at": "2026-08-15T23:30:33Z"
+  "updated_at": "2026-08-15T23:31:39Z"
 }
