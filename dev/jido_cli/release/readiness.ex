@@ -17,7 +17,8 @@ defmodule Jido.Cli.Release.Readiness do
     "tui-layout",
     "tui-terminal",
     "file-boundary",
-    "runtime-boundary"
+    "runtime-boundary",
+    "measurement"
   ]
 
   @doc "Returns the available check names in their required order."
@@ -33,6 +34,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("tui-terminal", opts), do: tui_terminal!(opts)
   def run!("file-boundary", opts), do: Jido.Cli.Release.Boundaries.file_boundary!(opts)
   def run!("runtime-boundary", opts), do: Jido.Cli.Release.Boundaries.runtime_boundary!(opts)
+  def run!("measurement", opts), do: measurement!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
@@ -142,6 +144,21 @@ defmodule Jido.Cli.Release.Readiness do
     }
   end
 
+  @doc false
+  @spec measurement!(keyword()) :: map()
+  def measurement!(opts \\ []) do
+    collector = Keyword.get(opts, :measurement_collector, &collect_measurement!/1)
+    result = collector.(opts)
+
+    required = ~w(package_size_bytes help version first_frame runtime_ready idle_memory_kib)
+
+    unless result["status"] == "passed" and Enum.all?(required, &Map.has_key?(result, &1)) do
+      raise "release measurement is incomplete"
+    end
+
+    Map.put(result, "claim", "environment-specific release data; not a public performance claim")
+  end
+
   defp run_clean_baseline!(run_id, project_root, source, opts) do
     root = temporary_path("jido-readiness-#{run_id}")
     checkout = Path.join(root, "source")
@@ -189,6 +206,112 @@ defmodule Jido.Cli.Release.Readiness do
     after
       unless keep?, do: File.rm_rf!(root)
     end
+  end
+
+  defp collect_measurement!(opts) do
+    project_root = opts |> Keyword.get(:project_root, File.cwd!()) |> Path.expand()
+    source = source_identity!(project_root)
+    environment = Enum.map(@secret_environment, &{&1, nil})
+    command!("mix", ["jido.release", "--warm-runs", "20"], project_root, environment)
+
+    acceptance = project_root |> Path.join("dist/acceptance.json") |> File.read!() |> Jason.decode!()
+    archive = Path.join(project_root, "dist/#{acceptance["artifact"]}")
+    idle_memory = idle_memory_samples!(archive, 6)
+
+    %{
+      "status" => "passed",
+      "source" => source,
+      "artifact" => %{
+        "name" => acceptance["artifact"],
+        "sha256" => acceptance["sha256"],
+        "target" => acceptance["target"],
+        "version" => acceptance["version"]
+      },
+      "package_size_bytes" => File.stat!(archive).size,
+      "help" => acceptance["startup"]["help"],
+      "version" => acceptance["startup"]["version"],
+      "first_frame" => acceptance["startup"]["first_frame"],
+      "runtime_ready" => acceptance["startup"]["runtime_ready"],
+      "idle_memory_kib" => %{
+        "cold" => hd(idle_memory),
+        "warm_samples" => tl(idle_memory),
+        "unit" => "KiB"
+      },
+      "method" => %{
+        "command" => "mix jido.release --warm-runs 20",
+        "sample_count" => 21,
+        "memory_sample_count" => 6,
+        "summary" => "one cold sample followed by warm samples"
+      }
+    }
+  end
+
+  defp idle_memory_samples!(archive, count) do
+    root = temporary_path("jido-measurement")
+    File.mkdir_p!(root)
+
+    try do
+      File.cd!(root, fn ->
+        case :erl_tar.extract(String.to_charlist(archive), [:compressed]) do
+          :ok -> :ok
+          {:error, reason} -> raise "cannot extract release for memory measurement: #{inspect(reason)}"
+        end
+      end)
+
+      case Path.wildcard(Path.join(root, "*/bin/jido")) do
+        [bin] -> measure_idle_memory!(bin, count)
+        paths -> raise "release archive has #{length(paths)} jido executables"
+      end
+    after
+      File.rm_rf!(root)
+    end
+  end
+
+  defp measure_idle_memory!(bin, count) do
+    expect = System.find_executable("expect") || raise "release measurement requires expect"
+
+    script = """
+    set timeout 12
+    set stty_init "rows 30 columns 100"
+    log_user 0
+    for {set index 0} {$index < $env(JIDO_SAMPLE_COUNT)} {incr index} {
+      spawn -noecho $env(JIDO_BIN)
+      expect {
+        -re {idle .* Enter sends} {}
+        timeout {exit 2}
+        eof {exit 3}
+      }
+      puts "rss_kib=[string trim [exec /bin/ps -o rss= -p [exp_pid]]]"
+      send "\\033"
+      expect eof
+    }
+    """
+
+    {output, status} =
+      System.cmd(
+        "/usr/bin/env",
+        [
+          "-i",
+          "PATH=/usr/bin:/bin",
+          "LANG=C.UTF-8",
+          "LC_ALL=C.UTF-8",
+          "TERM=xterm-256color",
+          "JIDO_BIN=#{bin}",
+          "JIDO_SAMPLE_COUNT=#{count}",
+          expect,
+          "-c",
+          script
+        ],
+        stderr_to_stdout: true
+      )
+
+    samples = Regex.scan(~r/rss_kib=(\d+)/, output) |> Enum.map(fn [_all, value] -> String.to_integer(value) end)
+
+    if status != 0 or length(samples) != count do
+      raise "idle-memory measurement failed with status #{status}"
+    end
+
+    samples
   end
 
   defp baseline_summary(acceptance) do

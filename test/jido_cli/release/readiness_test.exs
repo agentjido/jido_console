@@ -109,6 +109,25 @@ defmodule Jido.Cli.Release.ReadinessTest do
     assert "180000" in args
   end
 
+  test "keeps release measurements separate from a performance claim" do
+    collector = fn _opts ->
+      %{
+        "status" => "passed",
+        "package_size_bytes" => 1,
+        "help" => %{},
+        "version" => %{},
+        "first_frame" => %{},
+        "runtime_ready" => %{},
+        "idle_memory_kib" => %{}
+      }
+    end
+
+    assert %{"status" => "passed", "claim" => claim} =
+             Readiness.run!("measurement", measurement_collector: collector)
+
+    assert claim =~ "not a public performance claim"
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),
