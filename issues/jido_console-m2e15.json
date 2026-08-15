@@ -8,6 +8,8 @@
     "jido_console-m2e16",
     "jido_console-m2e34"
   ],
+  "closed_at": "2026-08-15T23:38:22Z",
+  "close_reason": "Landed on feat/m2-supervised-session-plane.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e15-admit-process-lifetime-input.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E15: Admit Process-Lifetime Input Before Wake-Up\n\n## Goal\n\nAccept and identify input before sending an advisory or coalescing wake-up during one application lifetime.\n\n## Scope\n\n- Create a process-lifetime input identity before the wake-up message is sent.\n- Store accepted input in the session owner before sending an advisory wake-up.\n- Use coalescing wake-ups as an optimization, not as the input record.\n- Deduplicate repeated wake-ups and repeated delivery attempts during the same application lifetime.\n- Define accepted, started, completed, rejected, and cancelled input states.\n- Test lost, repeated, delayed, and reordered wake-ups without losing or duplicating accepted input.\n- State clearly that an application crash can lose accepted input before Milestone 3 durability.\n\n## Out of Scope\n\n- Restart-safe input admission\n- Durable input receipts or a Console-to-Jidoka durable watermark\n- Persistent queues or recovery after application restart\n- Client delivery acknowledgements\n- Remote input admission\n\n## Dependencies\n\nThis epic depends on M2-E07 for process-lifetime input identity and on M2-E13 for the session owner that admits input.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds process-lifetime input admission, identity, wake-up handling, deduplication, and focused tests. It must not add persistent input storage or claim restart safety.\n\n## Acceptance Checks\n\n- Accepted input has an identity before any wake-up is sent.\n- A lost or repeated wake-up does not lose or duplicate accepted input while the application stays alive.\n- Wake-up coalescing cannot change accepted-input order.\n- Input states and terminal reasons are explicit and testable.\n- An application crash before Milestone 3 is documented as able to lose accepted input.\n- No durable input receipt or restart-safe claim is present in this pull request.\n\n## Proof Artifacts\n\n- Process-lifetime input state machine\n- Lost, repeated, delayed, and reordered wake-up results\n- Input identity and deduplication results\n- Application-crash limitation record\n\n## Milestone Traceability\n\nThis epic implements the Milestone 2 process-lifetime admission rule while preserving Milestone 3 ownership of restart-safe input and durable recovery.",
   "id": "jido_console-m2e15",
@@ -18,7 +20,7 @@
     "v0.2"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M2-E15: Admit Process-Lifetime Input Before Wake-Up",
   "type": "epic",
   "updated_at": "2026-08-15T23:38:22Z"
