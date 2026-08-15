@@ -3,6 +3,8 @@ defmodule Jido.Console.Tui do
 
   alias Jido.Console.Tui.{Effects, Selection, Shutdown, State, View, Workers}
   alias Jido.Console.Coding.Setup
+  alias Jido.Console.Session.Client.TUI, as: SessionTUI
+  alias Jido.Console.Session.Identity
   alias Jido.Console.Terminal
 
   @frame_interval_ms 33
@@ -44,6 +46,8 @@ defmodule Jido.Console.Tui do
   end
 
   defp run_terminal_loop(terminal, runtime, agent, opts) do
+    session_client = attach_session_client(opts)
+
     state =
       State.new(
         nil,
@@ -52,7 +56,8 @@ defmodule Jido.Console.Tui do
           prepare_prompt: true,
           runtime_status: :starting,
           model: Keyword.get(opts, :model),
-          coding_profile: Keyword.get(opts, :coding_profile)
+          coding_profile: Keyword.get(opts, :coding_profile),
+          session_client: session_client
         ] ++ Keyword.take(opts, [:catalog_entries])
       )
 
@@ -579,6 +584,15 @@ defmodule Jido.Console.Tui do
     case Keyword.get(opts, key, default) do
       value when is_integer(value) and value >= 0 -> value
       _other -> default
+    end
+  end
+
+  defp attach_session_client(opts) do
+    session_id = Keyword.get_lazy(opts, :session_id, fn -> Identity.new!(:session).id end)
+
+    case SessionTUI.attach(session_id, Keyword.take(opts, [:registry, :supervisor])) do
+      {:ok, handle} -> handle
+      {:error, _reason} -> nil
     end
   end
 

@@ -11,6 +11,7 @@ defmodule Jido.Console.Tui.State do
 
   @enforce_keys [:session, :size]
   defstruct session: nil,
+            session_client: nil,
             size: nil,
             editor: %Editor{},
             history: [],
@@ -59,6 +60,7 @@ defmodule Jido.Console.Tui.State do
 
     %__MODULE__{
       session: session,
+      session_client: Keyword.get(opts, :session_client),
       size: size,
       runtime_status: Keyword.get(opts, :runtime_status, :ready),
       prepare_prompt?: Keyword.get(opts, :prepare_prompt, false),
