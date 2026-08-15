@@ -9,6 +9,8 @@
     "jido_console-m2e06",
     "jido_console-m2e34"
   ],
+  "closed_at": "2026-08-15T23:30:05Z",
+  "close_reason": "Portable projection facade landed in Jidoka PR 58. Console integration is M2-E06.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e05-land-portable-jidoka-projection.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E05: Land the Portable Jidoka Projection Contract\n\n## Goal\n\nExpose one portable Jidoka projection contract for Console integration.\n\n## Scope\n\n- Deliver one external Jidoka pull request for the projection contract.\n- Add one documented root facade for the projection boundary.\n- Return portable, redacted, bounded projection data.\n- Preserve stable runtime and request identities needed by Console.\n- Define projection behavior for known events, unknown bounded data, errors, and terminal results.\n- Keep private Jidoka runtime structures outside the projection.\n- Add deterministic projection fixtures and compatibility tests.\n\n## Out of Scope\n\n- Jido Console event classification.\n- Console session state reduction.\n- Direct use of Jidoka private runtime modules.\n- Durable checkpoints or restart recovery.\n\n## Dependencies\n\nThis epic depends on M2-E01 for the ordered Jidoka event stream, M2-E02 for completed-request cleanup and handle semantics, and M2-E03 for the canonical Console protocol shapes.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one external Jidoka pull request. The pull request contains the root facade, portable projection types, redaction, bounds, and tests. It must not contain Jido Console integration or private-runtime exposure.\n\n## Acceptance Checks\n\n- Console can consume projection data through one documented root facade.\n- Projection records preserve the stable request, turn, and event identities required by the protocol.\n- Projection output is portable and JSON-compatible.\n- Sensitive content is redacted according to its declared sensitivity.\n- Projection size and unknown-data bounds are enforced.\n- Private Jidoka runtime structures, PIDs, references, and functions do not cross the facade.\n- Known, unknown, error, and terminal projection fixtures pass deterministic tests.\n\n## Proof Artifacts\n\n- External Jidoka pull request link.\n- Root-facade API record.\n- Portable projection schema and identity map.\n- Redaction and bounded-size results.\n- Private-runtime boundary scan.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to project canonical Jidoka events at one boundary and preserve their runtime identities without exposing runtime internals.",
   "id": "jido_console-m2e05",
@@ -25,8 +27,8 @@
     }
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M2-E05: Land the Portable Jidoka Projection Contract",
   "type": "epic",
-  "updated_at": "2026-08-15T23:30:04Z"
+  "updated_at": "2026-08-15T23:30:05Z"
 }
