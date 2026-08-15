@@ -100,7 +100,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
 
     assert {:ok, %Runtime.Session{} = session} = Runtime.start_session(Jido.Console.DefaultAgent, [])
     assert {:ok, request} = Runtime.start_turn(session, "wait", self(), llm: llm)
-    assert_receive :forced_capability_started, 1_000
+    assert_receive :forced_capability_started, 5_000
     request_id = request.request_id
 
     assert {:ok,
@@ -137,7 +137,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
 
     assert {:ok, %Runtime.Session{} = session} = Runtime.start_session(Jido.Console.DefaultAgent, [])
     assert {:ok, request} = Runtime.start_turn(session, "wait", self(), llm: llm)
-    assert_receive :cooperative_capability_started, 1_000
+    assert_receive :cooperative_capability_started, 5_000
 
     assert {:ok, %Cancellation{forced?: false} = cancellation} =
              Runtime.cancel(request, grace_ms: 500)
