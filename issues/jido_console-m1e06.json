@@ -10,6 +10,8 @@
     "jido_console-m1e18",
     "jido_console-m1e29"
   ],
+  "closed_at": "2026-08-15T14:06:19Z",
+  "close_reason": "Added versioned model catalog with complete identity and capability fields. Ollama remains beta. No supported-tier claims without evidence. mix precommit passed.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e06-define-model-support-catalog.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E06: Define the Model Support Catalog\n\n## Goal\n\nDefine the exact model support data that controls model selection and every v0.1 support claim.\n\n## Scope\n\n- Define supported, beta, available, and unsupported model tiers.\n- Record the exact provider and model identity for each catalog entry.\n- Record tested capabilities, limits, cost data, cancellation behavior, prompt-cache behavior, and known gaps.\n- Define the catalog format and revision rules used by model commands and the TUI.\n- Keep Ollama in the beta tier until its beta contract passes.\n- Reject an entry that has no declared support tier or incomplete capability data.\n- Link each claimed model to its provider contract evidence.\n\n## Out of Scope\n\n- Provider-specific contract execution\n- Credential resolution\n- Silent model or provider fallback\n- Support claims without contract evidence\n- Models for later releases\n\n## Dependencies\n\nThis epic depends on M1-E05 for the model and settings selection boundary.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the model catalog schema, entries, validation, and focused tests. It must not add provider support claims without evidence.\n\n## Acceptance Checks\n\n- Every catalog entry has one exact provider and model identity.\n- Every entry has one support tier and complete capability, limit, cost, cancellation, prompt-cache, and known-gap fields.\n- Unsupported features and missing contract evidence cannot be presented as supported.\n- Ollama remains beta until its declared beta contract passes.\n- Catalog validation returns a focused error for an unknown tier, duplicate identity, or missing field.\n- Model commands and the TUI can consume the same validated catalog data.\n\n## Proof Artifacts\n\n- Versioned model catalog schema\n- Validated v0.1 catalog\n- Catalog validation results\n- Model identity and capability field table\n- Links from catalog entries to provider contract evidence\n\n## Milestone Traceability\n\nThis epic supplies the model support tiers and exact capability data required by the Milestone 1 model selection and support gates.",
   "id": "jido_console-m1e06",
@@ -22,8 +24,8 @@
     "v0.1"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M1-E06: Define the Model Support Catalog",
   "type": "epic",
-  "updated_at": "2026-08-15T14:04:46Z"
+  "updated_at": "2026-08-15T14:06:19Z"
 }
