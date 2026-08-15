@@ -43,15 +43,23 @@ defmodule Jido.Console.Bootstrap do
   end
 
   defp cache_root(opts) do
-    root =
-      Keyword.get_lazy(opts, :cache_root, fn ->
-        :filename.basedir(:user_cache, ~c"jido") |> List.to_string()
-      end)
-
-    with :ok <- ensure_private_directory(root),
+    with {:ok, root} <- resolved_cache_root(opts),
+         :ok <- ensure_private_directory(root),
          escript_root = Path.join(root, "escript"),
          :ok <- ensure_private_directory(escript_root) do
       {:ok, escript_root}
+    end
+  end
+
+  defp resolved_cache_root(opts) do
+    case Keyword.fetch(opts, :cache_root) do
+      {:ok, root} ->
+        {:ok, root}
+
+      :error ->
+        with {:ok, _home} <- Jido.Console.Home.ensure(opts) do
+          Jido.Console.Home.path(:cache, opts)
+        end
     end
   end
 

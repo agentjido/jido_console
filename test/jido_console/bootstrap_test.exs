@@ -80,6 +80,25 @@ defmodule Jido.Console.BootstrapTest do
              Bootstrap.make_priv_files_accessible(Keyword.put(opts, :cache_root, unsafe))
   end
 
+  test "extracts into the Jido home cache when no cache root is injected", %{root: root, script: script} do
+    home = Path.join(root, "jido-home")
+
+    opts = [
+      priv_dir: fn :time_zone_info -> {:error, :bad_name} end,
+      script_name: fn -> script end,
+      jido_home: home,
+      version: "test",
+      otp_release: "test",
+      extract: fn _path, [] -> {:ok, archive: :fixture} end,
+      unzip: fixture_unzip(self())
+    ]
+
+    assert :ok = Bootstrap.make_priv_files_accessible(opts)
+    assert_receive :unzipped
+    assert [cache] = Path.wildcard(Path.join(home, "cache/escript/test-otp-test-*"))
+    assert File.dir?(cache)
+  end
+
   test "starts the application only after private files are available" do
     test_pid = self()
     priv = Path.join(System.tmp_dir!(), "jido-bootstrap-start-#{System.unique_integer([:positive])}")
