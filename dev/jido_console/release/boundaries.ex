@@ -33,7 +33,7 @@ defmodule Jido.Console.Release.Boundaries do
     processes = Keyword.get(opts, :process_probe, &process_probe!/0).()
 
     expected_network = %{"external" => "denied", "loopback" => "denied"}
-    expected_processes = Map.new(~w(success rejection cancellation timeout owner_exit), &{&1, "known_risk"})
+    expected_processes = Map.new(~w(success rejection cancellation timeout owner_exit), &{&1, "denied"})
 
     validate_classes!("network", network, expected_network)
     validate_classes!("process", processes, expected_processes)

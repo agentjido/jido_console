@@ -62,7 +62,7 @@ defmodule Jido.Console.Release.BoundariesTest do
 
     processes = fn ->
       Enum.map(~w(success rejection cancellation timeout owner_exit), fn name ->
-        %{"name" => name, "classification" => "known_risk", "runner_cleanup" => "passed"}
+        %{"name" => name, "classification" => "denied", "runner_cleanup" => "passed"}
       end)
     end
 

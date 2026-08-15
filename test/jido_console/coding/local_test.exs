@@ -208,6 +208,7 @@ defmodule Jido.Console.Coding.LocalTest do
     assert {:ok, %{"status" => "nonzero", "exit_status" => 1}, evidence} =
              Jido.Console.Coding.Local.Adapter.execute(nil, request,
                workspace: workspace,
+               network_allowlist: [%{host: "192.0.2.1"}],
                executables: %{
                  "git" => "/usr/bin/nc",
                  "sandbox-exec" => "/usr/bin/sandbox-exec"

@@ -4,6 +4,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
   @behaviour Jidoka.ExecutionEnvironment.Adapter
 
   alias Jido.Console.Coding.Network
+  alias Jido.Console.Process.Tree
   alias Jidoka.Cancellation
   alias Jidoka.CodingPack.Workspace
   alias Jidoka.ExecutionEnvironment.{Binding, EnforcementEvidence}
@@ -13,7 +14,6 @@ defmodule Jido.Console.Coding.Local.Adapter do
   @shell "/bin/sh"
   @head "/usr/bin/head"
   @mkfifo "/usr/bin/mkfifo"
-  @kill "/bin/kill"
   # Mix uses loopback TCP for local process coordination. Permit loopback only;
   # all non-local network traffic remains denied by the operating-system sandbox.
   @sandbox_profile """
@@ -138,22 +138,41 @@ defmodule Jido.Console.Coding.Local.Adapter do
                fifo,
                output_path,
                request["max_output_bytes"] + 1
-             ) do
-        outcome = await(port, request["timeout_ms"], request["max_output_bytes"], opts)
-        captured = read_capture(output_path, request["max_output_bytes"])
-        duration = max(System.monotonic_time(:millisecond) - started, 0)
-        normalize_outcome(outcome, captured, duration)
+             ),
+           {:ok, os_pid} <- os_pid(port) do
+        watch = Tree.watch(os_pid)
+
+        try do
+          outcome = await(port, request["timeout_ms"], request["max_output_bytes"], opts)
+          captured = read_capture(output_path, request["max_output_bytes"])
+          duration = max(System.monotonic_time(:millisecond) - started, 0)
+
+          case Tree.stop(os_pid) do
+            {:ok, _stopped} -> normalize_outcome(outcome, captured, duration)
+            {:error, reason} -> {:error, {:process_tree_cleanup_failed, reason}}
+          end
+        after
+          Tree.release(watch)
+          _ = Tree.stop(os_pid)
+        end
       end
     after
-      File.rm_rf!(temporary)
+      _ = Tree.cleanup_temp(temporary)
     end
   end
 
   defp open_port(sandbox, executable, args, cwd, fifo, output_path, capture_limit) do
     script = ~S"""
+    reap() {
+      for pid in $(ps -o pid= -g $$ 2>/dev/null); do
+        if [ "$pid" -ne "$$" ]; then
+          kill -KILL "$pid" 2>/dev/null
+        fi
+      done
+    }
     reader_pid=
     command_pid=
-    trap 'kill "$command_pid" "$reader_pid" 2>/dev/null; exit 143' TERM INT HUP
+    trap 'trap - TERM INT HUP; reap; exit 143' TERM INT HUP
     fifo=$2
     "$1" "$2" || exit 125
     "$3" -c "$4" < "$2" > "$5" &
@@ -166,6 +185,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
     wait "$reader_pid"
     reader_status=$?
     trap - TERM INT HUP
+    reap
     if [ "$reader_status" -ne 0 ]; then exit 126; fi
     exit "$command_status"
     """
@@ -185,15 +205,28 @@ defmodule Jido.Console.Coding.Local.Adapter do
       executable | args
     ]
 
-    port =
-      Port.open(
-        {:spawn_executable, String.to_charlist(@shell)},
-        [:binary, :exit_status, :stderr_to_stdout, :use_stdio, args: shell_args, cd: String.to_charlist(cwd)]
-      )
+    case Tree.wrap_leader(@shell, shell_args) do
+      {:ok, {leader, leader_args}} ->
+        port =
+          Port.open(
+            {:spawn_executable, String.to_charlist(leader)},
+            [:binary, :exit_status, :stderr_to_stdout, :use_stdio, args: leader_args, cd: String.to_charlist(cwd)]
+          )
 
-    {:ok, port}
+        {:ok, port}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   rescue
     exception -> {:error, {:local_command_start_failed, exception.__struct__}}
+  end
+
+  defp os_pid(port) do
+    case Port.info(port, :os_pid) do
+      {:os_pid, pid} when is_integer(pid) and pid > 1 -> {:ok, pid}
+      _missing -> {:error, :process_tree_missing}
+    end
   end
 
   defp sandbox_executable(opts) do
@@ -254,24 +287,17 @@ defmodule Jido.Console.Coding.Local.Adapter do
   end
 
   defp stop_port(port) do
-    signal_port(port)
+    case Port.info(port, :os_pid) do
+      {:os_pid, pid} -> _ = Tree.stop(pid)
+      _missing -> :ok
+    end
+
     await_port_stop(port, System.monotonic_time(:millisecond) + @termination_grace_ms)
     if not is_nil(Port.info(port)), do: Port.close(port)
     drain_port(port)
     :ok
   catch
     :error, :badarg -> :ok
-  end
-
-  defp signal_port(port) do
-    case Port.info(port, :os_pid) do
-      {:os_pid, pid} ->
-        _result = System.cmd(@kill, ["-TERM", Integer.to_string(pid)], stderr_to_stdout: true)
-        :ok
-
-      nil ->
-        :ok
-    end
   end
 
   defp await_port_stop(port, deadline) do

@@ -189,7 +189,7 @@ defmodule Jido.Console.Coding.Network do
   defp matches_allowlist?(destination, allowed) do
     class_ok? = allowed.class in [nil, destination.class]
     host_ok? = allowed.host in [nil, destination.host]
-    port_ok? = allowed.port in [nil, destination.port]
+    port_ok? = allowed.port in [nil, destination.port] or destination.port == nil
     class_ok? and host_ok? and port_ok? and (allowed.host != nil or allowed.class != nil)
   end
 
