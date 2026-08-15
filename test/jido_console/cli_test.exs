@@ -255,4 +255,48 @@ defmodule Jido.ConsoleTest do
       assert output =~ expected
     end
   end
+
+  test "lists and shows catalog models without credentials" do
+    list = capture_io(fn -> assert :ok = Jido.Console.run(["models", "list"]) end)
+    assert list =~ "openai\tgpt-4.1-mini\tsupported"
+    refute list =~ "sk-"
+
+    shown =
+      capture_io(fn ->
+        assert :ok = Jido.Console.run(["models", "show", "openai", "gpt-4.1-mini"])
+      end)
+
+    assert shown =~ "tier: supported"
+    refute shown =~ "sk-"
+  end
+
+  test "tests recorded contracts and denies offline or unsupported features" do
+    tested =
+      capture_io(fn ->
+        assert :ok = Jido.Console.run(["models", "test", "openai:gpt-4.1-mini"])
+      end)
+
+    assert tested =~ "contract.streaming: pass"
+
+    offline =
+      capture_io(fn ->
+        assert {:error, 1} = Jido.Console.run(["models", "test", "openai", "gpt-4.1-mini", "--offline"])
+      end)
+
+    assert offline =~ "offline: deny"
+
+    denied =
+      capture_io(fn ->
+        assert {:error, 1} = Jido.Console.run(["models", "test", "ollama", "llama3.2", "--require", "streaming"])
+      end)
+
+    assert denied =~ "preflight: deny"
+
+    unknown =
+      capture_io(:stderr, fn ->
+        assert {:error, 64} = Jido.Console.run(["models", "show", "openai", "missing"])
+      end)
+
+    assert unknown =~ "unknown_model"
+  end
 end

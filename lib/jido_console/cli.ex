@@ -9,6 +9,9 @@ defmodule Jido.Console do
     jido auth status [--provider NAME] [--env-file FILE]
     jido auth doctor [--provider NAME] [--env-file FILE]
     jido doctor [--provider NAME] [--env-file FILE]
+    jido models list
+    jido models show PROVIDER MODEL
+    jido models test PROVIDER MODEL [--offline] [--require FEATURE]
     jido run --agent FILE (--input FILE|- | --scenario FILE) [options]
     jido eval SUITE [options]
 
@@ -55,12 +58,16 @@ defmodule Jido.Console do
   defp dispatch_fast([flag]) when flag in ["--version", "-v"], do: print_version()
 
   defp dispatch_fast([command, flag])
-       when command in ["run", "eval", "status", "stop", "doctor", "auth"] and
+       when command in ["run", "eval", "status", "stop", "doctor", "auth", "models"] and
               flag in ["--help", "-h"],
        do: print_help()
 
   defp dispatch_fast(["auth", command, flag])
        when command in ["status", "doctor"] and flag in ["--help", "-h"],
+       do: print_help()
+
+  defp dispatch_fast(["models", command, flag])
+       when command in ["list", "show", "test"] and flag in ["--help", "-h"],
        do: print_help()
 
   defp dispatch_fast(_args), do: :continue
@@ -125,6 +132,9 @@ defmodule Jido.Console do
 
       ["doctor" | rest] ->
         run_doctor(rest, opts)
+
+      ["models" | rest] ->
+        run_models(rest, opts)
 
       _args ->
         run_interactive(args, opts)
@@ -251,6 +261,111 @@ defmodule Jido.Console do
       end
     end
     |> normalize_process_result()
+  end
+
+  defp run_models(["list" | rest], opts), do: run_models_list(rest, opts)
+  defp run_models(["show" | rest], opts), do: run_models_show(rest, opts)
+  defp run_models(["test" | rest], opts), do: run_models_test(rest, opts)
+  defp run_models(["--help"], _opts), do: print_help()
+  defp run_models(["-h"], _opts), do: print_help()
+  defp run_models(_args, _opts), do: usage_error()
+
+  defp run_models_list(args, opts) do
+    with :ok <- Jido.Console.Auth.reject_credential_args(args),
+         {:ok, options} <- parse_models_options(args, []) do
+      if Keyword.get(options, :help), do: print_help(), else: write_models(Jido.Console.Models.Commands.list(opts))
+    end
+    |> normalize_models_result()
+  end
+
+  defp run_models_show(args, opts) do
+    with :ok <- Jido.Console.Auth.reject_credential_args(args),
+         {:ok, identity, options} <- parse_models_target(args) do
+      if Keyword.get(options, :help) do
+        print_help()
+      else
+        write_models(apply_models_show(identity, opts))
+      end
+    end
+    |> normalize_models_result()
+  end
+
+  defp run_models_test(args, opts) do
+    with :ok <- Jido.Console.Auth.reject_credential_args(args),
+         {:ok, identity, options} <- parse_models_target(args, [:offline, :require]) do
+      if Keyword.get(options, :help) do
+        print_help()
+      else
+        write_models(apply_models_test(identity, Keyword.merge(opts, options)))
+      end
+    end
+    |> normalize_models_result()
+  end
+
+  defp apply_models_show({provider, model}, opts), do: Jido.Console.Models.Commands.show(provider, model, opts)
+  defp apply_models_show(identity, opts), do: Jido.Console.Models.Commands.show(identity, nil, opts)
+
+  defp apply_models_test({provider, model}, opts), do: Jido.Console.Models.Commands.test(provider, model, opts)
+  defp apply_models_test(identity, opts), do: Jido.Console.Models.Commands.test(identity, nil, opts)
+
+  defp write_models({:ok, output}) do
+    IO.write(output)
+    :ok
+  end
+
+  defp write_models(other), do: other
+
+  defp parse_models_target(args, extra \\ []) do
+    switches =
+      Enum.map([:help | extra], fn
+        :offline -> {:offline, :boolean}
+        :require -> {:require, :string}
+        :help -> {:help, :boolean}
+      end)
+
+    case OptionParser.parse(args, strict: switches, aliases: [h: :help]) do
+      {options, [], []} ->
+        if Keyword.get(options, :help), do: {:ok, nil, [help: true]}, else: {:error, :invalid_model_identity}
+
+      {options, [identity], []} ->
+        {:ok, identity, Keyword.take(options, extra)}
+
+      {options, [provider, model], []} ->
+        {:ok, {provider, model}, Keyword.take(options, extra)}
+
+      {_options, _args, _invalid} ->
+        {:error, :invalid_model_options}
+    end
+  end
+
+  defp parse_models_options(args, extra) do
+    case OptionParser.parse(args,
+           strict: [help: :boolean] ++ Enum.map(extra, &{&1, :boolean}),
+           aliases: [h: :help]
+         ) do
+      {options, [], []} -> {:ok, options}
+      {_options, _args, _invalid} -> {:error, :invalid_model_options}
+    end
+  end
+
+  defp normalize_models_result(:ok), do: :ok
+  defp normalize_models_result({:error, {:unknown_model, _identity} = reason}), do: config_error(reason)
+  defp normalize_models_result({:error, :invalid_model_identity}), do: usage_error()
+  defp normalize_models_result({:error, :invalid_model_options}), do: usage_error()
+  defp normalize_models_result({:error, :invalid_required_feature}), do: usage_error()
+  defp normalize_models_result({:error, {:offline_denied, output}}), do: write_denied(output)
+  defp normalize_models_result({:error, {:capability_denied, output}}), do: write_denied(output)
+  defp normalize_models_result({:error, {:contract_failed, output}}), do: write_denied(output)
+  defp normalize_models_result({:error, reason}), do: normalize_process_result({:error, reason})
+
+  defp write_denied(output) do
+    IO.write(output)
+    {:error, 1}
+  end
+
+  defp config_error(reason) do
+    IO.puts(:stderr, "jido: #{format_error(reason)}")
+    {:error, 64}
   end
 
   defp parse_auth_options(args) do
