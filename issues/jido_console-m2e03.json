@@ -17,9 +17,15 @@
     "roadmap",
     "v0.2"
   ],
+  "comments": [
+    {
+      "text": "Canonical protocol schema is at priv/session/protocol/jido.session.v1.json. mix test test/jido_console/session/protocol_test.exs passed 4 tests.",
+      "timestamp": "2026-08-15T23:23:55Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M2-E03: Define the Canonical Session Protocol",
   "type": "epic",
-  "updated_at": "2026-08-15T23:19:08Z"
+  "updated_at": "2026-08-15T23:23:55Z"
 }
