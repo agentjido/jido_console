@@ -19,7 +19,8 @@ defmodule Jido.Cli.Release.Readiness do
     "file-boundary",
     "runtime-boundary",
     "measurement",
-    "support-policy"
+    "support-policy",
+    "dependency-policy"
   ]
 
   @doc "Returns the available check names in their required order."
@@ -37,6 +38,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("runtime-boundary", opts), do: Jido.Cli.Release.Boundaries.runtime_boundary!(opts)
   def run!("measurement", opts), do: measurement!(opts)
   def run!("support-policy", opts), do: support_policy!(opts)
+  def run!("dependency-policy", opts), do: dependency_policy!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
@@ -168,6 +170,23 @@ defmodule Jido.Cli.Release.Readiness do
       opts,
       "roadmap/milestones/00-establish-release-readiness/first-user-support.md",
       ~w(Status User Job Activation Product Platform Channel Provider Security Non-claims)
+    )
+  end
+
+  @doc false
+  @spec dependency_policy!(keyword()) :: map()
+  def dependency_policy!(opts \\ []) do
+    command_check!(
+      "dependency-policy",
+      [
+        "test",
+        "test/jido_cli/jidoka_dependency_test.exs",
+        "test/jido_cli/jidoka_public_api_boundary_test.exs",
+        "test/jido_cli/release/cross_repo_test.exs",
+        "--seed",
+        "0"
+      ],
+      opts
     )
   end
 

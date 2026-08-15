@@ -133,6 +133,17 @@ defmodule Jido.Cli.Release.ReadinessTest do
     assert policy =~ "first-user-support.md"
   end
 
+  test "uses the existing Jidoka dependency checks" do
+    runner = fn "mix", _args, _opts -> {"", 0} end
+
+    assert %{"status" => "passed", "command" => command} =
+             Readiness.run!("dependency-policy", command_runner: runner)
+
+    assert command =~ "jidoka_dependency_test.exs"
+    assert command =~ "jidoka_public_api_boundary_test.exs"
+    assert command =~ "cross_repo_test.exs"
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),
