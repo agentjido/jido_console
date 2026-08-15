@@ -41,7 +41,8 @@ defmodule Jido.Console.MixProject do
 
   def application do
     [
-      extra_applications: extra_applications(Mix.env())
+      extra_applications: extra_applications(Mix.env()),
+      mod: {Jido.Console.Application, []}
     ]
   end
 
