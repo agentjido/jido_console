@@ -30,7 +30,12 @@ defmodule Jido.Console.Coding.LocalTest do
     assert {:error, :local_coding_root_required} =
              Setup.prepare(Jido.Console.DefaultAgent, coding_profile: Local.profile_id())
 
-    assert {:ok, setup} = Setup.prepare(Jido.Console.DefaultAgent, project_root: root)
+    assert {:ok, setup} =
+             Setup.prepare(Jido.Console.DefaultAgent,
+               project_root: root,
+               jido_home: Path.join(root, "home")
+             )
+
     assert setup.workspace.access == [:read]
     assert setup.local_resources == nil
   end

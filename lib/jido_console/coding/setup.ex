@@ -1,7 +1,7 @@
 defmodule Jido.Console.Coding.Setup do
   @moduledoc "Trusted CLI selection and context for the removable Jidoka coding pack."
 
-  alias Jido.Console.Coding.{FileMentions, Local, ProviderOptions, Selection, WorkspaceConfig}
+  alias Jido.Console.Coding.{FileMentions, Local, Profile, ProviderOptions, Selection, WorkspaceConfig}
   alias Jido.Console.Extensions
   alias Jidoka.CodingPack
   alias Jidoka.CodingPack.{Instructions, Workspace}
@@ -41,8 +41,10 @@ defmodule Jido.Console.Coding.Setup do
   def prepare(agent, opts) when is_list(opts) do
     with {:ok, spec} <- spec(agent),
          {:ok, selection} <- Selection.resolve(opts),
+         :ok <- Selection.validate_profile(selection.profile_id, opts),
+         {:ok, profile} <- Profile.resolve(selection.profile_id, opts),
          {:ok, spec} <- ProviderOptions.tune_spec(spec, selection, opts) do
-      configure(spec, selection, opts)
+      configure(spec, selection, profile, opts)
     end
   end
 
@@ -68,7 +70,7 @@ defmodule Jido.Console.Coding.Setup do
     end
   end
 
-  defp configure(spec, %{pack_id: nil}, opts) do
+  defp configure(spec, %{pack_id: nil}, _profile, opts) do
     extensions = Enum.reject(spec.extensions, &(&1.id == @default_pack))
 
     with {:ok, spec} <- Jidoka.Agent.Spec.new(spec |> Map.from_struct() |> Map.put(:extensions, extensions)),
@@ -95,16 +97,15 @@ defmodule Jido.Console.Coding.Setup do
     end
   end
 
-  defp configure(spec, selection, opts) do
-    with :ok <- Selection.validate_profile(selection.profile_id, opts),
-         {:ok, workspace} <- WorkspaceConfig.build(selection.profile_id, opts),
+  defp configure(spec, selection, profile, opts) do
+    with {:ok, workspace} <- WorkspaceConfig.build(selection.profile_id, opts),
          {:ok, instructions} <- Instructions.discover(workspace, WorkspaceConfig.working_directory(opts)),
          {:ok, local} <- local_profile(selection.profile_id, workspace) do
-      finish_configuration(spec, selection, workspace, instructions, local, opts)
+      finish_configuration(spec, selection, profile, workspace, instructions, local, opts)
     end
   end
 
-  defp finish_configuration(spec, selection, workspace, instructions, local, opts) do
+  defp finish_configuration(spec, selection, profile, workspace, instructions, local, opts) do
     try do
       request = Request.new!(id: selection.pack_id)
 
@@ -115,6 +116,7 @@ defmodule Jido.Console.Coding.Setup do
           context = %{
             "coding" => %{
               "status" => "enabled",
+              "profile" => Profile.to_map(profile),
               "pack_id" => selection.pack_id,
               "profile_id" => selection.profile_id,
               "workspace" => Workspace.to_map(workspace),

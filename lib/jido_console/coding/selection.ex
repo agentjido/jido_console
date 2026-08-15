@@ -1,10 +1,11 @@
 defmodule Jido.Console.Coding.Selection do
   @moduledoc "Validates the trusted coding pack and execution-profile selection."
 
+  alias Jido.Console.Coding.Profile
   alias Jidoka.CodingPack
 
   @default_pack CodingPack.id()
-  @default_profile "coding.default"
+  @default_profile Profile.restricted_id()
 
   @type t :: %{pack_id: String.t() | nil, profile_id: String.t() | nil}
 

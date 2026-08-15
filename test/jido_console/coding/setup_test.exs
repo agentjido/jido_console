@@ -13,14 +13,17 @@ defmodule Jido.Console.Coding.SetupTest do
     File.write!(Path.join(root, "lib/nested/with space.ex"), "defmodule WithSpace do\nend\n")
     File.write!(Path.join(root, ".env"), "TOKEN=secret")
     on_exit(fn -> File.rm_rf(root) end)
-    %{root: root}
+    %{root: root, home: Path.join(root, "home")}
   end
 
-  test "enables the built-in pack and named profile without module names", %{root: root} do
-    assert {:ok, setup} = Setup.prepare(Jido.Console.DefaultAgent, project_root: root)
+  test "enables the built-in pack and named profile without module names", %{root: root, home: home} do
+    assert {:ok, setup} = Setup.prepare(Jido.Console.DefaultAgent, project_root: root, jido_home: home)
 
     assert setup.pack_id == "jido.coding_pack"
-    assert setup.profile_id == "coding.default"
+    assert setup.profile_id == "coding.restricted"
+    assert setup.context["coding"]["profile"]["id"] == "coding.restricted"
+    assert setup.context["coding"]["profile"]["sandbox"] == false
+    assert setup.context["coding"]["profile"]["enforcement"] == "pending"
     assert setup.spec.id == "jido"
     assert Enum.any?(setup.spec.extensions, &(&1.id == "jido.coding_pack"))
     assert Map.has_key?(setup.extension_setup.registry, "jido.coding_pack")
