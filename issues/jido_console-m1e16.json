@@ -8,6 +8,8 @@
     "jido_console-m1e28",
     "jido_console-m1e29"
   ],
+  "closed_at": "2026-08-15T14:30:54Z",
+  "close_reason": "Restricted network policy denies undeclared loopback and external destinations before connect; Gate 0 network fixtures are denied.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e16-enforce-network-boundaries.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E16: Enforce Network Boundaries\n\n## Goal\n\nDeny network access that the restricted profile does not declare.\n\n## Scope\n\n- Deny undeclared loopback access.\n- Deny undeclared external network access.\n- Define the network allowlist and its effective evidence record.\n- Keep offline mode from making model or tool network calls.\n- Use controlled local endpoints and test doubles for boundary tests.\n- Return a clear policy denial before an undeclared connection can proceed.\n\n## Out of Scope\n\n- Provider support contracts.\n- Remote executor adapters.\n- Public network calls in tests.\n- Child-process tree ownership.\n\n## Dependencies\n\nThis epic depends on M1-E13 for the restricted execution profile and policy request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds network policy enforcement, offline denial, and controlled loopback and external-network tests.\n\n## Acceptance Checks\n\n- An undeclared loopback connection is denied.\n- An undeclared external connection is denied without contacting a public service.\n- A declared connection follows the versioned network policy.\n- Offline mode blocks all model-network calls and undeclared tool-network calls.\n- A network denial occurs before the request reaches the endpoint.\n- Network evidence contains no credentials, private host data, or paid provider result.\n- The Gate 0 hostile runtime-boundary network fixtures pass.\n\n## Proof Artifacts\n\n- Versioned network policy and effective allowlist.\n- Loopback denial result.\n- External-network denial result.\n- Offline-mode result.\n- Gate 0 hostile runtime-boundary network report.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 requirement to deny undeclared loopback and external network access in restricted execution.",
   "id": "jido_console-m1e16",
@@ -20,8 +22,8 @@
     "v0.1"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M1-E16: Enforce Network Boundaries",
   "type": "epic",
-  "updated_at": "2026-08-15T14:19:21Z"
+  "updated_at": "2026-08-15T14:30:54Z"
 }
