@@ -173,6 +173,12 @@ defmodule Jido.Cli.Release.ReadinessTest do
       Readiness.run!("workflow-policy", project_root: root)
     end
   end
+
+  test "checks the stable Milestone 1 delivery plan" do
+    assert %{"status" => "passed", "plan" => plan} = Readiness.run!("delivery-plan", [])
+    assert plan =~ "delivery-plan.json"
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),

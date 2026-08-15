@@ -19,6 +19,14 @@ Ship a safe, local, multi-model coding harness through the current terminal and 
 
 A new user can install Jido Console, select a tested model and restricted execution profile, complete one coding task, review the exact effects, and leave or restore the workspace to a known state.
 
+## Delivery control
+
+- [GitHub milestone 1](https://github.com/agentjido/jido_console/milestone/1) is the public milestone record.
+- Beadwork is the source of truth for task ownership, state, dependencies, and proof plans. Use `bw list --label milestone-1` for current state.
+- [The delivery plan](delivery-plan.json) stores stable identifiers and the critical path. It does not copy current task state.
+- [The first-user support boundary](../00-establish-release-readiness/first-user-support.md) defines the initial claim.
+- The critical path ends at `jido_console-m1e30`, after the release audit in `jido_console-m1e29`.
+
 ## Work
 
 - Rename the repository and package to `jido_console`, the OTP application to `:jido_console`, and the namespace to `Jido.Console`.

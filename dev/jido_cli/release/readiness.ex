@@ -22,7 +22,8 @@ defmodule Jido.Cli.Release.Readiness do
     "support-policy",
     "dependency-policy",
     "source-policy",
-    "workflow-policy"
+    "workflow-policy",
+    "delivery-plan"
   ]
 
   @doc "Returns the available check names in their required order."
@@ -43,6 +44,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("dependency-policy", opts), do: dependency_policy!(opts)
   def run!("source-policy", opts), do: source_policy!(opts)
   def run!("workflow-policy", opts), do: workflow_policy!(opts)
+  def run!("delivery-plan", opts), do: delivery_plan!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
@@ -286,6 +288,36 @@ defmodule Jido.Cli.Release.Readiness do
       "secret_inheritance" => "absent",
       "release_operations" => "absent"
     }
+  end
+
+  @doc false
+  @spec delivery_plan!(keyword()) :: map()
+  def delivery_plan!(opts \\ []) do
+    project_root = opts |> Keyword.get(:project_root, File.cwd!()) |> Path.expand()
+    relative_path = "roadmap/milestones/01-ship-trustworthy-local-kernel/delivery-plan.json"
+    plan = project_root |> Path.join(relative_path) |> File.read!() |> Jason.decode!()
+    critical_path = plan["critical_path"] || []
+    required_fields = get_in(plan, ["beadwork", "required_fields"]) || %{}
+
+    checks = [
+      {plan["schema"] == "jido.release.delivery-plan", "schema"},
+      {get_in(plan, ["milestone", "url"]) == "https://github.com/agentjido/jido_console/milestone/1",
+       "GitHub milestone"},
+      {get_in(plan, ["beadwork", "source_of_truth"]) == true, "Beadwork source"},
+      {get_in(plan, ["beadwork", "label"]) == "milestone-1", "Beadwork label"},
+      {get_in(plan, ["items", "prefix"]) == "jido_console-m1e", "item prefix"},
+      {get_in(plan, ["items", "count"]) == 30, "item count"},
+      {Map.keys(required_fields) |> Enum.sort() ==
+         ~w(dependencies effort_class owner proof_artifact readiness_state target_release), "required fields"},
+      {List.first(critical_path) == "jido_console-g0e15", "critical path entry"},
+      {List.last(critical_path) == "jido_console-m1e30", "critical path release"},
+      {Enum.uniq(critical_path) == critical_path, "critical path uniqueness"}
+    ]
+
+    case Enum.find(checks, fn {passed, _name} -> not passed end) do
+      nil -> %{"status" => "passed", "plan" => relative_path}
+      {_passed, name} -> raise "Milestone 1 delivery plan is invalid at: #{name}"
+    end
   end
 
   defp run_clean_baseline!(run_id, project_root, source, opts) do
