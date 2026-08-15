@@ -8,6 +8,8 @@
     "jido_console-m1e15",
     "jido_console-m1e29"
   ],
+  "closed_at": "2026-08-15T14:19:21Z",
+  "close_reason": "Restricted environment allowlist, private HOME, and redacted credential refs. mix precommit passed.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e14-isolate-process-environment.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E14: Isolate the Restricted Process Environment\n\n## Goal\n\nRun restricted work with only the declared environment, credentials, and temporary home.\n\n## Scope\n\n- Build an explicit environment allowlist for each restricted operation.\n- Pass only declared credential references to the restricted process.\n- Use a private temporary `HOME` for restricted work.\n- Keep provider credential values out of process arguments and inherited undeclared variables.\n- Keep temporary files under declared Jido home or execution roots.\n- Record the environment and credential policy without recording secret values.\n- Reject an incomplete or invalid environment contract before the turn starts.\n\n## Out of Scope\n\n- File-root and symbolic-link checks.\n- Network policy enforcement.\n- Child-process tree cleanup.\n- Credential storage or provider support claims.\n\n## Dependencies\n\nThis epic depends on M1-E08 for declared credential sources and M1-E13 for the restricted profile contract.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds process-environment construction, private temporary `HOME`, credential allowlisting, and redacted evidence.\n\n## Acceptance Checks\n\n- Restricted processes receive only the declared environment keys.\n- A restricted process uses a private temporary `HOME` and cannot use the operator home by default.\n- Credential values do not appear in arguments, configuration, events, logs, traces, artifacts, or session data.\n- Undeclared credential sources are rejected before a turn starts.\n- An invalid or incomplete environment contract fails closed.\n- Evidence identifies the effective keys and paths without exposing values or private paths.\n\n## Proof Artifacts\n\n- Restricted environment manifest.\n- Private `HOME` isolation result.\n- Credential allowlist and redaction result.\n- Invalid-contract denial results.\n- Environment evidence record with no secret values.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 requirement for an explicit environment allowlist and private temporary `HOME` in the restricted coding path.",
   "id": "jido_console-m1e14",
@@ -20,8 +22,8 @@
     "v0.1"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M1-E14: Isolate the Restricted Process Environment",
   "type": "epic",
-  "updated_at": "2026-08-15T14:18:23Z"
+  "updated_at": "2026-08-15T14:19:21Z"
 }
