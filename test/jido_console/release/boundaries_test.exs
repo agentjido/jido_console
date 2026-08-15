@@ -55,7 +55,7 @@ defmodule Jido.Console.Release.BoundariesTest do
   test "validates controlled runtime classifications without a host probe" do
     network = fn ->
       [
-        %{"name" => "loopback", "classification" => "known_risk"},
+        %{"name" => "loopback", "classification" => "denied"},
         %{"name" => "external", "classification" => "denied"}
       ]
     end

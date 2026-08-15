@@ -32,7 +32,7 @@ defmodule Jido.Console.Release.Boundaries do
     network = Keyword.get(opts, :network_probe, &network_probe!/0).()
     processes = Keyword.get(opts, :process_probe, &process_probe!/0).()
 
-    expected_network = %{"external" => "denied", "loopback" => "known_risk"}
+    expected_network = %{"external" => "denied", "loopback" => "denied"}
     expected_processes = Map.new(~w(success rejection cancellation timeout owner_exit), &{&1, "known_risk"})
 
     validate_classes!("network", network, expected_network)
@@ -90,6 +90,16 @@ defmodule Jido.Console.Release.Boundaries do
   defp classify_file_result({:ok, _result}), do: "known_risk"
   defp classify_file_result(result), do: raise("unsupported file-boundary result: #{inspect(result)}")
 
+  defp loopback_accepted?(true), do: false
+
+  defp loopback_accepted?(false) do
+    receive do
+      {:loopback_accepted, value} -> value
+    after
+      2_000 -> false
+    end
+  end
+
   defp network_probe! do
     nc = System.find_executable("nc") || raise "runtime-boundary checks require nc"
     {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}, reuseaddr: true])
@@ -113,14 +123,7 @@ defmodule Jido.Console.Release.Boundaries do
 
     try do
       loopback = adapter_command!(nc, ["-w", "1", "-z", "127.0.0.1", Integer.to_string(port)], 2_000)
-
-      accepted? =
-        receive do
-          {:loopback_accepted, value} -> value
-        after
-          2_000 -> false
-        end
-
+      accepted? = loopback_accepted?(loopback["status"] == "denied")
       external = adapter_command!(nc, ["-w", "1", "-z", "192.0.2.1", "9"], 2_000)
 
       [
@@ -242,6 +245,7 @@ defmodule Jido.Console.Release.Boundaries do
 
       case Adapter.execute(nil, request, opts) do
         {:ok, result, _evidence} -> result
+        {:error, {:network_denied, decision}} -> %{"status" => "denied", "class" => Atom.to_string(decision.class)}
         {:error, reason} -> raise "runtime-boundary adapter failed: #{inspect(reason)}"
       end
     after

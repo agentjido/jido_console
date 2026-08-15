@@ -3,6 +3,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
 
   @behaviour Jidoka.ExecutionEnvironment.Adapter
 
+  alias Jido.Console.Coding.Network
   alias Jidoka.Cancellation
   alias Jidoka.CodingPack.Workspace
   alias Jidoka.ExecutionEnvironment.{Binding, EnforcementEvidence}
@@ -66,6 +67,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
   @impl true
   def execute(_handle, request, opts) when is_map(request) do
     with :ok <- validate_request(request),
+         {:ok, _decision} <- Network.admit(request, opts),
          %Workspace{} = workspace <- Keyword.fetch!(opts, :workspace),
          {:ok, cwd} <- Workspace.resolve(workspace, request["cwd"], type: :directory),
          {:ok, executable} <- executable(request["command"], opts),
