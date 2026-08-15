@@ -1,5 +1,5 @@
 defmodule Jido.Cli.TuiTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Jido.Cli.Tui
   alias Jido.Cli.Runtime.Jidoka, as: Runtime
@@ -65,7 +65,7 @@ defmodule Jido.Cli.TuiTest do
     end
 
     @impl true
-    def start_turn(:session, prompt, owner, opts) do
+    def start_turn(_session, prompt, owner, opts) do
       test_pid = Keyword.fetch!(opts, :test_pid)
       send(test_pid, :turn_started)
       send(test_pid, {:turn_prompt, prompt, Keyword.get(opts, :context)})
@@ -541,6 +541,35 @@ defmodule Jido.Cli.TuiTest do
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)
     assert_receive :terminal_closed
+  end
+
+  test "completes a bounded 20-turn streamed session and closes its resources" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive :session_started, 500
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+
+    for _index <- 1..20 do
+      send_prompt(owner, ref)
+      assert_receive :turn_started, 500
+      assert_receive {:turn_prompt, "hello", _context}, 500
+      assert_receive {:turn_awaited, _opts}, 500
+      assert_frame_contains("Hello back", 500)
+    end
+
+    stop_tui(task, owner, ref)
   end
 
   test "keeps the Jidoka request owner alive while it awaits the result" do

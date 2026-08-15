@@ -91,6 +91,24 @@ defmodule Jido.Cli.Release.ReadinessTest do
     assert "test/jido_cli/cli/tui/view_test.exs" in args
   end
 
+  test "runs the bounded terminal and real PTY suite" do
+    parent = self()
+
+    runner = fn "mix", args, _opts ->
+      send(parent, {:terminal_command, args})
+      {"", 0}
+    end
+
+    assert %{"check" => "tui-terminal", "status" => "passed"} =
+             Readiness.run!("tui-terminal", command_runner: runner)
+
+    assert_receive {:terminal_command, args}
+    assert "test/integration/coding_tui_pty_test.exs" in args
+    assert "test/jido_cli/cli/tui_test.exs" in args
+    assert "expect" in args
+    assert "180000" in args
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),
