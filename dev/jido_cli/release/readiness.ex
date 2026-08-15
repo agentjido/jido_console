@@ -23,7 +23,8 @@ defmodule Jido.Cli.Release.Readiness do
     "dependency-policy",
     "source-policy",
     "workflow-policy",
-    "delivery-plan"
+    "delivery-plan",
+    "delivery-trace"
   ]
 
   @doc "Returns the available check names in their required order."
@@ -45,6 +46,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("source-policy", opts), do: source_policy!(opts)
   def run!("workflow-policy", opts), do: workflow_policy!(opts)
   def run!("delivery-plan", opts), do: delivery_plan!(opts)
+  def run!("delivery-trace", opts), do: Jido.Cli.Release.Traceability.run!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
