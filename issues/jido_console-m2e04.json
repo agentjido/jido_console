@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m2e03"
   ],
@@ -22,8 +22,8 @@
     "v0.2"
   ],
   "priority": 2,
-  "status": "open",
+  "status": "in_progress",
   "title": "M2-E04: Generate Protocol Types and Validators",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:41Z"
+  "updated_at": "2026-08-15T23:24:05Z"
 }
