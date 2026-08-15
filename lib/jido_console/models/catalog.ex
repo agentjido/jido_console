@@ -280,14 +280,7 @@ defmodule Jido.Console.Models.Catalog do
     [
       openai_gpt_4_1_mini(),
       anthropic_claude_sonnet_4(),
-      builtin(
-        "google",
-        "gemini-2.5-flash",
-        :available,
-        "pending:m1e12",
-        pending.("Awaiting Google Gemini qualification"),
-        ["No v0.1 support claim until M1-E12 contract evidence passes"]
-      ),
+      google_gemini_2_5_flash(),
       builtin(
         "ollama",
         "llama3.2",
@@ -297,6 +290,32 @@ defmodule Jido.Console.Models.Catalog do
         ["Local-only beta. Not a v0.1 supported-tier claim."]
       )
     ]
+  end
+
+  defp google_gemini_2_5_flash do
+    evidence = "harness:google:gemini-2.5-flash"
+    supported = %{state: :supported, evidence: evidence, note: "Recorded Google Gemini v0.1 contract"}
+
+    %{
+      provider: "google",
+      model: "gemini-2.5-flash",
+      tier: :supported,
+      evidence_id: evidence,
+      capabilities: Map.new(@capability_keys, &{&1, supported}),
+      limits: %{context_tokens: 1_048_576, output_tokens: 65_536},
+      cost: %{class: :standard, currency: "USD"},
+      cancellation: supported,
+      prompt_cache: %{
+        state: :supported,
+        evidence: evidence,
+        note: "Implicit prompt cache in the recorded Gemini contract"
+      },
+      known_gaps: [
+        "Recorded qualification does not call a live Gemini endpoint",
+        "Prompt cache is implicit and not separately configurable",
+        "Cost class is catalog metadata, not a live invoice"
+      ]
+    }
   end
 
   defp anthropic_claude_sonnet_4 do

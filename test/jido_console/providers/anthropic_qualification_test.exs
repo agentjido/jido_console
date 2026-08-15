@@ -42,11 +42,11 @@ defmodule Jido.Console.Providers.AnthropicQualificationTest do
     refute inspect(Qualification.report(result)) =~ "sk-ant-secret"
   end
 
-  test "does not change OpenAI or Gemini support claims" do
+  test "does not change OpenAI or Ollama support claims" do
     assert {:ok, openai} = Models.show("openai", "gpt-4.1-mini")
-    assert {:ok, gemini} = Models.show("google", "gemini-2.5-flash")
+    assert {:ok, ollama} = Models.show("ollama", "llama3.2")
     assert openai.tier == :supported
-    assert gemini.tier == :available
+    assert ollama.tier == :beta
   end
 
   test "offline preflight does not touch the network or credentials" do

@@ -58,13 +58,13 @@ defmodule Jido.Console.Policy.PreflightTest do
 
     assert {:error, missing} =
              Preflight.check(
-               provider: "google",
-               model: "gemini-2.5-flash",
+               provider: "ollama",
+               model: "llama3.2",
                required_features: [:streaming]
              )
 
     assert missing.outcome == :deny
-    assert missing.reason =~ "google:gemini-2.5-flash"
+    assert missing.reason =~ "ollama:llama3.2"
     assert missing.reason =~ "streaming"
 
     assert {:error, unknown} =
