@@ -4,7 +4,6 @@ defmodule Jido.Console.Coding.FileMentions do
   alias Jido.Console.Terminal.PlainText
   alias Jidoka.CodingPack.{Error, Read, Search, Workspace}
 
-  @mention ~r/(?<![\p{L}\p{N}_@\\])(?<full>@(?:"(?<double>(?:\\.|[^"\\\r\n])*)"|'(?<single>(?:\\.|[^'\\\r\n])*)'|(?<bare>[\p{L}\p{N}._\/~+#=-]*[\p{L}\p{N}_~+#=-])))/u
   @max_files 20
   @max_total_bytes 2_097_152
 
@@ -22,7 +21,7 @@ defmodule Jido.Console.Coding.FileMentions do
   end
 
   defp matches(prompt) do
-    Regex.scan(@mention, prompt, capture: ["full", "double", "single", "bare"], return: :index)
+    Regex.scan(mention_pattern(), prompt, capture: ["full", "double", "single", "bare"], return: :index)
     |> Enum.map(fn [full, double, single, bare] ->
       %{full: full, path: capture(prompt, [double, single, bare])}
     end)
@@ -120,5 +119,11 @@ defmodule Jido.Console.Coding.FileMentions do
 
   defp safe_mention?(mention) do
     mention != "" and String.valid?(mention) and not String.contains?(mention, ["*", "?", "[", "]", <<0>>])
+  end
+
+  # Keep compiled regexes out of module attributes. OTP 28 Regex values hold a
+  # reference that Elixir 1.18 cannot inject from an attribute into a function.
+  defp mention_pattern do
+    ~r/(?<![\p{L}\p{N}_@\\])(?<full>@(?:"(?<double>(?:\\.|[^"\\\r\n])*)"|'(?<single>(?:\\.|[^'\\\r\n])*)'|(?<bare>[\p{L}\p{N}._\/~+#=-]*[\p{L}\p{N}_~+#=-])))/u
   end
 end

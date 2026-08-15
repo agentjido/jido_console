@@ -18,94 +18,6 @@ defmodule Jido.Console.Release.Contract do
     "linux-arm64" => %{archive_extension: ".tar.gz", os: "linux", arch: "arm64"},
     "windows-x64" => %{archive_extension: ".zip", os: "windows", arch: "x86_64"}
   }
-  @non_empty_string Zoi.string() |> Zoi.regex(~r/\S/)
-  @version_string Zoi.string() |> Zoi.regex(~r/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
-  @digest_string Zoi.string() |> Zoi.regex(~r/^[0-9a-f]{64}$/)
-  @commit_string Zoi.string() |> Zoi.regex(~r/^[0-9a-f]{40}$/)
-  @file_schema Zoi.map(
-                 %{
-                   "path" => @non_empty_string,
-                   "sha256" => @digest_string,
-                   "size" => Zoi.integer() |> Zoi.gte(0)
-                 },
-                 unrecognized_keys: :error
-               )
-  @component_schema Zoi.map(
-                      %{
-                        "kind" => Zoi.enum(["dependency", "elixir", "otp", "project"]),
-                        "license_file" => @non_empty_string |> Zoi.nullish(),
-                        "licenses" => Zoi.array(@non_empty_string),
-                        "name" => @non_empty_string,
-                        "native_files" => Zoi.array(@non_empty_string),
-                        "source" => @non_empty_string,
-                        "version" => @non_empty_string
-                      },
-                      unrecognized_keys: :error
-                    )
-  @metadata_schema Zoi.map(
-                     %{
-                       "archive_checksum" => Zoi.enum(["checksums.txt"]) |> Zoi.optional(),
-                       "artifact" => @non_empty_string,
-                       "build" =>
-                         Zoi.map(
-                           %{
-                             "build_time_utc" => @non_empty_string |> Zoi.optional(),
-                             "launcher_version" => Zoi.enum([1]),
-                             "package_method" => Zoi.enum(["mix_release"]),
-                             "reproducible" => Zoi.boolean() |> Zoi.optional(),
-                             "source_date_epoch" => Zoi.integer() |> Zoi.gte(0),
-                             "toolchain_file" => Zoi.enum([".tool-versions"]) |> Zoi.optional()
-                           },
-                           unrecognized_keys: :error
-                         ),
-                       "components" => Zoi.array(@component_schema) |> Zoi.optional(),
-                       "digest_scope" => Zoi.enum(["all package files except release.json"]),
-                       "distribution" =>
-                         Zoi.map(
-                           %{"github" => Zoi.boolean(), "homebrew" => Zoi.boolean()},
-                           unrecognized_keys: :error
-                         ),
-                       "executable" => Zoi.enum([@executable]),
-                       "files" => Zoi.array(@file_schema),
-                       "native_files" => Zoi.array(@non_empty_string) |> Zoi.optional(),
-                       "package" => Zoi.enum(["jido_console"]),
-                       "product" => Zoi.enum(["jido"]),
-                       "root" => @non_empty_string,
-                       "runtime" =>
-                         Zoi.map(
-                           %{
-                             "elixir" => @non_empty_string,
-                             "jidoka" => @non_empty_string,
-                             "jidoka_ref" => @commit_string,
-                             "otp" => @non_empty_string
-                           },
-                           unrecognized_keys: :error
-                         ),
-                       "runtime_data" => Zoi.array(@non_empty_string),
-                       "schema" => Zoi.enum([@schema]),
-                       "schema_version" => Zoi.enum([@schema_version]),
-                       "source" =>
-                         Zoi.map(
-                           %{
-                             "commit" => Zoi.string() |> Zoi.min(7),
-                             "dirty" => Zoi.boolean()
-                           },
-                           unrecognized_keys: :error
-                         ),
-                       "target" => Zoi.enum(Map.keys(@targets)),
-                       "trust" =>
-                         Zoi.map(
-                           %{
-                             "notarized" => Zoi.boolean(),
-                             "publishable" => Zoi.boolean(),
-                             "signed" => Zoi.boolean()
-                           },
-                           unrecognized_keys: :error
-                         ),
-                       "version" => @version_string
-                     },
-                     unrecognized_keys: :error
-                   )
 
   @type target :: String.t()
 
@@ -193,7 +105,7 @@ defmodule Jido.Console.Release.Contract do
   @doc "Validates release metadata without changing it."
   @spec validate_metadata(term()) :: :ok | {:error, term()}
   def validate_metadata(%{} = metadata) do
-    with {:ok, metadata} <- Jido.Console.Document.validate(@metadata_schema, metadata, :release_metadata),
+    with {:ok, metadata} <- Jido.Console.Document.validate(metadata_schema(), metadata, :release_metadata),
          version = metadata["version"],
          target = metadata["target"],
          :ok <- equal(metadata, "root", root_name(version, target)),
@@ -329,4 +241,102 @@ defmodule Jido.Console.Release.Contract do
       path != "" and
       not Enum.member?(Path.split(path), "..")
   end
+
+  defp metadata_schema do
+    Zoi.map(
+      %{
+        "archive_checksum" => Zoi.enum(["checksums.txt"]) |> Zoi.optional(),
+        "artifact" => non_empty_string(),
+        "build" =>
+          Zoi.map(
+            %{
+              "build_time_utc" => non_empty_string() |> Zoi.optional(),
+              "launcher_version" => Zoi.enum([1]),
+              "package_method" => Zoi.enum(["mix_release"]),
+              "reproducible" => Zoi.boolean() |> Zoi.optional(),
+              "source_date_epoch" => Zoi.integer() |> Zoi.gte(0),
+              "toolchain_file" => Zoi.enum([".tool-versions"]) |> Zoi.optional()
+            },
+            unrecognized_keys: :error
+          ),
+        "components" => Zoi.array(component_schema()) |> Zoi.optional(),
+        "digest_scope" => Zoi.enum(["all package files except release.json"]),
+        "distribution" =>
+          Zoi.map(
+            %{"github" => Zoi.boolean(), "homebrew" => Zoi.boolean()},
+            unrecognized_keys: :error
+          ),
+        "executable" => Zoi.enum([@executable]),
+        "files" => Zoi.array(file_schema()),
+        "native_files" => Zoi.array(non_empty_string()) |> Zoi.optional(),
+        "package" => Zoi.enum(["jido_console"]),
+        "product" => Zoi.enum(["jido"]),
+        "root" => non_empty_string(),
+        "runtime" =>
+          Zoi.map(
+            %{
+              "elixir" => non_empty_string(),
+              "jidoka" => non_empty_string(),
+              "jidoka_ref" => commit_string(),
+              "otp" => non_empty_string()
+            },
+            unrecognized_keys: :error
+          ),
+        "runtime_data" => Zoi.array(non_empty_string()),
+        "schema" => Zoi.enum([@schema]),
+        "schema_version" => Zoi.enum([@schema_version]),
+        "source" =>
+          Zoi.map(
+            %{
+              "commit" => Zoi.string() |> Zoi.min(7),
+              "dirty" => Zoi.boolean()
+            },
+            unrecognized_keys: :error
+          ),
+        "target" => Zoi.enum(Map.keys(@targets)),
+        "trust" =>
+          Zoi.map(
+            %{
+              "notarized" => Zoi.boolean(),
+              "publishable" => Zoi.boolean(),
+              "signed" => Zoi.boolean()
+            },
+            unrecognized_keys: :error
+          ),
+        "version" => version_string()
+      },
+      unrecognized_keys: :error
+    )
+  end
+
+  defp component_schema do
+    Zoi.map(
+      %{
+        "kind" => Zoi.enum(["dependency", "elixir", "otp", "project"]),
+        "license_file" => non_empty_string() |> Zoi.nullish(),
+        "licenses" => Zoi.array(non_empty_string()),
+        "name" => non_empty_string(),
+        "native_files" => Zoi.array(non_empty_string()),
+        "source" => non_empty_string(),
+        "version" => non_empty_string()
+      },
+      unrecognized_keys: :error
+    )
+  end
+
+  defp file_schema do
+    Zoi.map(
+      %{
+        "path" => non_empty_string(),
+        "sha256" => digest_string(),
+        "size" => Zoi.integer() |> Zoi.gte(0)
+      },
+      unrecognized_keys: :error
+    )
+  end
+
+  defp non_empty_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("\\S"))
+  defp version_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"))
+  defp digest_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^[0-9a-f]{64}$"))
+  defp commit_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^[0-9a-f]{40}$"))
 end

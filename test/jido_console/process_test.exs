@@ -11,7 +11,19 @@ defmodule Jido.Console.ProcessTest do
     File.mkdir_p!(root)
     name = :"jido-process-#{System.unique_integer([:positive])}"
     opts = [jido_home: Path.join(root, "home"), name: name]
-    on_exit(fn -> File.rm_rf!(root) end)
+
+    on_exit(fn ->
+      if pid = Elixir.Process.whereis(name) do
+        try do
+          GenServer.stop(pid, :shutdown, 1_000)
+        catch
+          :exit, _reason -> :ok
+        end
+      end
+
+      File.rm_rf!(root)
+    end)
+
     %{opts: opts, root: root}
   end
 
@@ -54,6 +66,47 @@ defmodule Jido.Console.ProcessTest do
     assert {:ok, already} = Process.stop("interactive", opts)
     assert already.readiness == "already stopped"
     assert {:ok, []} = Process.list(opts)
+  end
+
+  test "process supervisor stays up after the starter exits", %{opts: opts} do
+    name = Keyword.fetch!(opts, :name)
+    parent = self()
+
+    starter =
+      spawn(fn ->
+        {:ok, pid} = Jido.Console.Process.Supervisor.ensure_started(opts)
+        send(parent, {:started, pid})
+      end)
+
+    assert_receive {:started, supervisor}
+    assert_receive_gone(starter)
+    assert Elixir.Process.whereis(name) == supervisor
+    assert Elixir.Process.alive?(supervisor)
+
+    owner = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+    assert {:ok, record} = Process.register(:interactive, owner, opts)
+    assert record.status == :ready
+    Elixir.Process.exit(owner, :kill)
+  end
+
+  test "register succeeds after the previous owner process exits", %{opts: opts} do
+    parent = self()
+
+    first =
+      spawn(fn ->
+        {:ok, _} = Process.register(:interactive, self(), opts)
+        send(parent, :first_ready)
+        receive do: (:go -> :ok)
+      end)
+
+    assert_receive :first_ready
+    send(first, :go)
+    assert_receive_gone(first)
+
+    second = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+    assert {:ok, record} = Process.register(:interactive, second, opts)
+    assert record.status == :ready
+    Elixir.Process.exit(second, :kill)
   end
 
   test "owner exit and supervisor stop leave no owned process", %{opts: opts} do

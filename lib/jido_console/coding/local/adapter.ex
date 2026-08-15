@@ -26,20 +26,6 @@ defmodule Jido.Console.Coding.Local.Adapter do
   """
   @poll_interval_ms 50
   @termination_grace_ms 500
-  @request_schema Zoi.map(
-                    %{
-                      "args" => Zoi.array(Zoi.string()),
-                      "command" => Zoi.enum(["git", "mix"]),
-                      "command_class" => Zoi.string() |> Zoi.regex(~r/\S/),
-                      "cwd" => Zoi.string() |> Zoi.regex(~r/\S/),
-                      "max_output_bytes" => Zoi.integer() |> Zoi.positive(),
-                      "mutation" => Zoi.enum(["read"]),
-                      "network" => Zoi.enum([false]),
-                      "stdin" => Zoi.enum([""]),
-                      "timeout_ms" => Zoi.integer() |> Zoi.positive()
-                    },
-                    unrecognized_keys: :error
-                  )
 
   @impl true
   def open(profile, _request, opts) do
@@ -95,7 +81,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
   def cleanup(_binding, opts), do: {:ok, evidence(opts)}
 
   defp validate_request(request) do
-    case Zoi.parse(@request_schema, request) do
+    case Zoi.parse(request_schema(), request) do
       {:ok, request} -> validate_request_text(request)
       {:error, errors} -> {:error, {:local_coding_request_invalid, Zoi.treefy_errors(errors)}}
     end
@@ -107,6 +93,23 @@ defmodule Jido.Console.Coding.Local.Adapter do
     if Enum.all?(values, &(String.valid?(&1) and not String.contains?(&1, <<0>>))),
       do: :ok,
       else: {:error, :local_coding_request_text_invalid}
+  end
+
+  defp request_schema do
+    Zoi.map(
+      %{
+        "args" => Zoi.array(Zoi.string()),
+        "command" => Zoi.enum(["git", "mix"]),
+        "command_class" => Zoi.string() |> Zoi.regex(Regex.compile!("\\S")),
+        "cwd" => Zoi.string() |> Zoi.regex(Regex.compile!("\\S")),
+        "max_output_bytes" => Zoi.integer() |> Zoi.positive(),
+        "mutation" => Zoi.enum(["read"]),
+        "network" => Zoi.enum([false]),
+        "stdin" => Zoi.enum([""]),
+        "timeout_ms" => Zoi.integer() |> Zoi.positive()
+      },
+      unrecognized_keys: :error
+    )
   end
 
   defp executable(command, opts) do

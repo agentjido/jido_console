@@ -3,24 +3,6 @@ defmodule Jido.Console.Extensions.Trust do
 
   alias Jido.Console.Document
 
-  @non_empty_string Zoi.string() |> Zoi.regex(~r/\S/)
-  @digest Zoi.string() |> Zoi.regex(~r/^sha256:[0-9a-f]{64}$/)
-  @project_schema Zoi.map(
-                    %{
-                      "extensions" => Zoi.map(@non_empty_string, @digest, []) |> Zoi.optional(),
-                      "repository_id" => @non_empty_string |> Zoi.optional(),
-                      "root" => @non_empty_string
-                    },
-                    unrecognized_keys: :error
-                  )
-  @trust_schema Zoi.map(
-                  %{
-                    "projects" => Zoi.array(@project_schema),
-                    "version" => Zoi.enum([1]) |> Zoi.optional()
-                  },
-                  unrecognized_keys: :error
-                )
-
   @doc "Returns a canonical project identity with an injectable repository identity."
   @spec project_identity(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def project_identity(root, opts \\ []) when is_binary(root) do
@@ -41,7 +23,7 @@ defmodule Jido.Console.Extensions.Trust do
 
   defp load_trust(path, identity) do
     with {:ok, document, _contents} <- Document.decode_file(path, max_file_bytes: 1_000_000),
-         {:ok, document} <- Document.validate(@trust_schema, document, path),
+         {:ok, document} <- Document.validate(trust_schema(), document, path),
          projects when is_list(projects) <- Map.get(document, "projects", []),
          {:ok, project} <- find_project(projects, identity),
          extensions when is_map(extensions) <- Map.get(project, "extensions", %{}) do
@@ -126,4 +108,28 @@ defmodule Jido.Console.Extensions.Trust do
         {:error, reason}
     end
   end
+
+  defp trust_schema do
+    Zoi.map(
+      %{
+        "projects" => Zoi.array(project_schema()),
+        "version" => Zoi.enum([1]) |> Zoi.optional()
+      },
+      unrecognized_keys: :error
+    )
+  end
+
+  defp project_schema do
+    Zoi.map(
+      %{
+        "extensions" => Zoi.map(non_empty_string(), digest_string(), []) |> Zoi.optional(),
+        "repository_id" => non_empty_string() |> Zoi.optional(),
+        "root" => non_empty_string()
+      },
+      unrecognized_keys: :error
+    )
+  end
+
+  defp non_empty_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("\\S"))
+  defp digest_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^sha256:[0-9a-f]{64}$"))
 end

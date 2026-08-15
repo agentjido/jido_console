@@ -1,12 +1,6 @@
 defmodule Jido.Console.Terminal.PlainText do
   @moduledoc "Converts external values to terminal-safe plain text."
 
-  @control_strings ~r/\x1B(?:\][^\x07\x1B]*(?:\x07|\x1B\\|$)|[P^_X].*?(?:\x1B\\|$))/su
-  @csi ~r/\x1B\[[0-?]*[ -\/]*[@-~]/u
-  @escape ~r/\x1B(?:.|$)/su
-  @multiline_controls ~r/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]+/u
-  @single_line_controls ~r/[\x00-\x1F\x7F-\x9F]+/u
-
   @doc "Removes terminal sequences and unsafe controls while it keeps line breaks."
   @spec clean(term()) :: String.t()
   def clean(value) do
@@ -15,7 +9,7 @@ defmodule Jido.Console.Terminal.PlainText do
     |> strip_sequences()
     |> String.replace("\r\n", "\n")
     |> String.replace("\r", "\n")
-    |> String.replace(@multiline_controls, "")
+    |> String.replace(multiline_controls(), "")
   end
 
   @doc "Returns terminal-safe text on one bounded line."
@@ -24,7 +18,7 @@ defmodule Jido.Console.Terminal.PlainText do
     value
     |> text()
     |> strip_sequences()
-    |> String.replace(@single_line_controls, " ")
+    |> String.replace(single_line_controls(), " ")
     |> String.replace(~r/\s+/u, " ")
     |> String.trim()
     |> String.slice(0, limit)
@@ -38,8 +32,16 @@ defmodule Jido.Console.Terminal.PlainText do
 
   defp strip_sequences(text) do
     text
-    |> String.replace(@control_strings, "")
-    |> String.replace(@csi, "")
-    |> String.replace(@escape, "")
+    |> String.replace(control_strings(), "")
+    |> String.replace(csi(), "")
+    |> String.replace(escape(), "")
   end
+
+  # Keep compiled regexes out of module attributes. OTP 28 Regex values hold a
+  # reference that Elixir 1.18 cannot inject from an attribute into a function.
+  defp control_strings, do: ~r/\x1B(?:\][^\x07\x1B]*(?:\x07|\x1B\\|$)|[P^_X].*?(?:\x1B\\|$))/su
+  defp csi, do: ~r/\x1B\[[0-?]*[ -\/]*[@-~]/u
+  defp escape, do: ~r/\x1B(?:.|$)/su
+  defp multiline_controls, do: ~r/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]+/u
+  defp single_line_controls, do: ~r/[\x00-\x1F\x7F-\x9F]+/u
 end

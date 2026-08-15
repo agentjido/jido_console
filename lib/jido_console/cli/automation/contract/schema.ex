@@ -607,11 +607,11 @@ defmodule Jido.Console.Automation.Contract.Schema do
   end
 
   defp extension_id do
-    Zoi.string() |> Zoi.regex(~r/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/)
+    Zoi.string() |> Zoi.regex(Regex.compile!("^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$"))
   end
 
-  defp non_empty_string, do: Zoi.string() |> Zoi.regex(~r/\S/)
-  defp digest_string, do: Zoi.string() |> Zoi.regex(~r/^sha256:[0-9a-f]{64}$/)
+  defp non_empty_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("\\S"))
+  defp digest_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^sha256:[0-9a-f]{64}$"))
   defp positive_integer, do: Zoi.integer() |> Zoi.positive()
   defp non_negative_integer, do: Zoi.integer() |> Zoi.gte(0)
   defp non_negative_number, do: Zoi.number() |> Zoi.gte(0)
