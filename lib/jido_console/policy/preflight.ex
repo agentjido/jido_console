@@ -34,6 +34,22 @@ defmodule Jido.Console.Policy.Preflight do
     end
   end
 
+  @doc "Returns labels for fallback fields that change a policy boundary."
+  @spec boundary_changes(map(), map()) :: [String.t()]
+  def boundary_changes(current, proposed) when is_map(current) and is_map(proposed) do
+    [
+      {:provider, "provider"},
+      {:data_boundary, "data boundary"},
+      {:cost_class, "cost class"},
+      {:capability, "capability"}
+    ]
+    |> Enum.flat_map(fn {key, label} ->
+      if Map.get(current, key) not in [nil, Map.get(proposed, key)] and Map.has_key?(proposed, key),
+        do: [label],
+        else: []
+    end)
+  end
+
   @doc "Returns a Jidoka policy decision for a Console preflight result."
   @spec to_jidoka(decision()) :: Decision.t()
   def to_jidoka(decision) do
@@ -113,7 +129,7 @@ defmodule Jido.Console.Policy.Preflight do
 
   defp classify_fallback(fallback, opts) when is_map(fallback) do
     current = Keyword.get(opts, :current, %{})
-    changes = fallback_changes(current, fallback)
+    changes = boundary_changes(current, fallback)
 
     if changes == [] do
       preflight_model(Keyword.merge(opts, provider: fallback.provider, model: fallback.model))
@@ -129,21 +145,6 @@ defmodule Jido.Console.Policy.Preflight do
          "jido.policy.fallback_consent"
        )}
     end
-  end
-
-  defp fallback_changes(current, fallback) do
-    [
-      {:provider, "provider"},
-      {:data_boundary, "data boundary"},
-      {:cost_class, "cost class"},
-      {:capability, "capability"}
-    ]
-    |> Enum.flat_map(fn {key, label} ->
-      if Map.get(current, key) not in [nil, Map.get(fallback, key)] and
-           Map.has_key?(fallback, key),
-         do: [label],
-         else: []
-    end)
   end
 
   defp missing_feature(entry, required) do

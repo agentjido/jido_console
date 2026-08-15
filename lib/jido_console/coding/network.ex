@@ -115,28 +115,34 @@ defmodule Jido.Console.Coding.Network do
 
   defp uri_destination(token) do
     case URI.parse(token) do
-      %URI{host: host} when is_binary(host) and host != "" ->
-        [%{host: normalize_host(host), port: nil, class: classify_host(host)}]
+      %URI{host: host} = uri when is_binary(host) and host != "" ->
+        [%{host: normalize_host(host), port: uri.port, class: classify_host(host)}]
 
       _other ->
         []
     end
   end
 
+  defp host_port("[" <> rest) do
+    case String.split(rest, "]:", parts: 2) do
+      [host, port] -> host_port_pair(host, port)
+      _other -> nil
+    end
+  end
+
   defp host_port(token) do
     case String.split(token, ":", parts: 2) do
-      [host, port] ->
-        parsed_host = host_token(host)
-        parsed_port = parse_port(port)
+      [host, port] -> host_port_pair(host, port)
+      _other -> nil
+    end
+  end
 
-        if parsed_host && parsed_port do
-          %{parsed_host | port: parsed_port}
-        else
-          nil
-        end
+  defp host_port_pair(host, port) do
+    parsed_host = host_token(host)
+    parsed_port = parse_port(port)
 
-      _other ->
-        nil
+    if parsed_host && parsed_port do
+      %{parsed_host | port: parsed_port}
     end
   end
 
@@ -205,7 +211,7 @@ defmodule Jido.Console.Coding.Network do
   defp matches_allowlist?(destination, allowed) do
     class_ok? = allowed.class in [nil, destination.class]
     host_ok? = allowed.host in [nil, destination.host]
-    port_ok? = allowed.port in [nil, destination.port] or destination.port == nil
+    port_ok? = allowed.port == nil or destination.port == allowed.port
     class_ok? and host_ok? and port_ok? and (allowed.host != nil or allowed.class != nil)
   end
 

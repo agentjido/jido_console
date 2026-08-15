@@ -22,27 +22,26 @@ defmodule Jido.Console.Coding.Paths do
     end
   end
 
-  defp decide(path, roots, opts) do
-    resolved_roots = Enum.map(roots, &resolve(Path.expand(&1)))
-    resolved = resolve(Path.expand(path))
-    _opts = opts
+  defp decide(path, roots, _opts) do
+    requested = Path.expand(path)
 
-    case inside_root(resolved, resolved_roots) do
-      nil ->
-        reason =
-          if symlink_escape?(Path.expand(path), resolved, resolved_roots),
-            do: "symbolic-link escape",
-            else: "path is outside declared roots"
+    with {:ok, resolved_roots} <- resolve_all(roots),
+         {:ok, resolved} <- resolve(requested) do
+      case inside_root(resolved, resolved_roots) do
+        nil ->
+          reason =
+            if requested != resolved,
+              do: "symbolic-link escape",
+              else: "path is outside declared roots"
 
-        deny(reason)
+          deny(reason)
 
-      root ->
-        allow(root)
+        root ->
+          allow(root)
+      end
+    else
+      {:error, :symlink_cycle} -> deny("symbolic-link escape")
     end
-  end
-
-  defp symlink_escape?(requested, resolved, roots) do
-    requested != resolved and is_nil(inside_root(resolved, roots))
   end
 
   defp inside_root(path, roots) do
@@ -51,28 +50,47 @@ defmodule Jido.Console.Coding.Paths do
     end)
   end
 
+  defp resolve_all(roots) do
+    Enum.reduce_while(roots, {:ok, []}, fn root, {:ok, acc} ->
+      case resolve(Path.expand(root)) do
+        {:ok, resolved} -> {:cont, {:ok, acc ++ [resolved]}}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
   defp resolve(path) do
     path
     |> Path.expand()
     |> Path.split()
-    |> Enum.reduce("/", fn
-      "/", acc -> acc
-      part, acc -> follow(Path.join(acc, part))
+    |> Enum.reduce_while({:ok, "/"}, fn
+      "/", {:ok, acc} ->
+        {:cont, {:ok, acc}}
+
+      part, {:ok, acc} ->
+        case follow(Path.join(acc, part), %{}) do
+          {:ok, next} -> {:cont, {:ok, next}}
+          {:error, _reason} = error -> {:halt, error}
+        end
     end)
   end
 
-  defp follow(path) do
-    case File.read_link(path) do
-      {:ok, target} ->
-        target =
-          if Path.type(target) == :absolute,
-            do: Path.expand(target),
-            else: Path.expand(target, Path.dirname(path))
+  defp follow(path, seen) when is_map(seen) do
+    if Map.has_key?(seen, path) do
+      {:error, :symlink_cycle}
+    else
+      case File.read_link(path) do
+        {:ok, target} ->
+          target =
+            if Path.type(target) == :absolute,
+              do: Path.expand(target),
+              else: Path.expand(target, Path.dirname(path))
 
-        follow(target)
+          follow(target, Map.put(seen, path, true))
 
-      {:error, _reason} ->
-        path
+        {:error, _reason} ->
+          {:ok, path}
+      end
     end
   end
 

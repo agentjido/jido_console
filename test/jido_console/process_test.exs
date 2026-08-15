@@ -68,6 +68,22 @@ defmodule Jido.Console.ProcessTest do
     assert {:ok, []} = Process.list(opts)
   end
 
+  test "rejects a second live registration for the same process", %{opts: opts} do
+    first = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+    second = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+    assert {:ok, _} = Process.register(:interactive, first, opts)
+    assert {:error, :process_already_registered} = Process.register(:interactive, second, opts)
+    Elixir.Process.exit(first, :kill)
+    Elixir.Process.exit(second, :kill)
+  end
+
+  test "skips invalid process markers instead of crashing status", %{opts: opts} do
+    assert {:ok, _} = Jido.Console.Home.ensure(opts)
+    {:ok, dir} = Jido.Console.Home.path(:run, opts)
+    File.write!(Path.join(dir, "broken.json"), "{not-json")
+    assert {:ok, []} = Process.list(opts)
+  end
+
   test "process supervisor stays up after the starter exits", %{opts: opts} do
     name = Keyword.fetch!(opts, :name)
     parent = self()

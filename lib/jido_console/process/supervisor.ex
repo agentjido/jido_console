@@ -67,30 +67,18 @@ defmodule Jido.Console.Process.Supervisor do
   @spec handle_call(term(), GenServer.from(), map()) :: {:reply, term(), map()}
   def handle_call({:register, kind, pid, register_opts}, _from, state) do
     spec = Process.spec(kind)
+    id = Keyword.get(register_opts, :id, spec.name)
 
-    record = %{
-      id: Keyword.get(register_opts, :id, spec.name),
-      kind: kind,
-      name: spec.name,
-      owner: spec.owner,
-      status: :ready,
-      readiness: spec.readiness,
-      failure: nil,
-      owner_pid: pid
-    }
+    case Map.get(state.processes, id) do
+      %{record: %{owner_pid: owner}} when is_pid(owner) ->
+        if Elixir.Process.alive?(owner) do
+          {:reply, {:error, :process_already_registered}, state}
+        else
+          do_register(kind, pid, id, spec, state)
+        end
 
-    mon = Elixir.Process.monitor(pid)
-
-    case Store.put(record, state.opts) do
-      {:ok, stored} ->
-        public = public_record(stored)
-
-        {:reply, {:ok, public},
-         %{state | processes: Map.put(state.processes, record.id, %{record: stored, monitor: mon})}}
-
-      {:error, _reason} = error ->
-        Elixir.Process.demonitor(mon, [:flush])
-        {:reply, error, state}
+      _other ->
+        do_register(kind, pid, id, spec, state)
     end
   end
 
@@ -136,7 +124,7 @@ defmodule Jido.Console.Process.Supervisor do
   @spec terminate(term(), map()) :: :ok
   def terminate(_reason, state) do
     Enum.each(state.processes, fn {_id, entry} ->
-      stop_owner(entry.record.owner_pid)
+      stop_owner(entry.record)
       _ = finalize(entry.record, :stopped, nil, state.opts)
     end)
 
@@ -215,7 +203,7 @@ defmodule Jido.Console.Process.Supervisor do
     case Map.pop(state.processes, name) do
       {%{record: record, monitor: mon}, processes} ->
         Elixir.Process.demonitor(mon, [:flush])
-        stop_owner(record.owner_pid)
+        stop_owner(record)
         {:ok, stopped} = finalize(record, :stopped, nil, state.opts)
         {{:ok, public_record(stopped)}, %{state | processes: processes}}
 
@@ -269,15 +257,52 @@ defmodule Jido.Console.Process.Supervisor do
 
   defp stopped_record(record), do: public_record(%{record | status: :stopped, readiness: "stopped"})
 
-  defp stop_owner(pid) when is_pid(pid) do
-    if Elixir.Process.alive?(pid) do
-      Elixir.Process.exit(pid, :shutdown)
-    end
+  defp do_register(kind, pid, id, spec, state) do
+    record = %{
+      id: id,
+      kind: kind,
+      name: spec.name,
+      owner: spec.owner,
+      status: :ready,
+      readiness: spec.readiness,
+      failure: nil,
+      owner_pid: pid,
+      owner_os_pid: beam_os_pid()
+    }
 
+    mon = Elixir.Process.monitor(pid)
+
+    case Store.put(record, state.opts) do
+      {:ok, stored} ->
+        public = public_record(stored)
+
+        {:reply, {:ok, public},
+         %{state | processes: Map.put(state.processes, record.id, %{record: stored, monitor: mon})}}
+
+      {:error, _reason} = error ->
+        Elixir.Process.demonitor(mon, [:flush])
+        {:reply, error, state}
+    end
+  end
+
+  defp stop_owner(%{owner_pid: pid}) when is_pid(pid) do
+    if Elixir.Process.alive?(pid), do: Elixir.Process.exit(pid, :shutdown)
     :ok
   end
 
-  defp stop_owner(_pid), do: :ok
+  defp stop_owner(%{owner_os_pid: os_pid}) when is_integer(os_pid) and os_pid > 1 do
+    _ = Jido.Console.Process.Tree.stop(os_pid)
+    :ok
+  end
+
+  defp stop_owner(_record), do: :ok
+
+  defp beam_os_pid do
+    case Integer.parse(System.pid()) do
+      {pid, ""} when pid > 1 -> pid
+      _invalid -> nil
+    end
+  end
 
   defp failure_text(:normal), do: nil
   defp failure_text(reason), do: inspect(reason)

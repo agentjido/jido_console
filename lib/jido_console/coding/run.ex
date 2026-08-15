@@ -7,6 +7,7 @@ defmodule Jido.Console.Coding.Run do
   """
 
   alias Jido.Console.Coding.{Approval, Paths}
+  alias Jido.Console.Digest
   alias Jido.Console.Providers.Redaction
 
   @type t :: %{
@@ -23,14 +24,16 @@ defmodule Jido.Console.Coding.Run do
   @spec open(String.t(), keyword()) :: {:ok, t()} | {:error, term()}
   def open(root, opts \\ []) when is_binary(root) do
     with {:ok, snapshot} <- snapshot(root) do
+      id = Keyword.get(opts, :run_id, random_id())
+
       {:ok,
        %{
-         id: Keyword.get(opts, :run_id, random_id()),
+         id: id,
          root: root,
          snapshot: snapshot,
          applied: [],
          rejected: [],
-         context: context(root, opts),
+         context: context(root, Keyword.put(opts, :run_id, id)),
          status: :open
        }}
     end
@@ -119,11 +122,15 @@ defmodule Jido.Console.Coding.Run do
         files =
           root
           |> Path.join("**/*")
-          |> Path.wildcard()
+          |> Path.wildcard(match_dot: true)
           |> Enum.filter(&File.regular?/1)
-          |> Map.new(&snapshot_file(root, &1))
 
-        {:ok, files}
+        Enum.reduce_while(files, {:ok, %{}}, fn path, {:ok, acc} ->
+          case snapshot_file(root, path) do
+            {:ok, {rel, record}} -> {:cont, {:ok, Map.put(acc, rel, record)}}
+            {:error, reason} -> {:halt, {:error, {:snapshot_failed, reason}}}
+          end
+        end)
 
       {:error, reason} ->
         {:error, {:snapshot_failed, reason}}
@@ -132,8 +139,11 @@ defmodule Jido.Console.Coding.Run do
 
   defp snapshot_file(root, path) do
     rel = Path.relative_to(path, root)
-    content = File.read!(path)
-    {rel, %{sha256: digest(content), content: content}}
+
+    case File.read(path) do
+      {:ok, content} -> {:ok, {rel, %{sha256: Digest.hex(content), content: content}}}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp write_effect(run, effect) do
@@ -193,7 +203,7 @@ defmodule Jido.Console.Coding.Run do
         |> Enum.sort_by(&elem(&1, 0))
         |> Enum.map_join("\n", fn {key, value} -> "  #{key}: #{inspect(value)}" end)
 
-      Redaction.redact("effect: #{effect.operation} #{effect.path}\n#{params}\n")
+      Redaction.redact("effect: #{effect.operation} #{Approval.display_path(effect.path)}\n#{params}\n")
     end)
   end
 
@@ -213,7 +223,7 @@ defmodule Jido.Console.Coding.Run do
 
   defp absolute(root, path), do: Path.expand(path, root)
 
-  defp digest(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
+  defp digest(value), do: Digest.hex(value)
 
   defp random_id do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)

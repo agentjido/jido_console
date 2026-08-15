@@ -45,7 +45,7 @@ defmodule Jido.Console.AuthTest do
 
     output =
       capture_io(:stderr, fn ->
-        assert {:error, 1} = Jido.Console.run(["auth", "status", "OPENAI_API_KEY=#{@secret}"])
+        assert {:error, 64} = Jido.Console.run(["auth", "status", "OPENAI_API_KEY=#{@secret}"])
       end)
 
     refute output =~ @secret

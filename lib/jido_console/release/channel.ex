@@ -36,6 +36,7 @@ defmodule Jido.Console.Release.Channel do
 
     with :ok <- verify_or_error(payload_dir, public_key),
          {:ok, record} <- read_payload(payload_dir),
+         {:ok, sha} <- Payload.checksum(payload_dir, record["archive"]),
          :ok <- copy_payload(payload_dir, prefix, record) do
       {:ok,
        %{
@@ -43,7 +44,7 @@ defmodule Jido.Console.Release.Channel do
          root: prefix,
          version: record["version"],
          license: record["license"],
-         payload_sha256: checksum_for(payload_dir, record["archive"])
+         payload_sha256: sha
        }}
     end
   end
@@ -129,17 +130,4 @@ defmodule Jido.Console.Release.Channel do
 
   defp decode({:ok, body}), do: Jason.decode(body)
   defp decode({:error, reason}), do: {:error, reason}
-
-  defp checksum_for(directory, archive) do
-    directory
-    |> Path.join("checksums.txt")
-    |> File.read!()
-    |> String.split("\n", trim: true)
-    |> Enum.find_value(fn line ->
-      case String.split(line, "  ", parts: 2) do
-        [sha, ^archive] -> sha
-        _other -> nil
-      end
-    end)
-  end
 end

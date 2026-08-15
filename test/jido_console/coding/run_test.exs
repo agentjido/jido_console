@@ -12,6 +12,14 @@ defmodule Jido.Console.Coding.RunTest do
     %{root: root}
   end
 
+  test "binds context to the opened run id and snapshots hidden files", %{root: root} do
+    File.write!(Path.join(root, ".gitignore"), "ignore-me")
+    assert {:ok, run} = Run.open(root)
+    assert run.context.run_id == run.id
+    assert run.id != "run"
+    assert Run.manifest(run)["files"][".gitignore"] != nil
+  end
+
   test "reviews proposed effects and rejects without changing the workspace", %{root: root} do
     assert {:ok, run} = Run.open(root, run_id: "run-1")
     assert Run.manifest(run)["files"]["edit.txt"] != nil

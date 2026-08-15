@@ -335,8 +335,8 @@ defmodule Jido.Console.Release.Contract do
     )
   end
 
-  defp non_empty_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("\\S"))
-  defp version_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"))
-  defp digest_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^[0-9a-f]{64}$"))
-  defp commit_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^[0-9a-f]{40}$"))
+  defp non_empty_string, do: Jido.Console.Document.non_empty_string()
+  defp version_string, do: Jido.Console.Document.version_string()
+  defp digest_string, do: Jido.Console.Document.hex64()
+  defp commit_string, do: Jido.Console.Document.hex40()
 end

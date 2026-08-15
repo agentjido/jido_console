@@ -7,6 +7,7 @@ defmodule Jido.Console.Coding.Approval do
   failure is denied. Records never include credential values or raw secrets.
   """
 
+  alias Jido.Console.Digest
   alias Jido.Console.Providers.Redaction
 
   @sensitive ~w(.env .env.local credentials secrets id_rsa id_ed25519)
@@ -34,7 +35,7 @@ defmodule Jido.Console.Coding.Approval do
       {:ok,
        %{
          operation: operation,
-         path: redact_path(path),
+         path: path,
          params: normalize_params(params)
        }}
     else
@@ -57,11 +58,10 @@ defmodule Jido.Console.Coding.Approval do
   @spec bind(map(), context()) :: {:ok, binding()} | {:error, term()}
   def bind(effect, context) when is_map(effect) and is_map(context) do
     with {:ok, effect} <- normalize(effect),
-         {:ok, context} <- normalize_context(context),
-         {:ok, id} <- identity(effect, context) do
+         {:ok, context} <- normalize_context(context) do
       {:ok,
        %{
-         id: id,
+         id: digest(%{effect: effect, context: context}),
          operation: effect.operation,
          path: effect.path,
          params: effect.params,
@@ -98,11 +98,17 @@ defmodule Jido.Console.Coding.Approval do
     approval.id: #{binding.id}
     approval.status: #{binding.status}
     approval.operation: #{binding.operation}
-    approval.path: #{binding.path}
+    approval.path: #{display_path(binding.path)}
     approval.profile: #{binding.context.profile_id}
     approval.network: #{binding.context.network_policy}
     approval.owner: #{binding.context.process_owner}
     """)
+  end
+
+  @doc "Returns a user-facing path with sensitive file names removed."
+  @spec display_path(String.t()) :: String.t()
+  def display_path(path) when is_binary(path) do
+    if Path.basename(path) in @sensitive, do: "[redacted]", else: path
   end
 
   defp normalize_context(context) when is_map(context) do
@@ -134,10 +140,6 @@ defmodule Jido.Console.Coding.Approval do
   defp redact_value(value) when is_map(value), do: normalize_params(value)
   defp redact_value(value), do: value
 
-  defp redact_path(path) do
-    if Path.basename(path) in @sensitive, do: "[redacted]", else: path
-  end
-
   defp string_field(map, key) do
     case field(map, key) do
       value when is_binary(value) -> value
@@ -147,10 +149,5 @@ defmodule Jido.Console.Coding.Approval do
 
   defp field(map, key) when is_map(map), do: Map.get(map, key, Map.get(map, Atom.to_string(key)))
 
-  defp digest(value) do
-    value
-    |> :erlang.term_to_binary()
-    |> then(&:crypto.hash(:sha256, &1))
-    |> Base.encode16(case: :lower)
-  end
+  defp digest(value), do: value |> :erlang.term_to_binary() |> Digest.hex()
 end

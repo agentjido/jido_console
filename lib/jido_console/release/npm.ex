@@ -23,7 +23,7 @@ defmodule Jido.Console.Release.Npm do
   @spec packages(Path.t()) :: {:ok, map()} | {:error, term()}
   def packages(payload_dir) do
     with {:ok, release} <- decode(Path.join(payload_dir, "release.json")),
-         {:ok, sha} <- archive_sha(payload_dir) do
+         {:ok, sha} <- Jido.Console.Release.Payload.archive_checksum(payload_dir) do
       version = release["version"]
 
       {:ok,
@@ -75,22 +75,6 @@ defmodule Jido.Console.Release.Npm do
       {:error, :npm_install_script_forbidden}
     else
       :ok
-    end
-  end
-
-  defp archive_sha(directory) do
-    with {:ok, body} <- File.read(Path.join(directory, "checksums.txt")) do
-      case Enum.find_value(String.split(body, "\n", trim: true), &archive_line/1) do
-        nil -> {:error, :archive_checksum_missing}
-        sha -> {:ok, sha}
-      end
-    end
-  end
-
-  defp archive_line(line) do
-    case String.split(line, "  ", parts: 2) do
-      [sha, name] -> if String.ends_with?(name, ".tar.gz"), do: sha
-      _other -> nil
     end
   end
 

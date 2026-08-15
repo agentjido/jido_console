@@ -44,8 +44,9 @@ defmodule Jido.Console.Auth do
   @doc "Resolves redacted credential status for catalog providers."
   @spec status(keyword()) :: {:ok, [status()]} | {:error, term()}
   def status(opts \\ []) do
-    with {:ok, providers} <- providers(opts) do
-      {:ok, Enum.map(providers, &provider_status(&1, opts))}
+    with {:ok, providers} <- providers(opts),
+         {:ok, file_env} <- file_env(opts) do
+      {:ok, Enum.map(providers, &provider_status(&1, Keyword.put(opts, :resolved_file_env, file_env)))}
     end
   end
 
@@ -146,7 +147,7 @@ defmodule Jido.Console.Auth do
 
   defp first_present(rows, opts) do
     host = Keyword.get_lazy(opts, :host_env, &System.get_env/0)
-    file_env = file_env(opts)
+    file_env = Keyword.get(opts, :resolved_file_env, %{})
 
     Enum.find_value(rows, fn row ->
       cond do
@@ -164,14 +165,8 @@ defmodule Jido.Console.Auth do
 
   defp file_env(opts) do
     case Keyword.get(opts, :env_file) do
-      path when is_binary(path) ->
-        case load_env_file(path) do
-          {:ok, values} -> values
-          {:error, _reason} -> %{}
-        end
-
-      _missing ->
-        %{}
+      path when is_binary(path) -> load_env_file(path)
+      _missing -> {:ok, %{}}
     end
   end
 
@@ -184,10 +179,19 @@ defmodule Jido.Console.Auth do
   end
 
   defp secure_file(path) do
-    case File.stat(path) do
-      {:ok, %{mode: mode}} when Bitwise.band(mode, 0o077) == 0 -> :ok
-      {:ok, _stat} -> {:error, {:dotenv_permissions_too_open, path}}
-      {:error, reason} -> {:error, {:dotenv_stat_failed, path, reason}}
+    case File.lstat(path) do
+      {:ok, %{type: :regular}} ->
+        case Jido.Console.Home.check_private(path) do
+          :ok -> :ok
+          {:error, {:unsafe_permissions, ^path, _mode}} -> {:error, {:dotenv_permissions_too_open, path}}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:ok, %{type: type}} ->
+        {:error, {:dotenv_not_regular, path, type}}
+
+      {:error, reason} ->
+        {:error, {:dotenv_stat_failed, path, reason}}
     end
   end
 

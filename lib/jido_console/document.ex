@@ -65,6 +65,30 @@ defmodule Jido.Console.Document do
     end
   end
 
+  @doc "Zoi schema for a string that contains a non-whitespace character."
+  @spec non_empty_string() :: term()
+  def non_empty_string, do: Zoi.string() |> Zoi.regex(compile!("\\S"))
+
+  @doc "Zoi schema for a lowercase 40-character hex digest."
+  @spec hex40() :: term()
+  def hex40, do: Zoi.string() |> Zoi.regex(compile!("^[0-9a-f]{40}$"))
+
+  @doc "Zoi schema for a lowercase 64-character hex digest."
+  @spec hex64() :: term()
+  def hex64, do: Zoi.string() |> Zoi.regex(compile!("^[0-9a-f]{64}$"))
+
+  @doc "Zoi schema for a portable `sha256:` digest."
+  @spec sha256_digest() :: term()
+  def sha256_digest, do: Zoi.string() |> Zoi.regex(compile!("^sha256:[0-9a-f]{64}$"))
+
+  @doc "Zoi schema for a dotted product version string."
+  @spec version_string() :: term()
+  def version_string, do: Zoi.string() |> Zoi.regex(compile!("^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"))
+
+  # OTP 28 Regex values hold a reference and cannot live in module attributes
+  # on Elixir 1.18. Compile from source strings at the call site instead.
+  defp compile!(source), do: Regex.compile!(source)
+
   defp valid_limit(value) when is_integer(value) and value > 0, do: :ok
   defp valid_limit(value), do: {:error, {:invalid_file_size_limit, value}}
 

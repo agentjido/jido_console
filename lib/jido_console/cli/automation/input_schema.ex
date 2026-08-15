@@ -163,5 +163,5 @@ defmodule Jido.Console.Automation.InputSchema do
 
   defp string_or_list, do: Zoi.union([Zoi.string(), string_list()])
   defp string_list, do: Zoi.array(Zoi.string())
-  defp non_empty, do: Zoi.string() |> Zoi.regex(Regex.compile!("\\S"))
+  defp non_empty, do: Document.non_empty_string()
 end

@@ -122,14 +122,12 @@ defmodule Jido.Console.Extensions.Trust do
   defp project_schema do
     Zoi.map(
       %{
-        "extensions" => Zoi.map(non_empty_string(), digest_string(), []) |> Zoi.optional(),
-        "repository_id" => non_empty_string() |> Zoi.optional(),
-        "root" => non_empty_string()
+        "extensions" =>
+          Zoi.map(Jido.Console.Document.non_empty_string(), Jido.Console.Document.sha256_digest(), []) |> Zoi.optional(),
+        "repository_id" => Jido.Console.Document.non_empty_string() |> Zoi.optional(),
+        "root" => Jido.Console.Document.non_empty_string()
       },
       unrecognized_keys: :error
     )
   end
-
-  defp non_empty_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("\\S"))
-  defp digest_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("^sha256:[0-9a-f]{64}$"))
 end

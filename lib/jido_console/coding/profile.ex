@@ -7,6 +7,7 @@ defmodule Jido.Console.Coding.Profile do
   the restricted-execution gate.
   """
 
+  alias Jido.Console.Coding.Environment
   alias Jido.Console.Home
 
   @restricted_id "coding.restricted"
@@ -57,28 +58,17 @@ defmodule Jido.Console.Coding.Profile do
   def resolve(profile_id, opts) when is_binary(profile_id) do
     cond do
       profile_id == @restricted_id ->
-        restricted(opts, explicit?: explicit_choice?(opts) and selected?(opts, @restricted_id))
+        restricted(opts, explicit?: selected?(opts, @restricted_id))
 
-      trusted?(profile_id) ->
-        if explicit_choice?(opts) do
+      known_trusted?(profile_id) ->
+        if selected?(opts, profile_id) do
           trusted(profile_id, opts)
-        else
-          {:error, {:explicit_profile_required, profile_id}}
-        end
-
-      profile_id == @legacy_default ->
-        if explicit_choice?(opts) do
-          trusted(@legacy_default, opts)
         else
           {:error, {:explicit_profile_required, profile_id}}
         end
 
       true ->
-        if explicit_choice?(opts) do
-          trusted(profile_id, opts)
-        else
-          {:error, {:unknown_execution_profile, profile_id}}
-        end
+        {:error, {:unknown_execution_profile, profile_id}}
     end
   end
 
@@ -153,9 +143,8 @@ defmodule Jido.Console.Coding.Profile do
   end
 
   defp restricted_roots(opts) do
-    with {:ok, home} <- Home.ensure(opts),
-         {:ok, artifacts} <- Home.path(:artifacts, opts),
-         {:ok, temporary} <- Home.path(:cache, opts) do
+    with {:ok, artifacts} <- Home.path(:artifacts, opts),
+         {:ok, roots} <- Environment.declared_roots(opts) do
       workspace = Keyword.get(opts, :project_root, File.cwd!())
 
       {:ok,
@@ -163,18 +152,20 @@ defmodule Jido.Console.Coding.Profile do
          "workspace" => workspace,
          "toolchain" => System.find_executable("mix") || "mix",
          "artifact" => artifacts,
-         "temporary" => Path.join(temporary, "restricted"),
-         "home" => home.root
+         "temporary" => roots.tmpdir,
+         "home" => roots.home
        }}
     end
   end
 
   defp environment_allowlist(opts) do
-    Keyword.get(opts, :environment_allowlist, ["PATH", "LANG", "HOME", "TMPDIR", "TERM"])
+    Keyword.get(opts, :environment_allowlist, Environment.default_allowlist())
   end
 
+  defp known_trusted?(id), do: trusted?(id) or id == @legacy_default
+
   defp selected?(opts, profile_id) do
-    Keyword.get(opts, :coding_profile) == profile_id
+    Keyword.get(opts, :coding_profile, Application.get_env(:jido_console, :coding_profile)) == profile_id
   end
 
   defp root_presence(roots) when is_map(roots) do

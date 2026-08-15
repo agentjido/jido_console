@@ -20,7 +20,7 @@ defmodule Jido.Console.Release.Homebrew do
     archive = Keyword.get_lazy(opts, :archive, fn -> archive_name(payload_dir) end)
 
     with {:ok, release} <- decode(Path.join(payload_dir, "release.json")),
-         {:ok, sha} <- archive_sha(payload_dir, archive) do
+         {:ok, sha} <- Jido.Console.Release.Payload.checksum(payload_dir, archive) do
       {:ok,
        """
        class Jido < Formula
@@ -61,26 +61,6 @@ defmodule Jido.Console.Release.Homebrew do
     case Path.wildcard(Path.join(directory, "*.tar.gz")) do
       [archive] -> Path.basename(archive)
       _other -> "missing.tar.gz"
-    end
-  end
-
-  defp archive_sha(directory, archive) do
-    case File.read(Path.join(directory, "checksums.txt")) do
-      {:ok, body} ->
-        sha =
-          body
-          |> String.split("\n", trim: true)
-          |> Enum.find_value(fn line ->
-            case String.split(line, "  ", parts: 2) do
-              [value, ^archive] -> value
-              _other -> nil
-            end
-          end)
-
-        if sha, do: {:ok, sha}, else: {:error, :archive_checksum_missing}
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 

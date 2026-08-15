@@ -47,6 +47,19 @@ defmodule Jido.Console.Coding.Environment do
   @spec default_allowlist() :: [String.t()]
   def default_allowlist, do: @default_allowlist
 
+  @doc "Returns the private HOME and TMPDIR paths for restricted execution."
+  @spec declared_roots(keyword()) :: {:ok, %{home: String.t(), tmpdir: String.t()}} | {:error, term()}
+  def declared_roots(opts \\ []) do
+    with {:ok, _home} <- Home.ensure(opts),
+         {:ok, cache} <- Home.path(:cache, opts) do
+      {:ok,
+       %{
+         home: Path.join(cache, "restricted-home"),
+         tmpdir: Path.join(cache, "restricted-tmp")
+       }}
+    end
+  end
+
   defp allowlist(opts) do
     case Keyword.get(opts, :allowlist, @default_allowlist) do
       list when is_list(list) and list != [] ->
@@ -69,15 +82,10 @@ defmodule Jido.Console.Coding.Environment do
   end
 
   defp ensure_roots(opts) do
-    with {:ok, _home} <- Home.ensure(opts),
-         {:ok, cache} <- Home.path(:cache, opts) do
-      private_home = Path.join(cache, "restricted-home")
-      tmpdir = Path.join(cache, "restricted-tmp")
-
-      with :ok <- mkdir_private(private_home),
-           :ok <- mkdir_private(tmpdir) do
-        {:ok, %{home: private_home, tmpdir: tmpdir}}
-      end
+    with {:ok, roots} <- declared_roots(opts),
+         :ok <- mkdir_private(roots.home),
+         :ok <- mkdir_private(roots.tmpdir) do
+      {:ok, roots}
     end
   end
 
@@ -86,12 +94,7 @@ defmodule Jido.Console.Coding.Environment do
 
     allowlist
     |> Enum.reduce(%{}, fn key, env ->
-      cond do
-        key == "HOME" -> Map.put(env, "HOME", roots.home)
-        key == "TMPDIR" -> Map.put(env, "TMPDIR", roots.tmpdir)
-        present?(Map.get(source, key)) -> Map.put(env, key, Map.fetch!(source, key))
-        true -> env
-      end
+      if present?(Map.get(source, key)), do: Map.put(env, key, Map.fetch!(source, key)), else: env
     end)
     |> Map.put("HOME", roots.home)
     |> Map.put("TMPDIR", roots.tmpdir)

@@ -80,6 +80,15 @@ defmodule Jido.Console.Models.Catalog do
     end
   end
 
+  @doc "Returns supported capabilities, including cancellation and prompt cache."
+  @spec claimed_features(entry()) :: [{atom(), feature()}]
+  def claimed_features(entry) do
+    entry.capabilities
+    |> Map.put(:cancellation, entry.cancellation)
+    |> Map.put(:prompt_cache, entry.prompt_cache)
+    |> Enum.filter(fn {_key, feature} -> feature.state == :supported end)
+  end
+
   defp reject_unknown_tiers(entries) do
     case Enum.find(entries, fn entry -> entry_tier(entry) not in @tiers end) do
       nil -> :ok
@@ -150,7 +159,7 @@ defmodule Jido.Console.Models.Catalog do
          model: model,
          identity: identity(provider, model),
          tier: tier,
-         capabilities: capabilities,
+         capabilities: Map.put(capabilities, :cancellation, cancellation),
          limits: limits,
          cost: cost,
          cancellation: cancellation,
@@ -293,80 +302,68 @@ defmodule Jido.Console.Models.Catalog do
   end
 
   defp google_gemini_2_5_flash do
-    evidence = "harness:google:gemini-2.5-flash"
-    supported = %{state: :supported, evidence: evidence, note: "Recorded Google Gemini v0.1 contract"}
-
-    %{
+    supported_entry(
       provider: "google",
       model: "gemini-2.5-flash",
-      tier: :supported,
-      evidence_id: evidence,
-      capabilities: Map.new(@capability_keys, &{&1, supported}),
+      evidence: "harness:google:gemini-2.5-flash",
+      note: "Recorded Google Gemini v0.1 contract",
       limits: %{context_tokens: 1_048_576, output_tokens: 65_536},
-      cost: %{class: :standard, currency: "USD"},
-      cancellation: supported,
-      prompt_cache: %{
-        state: :supported,
-        evidence: evidence,
-        note: "Implicit prompt cache in the recorded Gemini contract"
-      },
+      prompt_cache_note: "Implicit prompt cache in the recorded Gemini contract",
       known_gaps: [
         "Recorded qualification does not call a live Gemini endpoint",
         "Prompt cache is implicit and not separately configurable",
         "Cost class is catalog metadata, not a live invoice"
       ]
-    }
+    )
   end
 
   defp anthropic_claude_sonnet_4 do
-    evidence = "harness:anthropic:claude-sonnet-4-20250514"
-    supported = %{state: :supported, evidence: evidence, note: "Recorded Anthropic v0.1 contract"}
-
-    %{
+    supported_entry(
       provider: "anthropic",
       model: "claude-sonnet-4-20250514",
-      tier: :supported,
-      evidence_id: evidence,
-      capabilities: Map.new(@capability_keys, &{&1, supported}),
+      evidence: "harness:anthropic:claude-sonnet-4-20250514",
+      note: "Recorded Anthropic v0.1 contract",
       limits: %{context_tokens: 200_000, output_tokens: 64_000},
-      cost: %{class: :standard, currency: "USD"},
-      cancellation: supported,
-      prompt_cache: %{
-        state: :supported,
-        evidence: evidence,
-        note: "Explicit prompt cache breakpoints are supported in the recorded contract"
-      },
+      prompt_cache_note: "Explicit prompt cache breakpoints are supported in the recorded contract",
       known_gaps: [
         "Recorded qualification does not call a live Anthropic endpoint",
         "Prompt-cache TTL follows the provider default",
         "Cost class is catalog metadata, not a live invoice"
       ]
-    }
+    )
   end
 
   defp openai_gpt_4_1_mini do
-    evidence = "harness:openai:gpt-4.1-mini"
-    supported = %{state: :supported, evidence: evidence, note: "Recorded OpenAI v0.1 contract"}
-
-    %{
+    supported_entry(
       provider: "openai",
       model: "gpt-4.1-mini",
-      tier: :supported,
-      evidence_id: evidence,
-      capabilities: Map.new(@capability_keys, &{&1, supported}),
+      evidence: "harness:openai:gpt-4.1-mini",
+      note: "Recorded OpenAI v0.1 contract",
       limits: %{context_tokens: 1_047_576, output_tokens: 32_768},
-      cost: %{class: :standard, currency: "USD"},
-      cancellation: supported,
-      prompt_cache: %{
-        state: :supported,
-        evidence: evidence,
-        note: "Automatic prompt cache; no explicit cache-control API"
-      },
+      prompt_cache_note: "Automatic prompt cache; no explicit cache-control API",
       known_gaps: [
         "Recorded qualification does not call a live OpenAI endpoint",
         "Prompt cache is automatic and not separately configurable",
         "Cost class is catalog metadata, not a live invoice"
       ]
+    )
+  end
+
+  defp supported_entry(attrs) do
+    evidence = Keyword.fetch!(attrs, :evidence)
+    supported = %{state: :supported, evidence: evidence, note: Keyword.fetch!(attrs, :note)}
+
+    %{
+      provider: Keyword.fetch!(attrs, :provider),
+      model: Keyword.fetch!(attrs, :model),
+      tier: :supported,
+      evidence_id: evidence,
+      capabilities: Map.new(@capability_keys, &{&1, supported}),
+      limits: Keyword.fetch!(attrs, :limits),
+      cost: %{class: :standard, currency: "USD"},
+      cancellation: supported,
+      prompt_cache: %{state: :supported, evidence: evidence, note: Keyword.fetch!(attrs, :prompt_cache_note)},
+      known_gaps: Keyword.fetch!(attrs, :known_gaps)
     }
   end
 

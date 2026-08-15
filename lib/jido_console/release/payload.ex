@@ -21,6 +21,28 @@ defmodule Jido.Console.Release.Payload do
     %{public: public, private: private}
   end
 
+  @doc "Reads one named SHA-256 from checksums.txt."
+  @spec checksum(Path.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def checksum(directory, name) when is_binary(directory) and is_binary(name) do
+    with {:ok, body} <- File.read(Path.join(directory, "checksums.txt")) do
+      case checksum_line(body, &(&1 == name)) do
+        nil -> {:error, :archive_checksum_missing}
+        sha -> {:ok, sha}
+      end
+    end
+  end
+
+  @doc "Reads the first archive SHA-256 from checksums.txt."
+  @spec archive_checksum(Path.t()) :: {:ok, String.t()} | {:error, term()}
+  def archive_checksum(directory) when is_binary(directory) do
+    with {:ok, body} <- File.read(Path.join(directory, "checksums.txt")) do
+      case checksum_line(body, &String.ends_with?(&1, ".tar.gz")) do
+        nil -> {:error, :archive_checksum_missing}
+        sha -> {:ok, sha}
+      end
+    end
+  end
+
   @doc "Writes checksums for the archive and required evidence files."
   @spec checksums(Path.t(), [String.t()]) :: {:ok, String.t()} | {:error, term()}
   def checksums(directory, names) when is_binary(directory) and is_list(names) do
@@ -200,6 +222,17 @@ defmodule Jido.Console.Release.Payload do
     |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
     |> :crypto.hash_final()
     |> Base.encode16(case: :lower)
+  end
+
+  defp checksum_line(body, name_match?) do
+    body
+    |> String.split("\n", trim: true)
+    |> Enum.find_value(fn line ->
+      case String.split(line, "  ", parts: 2) do
+        [sha, name] -> if name_match?.(name), do: sha
+        _other -> nil
+      end
+    end)
   end
 
   defp decode_key(value) when is_binary(value), do: Base.decode64!(value)

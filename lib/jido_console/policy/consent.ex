@@ -7,9 +7,11 @@ defmodule Jido.Console.Policy.Consent do
   different fallback. Rejection leaves the current selection unchanged.
   """
 
+  alias Jido.Console.Digest
   alias Jido.Console.Policy.Preflight
   alias Jido.Console.Providers.Redaction
 
+  @fields [:provider, :model, :data_boundary, :cost_class, :capability]
   @boundaries [:provider, :data_boundary, :cost_class, :capability]
 
   @type request :: %{
@@ -23,7 +25,8 @@ defmodule Jido.Console.Policy.Consent do
   @type grant :: %{
           id: String.t(),
           response: :accept | :reject,
-          proposed: map()
+          proposed: map(),
+          request: request()
         }
 
   @doc "Builds a consent request or reports that no consent is required."
@@ -64,7 +67,8 @@ defmodule Jido.Console.Policy.Consent do
      %{
        id: request.id,
        response: response,
-       proposed: request.proposed
+       proposed: request.proposed,
+       request: %{request | consumed: true}
      }}
   end
 
@@ -98,7 +102,11 @@ defmodule Jido.Console.Policy.Consent do
   end
 
   defp build_request(current, proposed, decision) do
-    payload = %{current: public(current), proposed: public(proposed), changes: changes(current, proposed)}
+    payload = %{
+      current: public(current),
+      proposed: public(proposed),
+      changes: Preflight.boundary_changes(current, proposed)
+    }
 
     %{
       id: digest(payload),
@@ -111,42 +119,18 @@ defmodule Jido.Console.Policy.Consent do
   end
 
   defp normalize(map) do
-    Map.new(@boundaries ++ [:provider, :model], fn key ->
+    Map.new(@fields, fn key ->
       {key, Map.get(map, key, Map.get(map, Atom.to_string(key)))}
     end)
   end
 
-  defp public(map) do
-    Map.new(@boundaries ++ [:provider, :model], fn key ->
-      {key, Map.get(map, key)}
-    end)
-  end
-
-  defp changes(current, proposed) do
-    [
-      {:provider, "provider"},
-      {:data_boundary, "data boundary"},
-      {:cost_class, "cost class"},
-      {:capability, "capability"}
-    ]
-    |> Enum.flat_map(fn {key, label} ->
-      if Map.get(current, key) not in [nil, Map.get(proposed, key)] and Map.has_key?(proposed, key),
-        do: [label],
-        else: []
-    end)
-  end
+  defp public(map), do: Map.new(@fields, fn key -> {key, Map.get(map, key)} end)
 
   defp format_boundary(map) do
-    Enum.map_join(@boundaries ++ [:model], " ", fn key ->
+    Enum.map_join([:model | @boundaries], " ", fn key ->
       "#{key}=#{Map.get(map, key) || "unset"}"
     end)
   end
 
-  defp digest(payload) do
-    payload
-    |> :erlang.term_to_binary()
-    |> then(&:crypto.hash(:sha256, &1))
-    |> Base.encode16(case: :lower)
-    |> binary_part(0, 16)
-  end
+  defp digest(payload), do: payload |> :erlang.term_to_binary() |> Digest.hex() |> binary_part(0, 16)
 end

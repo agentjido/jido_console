@@ -65,9 +65,15 @@ defmodule Jido.Console.Release.Golden do
     {:ok, binding} = Approval.bind(apply_effect, run.context)
     {:ok, run, diff} = Run.apply_effect(run, apply_effect, binding)
 
-    {:ok, {leader, child}} = spawn_cancelled_child()
-    _ = Tree.stop(leader)
-    cancel_ok? = not Tree.alive?(child)
+    {:ok, {leader, child, cleanup}} = spawn_cancelled_child()
+
+    cancel_ok? =
+      try do
+        _ = Tree.stop(leader)
+        not Tree.alive?(child)
+      after
+        cleanup.()
+      end
 
     {:ok, reverted} = Run.revert(run)
     revert_ok? = File.read!(Path.join(workspace, "lib/value.ex")) == before and reverted.status == :reverted
@@ -98,9 +104,20 @@ defmodule Jido.Console.Release.Golden do
     port =
       Port.open({:spawn_executable, String.to_charlist(perl)}, [:binary, :exit_status, :hide, args: args])
 
-    {:os_pid, leader} = Port.info(port, :os_pid)
-    child = wait_pid!(child_file)
-    {:ok, {leader, child}}
+    cleanup = fn ->
+      if Port.info(port), do: Port.close(port)
+      File.rm_rf(state)
+    end
+
+    try do
+      {:os_pid, leader} = Port.info(port, :os_pid)
+      child = wait_pid!(child_file)
+      {:ok, {leader, child, cleanup}}
+    rescue
+      exception ->
+        cleanup.()
+        reraise exception, __STACKTRACE__
+    end
   end
 
   defp wait_pid!(path) do

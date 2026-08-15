@@ -76,7 +76,10 @@ defmodule Jido.Console.Coding.ApprovalTest do
   test "redacts sensitive paths and does not leak secrets in denials" do
     secret = %{@effect | path: ".env", params: %{contents: "OPENAI_API_KEY=sk-secretvalue"}}
     assert {:ok, binding} = Approval.bind(secret, @context)
-    assert binding.path == "[redacted]"
+    assert binding.path == ".env"
+    assert Approval.display_path(binding.path) == "[redacted]"
+    assert Approval.format(binding) =~ "[redacted]"
+    refute Approval.format(binding) =~ ".env"
     assert {:error, :approval_mismatch} = Approval.authorize(binding, @effect, @context)
     refute inspect(binding) =~ "sk-secretvalue"
   end

@@ -33,6 +33,12 @@ defmodule Jido.Console.Coding.ProfileTest do
     assert trusted.warning == Profile.trusted_warning()
     assert trusted.warning =~ "not a sandbox"
     assert trusted.explicit?
+
+    assert {:error, {:explicit_profile_required, "coding.trusted-workspace"}} =
+             Profile.resolve("coding.trusted-workspace", opts ++ [coding_profile: Profile.restricted_id()])
+
+    assert {:error, {:unknown_execution_profile, "missing"}} =
+             Profile.resolve("missing", opts ++ [coding_profile: "missing"])
   end
 
   test "restricted profile is compatible with the Jidoka contract shape", %{opts: opts} do

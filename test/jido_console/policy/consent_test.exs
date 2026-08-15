@@ -40,6 +40,8 @@ defmodule Jido.Console.Policy.ConsentTest do
     assert {:ok, grant} = Consent.decide(request, :accept, request.id)
     assert {:ok, applied} = Consent.apply_grant(@current, grant)
     assert applied.provider == "anthropic"
+    assert grant.request.consumed
+    assert {:error, :consent_consumed} = Consent.decide(grant.request, :accept, request.id)
 
     other = %{request | id: "different"}
     assert {:error, :consent_mismatch} = Consent.decide(other, :accept, request.id)

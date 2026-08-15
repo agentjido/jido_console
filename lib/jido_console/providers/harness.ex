@@ -179,23 +179,16 @@ defmodule Jido.Console.Providers.Harness do
   defp live_runner(opts), do: Keyword.get(opts, :live_runner)
 
   defp fixture_for(entry, capability, opts) do
-    fixtures = Keyword.get_lazy(opts, :fixtures, &recorded_fixtures/0)
-    key = {entry.provider, entry.model, capability}
+    case Keyword.fetch(opts, :fixtures) do
+      {:ok, fixtures} ->
+        Map.get(fixtures, {entry.provider, entry.model, capability}, %{
+          status: :not_applicable,
+          reason: "no recorded fixture for #{entry.identity} #{capability}"
+        })
 
-    Map.get(fixtures, key, %{
-      status: :not_applicable,
-      reason: "no recorded fixture for #{entry.identity} #{capability}"
-    })
-  end
-
-  defp recorded_fixtures do
-    {:ok, entries} = Models.list()
-
-    Map.new(
-      for entry <- entries, capability <- @dimensions do
-        {{entry.provider, entry.model, capability}, recorded_fixture(entry, capability)}
-      end
-    )
+      :error ->
+        recorded_fixture(entry, capability)
+    end
   end
 
   defp recorded_fixture(entry, capability) do

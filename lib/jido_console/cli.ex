@@ -226,8 +226,23 @@ defmodule Jido.Console do
 
   defp normalize_process_result({:error, reason}) do
     IO.puts(:stderr, "jido: #{format_error(reason)}")
-    {:error, 1}
+    {:error, if(configuration_reason?(reason), do: 64, else: 1)}
   end
+
+  defp configuration_reason?(reason)
+       when reason in [
+              :credential_argument_rejected,
+              :invalid_auth_options,
+              :invalid_provider,
+              :invalid_model_identity,
+              :invalid_model_options
+            ],
+       do: true
+
+  defp configuration_reason?({:unknown_provider, _provider}), do: true
+  defp configuration_reason?({:unsafe_permissions, _path, _mode}), do: true
+  defp configuration_reason?({:dotenv_permissions_too_open, _path}), do: true
+  defp configuration_reason?(_reason), do: false
 
   defp run_auth(["status" | rest], opts), do: run_auth_status(rest, opts)
   defp run_auth(["doctor" | rest], opts), do: run_doctor(rest, opts)

@@ -37,6 +37,19 @@ defmodule Jido.Console.Coding.NetworkTest do
     refute offline.reason =~ "example.invalid"
   end
 
+  test "preserves URI ports and IPv6 host-port pairs" do
+    allowlist = [%{host: "example.invalid", port: 443}]
+
+    assert {:ok, allowed} = Network.check("https://example.invalid:443/v1", allowlist)
+    assert allowed.outcome == :allow
+
+    assert {:error, {:network_denied, _denied}} = Network.check("https://example.invalid:8443/v1", allowlist)
+
+    assert {:ok, loopback} = Network.check("[::1]:9", [%{host: "::1", port: 9}])
+    assert loopback.class == :loopback
+    assert {:error, {:network_denied, _miss}} = Network.check("[::1]:9", [])
+  end
+
   test "commands without destinations stay allowed" do
     assert {:ok, decision} = Network.admit(%{"args" => ["status", "--short"]})
     assert decision.outcome == :allow

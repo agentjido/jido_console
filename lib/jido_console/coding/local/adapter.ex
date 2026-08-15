@@ -3,7 +3,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
 
   @behaviour Jidoka.ExecutionEnvironment.Adapter
 
-  alias Jido.Console.Coding.Network
+  alias Jido.Console.Coding.{Environment, Network}
   alias Jido.Console.Process.Tree
   alias Jidoka.Cancellation
   alias Jidoka.CodingPack.Workspace
@@ -100,8 +100,8 @@ defmodule Jido.Console.Coding.Local.Adapter do
       %{
         "args" => Zoi.array(Zoi.string()),
         "command" => Zoi.enum(["git", "mix"]),
-        "command_class" => Zoi.string() |> Zoi.regex(Regex.compile!("\\S")),
-        "cwd" => Zoi.string() |> Zoi.regex(Regex.compile!("\\S")),
+        "command_class" => Jido.Console.Document.non_empty_string(),
+        "cwd" => Jido.Console.Document.non_empty_string(),
         "max_output_bytes" => Zoi.integer() |> Zoi.positive(),
         "mutation" => Zoi.enum(["read"]),
         "network" => Zoi.enum([false]),
@@ -123,48 +123,59 @@ defmodule Jido.Console.Coding.Local.Adapter do
     started = System.monotonic_time(:millisecond)
     temporary_id = :crypto.strong_rand_bytes(12) |> Base.url_encode64(padding: false)
 
-    temporary =
-      Path.join(Keyword.get(opts, :temporary_root, System.tmp_dir!()), "jido-cli-command-#{temporary_id}")
+    with {:ok, prepared} <- prepare_command_env(opts) do
+      temporary = Path.join(prepared.tmpdir, "jido-cli-command-#{temporary_id}")
+      fifo = Path.join(temporary, "output.fifo")
+      output_path = Path.join(temporary, "output")
+      File.mkdir_p!(temporary)
 
-    fifo = Path.join(temporary, "output.fifo")
-    output_path = Path.join(temporary, "output")
-    File.mkdir!(temporary)
+      try do
+        with {:ok, sandbox} <- sandbox_executable(opts),
+             {:ok, port} <-
+               open_port(
+                 sandbox,
+                 executable,
+                 args,
+                 cwd,
+                 fifo,
+                 output_path,
+                 request["max_output_bytes"] + 1,
+                 prepared.env
+               ),
+             {:ok, os_pid} <- os_pid(port) do
+          watch = Tree.watch(os_pid)
 
-    try do
-      with {:ok, sandbox} <- sandbox_executable(opts),
-           {:ok, port} <-
-             open_port(
-               sandbox,
-               executable,
-               args,
-               cwd,
-               fifo,
-               output_path,
-               request["max_output_bytes"] + 1
-             ),
-           {:ok, os_pid} <- os_pid(port) do
-        watch = Tree.watch(os_pid)
+          try do
+            outcome = await(port, request["timeout_ms"], request["max_output_bytes"], opts)
+            captured = read_capture(output_path, request["max_output_bytes"])
+            duration = max(System.monotonic_time(:millisecond) - started, 0)
 
-        try do
-          outcome = await(port, request["timeout_ms"], request["max_output_bytes"], opts)
-          captured = read_capture(output_path, request["max_output_bytes"])
-          duration = max(System.monotonic_time(:millisecond) - started, 0)
-
-          case Tree.stop(os_pid) do
-            {:ok, _stopped} -> normalize_outcome(outcome, captured, duration)
-            {:error, reason} -> {:error, {:process_tree_cleanup_failed, reason}}
+            case Tree.stop(os_pid) do
+              {:ok, _stopped} -> normalize_outcome(outcome, captured, duration)
+              {:error, reason} -> {:error, {:process_tree_cleanup_failed, reason}}
+            end
+          after
+            Tree.release(watch)
+            _ = Tree.stop(os_pid)
           end
-        after
-          Tree.release(watch)
-          _ = Tree.stop(os_pid)
         end
+      after
+        _ = Tree.cleanup_temp(temporary)
       end
-    after
-      _ = Tree.cleanup_temp(temporary)
     end
   end
 
-  defp open_port(sandbox, executable, args, cwd, fifo, output_path, capture_limit) do
+  defp prepare_command_env(opts) do
+    with {:ok, %{env: env}} <- Environment.build(opts) do
+      {:ok,
+       %{
+         env: Enum.map(env, fn {key, value} -> {String.to_charlist(key), String.to_charlist(value)} end),
+         tmpdir: Keyword.get(opts, :temporary_root, env["TMPDIR"])
+       }}
+    end
+  end
+
+  defp open_port(sandbox, executable, args, cwd, fifo, output_path, capture_limit, env) do
     script = ~S"""
     reap() {
       for pid in $(ps -o pid= -g $$ 2>/dev/null); do
@@ -213,7 +224,15 @@ defmodule Jido.Console.Coding.Local.Adapter do
         port =
           Port.open(
             {:spawn_executable, String.to_charlist(leader)},
-            [:binary, :exit_status, :stderr_to_stdout, :use_stdio, args: leader_args, cd: String.to_charlist(cwd)]
+            [
+              :binary,
+              :exit_status,
+              :stderr_to_stdout,
+              :use_stdio,
+              args: leader_args,
+              cd: String.to_charlist(cwd),
+              env: env
+            ]
           )
 
         {:ok, port}

@@ -55,6 +55,18 @@ defmodule Jido.Console.Coding.PathsTest do
     refute inspect(decision) =~ String.trim(@canary)
   end
 
+  test "denies a symbolic-link cycle instead of following it forever", %{
+    roots: roots,
+    workspace: workspace
+  } do
+    cycle = Path.join(workspace, "cycle")
+    File.rm_rf!(cycle)
+    File.ln_s!(cycle, cycle)
+
+    assert {:ok, %{outcome: :deny, reason: reason}} = Paths.check(cycle, roots)
+    assert reason == "symbolic-link escape"
+  end
+
   test "Gate 0 hostile file-boundary fixtures still pass" do
     result = Boundaries.file_boundary!()
     assert result["status"] == "passed"

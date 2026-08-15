@@ -8,6 +8,7 @@ defmodule Jido.Console.Providers.Qualification do
 
   alias Jido.Console.Auth
   alias Jido.Console.Models
+  alias Jido.Console.Models.Catalog
   alias Jido.Console.Policy.Preflight
   alias Jido.Console.Providers.{Harness, Redaction}
 
@@ -25,9 +26,8 @@ defmodule Jido.Console.Providers.Qualification do
   @spec run(String.t(), keyword()) :: {:ok, report()} | {:error, term()}
   def run(provider, opts \\ []) when is_binary(provider) do
     with {:ok, entries} <- provider_entries(provider, opts),
-         {:ok, credentials} <- credential_record(provider, opts) do
-      models = Enum.map(entries, &qualify_model(&1, opts))
-
+         {:ok, credentials} <- credential_record(provider, opts),
+         {:ok, models} <- qualify_models(entries, opts) do
       {:ok,
        %{
          provider: provider,
@@ -66,28 +66,38 @@ defmodule Jido.Console.Providers.Qualification do
     end
   end
 
-  defp qualify_model(entry, opts) do
-    {:ok, harness} = Harness.run(Keyword.put(opts, :entry, entry))
-    extras = extra_results(entry)
-    claimed = claimed_capabilities(entry)
-    eligible? = eligible?(claimed, harness)
-    published = if entry.tier == :supported and eligible?, do: "supported", else: "available"
+  defp qualify_models(entries, opts) do
+    Enum.reduce_while(entries, {:ok, []}, fn entry, {:ok, acc} ->
+      case qualify_model(entry, opts) do
+        {:ok, model} -> {:cont, {:ok, acc ++ [model]}}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
 
-    %{
-      "identity" => entry.identity,
-      "model" => entry.model,
-      "published_tier" => Atom.to_string(entry.tier),
-      "tier" => published,
-      "eligible" => eligible?,
-      "limits" => stringify_map(entry.limits),
-      "cost" => stringify_map(entry.cost),
-      "known_gaps" => entry.known_gaps,
-      "capabilities" => capability_matrix(claimed, harness),
-      "extra" => extras,
-      "offline" => offline_record(entry),
-      "preflight" => preflight_record(entry),
-      "fallback" => fallback_record(entry)
-    }
+  defp qualify_model(entry, opts) do
+    with {:ok, harness} <- Harness.run(Keyword.put(opts, :entry, entry)) do
+      claimed = Catalog.claimed_features(entry)
+      eligible? = eligible?(claimed, harness)
+      published = if entry.tier == :supported and eligible?, do: "supported", else: "available"
+
+      {:ok,
+       %{
+         "identity" => entry.identity,
+         "model" => entry.model,
+         "published_tier" => Atom.to_string(entry.tier),
+         "tier" => published,
+         "eligible" => eligible?,
+         "limits" => stringify_map(entry.limits),
+         "cost" => stringify_map(entry.cost),
+         "known_gaps" => entry.known_gaps,
+         "capabilities" => capability_matrix(claimed, harness),
+         "extra" => extra_results(entry),
+         "offline" => decision_map(offline_result(entry)),
+         "preflight" => decision_map(preflight_result(entry)),
+         "fallback" => decision_map(fallback_result(entry))
+       }}
+    end
   end
 
   defp eligible?(claimed, harness) do
@@ -95,13 +105,6 @@ defmodule Jido.Console.Providers.Qualification do
       Enum.all?(claimed, fn {capability, _feature} ->
         match?(%{status: :pass}, Enum.find(harness, &(&1.capability == capability)))
       end)
-  end
-
-  defp claimed_capabilities(entry) do
-    entry.capabilities
-    |> Map.put(:cancellation, entry.cancellation)
-    |> Map.put(:prompt_cache, entry.prompt_cache)
-    |> Enum.filter(fn {_key, feature} -> feature.state == :supported end)
   end
 
   defp capability_matrix(claimed, harness) do
@@ -133,49 +136,38 @@ defmodule Jido.Console.Providers.Qualification do
   defp extra_reason(:cost, entry), do: "catalog cost class for #{entry.identity}"
   defp extra_reason(:error_normalization, entry), do: "recorded error form for #{entry.identity}"
 
-  defp offline_record(entry) do
-    case Preflight.check(
-           provider: entry.provider,
-           model: entry.model,
-           entry: entry,
-           offline: true,
-           network: fn -> raise "offline qualification must not call the network" end,
-           credentials: fn -> raise "offline qualification must not resolve credentials" end
-         ) do
-      {:error, decision} ->
-        %{"outcome" => Atom.to_string(decision.outcome), "reason" => Redaction.redact(decision.reason)}
-
-      {:ok, decision} ->
-        %{"outcome" => Atom.to_string(decision.outcome), "reason" => Redaction.redact(decision.reason)}
-    end
+  defp offline_result(entry) do
+    Preflight.check(
+      provider: entry.provider,
+      model: entry.model,
+      entry: entry,
+      offline: true,
+      network: fn -> raise "offline qualification must not call the network" end,
+      credentials: fn -> raise "offline qualification must not resolve credentials" end
+    )
   end
 
-  defp preflight_record(entry) do
-    required = claimed_capabilities(entry) |> Enum.map(&elem(&1, 0))
+  defp preflight_result(entry) do
+    required = entry |> Catalog.claimed_features() |> Enum.map(&elem(&1, 0))
 
-    case Preflight.check(provider: entry.provider, model: entry.model, entry: entry, required_features: required) do
-      {:ok, decision} ->
-        %{"outcome" => Atom.to_string(decision.outcome), "reason" => Redaction.redact(decision.reason)}
-
-      {:error, decision} ->
-        %{"outcome" => Atom.to_string(decision.outcome), "reason" => Redaction.redact(decision.reason)}
-    end
+    Preflight.check(provider: entry.provider, model: entry.model, entry: entry, required_features: required)
   end
 
-  defp fallback_record(entry) do
-    case Preflight.check(
-           provider: entry.provider,
-           model: entry.model,
-           entry: entry,
-           current: %{provider: entry.provider, cost_class: :standard},
-           fallback: %{provider: "other", model: "other", cost_class: :higher}
-         ) do
-      {:error, decision} ->
-        %{"outcome" => Atom.to_string(decision.outcome), "reason" => Redaction.redact(decision.reason)}
+  defp fallback_result(entry) do
+    Preflight.check(
+      provider: entry.provider,
+      model: entry.model,
+      entry: entry,
+      current: %{provider: entry.provider, cost_class: :standard},
+      fallback: %{provider: "other", model: "other", cost_class: :higher}
+    )
+  end
 
-      {:ok, decision} ->
-        %{"outcome" => Atom.to_string(decision.outcome), "reason" => Redaction.redact(decision.reason)}
-    end
+  defp decision_map({:ok, decision}), do: decision_map(decision)
+  defp decision_map({:error, decision}), do: decision_map(decision)
+
+  defp decision_map(decision) do
+    %{"outcome" => Atom.to_string(decision.outcome), "reason" => Redaction.redact(decision.reason)}
   end
 
   defp credential_record(provider, opts) do

@@ -137,21 +137,19 @@ defmodule Jido.Console.Extensions.Record do
   defp schema do
     Zoi.map(
       %{
-        "capabilities" => Zoi.array(non_empty_string()) |> Zoi.optional(),
-        "command" => Zoi.array(non_empty_string()) |> Zoi.nullish() |> Zoi.optional(),
+        "capabilities" => Zoi.array(Jido.Console.Document.non_empty_string()) |> Zoi.optional(),
+        "command" => Zoi.array(Jido.Console.Document.non_empty_string()) |> Zoi.nullish() |> Zoi.optional(),
         "enabled" => Zoi.boolean() |> Zoi.optional(),
-        "id" => non_empty_string(),
+        "id" => Jido.Console.Document.non_empty_string(),
         "modes" => Zoi.array(Zoi.enum(~w(interactive automation))) |> Zoi.optional(),
-        "permissions" => Zoi.array(non_empty_string()) |> Zoi.optional(),
-        "release" => non_empty_string(),
+        "permissions" => Zoi.array(Jido.Console.Document.non_empty_string()) |> Zoi.optional(),
+        "release" => Jido.Console.Document.non_empty_string(),
         "scope" => Zoi.enum(~w(user project)) |> Zoi.optional(),
-        "sha256" => Zoi.string() |> Zoi.regex(Regex.compile!("^sha256:[0-9a-f]{64}$")),
+        "sha256" => Jido.Console.Document.sha256_digest(),
         "source" => Zoi.enum(~w(built_in process)),
-        "source_ref" => non_empty_string()
+        "source_ref" => Jido.Console.Document.non_empty_string()
       },
       unrecognized_keys: :error
     )
   end
-
-  defp non_empty_string, do: Zoi.string() |> Zoi.regex(Regex.compile!("\\S"))
 end

@@ -71,7 +71,11 @@ defmodule Jido.Console.Process.Store do
   end
 
   defp owner_alive?(%{owner_pid: pid}) when is_pid(pid), do: Elixir.Process.alive?(pid)
-  defp owner_alive?(%{"owner_ref" => _ref}), do: false
+
+  defp owner_alive?(%{owner_os_pid: os_pid}) when is_integer(os_pid) and os_pid > 1 do
+    Jido.Console.Process.Tree.alive?(os_pid)
+  end
+
   defp owner_alive?(_record), do: false
 
   defp run_dir(opts) do
@@ -94,8 +98,9 @@ defmodule Jido.Console.Process.Store do
 
   defp read_file(path) do
     with {:ok, contents} <- File.read(path),
-         {:ok, decoded} <- Jason.decode(contents) do
-      {:ok, decode(decoded)}
+         {:ok, decoded} <- Jason.decode(contents),
+         {:ok, record} <- decode(decoded) do
+      {:ok, record}
     else
       {:error, :enoent} -> {:error, :process_not_found}
       {:error, reason} -> {:error, {:process_marker_invalid, path, reason}}
@@ -113,24 +118,44 @@ defmodule Jido.Console.Process.Store do
       "status" => Atom.to_string(record.status),
       "readiness" => record.readiness,
       "failure" => record[:failure],
-      "owner_ref" => encode_owner(record[:owner_pid])
+      "owner_os_pid" => record[:owner_os_pid]
     }
   end
 
-  defp decode(map) do
-    %{
-      id: Map.fetch!(map, "id"),
-      kind: String.to_existing_atom(Map.fetch!(map, "kind")),
-      name: Map.fetch!(map, "name"),
-      owner: Map.fetch!(map, "owner"),
-      status: String.to_existing_atom(Map.fetch!(map, "status")),
-      readiness: Map.fetch!(map, "readiness"),
-      failure: Map.get(map, "failure"),
-      owner_pid: nil,
-      owner_ref: Map.get(map, "owner_ref")
-    }
+  defp decode(map) when is_map(map) do
+    with {:ok, kind} <- existing_atom(Map.get(map, "kind")),
+         {:ok, status} <- existing_atom(Map.get(map, "status")),
+         id when is_binary(id) and id != "" <- Map.get(map, "id"),
+         name when is_binary(name) <- Map.get(map, "name"),
+         owner when is_binary(owner) <- Map.get(map, "owner"),
+         readiness when is_binary(readiness) <- Map.get(map, "readiness") do
+      {:ok,
+       %{
+         id: id,
+         kind: kind,
+         name: name,
+         owner: owner,
+         status: status,
+         readiness: readiness,
+         failure: Map.get(map, "failure"),
+         owner_pid: nil,
+         owner_os_pid: os_pid(Map.get(map, "owner_os_pid"))
+       }}
+    else
+      _invalid -> {:error, :invalid_process_marker}
+    end
   end
 
-  defp encode_owner(pid) when is_pid(pid), do: :erlang.pid_to_list(pid) |> List.to_string()
-  defp encode_owner(_other), do: nil
+  defp decode(_other), do: {:error, :invalid_process_marker}
+
+  defp existing_atom(value) when is_binary(value) do
+    {:ok, String.to_existing_atom(value)}
+  rescue
+    ArgumentError -> :error
+  end
+
+  defp existing_atom(_value), do: :error
+
+  defp os_pid(value) when is_integer(value) and value > 1, do: value
+  defp os_pid(_value), do: nil
 end

@@ -6,6 +6,7 @@ defmodule Jido.Console.Models.Commands do
   """
 
   alias Jido.Console.Models
+  alias Jido.Console.Models.Catalog
   alias Jido.Console.Policy.Preflight
   alias Jido.Console.Providers.{Harness, Redaction}
 
@@ -127,13 +128,7 @@ defmodule Jido.Console.Models.Commands do
   end
 
   defp claimed_results(entry, results) do
-    claimed =
-      entry.capabilities
-      |> Map.put(:cancellation, entry.cancellation)
-      |> Map.put(:prompt_cache, entry.prompt_cache)
-      |> Enum.filter(fn {_key, feature} -> feature.state == :supported end)
-      |> Enum.map(&elem(&1, 0))
-
+    claimed = entry |> Catalog.claimed_features() |> Enum.map(&elem(&1, 0))
     Enum.filter(results, &(&1.capability in claimed))
   end
 

@@ -91,7 +91,7 @@ defmodule Jido.Console.Tui.Selection do
   defp initial_profile(nil), do: {Profile.restricted_id(), nil}
 
   defp initial_profile(profile_id) when is_binary(profile_id) do
-    case Profile.resolve(profile_id, coding_profile: profile_id) do
+    case resolve_profile(profile_id) do
       {:ok, profile} -> {profile.id, profile.warning}
       {:error, _reason} -> {profile_id, nil}
     end
@@ -109,17 +109,13 @@ defmodule Jido.Console.Tui.Selection do
   end
 
   defp select_profile(selection, profile_id) do
-    if profile_id in @profiles do
-      case Profile.resolve(profile_id, coding_profile: profile_id) do
-        {:ok, profile} ->
-          next = %{selection | profile_id: profile.id, profile_warning: profile.warning}
-          {:command, next, profile_notice(next)}
+    case resolve_profile(profile_id) do
+      {:ok, profile} ->
+        next = %{selection | profile_id: profile.id, profile_warning: profile.warning}
+        {:command, next, profile_notice(next)}
 
-        {:error, _reason} ->
-          {:command, selection, "Unavailable profile #{profile_id}"}
-      end
-    else
-      {:command, selection, "Unavailable profile #{profile_id}"}
+      {:error, _reason} ->
+        {:command, selection, "Unavailable profile #{profile_id}"}
     end
   end
 
@@ -168,9 +164,11 @@ defmodule Jido.Console.Tui.Selection do
   defp profile_notice(selection), do: "Selected #{selection.profile_id}"
 
   defp profile_available(selection) do
-    case Profile.resolve(selection.profile_id, coding_profile: selection.profile_id) do
+    case resolve_profile(selection.profile_id) do
       {:ok, _profile} -> :ok
       {:error, _reason} -> {:error, "unavailable profile #{selection.profile_id}"}
     end
   end
+
+  defp resolve_profile(profile_id), do: Profile.resolve(profile_id, coding_profile: profile_id)
 end

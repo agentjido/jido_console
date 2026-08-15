@@ -54,7 +54,8 @@ defmodule Jido.Console.Process do
   @doc "Lists user-facing process records from the isolated home store."
   @spec list(keyword()) :: {:ok, [process_record()]} | {:error, term()}
   def list(opts \\ []) do
-    with {:ok, records} <- Store.list(opts) do
+    with {:ok, _reaped} <- Store.reap(opts),
+         {:ok, records} <- Store.list(opts) do
       {:ok, Enum.map(records, &public_record/1)}
     end
   end
@@ -80,7 +81,9 @@ defmodule Jido.Console.Process do
   @doc "Removes stale active markers whose owners are no longer alive."
   @spec reap(keyword()) :: {:ok, [process_record()]} | {:error, term()}
   def reap(opts \\ []) do
-    Store.reap(opts)
+    with {:ok, records} <- Store.reap(opts) do
+      {:ok, Enum.map(records, &public_record/1)}
+    end
   end
 
   @doc "Formats status records for `jido status` without private identifiers."

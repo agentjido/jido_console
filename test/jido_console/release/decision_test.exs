@@ -19,4 +19,16 @@ defmodule Jido.Console.Release.DecisionTest do
     reviews = Decision.epics() |> Enum.drop(1) |> Map.new(&{&1, %{"result" => "pass", "proof" => "x"}})
     assert {:error, {:incomplete_evidence, ["jido_console-m1e01"]}} = Decision.record(reviews: reviews)
   end
+
+  test "fails the decision when a reviewed epic did not pass" do
+    reviews =
+      Map.new(Decision.epics(), fn
+        "jido_console-m1e01" -> {"jido_console-m1e01", %{"result" => "fail", "proof" => "x"}}
+        id -> {id, %{"result" => "pass", "proof" => "x"}}
+      end)
+
+    assert {:ok, decision} = Decision.record(reviews: reviews)
+    assert decision["decision"] == "fail"
+    assert decision["channels"]["archive"] == "fail"
+  end
 end

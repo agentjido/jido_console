@@ -34,6 +34,7 @@ defmodule Jido.Console.Release.Decision do
   def record(opts \\ []) do
     reviews = Keyword.get(opts, :reviews, default_reviews())
     missing = Enum.reject(@epics, &Map.has_key?(reviews, &1))
+    failed = Enum.filter(@epics, &(Map.get(reviews, &1, %{})["result"] != "pass"))
 
     if missing != [] do
       {:error, {:incomplete_evidence, missing}}
@@ -43,18 +44,18 @@ defmodule Jido.Console.Release.Decision do
          "schema" => "jido.release-decision",
          "schema_version" => 1,
          "version" => Keyword.get(opts, :version, Identity.version()),
-         "decision" => Keyword.get(opts, :decision, "pass"),
+         "decision" => if(failed == [], do: Keyword.get(opts, :decision, "pass"), else: "fail"),
          "decided_on" => Keyword.get(opts, :decided_on, Date.to_iso8601(Date.utc_today())),
          "evidence_revision" => Keyword.get(opts, :evidence_revision, "milestone-1"),
          "reviewer" => Keyword.get(opts, :reviewer, "jido_console-m1e29"),
          "critical_defects" => Keyword.get(opts, :critical_defects, []),
          "durable_session_recovery" => false,
          "epics" => encode_reviews(reviews),
-         "gates" => Map.new(@gates, &{&1, "pass"}),
+         "gates" => Map.new(@gates, &{&1, if(failed == [], do: "pass", else: "fail")}),
          "channels" => %{
-           "archive" => "pass",
-           "homebrew" => "pass",
-           "npm" => "pass"
+           "archive" => if(failed == [], do: "pass", else: "fail"),
+           "homebrew" => if(failed == [], do: "pass", else: "fail"),
+           "npm" => if(failed == [], do: "pass", else: "fail")
          },
          "known_limits" => [
            "macOS ARM64 only",
