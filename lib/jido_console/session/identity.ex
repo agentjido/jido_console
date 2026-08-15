@@ -101,11 +101,11 @@ defmodule Jido.Console.Session.Identity do
       byte_size(id) > @max_bytes ->
         {:error, {:identity_too_large, kind}}
 
-      not String.starts_with?(id, prefix <> "_") ->
-        {:error, {:identity_prefix_invalid, kind}}
-
       String.contains?(id, ["token", "secret", "password", "credential"]) ->
         {:error, :credential_in_identity}
+
+      prefixed_as_other_kind?(id, prefix) ->
+        {:error, {:identity_prefix_invalid, kind}}
 
       true ->
         :ok
@@ -162,6 +162,12 @@ defmodule Jido.Console.Session.Identity do
       _other ->
         {:error, :session_id_missing}
     end
+  end
+
+  defp prefixed_as_other_kind?(id, prefix) do
+    Enum.any?(@kinds, fn {_kind, other} ->
+      other != prefix and String.starts_with?(id, other <> "_")
+    end)
   end
 
   defp fetch_prefix(kind) do
