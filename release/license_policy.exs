@@ -45,7 +45,7 @@
     jido_action-2.3.2
     jido_ai-2.3.0
     jido_browser-2.2.0
-    jido_cli-0.1.0
+    jido_console-0.1.0
     jido_mcp-1.1.1
     jido_signal-2.2.2
     jidoka-0.9.1

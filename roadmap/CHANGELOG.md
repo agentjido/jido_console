@@ -14,7 +14,7 @@ The roadmap uses [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Use the `jido_console` prefix for new Beadwork records while preserving the
-  closed legacy `jido_cli` records.
+  closed legacy `jido_console` records.
 
 ## [1.0.4] - 2026-08-14
 

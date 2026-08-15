@@ -1,27 +1,27 @@
-defmodule Jido.Cli.MixProject do
+defmodule Jido.Console.MixProject do
   @moduledoc false
 
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/mikehostetler/jido_cli"
+  @source_url "https://github.com/agentjido/jido_console"
   @description "Terminal and automation harness for the Jidoka agent framework."
   @jidoka_ref "f19ce72e7591b3215e832e6e034e3752e84a3604"
 
   def project do
     [
-      app: :jido_cli,
+      app: :jido_console,
       version: @version,
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       escript: [
-        main_module: Jido.Cli,
+        main_module: Jido.Console,
         name: "jido",
         app: nil,
         include_priv_for: [:extractous_ex, :req_llm, :time_zone_info]
       ],
-      name: "Jido CLI",
+      name: "Jido Console",
       description: @description,
       source_url: @source_url,
       homepage_url: @source_url,
@@ -67,9 +67,9 @@ defmodule Jido.Cli.MixProject do
       maintainers: ["Mike Hostetler"],
       licenses: ["Apache-2.0"],
       links: %{
-        "Changelog" => "https://hexdocs.pm/jido_cli/changelog.html",
+        "Changelog" => "https://hexdocs.pm/jido_console/changelog.html",
         "Discord" => "https://jido.run/discord",
-        "Documentation" => "https://hexdocs.pm/jido_cli",
+        "Documentation" => "https://hexdocs.pm/jido_console",
         "GitHub" => @source_url,
         "Website" => "https://jido.run"
       }
@@ -129,7 +129,7 @@ defmodule Jido.Cli.MixProject do
   end
 
   defp jidoka_dep do
-    case System.get_env("JIDO_CLI_JIDOKA_PATH") do
+    case System.get_env("JIDO_CONSOLE_JIDOKA_PATH") do
       nil ->
         {:jidoka, github: "agentjido/jidoka", ref: @jidoka_ref}
 
@@ -137,7 +137,7 @@ defmodule Jido.Cli.MixProject do
         if Mix.env() in [:dev, :test] do
           {:jidoka, path: Path.expand(path)}
         else
-          raise "JIDO_CLI_JIDOKA_PATH is permitted only in development and test"
+          raise "JIDO_CONSOLE_JIDOKA_PATH is permitted only in development and test"
         end
     end
   end
@@ -148,7 +148,7 @@ defmodule Jido.Cli.MixProject do
   defp releases do
     [
       jido: [
-        applications: [jido_cli: :load, llm_db: :load]
+        applications: [jido_console: :load, llm_db: :load]
       ]
     ]
   end

@@ -13,7 +13,7 @@ Roadmap status: **proposed**
 - User command: `jido`
 - Runtime foundation: Jidoka
 
-The current `jido_cli` code is the implementation base. Tilde supplies reviewed architecture and renderer patterns. Tilde is not a runtime dependency.
+The current `jido_console` code is the implementation base. Tilde supplies reviewed architecture and renderer patterns. Tilde is not a runtime dependency.
 
 ## Product Vision
 
@@ -158,7 +158,7 @@ Each release must include evidence that matches its claims:
 
 ## Source Allocation
 
-Keep these parts from the current Jido CLI:
+Keep these parts from the current Jido Console:
 
 - Command parsing and the `jido` executable
 - Automation schemas, evaluation matrix, JSONL contracts, exit status, and artifacts

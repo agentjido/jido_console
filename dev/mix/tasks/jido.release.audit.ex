@@ -33,7 +33,7 @@ defmodule Mix.Tasks.Jido.Release.Audit do
       |> put_if_present(:checks, if(checks == [], do: nil, else: checks))
       |> put_if_present(:output, options[:output])
 
-    result = Jido.Cli.Release.Audit.run!(audit_options)
+    result = Jido.Console.Release.Audit.run!(audit_options)
 
     Mix.shell().info("Release-readiness audit passed.")
 

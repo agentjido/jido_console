@@ -1,9 +1,9 @@
-defmodule Jido.Cli.CodingTuiPtyTest do
+defmodule Jido.Console.CodingTuiPtyTest do
   use ExUnit.Case, async: false
 
   alias CodingScenario.Oracle
-  alias Jido.Cli.Release.ProbeRuntime
-  alias Jido.Cli.Tui
+  alias Jido.Console.Release.ProbeRuntime
+  alias Jido.Console.Tui
 
   @project_root Path.expand("../..", __DIR__)
   @expected_file Path.expand(
@@ -12,7 +12,7 @@ defmodule Jido.Cli.CodingTuiPtyTest do
                  )
 
   defmodule DriverAdapter do
-    @behaviour Jido.Cli.Terminal.Adapter
+    @behaviour Jido.Console.Terminal.Adapter
 
     @impl true
     def open(owner, opts) do
@@ -69,7 +69,7 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     {output, status} =
       System.cmd("mix", ["escript.build"],
         cd: source_root,
-        env: [{"JIDO_CLI_JIDOKA_PATH", nil}, {"MIX_ENV", "prod"}],
+        env: [{"JIDO_CONSOLE_JIDOKA_PATH", nil}, {"MIX_ENV", "prod"}],
         stderr_to_stdout: true
       )
 

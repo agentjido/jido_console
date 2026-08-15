@@ -5,12 +5,8 @@
 - Product name: Jido Console.
 - User command: `jido`.
 - Runtime foundation: Jidoka.
-- Current implementation identifiers: package `jido_cli`, OTP application
-  `:jido_cli`, and namespace `Jido.Cli`.
-- Target identifiers: package `jido_console`, OTP application `:jido_console`,
-  and namespace `Jido.Console`.
-- Do not mix the target rename into unrelated work. The owning roadmap
-  milestone controls that change.
+- Implementation identifiers: package `jido_console`, OTP application
+  `:jido_console`, and namespace `Jido.Console`.
 
 `jido` starts the interactive terminal with no command. `jido run` and
 `jido eval` run plain YAML or JSON inputs and write JSONL results.
@@ -23,13 +19,13 @@
 - Keep agent, scenario, and suite inputs as data. They must not load Elixir
   modules.
 - Validate command input and cross-field rules through
-  `Jido.Cli.Automation.Command`. Return its documented reason terms.
+  `Jido.Console.Automation.Command`. Return its documented reason terms.
 - Preserve the automation flow: `Command` parses, `Loader` resolves versioned
   documents, `Plan` builds the digest-keyed matrix, `Engine.Jidoka` runs each
   cell through the `Engine` behavior, and `JSONL` writes outputs.
-- Normalize user-facing failures through `Jido.Cli.Error`. Keep rich provider
+- Normalize user-facing failures through `Jido.Console.Error`. Keep rich provider
   and execution failure data in the portable Jidoka error form.
-- Keep `Jido.Cli.Automation.JSONL` as the only writer of standard output and
+- Keep `Jido.Console.Automation.JSONL` as the only writer of standard output and
   run artifacts.
 - Keep `jido.case-result` as the portable integration boundary.
 - Give each evaluation matrix cell one fresh Jidoka session. State can continue
@@ -64,7 +60,7 @@
   find unblocked work and `bw show <id>` to inspect one item.
 - Beadwork is already initialized on the `beadwork` branch. Do not run
   `bw init --force` and do not edit files on that branch by hand.
-- New issue IDs use the `jido_console` prefix. Keep closed legacy `jido_cli`
+- New issue IDs use the `jido_console` prefix. Keep closed legacy `jido_console`
   records for history.
 - The roadmap owns milestone goals, outcomes, work boundaries, exclusions,
   exit gates, release effects, epic scopes, and epic dependencies.

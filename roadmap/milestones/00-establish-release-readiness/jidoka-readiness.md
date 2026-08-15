@@ -20,8 +20,8 @@ The issue state is planning data. It does not prove that a release contains the 
 
 Milestone 1 can replace the current pin only after Jidoka publishes an immutable version that contains the five changes. Jido Console must pin that exact version or commit and pass these existing checks:
 
-- `test/jido_cli/jidoka_dependency_test.exs`
-- `test/jido_cli/jidoka_public_api_boundary_test.exs`
-- `test/jido_cli/release/cross_repo_test.exs`
+- `test/jido_console/jidoka_dependency_test.exs`
+- `test/jido_console/jidoka_public_api_boundary_test.exs`
+- `test/jido_console/release/cross_repo_test.exs`
 
 A local path, a branch name, an unverified tag, or an issue state is not an approved production dependency. Beadwork item `jido_console-g0e10` owns changes to this decision.

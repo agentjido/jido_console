@@ -1,7 +1,7 @@
-defmodule Jido.Cli.LiveTuiPtyTest do
+defmodule Jido.Console.LiveTuiPtyTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Cli.Terminal.PlainText
+  alias Jido.Console.Terminal.PlainText
 
   @moduletag :live
   @project_root Path.expand("../..", __DIR__)
@@ -52,7 +52,7 @@ defmodule Jido.Cli.LiveTuiPtyTest do
       {output, status} =
         System.cmd("mix", ["escript.build"],
           cd: @project_root,
-          env: [{"MIX_ENV", "prod"}, {"JIDO_CLI_JIDOKA_PATH", nil}],
+          env: [{"MIX_ENV", "prod"}, {"JIDO_CONSOLE_JIDOKA_PATH", nil}],
           stderr_to_stdout: true
         )
 
