@@ -14,8 +14,9 @@
   "id": "jido_console-m2e06",
   "labels": [
     "milestone-2",
-    "roadmap",
     "one-pr",
+    "risk:jidoka-contract",
+    "roadmap",
     "v0.2"
   ],
   "comments": [
