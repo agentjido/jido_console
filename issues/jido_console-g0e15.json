@@ -30,9 +30,15 @@
     "roadmap",
     "one-pr"
   ],
+  "comments": [
+    {
+      "text": "Gate 0 completion confirmed after PR #5 merged to main at 7f67f33.",
+      "timestamp": "2026-08-15T13:25:19Z"
+    }
+  ],
   "priority": 2,
   "status": "closed",
   "title": "G0-E15: Audit the Gate 0 Exit Evidence",
   "type": "epic",
-  "updated_at": "2026-08-14T22:30:15Z"
+  "updated_at": "2026-08-15T13:25:19Z"
 }
