@@ -1,8 +1,17 @@
 # Jidoka release readiness
 
-Status: The blocker issues are closed. Dependency replacement is not ready.
+Status: Milestone 1 uses an immutable Git pin that includes the additive
+restricted v0.1 contracts.
 
-Jido Console is pinned to Jidoka commit `f19ce72e7591b3215e832e6e034e3752e84a3604`. This is an immutable source, but it is not the planned Jidoka v0.9.1 release.
+Jido Console is pinned to Jidoka commit
+`419bb36b428c8ef3e0a06455d4e90ba409573f59`. That commit is the previous
+immutable pin plus the additive policy and restricted-execution contracts from
+[Jidoka pull request 55](https://github.com/agentjido/jidoka/pull/55). It is
+not a Hex package and it is not the planned Jidoka v0.9.1 release.
+
+Known compatibility limits: Console uses only public Jidoka client, policy,
+and execution-environment facades. Restricted-path enforcement beyond those
+contracts remains Console work in later Milestone 1 epics.
 
 ## Blocker order
 

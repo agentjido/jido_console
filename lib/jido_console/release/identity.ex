@@ -3,15 +3,21 @@ defmodule Jido.Console.Release.Identity do
 
   @app :jido_console
   @compiled_version Mix.Project.config() |> Keyword.fetch!(:version)
+  @jidoka_ref Mix.Project.config() |> Keyword.fetch!(:jidoka_ref)
 
   @type t :: %{
           product: String.t(),
           package: String.t(),
           version: String.t(),
           jidoka: String.t(),
+          jidoka_ref: String.t(),
           elixir: String.t(),
           otp: String.t()
         }
+
+  @doc "Returns the immutable Jidoka Git source identity."
+  @spec jidoka_ref() :: String.t()
+  def jidoka_ref, do: @jidoka_ref
 
   @doc "Returns the product version embedded from the Mix project at compile time."
   @spec version(keyword()) :: String.t()
@@ -38,6 +44,7 @@ defmodule Jido.Console.Release.Identity do
       package: Atom.to_string(@app),
       version: version(application_get_key: application_get_key),
       jidoka: application_version(:jidoka, application_get_key),
+      jidoka_ref: @jidoka_ref,
       elixir: System.version(),
       otp: List.to_string(:erlang.system_info(:otp_release))
     }

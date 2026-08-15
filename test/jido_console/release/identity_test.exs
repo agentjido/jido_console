@@ -14,6 +14,8 @@ defmodule Jido.Console.Release.IdentityTest do
     assert identity.package == "jido_console"
     assert identity.version == Identity.version()
     assert identity.jidoka == to_string(Application.spec(:jidoka, :vsn))
+    assert identity.jidoka_ref == Identity.jidoka_ref()
+    assert identity.jidoka_ref == Mix.Project.config()[:jidoka_ref]
     assert identity.elixir == System.version()
     assert identity.otp == List.to_string(:erlang.system_info(:otp_release))
   end
