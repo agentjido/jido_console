@@ -10,7 +10,7 @@ defmodule Jido.Cli.Release.Readiness do
     OPENAI_API_KEY
   )
 
-  @checks ["baseline"]
+  @checks ["baseline", "replay"]
 
   @doc "Returns the available check names in their required order."
   @spec checks() :: [String.t()]
@@ -19,6 +19,7 @@ defmodule Jido.Cli.Release.Readiness do
   @doc "Runs one named readiness check."
   @spec run!(String.t(), keyword()) :: map()
   def run!("baseline", opts), do: baseline!(opts)
+  def run!("replay", opts), do: replay!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
@@ -45,6 +46,21 @@ defmodule Jido.Cli.Release.Readiness do
       "runs" => runs,
       "semantic_sha256" => digest(first)
     }
+  end
+
+  defp replay!(opts) do
+    command_check!(
+      "replay",
+      [
+        "test",
+        "test/jido_cli/cli/automation/replay_test.exs",
+        "test/jido_cli/cli/automation/jsonl_test.exs",
+        "test/jido_cli/release/tooling_test.exs",
+        "--seed",
+        "0"
+      ],
+      opts
+    )
   end
 
   @doc false
@@ -152,6 +168,27 @@ defmodule Jido.Cli.Release.Readiness do
          ) do
       {_output, 0} -> :ok
       {_output, status} -> raise "#{command} #{Enum.join(args, " ")} failed with status #{status}"
+    end
+  end
+
+  defp command_check!(name, args, opts) do
+    project_root = opts |> Keyword.get(:project_root, File.cwd!()) |> Path.expand()
+    runner = Keyword.get(opts, :command_runner, &System.cmd/3)
+    environment = Enum.map(@secret_environment, &{&1, nil})
+
+    command_opts = [
+      cd: project_root,
+      env: environment,
+      stderr_to_stdout: true,
+      into: IO.stream(:stdio, :line)
+    ]
+
+    case runner.("mix", args, command_opts) do
+      {_output, 0} ->
+        %{"status" => "passed", "command" => Enum.join(["mix" | args], " "), "check" => name}
+
+      {_output, status} ->
+        raise "release-readiness check #{name} failed with status #{status}"
     end
   end
 

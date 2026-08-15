@@ -42,6 +42,23 @@ defmodule Jido.Cli.Release.ReadinessTest do
     end
   end
 
+  test "runs the provider-free replay contract through existing product tests" do
+    parent = self()
+
+    runner = fn "mix", args, opts ->
+      send(parent, {:command, args, opts})
+      {"", 0}
+    end
+
+    assert %{"check" => "replay", "status" => "passed"} =
+             Readiness.run!("replay", command_runner: runner)
+
+    assert_receive {:command, ["test" | tests], opts}
+    assert "test/jido_cli/cli/automation/replay_test.exs" in tests
+    assert "test/jido_cli/cli/automation/jsonl_test.exs" in tests
+    assert opts[:cd] == File.cwd!()
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),
