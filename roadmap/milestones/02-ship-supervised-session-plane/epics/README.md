@@ -8,9 +8,9 @@ The epic files define scope, epic dependencies, acceptance checks, and proof. Be
 
 | Epic | Beadwork ID | One-pull-request result | Depends on |
 | --- | --- | --- | --- |
-| [M2-E01 Ordered Jidoka async events](m2-e01-land-ordered-jidoka-async-events.md) | `jido_console-m2e01` | Jidoka emits one contiguous, single-terminal event stream for each asynchronous request. | M1-E30 |
+| [M2-E01 Ordered Jidoka async events](m2-e01-land-ordered-jidoka-async-events.md) | `jido_console-m2e01` | Jidoka emits one contiguous, single-terminal event stream for each asynchronous request. | — |
 | [M2-E02 Jidoka request-controller cleanup](m2-e02-stop-completed-jidoka-request-controllers.md) | `jido_console-m2e02` | Completed asynchronous Jidoka requests leave no request-controller process. | M2-E01 |
-| [M2-E03 Canonical session protocol](m2-e03-define-canonical-session-protocol.md) | `jido_console-m2e03` | One versioned schema defines every semantic session message family. | M1-E30 |
+| [M2-E03 Canonical session protocol](m2-e03-define-canonical-session-protocol.md) | `jido_console-m2e03` | One versioned schema defines every semantic session message family. | — |
 | [M2-E04 Protocol types and validators](m2-e04-generate-protocol-types-and-validators.md) | `jido_console-m2e04` | Generated types and validators stay synchronized with the canonical protocol. | M2-E03 |
 | [M2-E05 Portable Jidoka projection](m2-e05-land-portable-jidoka-projection.md) | `jido_console-m2e05` | Jidoka exposes the bounded, redacted projection that Console needs through a public facade. | M2-E01, M2-E02, M2-E03 |
 | [M2-E06 Milestone 2 Jidoka integration](m2-e06-pin-and-prove-jidoka-integration.md) | `jido_console-m2e06` | Console pins and proves the approved Jidoka session-plane contract. | M2-E02, M2-E05 |
@@ -50,8 +50,6 @@ Solid arrows show implementation dependencies. Dashed arrows show that the final
 
 ```mermaid
 flowchart TB
-    M1["M1-E30<br/>Publish v0.1"]
-
     E01["M2-E01<br/>Ordered Jidoka events"]
     E02["M2-E02<br/>Controller cleanup"]
     E03["M2-E03<br/>Protocol schema"]
@@ -88,8 +86,6 @@ flowchart TB
     E34["M2-E34<br/>Release audit"]
     E35["M2-E35<br/>Publish v0.2"]
 
-    M1 --> E01
-    M1 --> E03
     E01 --> E02
     E01 --> E05
     E02 --> E05
@@ -193,7 +189,8 @@ flowchart TB
 
 ## Merge Plan
 
-1. Complete and publish M1-E30. Then run M2-E01 and M2-E03 in parallel.
+1. Start from the approved Milestone 1 source baseline. Run M2-E01 and M2-E03
+   in parallel. M1-E30 remains a separate deferred publication item.
 2. Run M2-E02 and M2-E04 when their direct dependencies pass.
 3. Run M2-E05 after request cleanup and the protocol schema. Run M2-E07 and M2-E21 after protocol generation.
 4. Run M2-E06 after the Jidoka changes. Run M2-E08 after M2-E07.

@@ -2,14 +2,14 @@
 epic: M1-E30
 type: epic
 title: Publish and Record Jido Console v0.1
-status: proposed
+status: deferred
 milestone: milestone-1
 beadwork_id: jido_console-m1e30
 depends_on: [M1-E29]
 release: v0.1
 delivery_unit: one_pull_request
 introduced_in: 1.0.6
-last_updated_in: 1.0.6
+last_updated_in: 1.0.8
 ---
 
 # M1-E30: Publish and Record Jido Console v0.1
@@ -17,6 +17,11 @@ last_updated_in: 1.0.6
 ## Goal
 
 Publish the approved v0.1 payload through every required channel and record the immutable release identity.
+
+## Delivery State
+
+Publication is deferred until 2026-10-01. The approved Milestone 1 source
+baseline can support Milestone 2 work without a public v0.1 release.
 
 ## Scope
 

@@ -4,6 +4,18 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.8] - 2026-08-15
+
+### Added
+
+- Restore the generated Milestone 1 and Milestone 2 epic sources to `main`.
+
+### Changed
+
+- Defer M1-E30 production publication until 2026-10-01.
+- Start M2-E01 and M2-E03 from the approved Milestone 1 source baseline.
+- Keep public v0.1 publication separate from the Milestone 2 delivery graph.
+
 ## [1.0.7] - 2026-08-14
 
 ### Added

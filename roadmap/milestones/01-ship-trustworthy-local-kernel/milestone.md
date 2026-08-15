@@ -6,7 +6,7 @@ status: proposed
 depends_on: [gate-0]
 release: v0.1
 introduced_in: 0.1.0
-last_updated_in: 1.0.6
+last_updated_in: 1.0.8
 ---
 
 # Milestone 1: Ship the Trustworthy Local Kernel
@@ -25,7 +25,9 @@ A new user can install Jido Console, select a tested model and restricted execut
 - Beadwork is the source of truth for task ownership, state, dependencies, and proof plans. Use `bw list --label milestone-1` for current state.
 - [The delivery plan](delivery-plan.json) stores stable identifiers and the critical path. It does not copy current task state.
 - [The first-user support boundary](../00-establish-release-readiness/first-user-support.md) defines the initial claim.
-- The critical path ends at `jido_console-m1e30`, after the release audit in `jido_console-m1e29`.
+- The source-baseline critical path ends at `jido_console-m1e29`.
+- Production publication remains in `jido_console-m1e30` and is deferred until
+  2026-10-01. It does not block Milestone 2 source work.
 
 ## Generated Epics
 

@@ -5,11 +5,11 @@ title: Land the Ordered Jidoka Async Event Contract
 status: proposed
 milestone: milestone-2
 beadwork_id: jido_console-m2e01
-depends_on: [M1-E30]
+depends_on: []
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.0.8
 ---
 
 # M2-E01: Land the Ordered Jidoka Async Event Contract
@@ -37,7 +37,9 @@ Make one Jidoka request emit one valid ordered event stream.
 
 ## Dependencies
 
-This epic depends on M1-E30 for the published v0.1 source, release record, and approved Jidoka dependency baseline.
+This epic starts from the approved Milestone 1 source and Jidoka dependency
+baseline on `main`. Deferred public v0.1 publication in M1-E30 does not block
+this work.
 
 ## Pull Request Boundary
 

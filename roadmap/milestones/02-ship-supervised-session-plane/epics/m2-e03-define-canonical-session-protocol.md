@@ -5,11 +5,11 @@ title: Define the Canonical Session Protocol
 status: proposed
 milestone: milestone-2
 beadwork_id: jido_console-m2e03
-depends_on: [M1-E30]
+depends_on: []
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.0.8
 ---
 
 # M2-E03: Define the Canonical Session Protocol
@@ -39,7 +39,9 @@ Define one versioned protocol for all current Jido Console session clients.
 
 ## Dependencies
 
-This epic depends on M1-E30 for the published v0.1 client contracts and release baseline.
+This epic starts from the approved Milestone 1 client contracts and source
+baseline on `main`. Deferred public v0.1 publication in M1-E30 does not block
+this work.
 
 ## Pull Request Boundary
 
