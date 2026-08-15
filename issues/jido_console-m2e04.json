@@ -21,9 +21,15 @@
     "one-pr",
     "v0.2"
   ],
+  "comments": [
+    {
+      "text": "Generator, generated Elixir/TS types, validators, and drift tests landed. mix test test/jido_console/session/protocol passed 10 tests.",
+      "timestamp": "2026-08-15T23:26:55Z"
+    }
+  ],
   "priority": 2,
   "status": "in_progress",
   "title": "M2-E04: Generate Protocol Types and Validators",
   "type": "epic",
-  "updated_at": "2026-08-15T23:24:05Z"
+  "updated_at": "2026-08-15T23:26:55Z"
 }
