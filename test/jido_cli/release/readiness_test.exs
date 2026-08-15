@@ -74,6 +74,23 @@ defmodule Jido.Cli.Release.ReadinessTest do
     assert "test/integration/coding_scenario_oracle_test.exs" in args
   end
 
+  test "uses the existing deterministic TUI state and layout suite" do
+    parent = self()
+
+    runner = fn "mix", args, _opts ->
+      send(parent, {:layout_command, args})
+      {"", 0}
+    end
+
+    assert %{"check" => "tui-layout", "status" => "passed"} =
+             Readiness.run!("tui-layout", command_runner: runner)
+
+    assert_receive {:layout_command, args}
+    assert "test/jido_cli/cli/tui/editor_test.exs" in args
+    assert "test/jido_cli/cli/tui/state_test.exs" in args
+    assert "test/jido_cli/cli/tui/view_test.exs" in args
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),

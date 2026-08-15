@@ -10,7 +10,7 @@ defmodule Jido.Cli.Release.Readiness do
     OPENAI_API_KEY
   )
 
-  @checks ["baseline", "replay", "golden-task"]
+  @checks ["baseline", "replay", "golden-task", "tui-layout"]
 
   @doc "Returns the available check names in their required order."
   @spec checks() :: [String.t()]
@@ -21,6 +21,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("baseline", opts), do: baseline!(opts)
   def run!("replay", opts), do: replay!(opts)
   def run!("golden-task", opts), do: golden_task!(opts)
+  def run!("tui-layout", opts), do: tui_layout!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
@@ -68,6 +69,21 @@ defmodule Jido.Cli.Release.Readiness do
     command_check!(
       "golden-task",
       ["test", "test/integration/coding_scenario_oracle_test.exs", "--seed", "0"],
+      opts
+    )
+  end
+
+  defp tui_layout!(opts) do
+    command_check!(
+      "tui-layout",
+      [
+        "test",
+        "test/jido_cli/cli/tui/editor_test.exs",
+        "test/jido_cli/cli/tui/state_test.exs",
+        "test/jido_cli/cli/tui/view_test.exs",
+        "--seed",
+        "0"
+      ],
       opts
     )
   end
