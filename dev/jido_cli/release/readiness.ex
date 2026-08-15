@@ -10,7 +10,7 @@ defmodule Jido.Cli.Release.Readiness do
     OPENAI_API_KEY
   )
 
-  @checks ["baseline", "replay", "golden-task", "tui-layout", "tui-terminal"]
+  @checks ["baseline", "replay", "golden-task", "tui-layout", "tui-terminal", "file-boundary"]
 
   @doc "Returns the available check names in their required order."
   @spec checks() :: [String.t()]
@@ -23,6 +23,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("golden-task", opts), do: golden_task!(opts)
   def run!("tui-layout", opts), do: tui_layout!(opts)
   def run!("tui-terminal", opts), do: tui_terminal!(opts)
+  def run!("file-boundary", opts), do: Jido.Cli.Release.Boundaries.file_boundary!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
