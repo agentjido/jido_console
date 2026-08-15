@@ -56,6 +56,7 @@ defmodule Jido.Console.Coding.ProviderOptions do
     Minimal valid calls:
     - coding.read: {"path":"relative/file"}
     - coding.search: {"mode":"text","path":".","pattern":"literal text"}
+    - coding.search (list paths): {"mode":"path","path":".","pattern":"*"}
     - coding.edit: {"path":"relative/file","old_text":"exact text","new_text":"replacement"}
     - coding.write: {"path":"relative/file","content":"complete content"}
     - coding.git_status: {}
@@ -65,6 +66,9 @@ defmodule Jido.Console.Coding.ProviderOptions do
     There is no general shell operation. Never shorten an operation name, such
     as `read`, `edit`, or `verify`. A path value must be a plain relative path.
     Do not include quotation-mark characters inside the path value.
+    Use coding.search with mode `path` to list files or directories.
+    coding.git_status shows changed files only. A clean status does not mean
+    that the directory is empty.
     """
 
     Map.update!(attrs, :instructions, &(&1 <> local_instructions))

@@ -31,6 +31,19 @@ defmodule Jido.Console.Coding.SetupTest do
     refute inspect(setup.context) =~ root
   end
 
+  test "tells the model to use path search for a directory listing", %{root: root, home: home} do
+    setup = prepared(project_root: root, jido_home: home)
+
+    assert setup.spec.instructions =~
+             ~s|coding.search (list paths): {"mode":"path","path":".","pattern":"*"}|
+
+    assert setup.spec.instructions =~
+             "Use coding.search with mode `path` to list files or directories."
+
+    assert setup.spec.instructions =~
+             "coding.git_status shows changed files only. A clean status does not mean"
+  end
+
   test "can disable the full pack or replace it by a trusted ID", %{root: root} do
     disabled = prepared(project_root: root, coding_pack: :disabled)
 

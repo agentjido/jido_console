@@ -7,10 +7,10 @@ defmodule Jido.Console.LiveTuiPtyTest do
   @project_root Path.expand("../..", __DIR__)
 
   if System.get_env("JIDO_LIVE_PTY") != "1" do
-    @moduletag skip: "set JIDO_LIVE_PTY=1 to make one live provider request"
+    @moduletag skip: "set JIDO_LIVE_PTY=1 to test live coding tool selection"
   end
 
-  test "returns a complete answer through the compiled TUI" do
+  test "uses path search to list files through the compiled TUI" do
     expect = System.find_executable("expect") || flunk("expect is required for the live PTY test")
     executable = build_executable!()
     capture = capture_path()
@@ -39,7 +39,9 @@ defmodule Jido.Console.LiveTuiPtyTest do
              "Sanitized Expect and terminal transcript:\n#{transcript}"
 
     assert transcript =~ "live_pty=passed"
-    assert transcript =~ "LIVE_PTY_OK"
+    assert transcript =~ "coding.search"
+    assert transcript =~ "mix.exs"
+    refute transcript =~ "coding.git_status"
     refute transcript =~ "Jidoka execution failed"
   end
 
@@ -124,7 +126,7 @@ defmodule Jido.Console.LiveTuiPtyTest do
       exit $code
     }
 
-    spawn -noecho $env(JIDO_BIN) --coding-pack disabled
+    spawn -noecho $env(JIDO_BIN)
 
     expect {
       -re {idle .* Enter sends} {}
@@ -134,34 +136,45 @@ defmodule Jido.Console.LiveTuiPtyTest do
     }
 
     stty -isig < $spawn_out(slave,name)
-    send "Reply with exactly LIVE_PTY_OK.\r"
+    send "What files are in this folder?\r"
 
     expect {
+      -re {coding\.git_status} {fail_live "live_pty=wrong_tool" 5}
+      -re {coding\.search} {}
       -re {Jidoka execution failed} {fail_live "live_pty=generic_error" 5}
       -re {error .*} {fail_live "live_pty=request_error" 6}
-      -re {LIVE_PTY_OK} {}
       timeout {fail_live "live_pty=response_timeout" 7}
       eof {puts "live_pty=response_exit"; exit 8}
     }
 
     expect {
+      -re {coding\.git_status} {fail_live "live_pty=wrong_tool" 9}
       -re {Jidoka execution failed} {fail_live "live_pty=generic_error" 9}
       -re {error .*} {fail_live "live_pty=request_error" 10}
-      -re {idle .* Enter sends} {}
+      -re {mix\.exs} {}
       timeout {fail_live "live_pty=completion_timeout" 11}
       eof {puts "live_pty=completion_exit"; exit 12}
+    }
+
+    expect {
+      -re {coding\.git_status} {fail_live "live_pty=wrong_tool" 13}
+      -re {Jidoka execution failed} {fail_live "live_pty=generic_error" 14}
+      -re {error .*} {fail_live "live_pty=request_error" 15}
+      -re {idle .* Enter sends} {}
+      timeout {fail_live "live_pty=completion_timeout" 16}
+      eof {puts "live_pty=completion_exit"; exit 17}
     }
 
     send "\033"
     expect {
       eof {}
-      timeout {fail_live "live_pty=shutdown_timeout" 13}
+      timeout {fail_live "live_pty=shutdown_timeout" 18}
     }
 
     set wait_result [wait]
     if {[llength $wait_result] != 4 || [lindex $wait_result 2] != 0 || [lindex $wait_result 3] != 0} {
       puts "live_pty=bad_exit:$wait_result"
-      exit 14
+      exit 19
     }
 
     puts "live_pty=passed"
