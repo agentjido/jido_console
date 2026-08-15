@@ -1,0 +1,15 @@
+{
+  "protocol": "jido.session",
+  "version": "1",
+  "family": "command",
+  "type": "submit_input",
+  "id": "plt_command_1",
+  "session_id": "ses_demo",
+  "created_at": "2026-08-15T12:00:00Z",
+  "payload": {
+    "input_id": "inp_1",
+    "client_id": "cli_tui",
+    "text": "Summarize the current file.",
+    "attachments": []
+  }
+}
