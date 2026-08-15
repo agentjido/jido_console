@@ -636,8 +636,9 @@ defmodule Jido.Console.Release.Acceptance do
     if metadata["components"] == [], do: raise("component inventory is empty")
 
     checksum = File.read!(Path.join(directory, "checksums.txt"))
-    expected_line = "#{expected_sha256}  #{Path.basename(archive)}\n"
-    if checksum != expected_line, do: raise("external checksum file is stale or malformed")
+    expected_line = "#{expected_sha256}  #{Path.basename(archive)}"
+    lines = String.split(checksum, "\n", trim: true)
+    unless expected_line in lines, do: raise("external checksum file is stale or malformed")
 
     public_text =
       ["release.json", "sbom.json", "provenance.json"]

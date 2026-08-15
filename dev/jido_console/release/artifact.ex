@@ -121,14 +121,19 @@ defmodule Jido.Console.Release.Artifact do
     metadata = outputs.metadata
     archive_name = Path.basename(outputs.archive)
 
-    File.write!(
-      Path.join(candidate_dir, "checksums.txt"),
-      "#{outputs.archive_sha256}  #{archive_name}\n"
-    )
-
     write_json!(Path.join(candidate_dir, "release.json"), metadata)
     write_json!(Path.join(candidate_dir, "sbom.json"), sbom(outputs))
     write_json!(Path.join(candidate_dir, "provenance.json"), provenance(outputs))
+
+    {:ok, checksum_body} =
+      Jido.Console.Release.Payload.checksums(candidate_dir, [
+        archive_name,
+        "release.json",
+        "sbom.json",
+        "provenance.json"
+      ])
+
+    File.write!(Path.join(candidate_dir, "checksums.txt"), checksum_body)
   end
 
   defp sbom(outputs) do
