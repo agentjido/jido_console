@@ -1,0 +1,41 @@
+{
+  "schema": "jido.release.delivery-plan",
+  "schema_version": 1,
+  "milestone": {
+    "number": 1,
+    "url": "https://github.com/agentjido/jido_console/milestone/1"
+  },
+  "beadwork": {
+    "source_of_truth": true,
+    "command": "bw export",
+    "label": "milestone-1",
+    "uri": "beadwork://agentjido/jido_console?label=milestone-1",
+    "required_fields": {
+      "owner": "owner",
+      "effort_class": "labels:effort:*",
+      "dependencies": "blocked_by",
+      "readiness_state": "labels:readiness:*",
+      "target_release": "labels:v0.1",
+      "proof_artifact": "description:## Proof Artifacts"
+    }
+  },
+  "items": {
+    "prefix": "jido_console-m1e",
+    "count": 30
+  },
+  "critical_path": [
+    "jido_console-g0e15",
+    "jido_console-m1e01",
+    "jido_console-m1e05",
+    "jido_console-m1e06",
+    "jido_console-m1e07",
+    "jido_console-m1e09",
+    "jido_console-m1e10",
+    "jido_console-m1e18",
+    "jido_console-m1e19",
+    "jido_console-m1e20",
+    "jido_console-m1e28",
+    "jido_console-m1e29",
+    "jido_console-m1e30"
+  ]
+}

@@ -116,7 +116,11 @@ defmodule Jido.Cli.Coding.Local.Adapter do
 
   defp run(executable, args, cwd, request, opts) do
     started = System.monotonic_time(:millisecond)
-    temporary = Path.join(System.tmp_dir!(), "jido-cli-command-#{System.unique_integer([:positive, :monotonic])}")
+    temporary_id = :crypto.strong_rand_bytes(12) |> Base.url_encode64(padding: false)
+
+    temporary =
+      Path.join(Keyword.get(opts, :temporary_root, System.tmp_dir!()), "jido-cli-command-#{temporary_id}")
+
     fifo = Path.join(temporary, "output.fifo")
     output_path = Path.join(temporary, "output")
     File.mkdir!(temporary)
