@@ -152,6 +152,27 @@ defmodule Jido.Cli.Release.ReadinessTest do
            } = Readiness.run!("source-policy", [])
   end
 
+  test "checks immutable and narrow GitHub workflows" do
+    assert %{
+             "status" => "passed",
+             "workflow_count" => 2,
+             "immutable_reference_count" => 2,
+             "secret_inheritance" => "absent",
+             "release_operations" => "absent"
+           } = Readiness.run!("workflow-policy", [])
+  end
+
+  test "rejects a mutable external workflow dependency" do
+    root = Path.join(System.tmp_dir!(), "jido-workflow-policy-#{System.unique_integer([:positive])}")
+    workflow = Path.join(root, ".github/workflows/ci.yml")
+    File.mkdir_p!(Path.dirname(workflow))
+    File.write!(workflow, "jobs:\n  ci:\n    uses: actions/checkout@v6\n")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert_raise RuntimeError, ~r/mutable workflow reference v6/, fn ->
+      Readiness.run!("workflow-policy", project_root: root)
+    end
+  end
   defp source do
     %{
       "commit" => String.duplicate("a", 40),

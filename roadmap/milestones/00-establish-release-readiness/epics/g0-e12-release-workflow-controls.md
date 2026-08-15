@@ -16,21 +16,21 @@ last_updated_in: 1.0.5
 
 ## Goal
 
-Make release workflow inputs and publish gates explicit and safe.
+Make the current workflow dependencies explicit and keep release work out of normal CI.
 
 ## Scope
 
-- Pin each release workflow dependency to an immutable identity.
+- Pin each reusable workflow dependency to an immutable identity.
 - Give each workflow the minimum permissions.
-- Replace inherited secrets with named required secrets or no secrets.
+- Remove inherited secrets.
 - Define the approved dependency update process.
-- Require a passing release evidence manifest for the selected source identity before production publish.
-- Prevent production publish when a required check is skipped, absent, or failed.
-- Add controlled negative tests or a policy check for the publish guard.
+- Verify that normal CI does not run the release audit, upload its result, or publish a release.
+- Require a separate, deny-by-default publish guard when a future milestone adds publication.
 
 ## Out of Scope
 
 - A production publish
+- A production publish workflow
 - A public release
 - A new platform or distribution channel
 - Product implementation work
@@ -41,24 +41,23 @@ This epic has no Gate 0 dependency. It defines the controls before release or pu
 
 ## Pull Request Boundary
 
-Deliver this epic in exactly one pull request. The pull request changes workflow policy and its tests only. It must not publish an artifact.
+The change pins and narrows the existing CI and review workflows. It does not add a release workflow.
 
 ## Acceptance Checks
 
 - Reusable workflow and action references use immutable identities.
-- Workflows do not use unrestricted secret inheritance.
+- Workflows do not inherit secrets.
 - Workflow permissions are explicit and use the minimum access.
-- A skipped, absent, cancelled, or failed required check blocks production publish.
-- A missing, invalid, stale, or non-passing release evidence manifest for the selected source identity blocks production publish.
-- A policy test proves the negative cases without a real publish.
+- Normal CI does not run `mix jido.release.audit` or upload its local result.
+- No workflow in this repository publishes a release.
+- The policy check rejects a release audit, upload, or publish operation in the current workflows.
 - The update process retains review and test gates.
 
 ## Proof Artifacts
 
 - Workflow dependency inventory
 - Permission and secret inventory
-- Publish-gate policy results
-- Negative-case test results
+- Workflow policy result
 - Dependency update procedure
 
 ## Milestone Traceability

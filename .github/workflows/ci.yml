@@ -18,8 +18,7 @@ permissions:
 jobs:
   ci:
     name: CI
-    uses: agentjido/github-actions/.github/workflows/jido-ci.yml@v5
-    secrets: inherit
+    uses: agentjido/github-actions/.github/workflows/jido-ci.yml@c782c2d13584f0a7b43027eedd83807ed1a2b7dc # v5
     with:
       docs_command: mix docs
       test_command: mix coveralls --exclude darwin --exclude expect --exclude flaky

@@ -21,7 +21,8 @@ defmodule Jido.Cli.Release.Readiness do
     "measurement",
     "support-policy",
     "dependency-policy",
-    "source-policy"
+    "source-policy",
+    "workflow-policy"
   ]
 
   @doc "Returns the available check names in their required order."
@@ -41,6 +42,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("support-policy", opts), do: support_policy!(opts)
   def run!("dependency-policy", opts), do: dependency_policy!(opts)
   def run!("source-policy", opts), do: source_policy!(opts)
+  def run!("workflow-policy", opts), do: workflow_policy!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
@@ -223,6 +225,67 @@ defmodule Jido.Cli.Release.Readiness do
     end
 
     Map.merge(result, %{"dependency" => "absent", "production_module" => "absent"})
+  end
+
+  @doc false
+  @spec workflow_policy!(keyword()) :: map()
+  def workflow_policy!(opts \\ []) do
+    project_root = opts |> Keyword.get(:project_root, File.cwd!()) |> Path.expand()
+    files = Path.wildcard(Path.join(project_root, ".github/workflows/*.{yml,yaml}")) |> Enum.sort()
+
+    if files == [], do: raise("no GitHub workflows found")
+
+    sources = Enum.map(files, &{Path.relative_to(&1, project_root), File.read!(&1)})
+
+    uses =
+      for {file, source} <- sources,
+          [_match, target] <- Regex.scan(~r/^\s*uses:\s*([^\s#]+)/m, source),
+          not String.starts_with?(target, "./") do
+        {file, target}
+      end
+
+    references =
+      Enum.map(uses, fn {file, target} ->
+        case String.split(target, "@", parts: 2) do
+          [_action, reference] -> {file, reference}
+          _other -> raise "#{file} uses an external action without an immutable reference"
+        end
+      end)
+
+    case Enum.find(references, fn {_file, reference} ->
+           not Regex.match?(~r/\A[0-9a-f]{40}\z/, reference)
+         end) do
+      nil -> :ok
+      {file, reference} -> raise "#{file} uses mutable workflow reference #{reference}"
+    end
+
+    joined = Enum.map_join(sources, "\n", &elem(&1, 1))
+    normalized = String.downcase(joined)
+
+    if Regex.match?(~r/^\s*secrets:\s*inherit\s*$/m, joined) do
+      raise "workflow uses unrestricted secret inheritance"
+    end
+
+    forbidden = [
+      "jido.release.audit",
+      "actions/upload-artifact",
+      "softprops/action-gh-release",
+      "gh release",
+      "mix hex.publish"
+    ]
+
+    case Enum.find(forbidden, &String.contains?(normalized, &1)) do
+      nil -> :ok
+      value -> raise "workflow contains release-only operation #{value}"
+    end
+
+    %{
+      "status" => "passed",
+      "workflow_count" => length(files),
+      "immutable_reference_count" => length(references),
+      "secret_inheritance" => "absent",
+      "release_operations" => "absent"
+    }
   end
 
   defp run_clean_baseline!(run_id, project_root, source, opts) do
