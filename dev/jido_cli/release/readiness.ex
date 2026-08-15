@@ -18,7 +18,8 @@ defmodule Jido.Cli.Release.Readiness do
     "tui-terminal",
     "file-boundary",
     "runtime-boundary",
-    "measurement"
+    "measurement",
+    "support-policy"
   ]
 
   @doc "Returns the available check names in their required order."
@@ -35,6 +36,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("file-boundary", opts), do: Jido.Cli.Release.Boundaries.file_boundary!(opts)
   def run!("runtime-boundary", opts), do: Jido.Cli.Release.Boundaries.runtime_boundary!(opts)
   def run!("measurement", opts), do: measurement!(opts)
+  def run!("support-policy", opts), do: support_policy!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
@@ -157,6 +159,16 @@ defmodule Jido.Cli.Release.Readiness do
     end
 
     Map.put(result, "claim", "environment-specific release data; not a public performance claim")
+  end
+
+  @doc false
+  @spec support_policy!(keyword()) :: map()
+  def support_policy!(opts \\ []) do
+    policy!(
+      opts,
+      "roadmap/milestones/00-establish-release-readiness/first-user-support.md",
+      ~w(Status User Job Activation Product Platform Channel Provider Security Non-claims)
+    )
   end
 
   defp run_clean_baseline!(run_id, project_root, source, opts) do
@@ -334,6 +346,17 @@ defmodule Jido.Cli.Release.Readiness do
         "exit_status" => "passed"
       }
     }
+  end
+
+  defp policy!(opts, relative_path, required_terms) do
+    project_root = opts |> Keyword.get(:project_root, File.cwd!()) |> Path.expand()
+    path = Path.join(project_root, relative_path)
+    contents = File.read!(path)
+
+    missing = Enum.reject(required_terms, &String.contains?(contents, &1))
+    if missing != [], do: raise("#{relative_path} is missing: #{Enum.join(missing, ", ")}")
+
+    %{"status" => "passed", "policy" => relative_path}
   end
 
   defp command!(command, args, directory, environment) do

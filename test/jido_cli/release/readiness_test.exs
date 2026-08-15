@@ -128,6 +128,11 @@ defmodule Jido.Cli.Release.ReadinessTest do
     assert claim =~ "not a public performance claim"
   end
 
+  test "checks the first-user support policy" do
+    assert %{"status" => "passed", "policy" => policy} = Readiness.run!("support-policy", [])
+    assert policy =~ "first-user-support.md"
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),
