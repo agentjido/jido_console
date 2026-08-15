@@ -20,9 +20,15 @@
     "one-pr",
     "v0.2"
   ],
+  "comments": [
+    {
+      "text": "Identity kinds, invocation identity, and admission checks landed. mix test test/jido_console/session/identity_test.exs passed.",
+      "timestamp": "2026-08-15T23:30:05Z"
+    }
+  ],
   "priority": 2,
   "status": "in_progress",
   "title": "M2-E07: Define Process-Lifetime Identities",
   "type": "epic",
-  "updated_at": "2026-08-15T23:27:05Z"
+  "updated_at": "2026-08-15T23:30:05Z"
 }
