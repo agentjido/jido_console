@@ -1,5 +1,5 @@
 defmodule Jido.Console.Release.BoundariesTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Jido.Console.Release.Boundaries
   alias Jido.Console.Coding.Local.Adapter

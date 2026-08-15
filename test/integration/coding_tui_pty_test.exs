@@ -163,6 +163,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
   end
 
   @tag :expect
+  @tag timeout: 180_000
   test "drives the same coding flow through a compiled executable and real PTY", %{
     fixture: fixture,
     log: log

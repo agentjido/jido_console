@@ -1,5 +1,5 @@
 defmodule Jido.Console.Process.TreeTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Jido.Console.Process.Tree
   alias Jido.Console.Release.Boundaries

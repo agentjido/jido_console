@@ -53,9 +53,9 @@ defmodule Jido.Console.Process.Tree do
   @doc "Stops every remaining member of the process group."
   @spec stop(pos_integer()) :: {:ok, stop_result()} | {:error, term()}
   def stop(os_pid) when is_integer(os_pid) and os_pid > 1 do
-    signal_all(snapshot(os_pid), "TERM")
+    signal_tree(os_pid, "TERM")
     wait_empty(os_pid, 300)
-    signal_all(snapshot(os_pid), "KILL")
+    signal_tree(os_pid, "KILL")
     wait_empty(os_pid, 300)
     report(os_pid)
   end
@@ -112,19 +112,20 @@ defmodule Jido.Console.Process.Tree do
     children ++ Enum.flat_map(children, &descendants/1)
   end
 
-  defp signal_all(pids, signal) do
-    Enum.each(pids, fn pid ->
+  defp signal_tree(os_pid, signal) do
+    # The leader created by `wrap_leader/2` is also the process-group id. Send
+    # the group signal before process discovery so owner-exit cleanup starts
+    # at once. Direct signals keep cleanup portable when descendants change
+    # groups or the original leader has already exited.
+    _result = System.cmd(@kill, ["-s", signal, "--", "-" <> Integer.to_string(os_pid)], stderr_to_stdout: true)
+
+    os_pid
+    |> snapshot()
+    |> Enum.each(fn pid ->
       _result = System.cmd(@kill, ["-s", signal, "--", Integer.to_string(pid)], stderr_to_stdout: true)
     end)
 
-    case pids do
-      [leader | _rest] ->
-        _result = System.cmd(@kill, ["-s", signal, "--", "-" <> Integer.to_string(leader)], stderr_to_stdout: true)
-        :ok
-
-      [] ->
-        :ok
-    end
+    :ok
   end
 
   defp report(os_pid) do
