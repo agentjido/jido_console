@@ -18,9 +18,15 @@
     "one-pr",
     "v0.2"
   ],
+  "comments": [
+    {
+      "text": "Event classification landed. mix test test/jido_console/session/event_test.exs passed.",
+      "timestamp": "2026-08-15T23:31:39Z"
+    }
+  ],
   "priority": 2,
   "status": "in_progress",
   "title": "M2-E08: Classify Console Events",
   "type": "epic",
-  "updated_at": "2026-08-15T23:30:33Z"
+  "updated_at": "2026-08-15T23:31:39Z"
 }
