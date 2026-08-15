@@ -28,5 +28,9 @@ defmodule Jido.Console.Session.Registry do
       [{pid, _value}] -> {:ok, pid}
       [] -> {:error, :not_found}
     end
+  rescue
+    ArgumentError -> {:error, :not_found}
+  catch
+    :exit, {:noproc, _info} -> {:error, :not_found}
   end
 end

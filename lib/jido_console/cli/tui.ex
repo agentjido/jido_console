@@ -594,6 +594,8 @@ defmodule Jido.Console.Tui do
       {:ok, handle} -> handle
       {:error, _reason} -> nil
     end
+  rescue
+    _exception -> nil
   end
 
   defp process_opts(opts), do: Keyword.take(opts, [:name, :jido_home, :id])

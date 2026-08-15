@@ -17,5 +17,7 @@ defmodule Jido.Console.Session.DynamicSupervisor do
   def start_session(server, opts) do
     supervisor = Keyword.get(opts, :supervisor, __MODULE__)
     DynamicSupervisor.start_child(supervisor, {server, opts})
+  catch
+    :exit, {:noproc, _info} -> {:error, :not_found}
   end
 end
