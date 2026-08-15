@@ -7,8 +7,8 @@ The portable request-stream projection lands in Jidoka, not in Jido Console.
 | Field | Value |
 | --- | --- |
 | External pull request | https://github.com/agentjido/jidoka/pull/58 |
-| Branch | `feat/m2-e05-portable-projection` |
-| Immutable source | `6e63a992f5f81bcd8f667ebcc36ac051a2431c5b` |
+| Branch | `feat/m2-e05-portable-projection` (merged to `main`) |
+| Immutable source | `6d97015acaac3ce5216d1811fa1465f6152c9c6b` |
 | Root facade | `Jidoka.project_events/1` |
 | Depends on | https://github.com/agentjido/jidoka/pull/56, https://github.com/agentjido/jidoka/pull/57 |
 | Release target | v0.2 |
@@ -20,4 +20,4 @@ event identities. Sensitive values are redacted. Size and unknown-data bounds
 are enforced. PIDs, references, functions, and private runtime structs do not
 cross the facade.
 
-Update the SHA above if the Jidoka pull request is rebased before merge.
+This SHA is the Jidoka `main` merge of pull request 58.
