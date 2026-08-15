@@ -8,8 +8,7 @@ defmodule Jido.Console.Process.Supervisor do
 
   use GenServer
 
-  alias Jido.Console.Process
-  alias Jido.Console.Process.Store
+  alias Jido.Console.Process.{Contract, Store}
 
   @typedoc "Supervisor start options, including Jido home overrides."
   @type start_opt :: {:name, atom()} | {atom(), term()}
@@ -38,19 +37,19 @@ defmodule Jido.Console.Process.Supervisor do
   end
 
   @doc "Registers an owned process and marks it ready."
-  @spec register(Process.kind(), pid(), keyword()) :: {:ok, Process.process_record()} | {:error, term()}
+  @spec register(Contract.kind(), pid(), keyword()) :: {:ok, Contract.process_record()} | {:error, term()}
   def register(kind, pid, opts \\ []) do
     call(opts, {:register, kind, pid, opts})
   end
 
   @doc "Stops one named process through its owner."
-  @spec stop_named(String.t(), keyword()) :: {:ok, Process.process_record()} | {:error, term()}
+  @spec stop_named(String.t(), keyword()) :: {:ok, Contract.process_record()} | {:error, term()}
   def stop_named(name, opts \\ []) do
     call(opts, {:stop, name})
   end
 
   @doc "Stops every owned process."
-  @spec stop_all(keyword()) :: {:ok, [Process.process_record()]} | {:error, term()}
+  @spec stop_all(keyword()) :: {:ok, [Contract.process_record()]} | {:error, term()}
   def stop_all(opts \\ []) do
     call(opts, :stop_all)
   end
@@ -66,7 +65,7 @@ defmodule Jido.Console.Process.Supervisor do
   @impl true
   @spec handle_call(term(), GenServer.from(), map()) :: {:reply, term(), map()}
   def handle_call({:register, kind, pid, register_opts}, _from, state) do
-    spec = Process.spec(kind)
+    spec = Contract.spec(kind)
     id = Keyword.get(register_opts, :id, spec.name)
 
     case Map.get(state.processes, id) do
@@ -240,7 +239,7 @@ defmodule Jido.Console.Process.Supervisor do
 
   defp already_stopped(name) do
     spec =
-      Enum.find_value(Process.catalog(), fn {_kind, spec} ->
+      Enum.find_value(Contract.catalog(), fn {_kind, spec} ->
         if spec.name == name, do: spec
       end) || %{name: name, owner: "unknown", readiness: "stopped"}
 

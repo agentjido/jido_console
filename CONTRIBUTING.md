@@ -55,8 +55,8 @@ mix test --cover
 ```
 
 `mix precommit` runs, in order: `format --check-formatted`,
-`compile --warnings-as-errors`, `credo`, `dialyzer`, and
-`doctor --raise`.
+`compile --warnings-as-errors`, the zero-cycle `xref` check, `credo`,
+`dialyzer`, and `doctor --raise`.
 
 Git hooks never auto-install. Install them explicitly when you want them:
 

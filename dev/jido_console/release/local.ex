@@ -76,6 +76,7 @@ defmodule Jido.Console.Release.Local do
       {"locked dependencies", "mix", ["deps.get", "--check-locked"], []},
       {"format", "mix", ["format", "--check-formatted"], []},
       {"compile", "mix", ["compile", "--warnings-as-errors"], []},
+      {"xref cycles", "mix", ["xref", "graph", "--format", "cycles", "--fail-above", "0"], []},
       {"credo", "mix", ["credo"], []},
       {"dialyzer", "mix", ["dialyzer"], []},
       {"doctor", "mix", ["doctor", "--raise"], []},

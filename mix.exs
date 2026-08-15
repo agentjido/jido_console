@@ -103,6 +103,7 @@ defmodule Jido.Console.MixProject do
       precommit: [
         "format --check-formatted",
         "compile --warnings-as-errors",
+        "xref graph --format cycles --fail-above 0",
         "credo",
         "dialyzer",
         "doctor --raise"

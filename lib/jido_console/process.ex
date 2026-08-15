@@ -7,49 +7,23 @@ defmodule Jido.Console.Process do
   process identifiers or credential values.
   """
 
-  alias Jido.Console.Process.{Store, Supervisor}
+  alias Jido.Console.Process.{Contract, Store, Supervisor}
 
-  @statuses [:starting, :ready, :running, :stopping, :stopped, :failed]
-  @catalog %{
-    interactive: %{
-      name: "interactive",
-      owner: "tui",
-      purpose: "interactive terminal session",
-      readiness: "terminal and runtime are ready",
-      shutdown: "TUI shutdown through the process supervisor"
-    },
-    coding_runtime: %{
-      name: "coding-runtime",
-      owner: "coding",
-      purpose: "trusted local coding manager",
-      readiness: "execution manager is open",
-      shutdown: "coding setup close through the process supervisor"
-    }
-  }
-
-  @type status :: :starting | :ready | :running | :stopping | :stopped | :failed
-  @type kind :: :interactive | :coding_runtime
-  @type process_record :: %{
-          required(:id) => String.t(),
-          required(:kind) => kind(),
-          required(:name) => String.t(),
-          required(:owner) => String.t(),
-          required(:status) => status(),
-          required(:readiness) => String.t(),
-          optional(:failure) => String.t() | nil
-        }
+  @type status :: Contract.status()
+  @type kind :: Contract.kind()
+  @type process_record :: Contract.process_record()
 
   @doc "Returns the supported process status values."
   @spec statuses() :: [status()]
-  def statuses, do: @statuses
+  defdelegate statuses, to: Contract
 
   @doc "Returns the local process ownership and status matrix."
   @spec catalog() :: %{kind() => map()}
-  def catalog, do: @catalog
+  defdelegate catalog, to: Contract
 
   @doc "Returns one catalog entry."
   @spec spec(kind()) :: map()
-  def spec(kind) when is_map_key(@catalog, kind), do: Map.fetch!(@catalog, kind)
+  defdelegate spec(kind), to: Contract
 
   @doc "Lists user-facing process records from the isolated home store."
   @spec list(keyword()) :: {:ok, [process_record()]} | {:error, term()}

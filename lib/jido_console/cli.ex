@@ -73,16 +73,11 @@ defmodule Jido.Console do
   defp dispatch_fast(_args), do: :continue
 
   defp start_probe_or_run(args) do
-    if release_probe?() do
-      System.halt(Jido.Console.Release.Entry.run(args))
+    if Jido.Console.Release.Probe.configured?() do
+      System.halt(Jido.Console.Release.Probe.run(args, cli_run: &run/2))
     else
       start_and_run(args)
     end
-  end
-
-  defp release_probe? do
-    System.get_env("JIDO_RELEASE_NATIVE_PROBE") != nil or
-      System.get_env("JIDO_RELEASE_TUI_PROBE") != nil
   end
 
   defp start_and_run([command | _rest] = args) when command in ["run", "eval"] do

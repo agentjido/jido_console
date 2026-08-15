@@ -7,10 +7,9 @@ defmodule Jido.Console.Coding.Profile do
   the restricted-execution gate.
   """
 
-  alias Jido.Console.Coding.Environment
+  alias Jido.Console.Coding.{Environment, RestrictedProfile}
   alias Jido.Console.Home
 
-  @restricted_id "coding.restricted"
   @trusted_id "coding.trusted-workspace"
   @legacy_default "coding.default"
   @version 1
@@ -29,7 +28,7 @@ defmodule Jido.Console.Coding.Profile do
 
   @doc "Returns the default restricted profile identifier."
   @spec restricted_id() :: String.t()
-  def restricted_id, do: @restricted_id
+  def restricted_id, do: RestrictedProfile.id()
 
   @doc "Returns the explicit trusted-workspace profile identifier."
   @spec trusted_id() :: String.t()
@@ -57,8 +56,8 @@ defmodule Jido.Console.Coding.Profile do
 
   def resolve(profile_id, opts) when is_binary(profile_id) do
     cond do
-      profile_id == @restricted_id ->
-        restricted(opts, explicit?: selected?(opts, @restricted_id))
+      profile_id == RestrictedProfile.id() ->
+        restricted(opts, explicit?: selected?(opts, RestrictedProfile.id()))
 
       known_trusted?(profile_id) ->
         if selected?(opts, profile_id) do
@@ -97,7 +96,7 @@ defmodule Jido.Console.Coding.Profile do
     with {:ok, roots} <- restricted_roots(opts) do
       {:ok,
        %{
-         id: @restricted_id,
+         id: RestrictedProfile.id(),
          version: @version,
          class: :restricted,
          explicit?: extra[:explicit?],

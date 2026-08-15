@@ -7,10 +7,8 @@ defmodule Jido.Console.Coding.Environment do
   """
 
   alias Jido.Console.Auth
-  alias Jido.Console.Coding.Profile
+  alias Jido.Console.Coding.RestrictedProfile
   alias Jido.Console.Home
-
-  @default_allowlist ~w(PATH LANG TERM TMPDIR HOME)
 
   @type manifest :: %{
           profile_id: String.t(),
@@ -32,7 +30,7 @@ defmodule Jido.Console.Coding.Environment do
        %{
          env: env,
          manifest: %{
-           profile_id: Keyword.get(opts, :profile_id, Profile.restricted_id()),
+           profile_id: Keyword.get(opts, :profile_id, RestrictedProfile.id()),
            allowlist: allowlist,
            home: "private",
            tmpdir: "declared",
@@ -45,7 +43,7 @@ defmodule Jido.Console.Coding.Environment do
 
   @doc "Returns the default restricted environment allowlist."
   @spec default_allowlist() :: [String.t()]
-  def default_allowlist, do: @default_allowlist
+  def default_allowlist, do: RestrictedProfile.environment_allowlist()
 
   @doc "Returns the private HOME and TMPDIR paths for restricted execution."
   @spec declared_roots(keyword()) :: {:ok, %{home: String.t(), tmpdir: String.t()}} | {:error, term()}
@@ -61,7 +59,7 @@ defmodule Jido.Console.Coding.Environment do
   end
 
   defp allowlist(opts) do
-    case Keyword.get(opts, :allowlist, @default_allowlist) do
+    case Keyword.get(opts, :allowlist, RestrictedProfile.environment_allowlist()) do
       list when is_list(list) and list != [] ->
         if Enum.all?(list, &(&1 != "" and is_binary(&1))),
           do: {:ok, Enum.uniq(list)},
