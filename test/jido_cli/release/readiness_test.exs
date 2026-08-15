@@ -144,6 +144,14 @@ defmodule Jido.Cli.Release.ReadinessTest do
     assert command =~ "cross_repo_test.exs"
   end
 
+  test "checks the Tilde source boundary" do
+    assert %{
+             "status" => "passed",
+             "dependency" => "absent",
+             "production_module" => "absent"
+           } = Readiness.run!("source-policy", [])
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),

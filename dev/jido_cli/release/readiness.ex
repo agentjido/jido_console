@@ -20,7 +20,8 @@ defmodule Jido.Cli.Release.Readiness do
     "runtime-boundary",
     "measurement",
     "support-policy",
-    "dependency-policy"
+    "dependency-policy",
+    "source-policy"
   ]
 
   @doc "Returns the available check names in their required order."
@@ -39,6 +40,7 @@ defmodule Jido.Cli.Release.Readiness do
   def run!("measurement", opts), do: measurement!(opts)
   def run!("support-policy", opts), do: support_policy!(opts)
   def run!("dependency-policy", opts), do: dependency_policy!(opts)
+  def run!("source-policy", opts), do: source_policy!(opts)
   def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
 
   @doc false
@@ -188,6 +190,39 @@ defmodule Jido.Cli.Release.Readiness do
       ],
       opts
     )
+  end
+
+  @doc false
+  @spec source_policy!(keyword()) :: map()
+  def source_policy!(opts \\ []) do
+    project_root = opts |> Keyword.get(:project_root, File.cwd!()) |> Path.expand()
+
+    result =
+      policy!(
+        opts,
+        "roadmap/milestones/00-establish-release-readiness/tilde-source-governance.md",
+        ~w(Status Source Attribution Approved Prohibited)
+      )
+
+    dependency_source =
+      ["mix.exs", "mix.lock"]
+      |> Enum.map_join("\n", fn path -> File.read!(Path.join(project_root, path)) end)
+
+    production_source =
+      project_root
+      |> Path.join("lib/**/*.ex")
+      |> Path.wildcard()
+      |> Enum.map_join("\n", &File.read!/1)
+
+    if Regex.match?(~r/(?:^|[^a-z0-9_])tilde(?:[^a-z0-9_]|$)/i, dependency_source) do
+      raise "Tilde is present in the dependency definition"
+    end
+
+    if Regex.match?(~r/\bTilde(?:\.|\b)/, production_source) do
+      raise "production source references a Tilde module"
+    end
+
+    Map.merge(result, %{"dependency" => "absent", "production_module" => "absent"})
   end
 
   defp run_clean_baseline!(run_id, project_root, source, opts) do
