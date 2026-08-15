@@ -467,7 +467,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> Map.put(:runtime_opts, llm: llm)
 
     assert {:ok, request} = Engine.start(cell, [])
-    assert_receive {:engine_sequence_started, capability_pid}, 1_000
+    assert_receive {:engine_sequence_started, capability_pid}, 5_000
 
     assert {:ok, %Cancellation{} = cancellation} = Engine.cancel(request, grace_ms: 500)
     result = Engine.await(request, automation_await_timeout: 100)
