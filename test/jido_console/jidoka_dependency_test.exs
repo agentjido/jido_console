@@ -1,7 +1,7 @@
 defmodule Jido.Console.JidokaDependencyTest do
   use ExUnit.Case, async: true
 
-  @jidoka_ref "419bb36b428c8ef3e0a06455d4e90ba409573f59"
+  @jidoka_ref "7a346949aeb5c829ee0fad7b6b38eb23839b1384"
 
   test "the default build uses the immutable GitHub Jidoka dependency" do
     if System.get_env("JIDO_CONSOLE_JIDOKA_PATH") do

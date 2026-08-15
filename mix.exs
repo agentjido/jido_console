@@ -6,7 +6,7 @@ defmodule Jido.Console.MixProject do
   @version "0.1.0"
   @source_url "https://github.com/agentjido/jido_console"
   @description "Terminal and automation harness for the Jidoka agent framework."
-  @jidoka_ref "419bb36b428c8ef3e0a06455d4e90ba409573f59"
+  @jidoka_ref "7a346949aeb5c829ee0fad7b6b38eb23839b1384"
 
   def project do
     [

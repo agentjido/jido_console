@@ -9,8 +9,8 @@ in Jido Console.
 | --- | --- |
 | External pull request | https://github.com/agentjido/jidoka/pull/55 |
 | Branch | `feat/m1-e04-restricted-contracts` |
-| Immutable source on current Jidoka main | `974608babab358c0a4b7bd8d065069476186c795` |
-| Immutable source on the Console pin | `419bb36b428c8ef3e0a06455d4e90ba409573f59` |
+| Immutable source on current Jidoka main | `7a346949aeb5c829ee0fad7b6b38eb23839b1384` |
+| Immutable source on the Console pin | `7a346949aeb5c829ee0fad7b6b38eb23839b1384` |
 | Release target | v0.1 |
 | Owner | Milestone 1 / jido_console-m1e04 |
 | Console integration | M1-E05 |
