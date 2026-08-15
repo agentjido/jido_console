@@ -7,6 +7,8 @@
     "jido_console-m1e27",
     "jido_console-m1e29"
   ],
+  "closed_at": "2026-08-15T14:59:19Z",
+  "close_reason": "npm entry package selects the exact darwin-arm64 target with no install-script download or compile.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e26-ship-npm-channel.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E26: Prepare the npm Channel\n\n## Goal\n\nPrepare the v0.1 macOS ARM64 native release for the supported npm entry\npackage and exact-version target package.\n\n## Scope\n\n- Prepare `@agentjido/jido-console` as the supported npm entry package.\n- Prepare the exact-version macOS ARM64 target package.\n- Make the entry package select the declared target package for the supported\n  platform and architecture.\n- Verify global, local, `npm exec`, and `npx` installation and first-run\n  behavior.\n- Verify update and removal behavior for the supported npm lifecycle.\n- Preserve the native payload version, license, checksums, and provenance.\n- Keep package installation free of Erlang or Elixir compilation.\n- Keep package installation free of release downloads from an install script.\n\n## Out of Scope\n\n- Native payload creation owned by M1-E23.\n- Direct archive packaging owned by M1-E24.\n- Homebrew packaging or publication.\n- npm targets for unsupported platforms or architectures.\n- Provider credentials or live model calls during installation tests.\n- Production publication, which M1-E30 owns.\n\n## Dependencies\n\nThis epic depends on M1-E24. It uses the verified native payload and direct\narchive lifecycle contract as the npm source artifact.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the npm\nentry package, exact macOS ARM64 target package, package metadata, and npm\nlifecycle tests. It must not add Homebrew behavior or change the native\npayload.\n\n## Acceptance Checks\n\n- `@agentjido/jido-console` resolves the exact supported macOS ARM64 target\n  package.\n- Global, local, `npm exec`, and `npx` flows install and start the expected\n  exact version.\n- First run succeeds without an existing Elixir or Erlang toolchain.\n- Update and removal pass for the supported npm lifecycle.\n- The installed artifact reports the expected version and license.\n- npm installation does not compile Erlang or Elixir.\n- npm installation does not download a release from an install script.\n- Package checksums and provenance identify the same payload as M1-E24.\n- Lifecycle evidence is redacted, repeatable, and tied to the package version.\n\n## Proof Artifacts\n\n- npm entry package manifest\n- Exact-version macOS ARM64 target package manifest\n- Global install and first-run result\n- Local install and first-run result\n- `npm exec` result\n- `npx` result\n- Update result\n- Removal result\n- Package checksum and provenance evidence\n- Redacted npm lifecycle evidence\n\n## Milestone Traceability\n\nThis epic covers the npm cell in the v0.1 platform and channel matrix and its\ninstall, first-run, update, and removal evidence.",
   "id": "jido_console-m1e26",
@@ -19,8 +21,8 @@
     "v0.1"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M1-E26: Prepare the npm Channel",
   "type": "epic",
-  "updated_at": "2026-08-15T14:57:23Z"
+  "updated_at": "2026-08-15T14:59:19Z"
 }
