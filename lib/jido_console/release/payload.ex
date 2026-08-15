@@ -87,15 +87,19 @@ defmodule Jido.Console.Release.Payload do
     signature_path = Path.join(directory, "payload.sig")
     payload_path = Path.join(directory, "payload.json")
 
-    with {:ok, body} <- File.read(checksums_path),
+    with {:ok, public} <- trusted_public_key(public),
+         {:ok, body} <- File.read(checksums_path),
          {:ok, signature} <- File.read(signature_path),
          {:ok, record} <- read_json(payload_path),
          :ok <- verify_version(directory, record),
          :ok <- verify_checksums(directory, body),
-         :ok <- verify_signature(body, signature, public || decode_key(record["public_key"])) do
+         :ok <- verify_signature(body, signature, public) do
       {:ok, verify_report(directory, record, :ok)}
     end
   end
+
+  defp trusted_public_key(key) when is_binary(key) and byte_size(key) > 0, do: {:ok, key}
+  defp trusted_public_key(_key), do: {:error, :trusted_public_key_required}
 
   @doc "Compares two sealed evidence sets and lists only documented differences."
   @spec compare(report(), report()) :: {:ok, map()} | {:error, term()}
@@ -234,8 +238,6 @@ defmodule Jido.Console.Release.Payload do
       end
     end)
   end
-
-  defp decode_key(value) when is_binary(value), do: Base.decode64!(value)
 
   defp read_json(path) do
     with {:ok, body} <- File.read(path), do: Jason.decode(body)

@@ -31,6 +31,8 @@ defmodule Jido.Console.Release.PayloadTest do
     assert {:ok, verified} = Payload.verify(root, public_key: key.public)
     assert {:ok, %{"status" => "same"}} = Payload.compare(report, verified)
     refute inspect(verified) =~ "sk-"
+    assert {:error, :trusted_public_key_required} = Payload.verify(root)
+    assert {:error, :trusted_public_key_required} = Payload.verify(root, public_key: nil)
   end
 
   test "fails verification when the archive changes", %{root: root} do

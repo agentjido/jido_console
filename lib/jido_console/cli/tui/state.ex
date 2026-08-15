@@ -37,6 +37,7 @@ defmodule Jido.Console.Tui.State do
             next_turn_id: 0,
             pending_review: nil,
             selection: nil,
+            previous_selection: nil,
             dirty?: true,
             render_scheduled?: false
 
@@ -44,6 +45,7 @@ defmodule Jido.Console.Tui.State do
           {:start_turn, String.t()}
           | {:start_turn, String.t(), map()}
           | {:prepare_prompt, String.t()}
+          | {:apply_selection, map()}
           | {:await_turn, term()}
           | {:cancel_turn, term()}
           | {:respond_review, :approve | :deny, term(), term()}
@@ -179,7 +181,15 @@ defmodule Jido.Console.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:prompt_error, reason}) do
-    {%{state | pending_prompt: nil, status: :error, error: format_error(reason), dirty?: true}, []}
+    {%{
+       state
+       | pending_prompt: nil,
+         selection: state.previous_selection || state.selection,
+         previous_selection: nil,
+         status: :error,
+         error: format_error(reason),
+         dirty?: true
+     }, []}
   end
 
   def update(%__MODULE__{} = state, {:runtime_ready, session, instructions}) do
@@ -191,6 +201,7 @@ defmodule Jido.Console.Tui.State do
         runtime_status: :ready,
         startup_error: nil,
         submit_when_ready?: false,
+        previous_selection: nil,
         status: :idle,
         error: nil,
         project_instructions: instructions,
@@ -576,16 +587,26 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp apply_command(state, selection, notice) do
+    previous = state.selection
+    changed? = runtime_selection_changed?(previous, selection)
+
     state = %{
       state
       | selection: selection,
+        previous_selection: if(changed?, do: previous),
         editor: Editor.clear(state.editor),
         messages: state.messages ++ [%{role: :system, content: notice}],
-        status: :idle,
+        status: if(changed?, do: :resolving, else: :idle),
         error: nil,
         dirty?: true
     }
 
-    {state, []}
+    if changed?, do: {state, [{:apply_selection, selection}]}, else: {state, []}
   end
+
+  defp runtime_selection_changed?(left, right) when is_map(left) and is_map(right) do
+    left.model != right.model or left.profile_id != right.profile_id
+  end
+
+  defp runtime_selection_changed?(_left, _right), do: false
 end

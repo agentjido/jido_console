@@ -1,14 +1,13 @@
 defmodule Jido.Console.Coding.ProviderOptions do
   @moduledoc "Applies local coding model and provider options to an agent specification."
 
-  alias Jido.Console.Coding.Local
   alias Jidoka.Agent.Spec.Generation
 
   @doc "Tunes an agent specification for the selected trusted coding profile."
   @spec tune_spec(Jidoka.Agent.Spec.t(), map(), keyword()) ::
           {:ok, Jidoka.Agent.Spec.t()} | {:error, term()}
   def tune_spec(spec, selection, opts) do
-    local? = selection.profile_id == Local.profile_id()
+    local? = local_execution?(selection.profile_id)
     model = Keyword.get(opts, :model, if(local?, do: "openai:gpt-4.1-mini", else: nil))
 
     attrs =
@@ -25,7 +24,7 @@ defmodule Jido.Console.Coding.ProviderOptions do
   @doc "Returns turn options for the selected coding profile and model."
   @spec turn_opts(String.t(), String.t()) :: keyword()
   def turn_opts(profile_id, "openai:" <> _model) do
-    if profile_id == Local.profile_id() do
+    if local_execution?(profile_id) do
       [
         llm_opts: [provider_options: [response_format: openai_decision_format()]],
         max_parallel_operations: 1
@@ -36,8 +35,11 @@ defmodule Jido.Console.Coding.ProviderOptions do
   end
 
   def turn_opts(profile_id, _model) do
-    if profile_id == Local.profile_id(), do: [max_parallel_operations: 1], else: []
+    if local_execution?(profile_id), do: [max_parallel_operations: 1], else: []
   end
+
+  defp local_execution?(profile_id) when is_binary(profile_id), do: profile_id != ""
+  defp local_execution?(_profile_id), do: false
 
   defp maybe_put_model(attrs, nil), do: attrs
   defp maybe_put_model(attrs, model), do: Map.put(attrs, :model, model)

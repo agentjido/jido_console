@@ -180,9 +180,8 @@ defmodule Jido.Console.Coding.Local do
 
   defp executables do
     with git when is_binary(git) <- System.find_executable("git"),
-         mix when is_binary(mix) <- System.find_executable("mix"),
-         sandbox when is_binary(sandbox) <- System.find_executable("sandbox-exec") do
-      {:ok, %{"git" => git, "mix" => mix, "sandbox-exec" => sandbox}}
+         mix when is_binary(mix) <- System.find_executable("mix") do
+      {:ok, %{"git" => git, "mix" => mix, "sandbox-exec" => System.find_executable("sandbox-exec")}}
     else
       _missing -> {:error, :local_coding_executable_missing}
     end

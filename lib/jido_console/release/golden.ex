@@ -24,6 +24,7 @@ defmodule Jido.Console.Release.Golden do
       end)
 
     with {:ok, install} <- Channel.install(:archive, payload_dir, prefix, opts),
+         {:ok, first_run} <- Channel.first_run(install),
          {:ok, run} <- Run.open(workspace, run_id: "golden", profile_id: @profile),
          {:ok, steps} <- run_steps(run, workspace) do
       report = %{
@@ -33,7 +34,8 @@ defmodule Jido.Console.Release.Golden do
           "channel" => "archive",
           "version" => install.version,
           "digest" => install.payload_sha256,
-          "source" => "signed-payload"
+          "source" => "signed-payload",
+          "first_run" => first_run
         },
         "model" => @model,
         "profile" => @profile,

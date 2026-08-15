@@ -134,7 +134,7 @@ defmodule Jido.Console.Coding.Setup do
             pack_id: selection.pack_id,
             profile_id: selection.profile_id,
             local_resources: Map.get(local, :resources),
-            await_timeout_ms: if(selection.profile_id == Local.profile_id(), do: 180_000, else: 30_000),
+            await_timeout_ms: if(Map.get(local, :resources), do: 180_000, else: 30_000),
             turn_opts: ProviderOptions.turn_opts(selection.profile_id, Jidoka.Config.model_ref(spec.model))
           }
 
@@ -203,8 +203,15 @@ defmodule Jido.Console.Coding.Setup do
   defp extension_setup(_replacement, requests, _workspace, _local, opts),
     do: Extensions.resolve(requests, :interactive, opts)
 
-  defp local_profile(profile_id, workspace) do
-    if profile_id == Local.profile_id(), do: Local.prepare(workspace), else: {:ok, %{}}
+  defp local_profile(nil, _workspace), do: {:ok, %{}}
+
+  defp local_profile(_profile_id, workspace) do
+    case Local.prepare(workspace) do
+      {:ok, _local} = success -> success
+      {:error, :local_coding_executable_missing} -> {:ok, %{}}
+      {:error, :local_coding_module_unavailable} -> {:ok, %{}}
+      {:error, _reason} = error -> error
+    end
   end
 
   defp put_request(spec, request) do

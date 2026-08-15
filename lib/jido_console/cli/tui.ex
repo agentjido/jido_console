@@ -35,11 +35,15 @@ defmodule Jido.Console.Tui do
 
   defp run_terminal_loop(terminal, runtime, agent, opts) do
     state =
-      State.new(nil, terminal.size,
-        prepare_prompt: true,
-        runtime_status: :starting,
-        model: Keyword.get(opts, :model),
-        coding_profile: Keyword.get(opts, :coding_profile)
+      State.new(
+        nil,
+        terminal.size,
+        [
+          prepare_prompt: true,
+          runtime_status: :starting,
+          model: Keyword.get(opts, :model),
+          coding_profile: Keyword.get(opts, :coding_profile)
+        ] ++ Keyword.take(opts, [:catalog_entries])
       )
 
     with :ok <- Terminal.draw(terminal, View.render(state)) do
@@ -74,7 +78,7 @@ defmodule Jido.Console.Tui do
       send(owner, {:jido_runtime_startup, self(), result})
 
       case result do
-        {:ok, startup} -> runtime_owner_loop(owner_monitor, runtime, startup)
+        {:ok, startup} -> runtime_owner_loop(owner_monitor, runtime, agent, startup)
         {:error, _reason} -> :ok
       end
     end
@@ -147,13 +151,39 @@ defmodule Jido.Console.Tui do
     |> Keyword.put(:coding_setup_resolved, coding)
   end
 
-  defp runtime_owner_loop(owner_monitor, runtime, startup) do
+  defp runtime_owner_loop(owner_monitor, runtime, agent, startup) do
     receive do
+      {:reconfigure, caller, selection} ->
+        result = reconfigure_runtime(runtime, agent, startup, selection)
+        send(caller, {:jido_runtime_reconfigure, self(), result})
+
+        case result do
+          {:ok, next} -> runtime_owner_loop(owner_monitor, runtime, agent, next)
+          {:error, _reason} -> runtime_owner_loop(owner_monitor, runtime, agent, startup)
+        end
+
       {:close, _owner} ->
         close_startup_result(runtime, {:ok, startup})
 
       {:DOWN, ^owner_monitor, :process, _owner, _reason} ->
         close_startup_result(runtime, {:ok, startup})
+    end
+  end
+
+  defp reconfigure_runtime(runtime, agent, startup, selection) do
+    opts =
+      startup.opts
+      |> Keyword.put(:model, selection.model)
+      |> Keyword.put(:coding_profile, selection.profile_id)
+      |> Keyword.drop([:turn_opts, :await_opts, :coding_setup_resolved])
+
+    case safe_start_runtime(runtime, agent, opts) do
+      {:ok, next} ->
+        close_startup_result(runtime, {:ok, startup})
+        {:ok, next}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -287,7 +317,7 @@ defmodule Jido.Console.Tui do
           {:runtime_ready, startup.session, startup.coding.instructions},
           terminal,
           runtime,
-          startup.opts,
+          with_runtime_owner(startup.opts, startup_pid),
           %{pid: startup_pid, ref: startup_ref},
           workers
         )
@@ -424,6 +454,17 @@ defmodule Jido.Console.Tui do
       {:event, event} ->
         continue(state, event, terminal, runtime, opts, startup, workers)
 
+      {:reconfigured, next} ->
+        continue(
+          state,
+          {:runtime_ready, next.session, next.coding.instructions},
+          terminal,
+          runtime,
+          with_runtime_owner(next.opts, startup.pid),
+          startup,
+          workers
+        )
+
       {:start_turn, relay_pid, {:turn_started, request}} ->
         {state, effects} = State.update(state, {:turn_started, request})
 
@@ -532,4 +573,6 @@ defmodule Jido.Console.Tui do
   end
 
   defp process_opts(opts), do: Keyword.take(opts, [:name, :jido_home, :id])
+
+  defp with_runtime_owner(opts, pid) when is_pid(pid), do: Keyword.put(opts, :runtime_owner, pid)
 end

@@ -1,27 +1,16 @@
 defmodule Jido.Console.Release.HomebrewTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Release.{Channel, Homebrew, Payload}
+  alias Jido.Console.Release.{Channel, Homebrew, PayloadFixture}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-brew-#{System.unique_integer([:positive])}")
     payload = Path.join(root, "payload")
     prefix = Path.join(root, "prefix")
     File.mkdir_p!(payload)
-    File.write!(Path.join(payload, "jido-0.1.0-darwin-arm64.tar.gz"), "payload-bytes")
-    File.write!(Path.join(payload, "LICENSE"), "Apache License Version 2.0")
-
-    File.write!(
-      Path.join(payload, "release.json"),
-      Jason.encode!(%{"version" => "0.1.0", "license" => "Apache-2.0"}) <> "\n"
-    )
-
-    File.write!(Path.join(payload, "sbom.json"), "{}\n")
-    File.write!(Path.join(payload, "provenance.json"), "{}\n")
-    key = Payload.generate_key()
-    assert {:ok, _} = Payload.seal(payload, archive: Path.join(payload, "jido-0.1.0-darwin-arm64.tar.gz"), keypair: key)
+    fixture = PayloadFixture.create(payload)
     on_exit(fn -> File.rm_rf!(root) end)
-    %{payload: payload, prefix: prefix, key: key}
+    %{payload: payload, prefix: prefix, key: fixture.key}
   end
 
   test "formula pins the payload checksum and does not compile", %{payload: payload, prefix: prefix, key: key} do

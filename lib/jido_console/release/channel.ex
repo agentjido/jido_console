@@ -34,7 +34,8 @@ defmodule Jido.Console.Release.Channel do
   def install(channel, payload_dir, prefix, opts \\ []) when channel in @channels do
     public_key = Keyword.get(opts, :public_key)
 
-    with :ok <- verify_or_error(payload_dir, public_key),
+    with :ok <- require_public_key(public_key),
+         :ok <- verify_or_error(payload_dir, public_key),
          {:ok, record} <- read_payload(payload_dir),
          {:ok, sha} <- Payload.checksum(payload_dir, record["archive"]),
          :ok <- copy_payload(payload_dir, prefix, record) do
@@ -49,25 +50,29 @@ defmodule Jido.Console.Release.Channel do
     end
   end
 
-  @doc "Records first run of the installed artifact without a host toolchain."
+  @doc "Runs the installed payload executable once without a host toolchain."
   @spec first_run(install()) :: {:ok, map()} | {:error, term()}
   def first_run(install) do
     version_path = Path.join(install.root, "release.json")
 
     with {:ok, body} <- File.read(version_path),
-         {:ok, release} <- Jason.decode(body) do
-      if release["version"] == install.version do
-        {:ok,
-         %{
-           "stage" => "first_run",
-           "version" => install.version,
-           "license" => install.license,
-           "toolchain" => "bundled",
-           "compiled" => false
-         }}
-      else
-        {:error, :version_mismatch}
-      end
+         {:ok, release} <- Jason.decode(body),
+         true <- release["version"] == install.version,
+         {:ok, executable} <- installed_executable(install.root),
+         {:ok, output} <- exec_version(executable),
+         true <- version_printed?(output, install.version) do
+      {:ok,
+       %{
+         "stage" => "first_run",
+         "version" => install.version,
+         "license" => install.license,
+         "toolchain" => "bundled",
+         "compiled" => false,
+         "executable" => "bin/jido"
+       }}
+    else
+      false -> {:error, :version_mismatch}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -103,6 +108,9 @@ defmodule Jido.Console.Release.Channel do
     }
   end
 
+  defp require_public_key(key) when is_binary(key) and byte_size(key) > 0, do: :ok
+  defp require_public_key(_key), do: {:error, :trusted_public_key_required}
+
   defp verify_or_error(payload_dir, public_key) do
     case Payload.verify(payload_dir, public_key: public_key) do
       {:ok, _report} -> :ok
@@ -121,7 +129,58 @@ defmodule Jido.Console.Release.Channel do
       end
     )
 
-    :ok
+    extract_archive(prefix, record["archive"])
+  end
+
+  defp extract_archive(prefix, archive_name) when is_binary(archive_name) do
+    archive = Path.join(prefix, archive_name)
+
+    with {:ok, members} <- :erl_tar.table(String.to_charlist(archive), [:compressed]),
+         :ok <- safe_tar_members(members),
+         :ok <- :erl_tar.extract(String.to_charlist(archive), [:compressed, cwd: String.to_charlist(prefix)]) do
+      :ok
+    else
+      {:error, reason} -> {:error, {:archive_extract_failed, reason}}
+    end
+  end
+
+  defp extract_archive(_prefix, _archive_name), do: {:error, :archive_missing}
+
+  defp safe_tar_members(members) do
+    if Enum.any?(members, &unsafe_tar_member?/1),
+      do: {:error, :archive_path_unsafe},
+      else: :ok
+  end
+
+  defp unsafe_tar_member?(member) do
+    path = member |> tar_member_name() |> to_string()
+    Path.type(path) == :absolute or Enum.any?(Path.split(path), &(&1 == ".."))
+  end
+
+  defp tar_member_name({name, _type, _size, _mtime, _mode, _uid, _gid}), do: name
+  defp tar_member_name({name, _type, _size, _mtime, _mode, _uid, _gid, _type_name, _link}), do: name
+  defp tar_member_name(name), do: name
+
+  defp installed_executable(root) do
+    root
+    |> Path.join("**/bin/jido")
+    |> Path.wildcard()
+    |> Enum.find(&File.regular?/1)
+    |> case do
+      nil -> {:error, :installed_executable_missing}
+      path -> {:ok, path}
+    end
+  end
+
+  defp exec_version(executable) do
+    case System.cmd(executable, ["--version"], stderr_to_stdout: true) do
+      {output, 0} -> {:ok, output}
+      {output, status} -> {:error, {:first_run_failed, status, output}}
+    end
+  end
+
+  defp version_printed?(output, version) when is_binary(output) and is_binary(version) do
+    String.contains?(output, version)
   end
 
   defp read_payload(directory) do

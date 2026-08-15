@@ -10,6 +10,7 @@ defmodule Jido.Console.Tui.Effects do
           | {:start_turn, pid(), term()}
           | {:review_result, pid(), term()}
           | {:request_result, term(), term()}
+          | {:reconfigured, map()}
           | :ignore
 
   @spec dispatch(State.t(), [State.effect()], module(), keyword(), Workers.t()) ::
@@ -25,6 +26,14 @@ defmodule Jido.Console.Tui.Effects do
         workers =
           Workers.start(workers, {:prepare_prompt, prompt}, nil, fn ->
             prepare_prompt(coding, prompt, opts)
+          end)
+
+        {:cont, {:continue, workers}}
+
+      {:apply_selection, selection}, {:continue, workers} ->
+        workers =
+          Workers.start(workers, {:apply_selection, selection}, nil, fn ->
+            apply_selection(selection, opts)
           end)
 
         {:cont, {:continue, workers}}
@@ -63,6 +72,15 @@ defmodule Jido.Console.Tui.Effects do
   end
 
   @spec complete(Worker.t(), {:ok, term()} | {:crash, term()}) :: completion()
+  def complete(%Worker{kind: {:apply_selection, _selection}}, outcome) do
+    case outcome do
+      {:ok, {:ok, startup}} when is_map(startup) -> {:reconfigured, startup}
+      {:ok, {:error, reason}} -> {:event, {:prompt_error, reason}}
+      {:ok, other} -> {:event, {:prompt_error, {:invalid_selection_result, other}}}
+      {:crash, reason} -> {:event, {:prompt_error, reason}}
+    end
+  end
+
   def complete(%Worker{kind: {:prepare_prompt, _prompt}}, outcome) do
     event =
       case outcome do
@@ -104,6 +122,22 @@ defmodule Jido.Console.Tui.Effects do
 
   def complete(%Worker{kind: {:respond_review, _decision, relay_pid}}, outcome) do
     {:review_result, relay_pid, unwrap(outcome)}
+  end
+
+  defp apply_selection(selection, opts) do
+    case Keyword.get(opts, :runtime_owner) do
+      pid when is_pid(pid) ->
+        send(pid, {:reconfigure, self(), selection})
+
+        receive do
+          {:jido_runtime_reconfigure, ^pid, result} -> result
+        after
+          60_000 -> {:error, :selection_apply_timeout}
+        end
+
+      _missing ->
+        {:error, :runtime_owner_missing}
+    end
   end
 
   defp start_turn(workers, runtime, session, opts, prompt, context) do

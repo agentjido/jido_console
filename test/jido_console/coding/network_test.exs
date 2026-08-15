@@ -13,6 +13,10 @@ defmodule Jido.Console.Coding.NetworkTest do
     assert loopback.policy.version == "1"
     refute loopback.reason =~ "127.0.0.1"
 
+    assert {:error, {:network_denied, abbreviated}} = Network.check("127.1", [])
+    assert abbreviated.class == :loopback
+    assert {:error, {:network_denied, _short}} = Network.check("127.0.1:9", [])
+
     assert {:error, {:network_denied, external}} = Network.check("192.0.2.1", [])
     assert external.outcome == :deny
     assert external.class == :external
@@ -120,6 +124,41 @@ defmodule Jido.Console.Coding.NetworkTest do
     :gen_tcp.close(listener)
     Task.shutdown(acceptor, :brutal_kill)
     refute accepted?
+  end
+
+  @tag :darwin
+  test "operating-system sandbox denies implicit loopback from git" do
+    root = Path.join(System.tmp_dir!(), "jido-implicit-net-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    connector = Path.join(root, "connect")
+    File.write!(connector, "#!/bin/sh\nexec /usr/bin/nc -w 1 -z 127.0.0.1 9\n")
+    File.chmod!(connector, 0o700)
+
+    request = %{
+      "command" => "git",
+      "args" => ["status"],
+      "stdin" => "",
+      "cwd" => ".",
+      "timeout_ms" => 2_000,
+      "max_output_bytes" => 1_024,
+      "network" => false,
+      "command_class" => "git",
+      "mutation" => "read"
+    }
+
+    assert {:ok, result, _evidence} =
+             Adapter.execute(nil, request,
+               workspace: Workspace.new!(root: root, access: [:shell]),
+               executables: %{
+                 "git" => connector,
+                 "sandbox-exec" => System.find_executable("sandbox-exec")
+               }
+             )
+
+    assert result["status"] in ["nonzero", "error"]
+    refute result["status"] == "ok"
   end
 
   @tag :darwin

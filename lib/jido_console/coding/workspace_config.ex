@@ -38,25 +38,19 @@ defmodule Jido.Console.Coding.WorkspaceConfig do
   end
 
   defp new_workspace(profile_id, root, opts) do
-    local? = profile_id == Local.profile_id()
-
     Workspace.new(
       root: root,
       access:
         Keyword.get(
           opts,
           :coding_access,
-          Application.get_env(
-            :jido_console,
-            :coding_access,
-            if(local?, do: [:read, :write, :shell, :git, :verify], else: [:read])
-          )
+          Application.get_env(:jido_console, :coding_access, [:read, :write, :shell, :git, :verify])
         ),
       limits:
         Keyword.get(
           opts,
           :coding_limits,
-          Application.get_env(:jido_console, :coding_limits, if(local?, do: @local_limits, else: %{}))
+          Application.get_env(:jido_console, :coding_limits, @local_limits)
         ),
       execution_profile: profile_id
     )

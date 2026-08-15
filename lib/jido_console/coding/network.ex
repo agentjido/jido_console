@@ -7,6 +7,8 @@ defmodule Jido.Console.Coding.Network do
   policy version and destination class only.
   """
 
+  import Bitwise
+
   @policy_id "jido.network.v1"
   @policy_version "1"
   @file_suffixes ~w(ex exs erl hrl md txt json yaml yml lock html htm css js ts tsx rs go py rb sh bash zsh toml xml csv log pid so dylib beam hex)
@@ -151,7 +153,14 @@ defmodule Jido.Console.Coding.Network do
       ipv4?(token) -> %{host: token, port: nil, class: classify_host(token)}
       ipv6?(token) -> %{host: normalize_host(token), port: nil, class: classify_host(token)}
       hostname?(token) -> %{host: normalize_host(token), port: nil, class: classify_host(token)}
-      true -> nil
+      true -> abbreviated_loopback_host(token)
+    end
+  end
+
+  defp abbreviated_loopback_host(token) do
+    case abbreviated_loopback(token) do
+      {:ok, expanded} -> %{host: expanded, port: nil, class: :loopback}
+      :error -> nil
     end
   end
 
@@ -201,6 +210,44 @@ defmodule Jido.Console.Coding.Network do
     case :inet.parse_ipv4strict_address(String.to_charlist(host)) do
       {:ok, {127, _b, _c, _d}} -> true
       _other -> false
+    end
+  end
+
+  defp abbreviated_loopback(token) do
+    parts = String.split(token, ".")
+
+    if length(parts) in 2..3 do
+      case expand_ipv4(parts) do
+        {:ok, address} -> if(ipv4_loopback?(address), do: {:ok, address}, else: :error)
+        :error -> :error
+      end
+    else
+      :error
+    end
+  end
+
+  defp expand_ipv4([a, b]) do
+    with {:ok, a} <- parse_u8(a), {:ok, b} <- parse_u24(b) do
+      {:ok, Enum.join([a, b >>> 16, b >>> 8 &&& 255, b &&& 255], ".")}
+    end
+  end
+
+  defp expand_ipv4([a, b, c]) do
+    with {:ok, a} <- parse_u8(a), {:ok, b} <- parse_u8(b), {:ok, c} <- parse_u16(c) do
+      {:ok, Enum.join([a, b, c >>> 8, c &&& 255], ".")}
+    end
+  end
+
+  defp expand_ipv4(_parts), do: :error
+
+  defp parse_u8(value), do: parse_bounded_int(value, 255)
+  defp parse_u16(value), do: parse_bounded_int(value, 65_535)
+  defp parse_u24(value), do: parse_bounded_int(value, 16_777_215)
+
+  defp parse_bounded_int(value, max) do
+    case Integer.parse(value) do
+      {int, ""} when int >= 0 and int <= max -> {:ok, int}
+      _other -> :error
     end
   end
 

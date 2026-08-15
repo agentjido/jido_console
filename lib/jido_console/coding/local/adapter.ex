@@ -14,14 +14,19 @@ defmodule Jido.Console.Coding.Local.Adapter do
   @shell "/bin/sh"
   @head "/usr/bin/head"
   @mkfifo "/usr/bin/mkfifo"
-  # Mix uses loopback TCP for local process coordination. Permit loopback only;
-  # all non-local network traffic remains denied by the operating-system sandbox.
-  @sandbox_profile """
+  # Git and other helpers get no network, including loopback. Mix still needs
+  # localhost for local process coordination; bind and inbound stay on localhost.
+  @git_sandbox_profile """
   (version 1)
   (allow default)
   (deny network*)
-  (allow network-bind)
-  (allow network-inbound)
+  """
+  @mix_sandbox_profile """
+  (version 1)
+  (allow default)
+  (deny network*)
+  (allow network-bind (local ip "localhost:*"))
+  (allow network-inbound (local ip "localhost:*"))
   (allow network-outbound (remote ip "localhost:*"))
   """
   @poll_interval_ms 50
@@ -140,7 +145,8 @@ defmodule Jido.Console.Coding.Local.Adapter do
                  fifo,
                  output_path,
                  request["max_output_bytes"] + 1,
-                 prepared.env
+                 prepared.env,
+                 request["command"]
                ),
              {:ok, os_pid} <- os_pid(port) do
           watch = Tree.watch(os_pid)
@@ -175,7 +181,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
     end
   end
 
-  defp open_port(sandbox, executable, args, cwd, fifo, output_path, capture_limit, env) do
+  defp open_port(sandbox, executable, args, cwd, fifo, output_path, capture_limit, env, command) do
     script = ~S"""
     reap() {
       for pid in $(ps -o pid= -g $$ 2>/dev/null); do
@@ -215,7 +221,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
       output_path,
       sandbox,
       "-p",
-      @sandbox_profile,
+      sandbox_profile(command),
       executable | args
     ]
 
@@ -257,6 +263,9 @@ defmodule Jido.Console.Coding.Local.Adapter do
       _missing -> {:error, :local_coding_sandbox_unavailable}
     end
   end
+
+  defp sandbox_profile("mix"), do: @mix_sandbox_profile
+  defp sandbox_profile(_command), do: @git_sandbox_profile
 
   defp await(port, timeout_ms, output_limit, opts) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms

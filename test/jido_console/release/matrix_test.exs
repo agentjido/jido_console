@@ -1,26 +1,15 @@
 defmodule Jido.Console.Release.MatrixTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Release.{Matrix, Payload}
+  alias Jido.Console.Release.{Matrix, PayloadFixture}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-matrix-#{System.unique_integer([:positive])}")
     payload = Path.join(root, "payload")
     File.mkdir_p!(payload)
-    File.write!(Path.join(payload, "jido-0.1.0-darwin-arm64.tar.gz"), "payload-bytes")
-    File.write!(Path.join(payload, "LICENSE"), "Apache License Version 2.0")
-
-    File.write!(
-      Path.join(payload, "release.json"),
-      Jason.encode!(%{"version" => "0.1.0", "license" => "Apache-2.0"}) <> "\n"
-    )
-
-    File.write!(Path.join(payload, "sbom.json"), "{}\n")
-    File.write!(Path.join(payload, "provenance.json"), "{}\n")
-    key = Payload.generate_key()
-    assert {:ok, _} = Payload.seal(payload, archive: Path.join(payload, "jido-0.1.0-darwin-arm64.tar.gz"), keypair: key)
+    fixture = PayloadFixture.create(payload)
     on_exit(fn -> File.rm_rf!(root) end)
-    %{root: root, payload: payload, key: key}
+    %{root: root, payload: payload, key: fixture.key}
   end
 
   test "passes the darwin-arm64 archive, Homebrew, and npm cells", %{root: root, payload: payload, key: key} do

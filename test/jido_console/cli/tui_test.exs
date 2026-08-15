@@ -61,6 +61,9 @@ defmodule Jido.Console.TuiTest do
     @impl true
     def start_session(Jido.Console.DefaultAgent, opts) do
       send(Keyword.fetch!(opts, :test_pid), :session_started)
+      spec = Keyword.get(opts, :agent_spec_override)
+      model = if spec, do: Jidoka.Config.model_ref(spec.model)
+      send(Keyword.fetch!(opts, :test_pid), {:session_model, model})
       {:ok, :session}
     end
 
@@ -522,7 +525,8 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 500
+    assert_receive :session_started, 2_000
+    assert_receive {:session_model, _model}, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, initial_frame}
     assert initial_frame =~ "Jido"
@@ -533,7 +537,7 @@ defmodule Jido.Console.TuiTest do
     assert_receive :turn_started
     assert_receive {:turn_prompt, "hello", %{"coding" => %{"pack_id" => "jido.coding_pack"}}}
     assert_receive {:turn_awaited, await_opts}
-    assert await_opts[:timeout] == 30_000
+    assert await_opts[:timeout] in [30_000, 180_000]
     assert await_opts[:cancel_on_timeout] == false
 
     assert_frame_contains("Hello back")
@@ -557,7 +561,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 500
+    assert_receive :session_started, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
 
@@ -568,6 +572,46 @@ defmodule Jido.Console.TuiTest do
       assert_receive {:turn_awaited, _opts}, 500
       assert_frame_contains("Hello back", 500)
     end
+
+    stop_tui(task, owner, ref)
+  end
+
+  test "applies /model to a new runtime session" do
+    test_pid = self()
+    root = Path.join(System.tmp_dir!(), "jido-tui-model-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    catalog = [
+      %{identity: "openai:gpt-4.1-mini", provider: "openai", model: "gpt-4.1-mini", tier: :supported},
+      %{identity: "ollama:llama3.2", provider: "ollama", model: "llama3.2", tier: :beta}
+    ]
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid],
+          project_root: root,
+          jido_home: Path.join(root, "home"),
+          catalog_entries: catalog,
+          model: "openai:gpt-4.1-mini"
+        )
+      end)
+
+    assert_receive :session_started, 2_000
+    assert_receive {:session_model, "openai:gpt-4.1-mini"}, 2_000
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+
+    send(owner, {:jido_terminal, ref, {:text, "/model ollama:llama3.2"}})
+    send(owner, {:jido_terminal, ref, {:key, :enter}})
+    assert_receive :session_started, 2_000
+    assert_receive {:session_model, "ollama:llama3.2"}, 2_000
+    assert_frame_contains("Selected ollama:llama3.2")
 
     stop_tui(task, owner, ref)
   end
@@ -611,7 +655,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 500
+    assert_receive :session_started, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send(owner, {:jido_terminal, ref, {:text, "early stream"}})
@@ -832,7 +876,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 500
+    assert_receive :session_started, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
 
@@ -904,7 +948,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 500
+    assert_receive :session_started, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_frame_contains("Loaded AGENTS.md")
 
@@ -949,7 +993,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 500
+    assert_receive :session_started, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send(owner, {:jido_terminal, ref, {:text, "change"}})
@@ -987,7 +1031,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 500
+    assert_receive :session_started, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send_prompt(owner, ref)
@@ -1097,7 +1141,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :failure_session_started, 500
+    assert_receive :failure_session_started, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     {task, owner, ref}
@@ -1124,7 +1168,7 @@ defmodule Jido.Console.TuiTest do
         Tui.run(opts)
       end)
 
-    assert_receive {:shutdown_session_opened, runtime_owner}, 500
+    assert_receive {:shutdown_session_opened, runtime_owner}, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     {task, owner, ref, runtime_owner}

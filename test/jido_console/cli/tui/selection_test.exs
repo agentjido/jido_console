@@ -43,13 +43,17 @@ defmodule Jido.Console.Tui.SelectionTest do
   test "TUI slash commands change the visible run configuration" do
     state = State.new(:session, {80, 12}, catalog_entries: @entries)
     {state, []} = State.update(state, {:terminal, {:text, "/model ollama:llama3.2"}})
-    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    {state, [{:apply_selection, selection}]} = State.update(state, {:terminal, {:key, :enter}})
+    assert selection.model == "ollama:llama3.2"
     assert state.selection.model == "ollama:llama3.2"
+    assert state.status == :resolving
     assert List.last(state.messages).content =~ "Selected ollama:llama3.2"
     assert Enum.join(View.render(state).rows, "\n") =~ "ollama:llama3.2"
 
+    {state, []} = State.update(state, {:runtime_ready, :session, []})
     {state, []} = State.update(state, {:terminal, {:text, "/profile coding.trusted-workspace"}})
-    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    {state, [{:apply_selection, trusted}]} = State.update(state, {:terminal, {:key, :enter}})
+    assert trusted.profile_id == "coding.trusted-workspace"
     assert state.selection.profile_id == "coding.trusted-workspace"
     assert Enum.join(View.render(state).rows, "\n") =~ "not a sandbox"
   end

@@ -42,6 +42,7 @@ defmodule Jido.Console.Coding.RunTest do
     assert {:ok, run, diff} = Run.apply_effect(run, effect, binding)
     assert File.read!(Path.join(root, "edit.txt")) == "after"
     assert diff.after != diff.before
+    assert {:error, :approval_replay} = Run.apply_effect(run, effect, binding)
 
     File.write!(Path.join(root, "keep.txt"), "unrelated after start")
     File.write!(Path.join(root, "outside.txt"), "created outside the run")

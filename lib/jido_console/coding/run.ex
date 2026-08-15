@@ -16,6 +16,7 @@ defmodule Jido.Console.Coding.Run do
           snapshot: %{String.t() => map()},
           applied: [map()],
           rejected: [map()],
+          consumed_ids: [String.t()],
           context: map(),
           status: :open | :reverted | :failed
         }
@@ -33,6 +34,7 @@ defmodule Jido.Console.Coding.Run do
          snapshot: snapshot,
          applied: [],
          rejected: [],
+         consumed_ids: [],
          context: context(root, Keyword.put(opts, :run_id, id)),
          status: :open
        }}
@@ -82,11 +84,12 @@ defmodule Jido.Console.Coding.Run do
 
   def apply_effect(%{status: :open} = run, effect, binding, opts) do
     with {:ok, normalized} <- Approval.normalize(effect),
+         :ok <- unused_approval(run, binding),
          {:ok, _binding} <- Approval.authorize(binding, effect, run.context),
          {:ok, decision} <- Paths.check(absolute(run.root, normalized.path), roots(run, opts)),
          :ok <- allowed(decision),
          :ok <- write_effect(run, normalized),
-         {:ok, _binding} <- Approval.consume(binding, :completed) do
+         {:ok, consumed} <- Approval.consume(binding, :completed) do
       record = %{
         path: normalized.path,
         operation: normalized.operation,
@@ -94,7 +97,7 @@ defmodule Jido.Console.Coding.Run do
         after: file_digest(run, normalized.path)
       }
 
-      {:ok, %{run | applied: run.applied ++ [record]}, record}
+      {:ok, %{run | applied: run.applied ++ [record], consumed_ids: [consumed.id | run.consumed_ids]}, record}
     end
   end
 
@@ -177,6 +180,12 @@ defmodule Jido.Console.Coding.Run do
       :error -> remover.(path)
     end
   end
+
+  defp unused_approval(run, %{id: id}) do
+    if id in run.consumed_ids, do: {:error, :approval_replay}, else: :ok
+  end
+
+  defp unused_approval(_run, _binding), do: {:error, :approval_mismatch}
 
   defp allowed(%{outcome: :allow}), do: :ok
   defp allowed(%{outcome: :deny}), do: {:error, :path_boundary_denied}

@@ -26,7 +26,7 @@ defmodule Jido.Console.Coding.LocalTest do
     %{root: root}
   end
 
-  test "requires an explicit root and keeps the default profile read-only", %{root: root} do
+  test "requires an explicit root and prepares local resources for the default profile", %{root: root} do
     assert {:error, :local_coding_root_required} =
              Setup.prepare(Jido.Console.DefaultAgent, coding_profile: Local.profile_id())
 
@@ -36,8 +36,14 @@ defmodule Jido.Console.Coding.LocalTest do
                jido_home: Path.join(root, "home")
              )
 
-    assert setup.workspace.access == [:read]
-    assert setup.local_resources == nil
+    on_exit(fn -> Setup.close(setup) end)
+    assert Enum.sort(setup.workspace.access) == Enum.sort([:read, :write, :shell, :git, :verify])
+    assert setup.profile_id == "coding.restricted"
+
+    if System.find_executable("git") && System.find_executable("mix") do
+      assert setup.local_resources
+      assert setup.extension_setup.recover_coding_errors
+    end
   end
 
   @tag :darwin
