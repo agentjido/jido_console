@@ -8,6 +8,8 @@
     "jido_console-m2e26",
     "jido_console-m2e34"
   ],
+  "closed_at": "2026-08-15T23:38:26Z",
+  "close_reason": "Landed on feat/m2-supervised-session-plane.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e23-separate-model-and-view-results.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E23: Separate Model Content from View Details\n\n## Goal\n\nReturn concise model content together with typed structured view details so\nclients can render the same semantic result without copying renderer data.\n\n## Scope\n\n- Define the concise model-content result for a completed semantic turn.\n- Define typed structured view details for status, progress, tool activity,\n  permissions, diagnostics, and other client-facing details.\n- Keep model content separate from view details in events, outcomes, and\n  snapshots.\n- Preserve provenance, sensitivity, durability, and trust data for each result.\n- Keep view details renderer-neutral and safe for bounded client delivery.\n- Preserve bounded unknown view fields without granting authority.\n\n## Out of Scope\n\n- Typed command-effect definitions owned by M2-E22.\n- Client-specific rendering or adapter migration.\n- Model provider support qualification.\n- Durable session recovery.\n\n## Dependencies\n\nThis epic depends on M2-E14 for the model and tool worker-result boundary and\nM2-E22 for typed command effects.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds the model\ncontent and view-detail schemas, validators, sensitivity rules, and\ndeterministic result tests. It must not change a client adapter or add a model\nprovider.\n\n## Acceptance Checks\n\n- A completed turn returns concise model content and typed view details in\n  separate fields.\n- View details contain no renderer-specific structures, PIDs, references, or\n  functions.\n- Content and view details preserve their declared sensitivity, durability,\n  provenance, and trust data.\n- Unknown bounded view fields remain data and cannot grant authority.\n- Clients can omit view details without changing command meaning or model\n  content.\n- Deterministic tests cover content-only, view-only, combined, invalid, and\n  sensitive result cases.\n\n## Proof Artifacts\n\n- Model-content and view-detail schema\n- Result validation and sensitivity table\n- Renderer-neutral structured view examples\n- Unknown-field safety results\n- Content and view separation test results\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 requirement to return concise model content\nseparately from structured view details.",
   "id": "jido_console-m2e23",
@@ -18,8 +20,8 @@
     "v0.2"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M2-E23: Separate Model Content from View Details",
   "type": "epic",
-  "updated_at": "2026-08-15T23:38:25Z"
+  "updated_at": "2026-08-15T23:38:26Z"
 }
