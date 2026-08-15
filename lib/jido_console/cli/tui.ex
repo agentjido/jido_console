@@ -1,7 +1,7 @@
 defmodule Jido.Console.Tui do
   @moduledoc "Full-screen Jido chat loop."
 
-  alias Jido.Console.Tui.{Effects, Shutdown, State, View, Workers}
+  alias Jido.Console.Tui.{Effects, Selection, Shutdown, State, View, Workers}
   alias Jido.Console.Coding.Setup
   alias Jido.Console.Terminal
 
@@ -11,6 +11,7 @@ defmodule Jido.Console.Tui do
 
   @spec run(keyword()) :: :ok | {:error, term()}
   def run(opts \\ []) do
+    opts = resolve_initial_selection(opts)
     runtime = Keyword.get(opts, :runtime, Jido.Console.Runtime.Jidoka)
     agent = Keyword.get(opts, :agent, Jido.Console.DefaultAgent)
 
@@ -21,6 +22,15 @@ defmodule Jido.Console.Tui do
         Terminal.close(terminal)
       end
     end
+  end
+
+  defp resolve_initial_selection(opts) do
+    selection = Selection.init(opts)
+
+    opts
+    |> Keyword.put(:catalog_entries, selection.catalog_entries)
+    |> Keyword.put(:model, selection.model)
+    |> Keyword.put(:coding_profile, selection.profile_id)
   end
 
   defp run_terminal(terminal, runtime, agent, opts) do

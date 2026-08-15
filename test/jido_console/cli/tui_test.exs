@@ -616,6 +616,34 @@ defmodule Jido.Console.TuiTest do
     stop_tui(task, owner, ref)
   end
 
+  test "uses the visible catalog default when the coding pack is disabled" do
+    test_pid = self()
+
+    catalog = [
+      %{identity: "openai:gpt-4.1-mini", provider: "openai", model: "gpt-4.1-mini", tier: :supported}
+    ]
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid],
+          turn_opts: [test_pid: test_pid],
+          catalog_entries: catalog,
+          coding_pack: :disabled
+        )
+      end)
+
+    assert_receive :session_started, 2_000
+    assert_receive {:session_model, "openai:gpt-4.1-mini"}, 2_000
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _initial_frame}
+
+    stop_tui(task, owner, ref)
+  end
+
   test "keeps the Jidoka request owner alive while it awaits the result" do
     test_pid = self()
 

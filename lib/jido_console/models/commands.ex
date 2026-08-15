@@ -154,6 +154,8 @@ defmodule Jido.Console.Models.Commands do
       end)
 
     gaps = Enum.map_join(entry.known_gaps, " | ", &Redaction.redact/1)
+    metadata = Map.get(entry, :metadata, %{})
+    lifecycle = value(metadata, :lifecycle, %{}) || %{}
 
     """
     identity: #{entry.identity}
@@ -164,11 +166,19 @@ defmodule Jido.Console.Models.Commands do
     cancellation: #{entry.cancellation.state} #{entry.cancellation.evidence || "none"}
     prompt_cache: #{entry.prompt_cache.state} #{entry.prompt_cache.evidence || "none"}
     cost.class: #{entry.cost[:class] || entry.cost["class"]}
+    cost.input_per_million: #{value(entry.cost, :input, "unknown")}
+    cost.output_per_million: #{value(entry.cost, :output, "unknown")}
     limits.context_tokens: #{entry.limits[:context_tokens] || entry.limits["context_tokens"]}
     limits.output_tokens: #{entry.limits[:output_tokens] || entry.limits["output_tokens"]}
+    metadata.source: #{value(metadata, :source, :unknown)}
+    lifecycle.status: #{value(lifecycle, :status, "active")}
+    lifecycle.replacement: #{value(lifecycle, :replacement, "none")}
     known_gaps: #{gaps}
     """ <> capabilities
   end
+
+  defp value(map, key, default) when is_map(map),
+    do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
 
   defp format_test(entry, results) do
     rows =

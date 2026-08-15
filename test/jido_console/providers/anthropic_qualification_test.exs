@@ -17,7 +17,7 @@ defmodule Jido.Console.Providers.AnthropicQualificationTest do
     assert model["preflight"]["outcome"] == "allow"
     assert model["fallback"]["outcome"] == "consent_required"
     assert model["known_gaps"] != []
-    assert model["limits"]["context_tokens"] == 200_000
+    assert model["limits"]["context_tokens"] == "unknown"
     assert Enum.all?(model["capabilities"], &(&1["status"] == "pass"))
     refute inspect(Qualification.report(result)) =~ "sk-"
   end

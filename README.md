@@ -93,6 +93,12 @@ chmod 600 .env
 OPENAI_API_KEY=replace-me
 ```
 
+Jido resolves allowlisted models through the packaged LLMDB snapshot. LLMDB
+supplies model limits, prices, lifecycle data, and execution metadata. Jido
+Console configuration supplies the smaller support allowlist, support tiers,
+contract evidence, and known integration gaps. An LLMDB catalog entry alone is
+not a Jido Console support claim.
+
 Start with a simple chat session that has no project tools:
 
 ```sh
