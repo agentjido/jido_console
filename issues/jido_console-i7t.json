@@ -2,13 +2,14 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-15T21:39:45Z",
   "created": "2026-08-15T21:17:25Z",
   "description": "Replace the duplicated hard-coded Console model metadata with an LLMDB-backed catalog and a small Console-owned support policy. Keep support tiers, Jido contract evidence, and known gaps in Console. Connect model resolution to one authoritative path and preserve deterministic tests.",
   "id": "jido_console-i7t",
   "labels": [],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Use LLMDB as the model metadata source",
   "type": "task",
-  "updated_at": "2026-08-15T21:17:52Z"
+  "updated_at": "2026-08-15T21:39:45Z"
 }
