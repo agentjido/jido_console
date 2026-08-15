@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m2e14"
   ],
@@ -17,8 +17,8 @@
     "v0.2"
   ],
   "priority": 2,
-  "status": "open",
+  "status": "in_progress",
   "title": "M2-E19: Add Exact Worker Drain",
   "type": "epic",
-  "updated_at": "2026-08-14T20:08:45Z"
+  "updated_at": "2026-08-15T23:38:24Z"
 }
