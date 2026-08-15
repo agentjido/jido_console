@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [
     "jido_console-m2e04",
@@ -15,9 +15,9 @@
     "one-pr",
     "v0.2"
   ],
-  "priority": 2,
+  "priority": 1,
   "status": "open",
   "title": "M2-E03: Define the Canonical Session Protocol",
   "type": "epic",
-  "updated_at": "2026-08-15T22:05:10Z"
+  "updated_at": "2026-08-15T22:05:29Z"
 }
