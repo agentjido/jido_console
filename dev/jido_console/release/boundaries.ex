@@ -236,8 +236,7 @@ defmodule Jido.Console.Release.Boundaries do
             workspace: workspace,
             executables: %{
               "git" => executable,
-              "sandbox-exec" =>
-                System.find_executable("sandbox-exec") || raise("runtime-boundary checks require sandbox-exec")
+              "sandbox-exec" => System.find_executable("sandbox-exec") || "sandbox-exec"
             }
           ],
           adapter_opts

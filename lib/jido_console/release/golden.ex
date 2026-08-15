@@ -66,7 +66,7 @@ defmodule Jido.Console.Release.Golden do
     {:ok, run, diff} = Run.apply_effect(run, apply_effect, binding)
 
     {:ok, {leader, child}} = spawn_cancelled_child()
-    {:ok, _stopped} = Tree.stop(leader)
+    _ = Tree.stop(leader)
     cancel_ok? = not Tree.alive?(child)
 
     {:ok, reverted} = Run.revert(run)

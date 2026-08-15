@@ -138,14 +138,41 @@ defmodule Jido.Console.Providers.Harness do
     if cancelled?.() do
       {:error, :cancelled}
     else
-      task = Task.async(fn -> runner.(entry, capability, opts) end)
+      parent = self()
+      {pid, ref} = spawn_monitor(fn -> send(parent, {:live, self(), runner.(entry, capability, opts)}) end)
+      await_live(pid, ref, timeout)
+    end
+  end
 
-      case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-        {:ok, {:ok, status, reason}} -> {:ok, status, reason}
-        {:ok, {:error, reason}} -> {:error, reason}
-        nil -> {:error, :timeout}
-        {:exit, reason} -> {:error, reason}
-      end
+  defp await_live(pid, ref, timeout) do
+    receive do
+      {:live, ^pid, {:ok, status, reason}} ->
+        Process.demonitor(ref, [:flush])
+        {:ok, status, reason}
+
+      {:live, ^pid, {:error, reason}} ->
+        Process.demonitor(ref, [:flush])
+        {:error, reason}
+
+      {:DOWN, ^ref, :process, ^pid, reason} ->
+        {:error, reason}
+    after
+      timeout ->
+        Process.exit(pid, :kill)
+
+        receive do
+          {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+        after
+          100 -> :ok
+        end
+
+        receive do
+          {:live, ^pid, _result} -> :ok
+        after
+          0 -> :ok
+        end
+
+        {:error, :timeout}
     end
   end
 

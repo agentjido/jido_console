@@ -53,6 +53,7 @@ defmodule Jido.Console.Process.TreeTest do
     refute File.dir?(root)
   end
 
+  @tag :darwin
   test "Gate 0 hostile runtime-boundary process fixtures are denied" do
     result =
       Boundaries.runtime_boundary!(

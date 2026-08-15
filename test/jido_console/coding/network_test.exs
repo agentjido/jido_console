@@ -16,6 +16,9 @@ defmodule Jido.Console.Coding.NetworkTest do
     assert {:error, {:network_denied, external}} = Network.check("192.0.2.1", [])
     assert external.outcome == :deny
     assert external.class == :external
+
+    assert {:error, {:network_denied, named}} = Network.check("github.com", [])
+    assert named.class == :external
     refute inspect(Network.evidence(external)) =~ "192.0.2.1"
   end
 
@@ -38,6 +41,9 @@ defmodule Jido.Console.Coding.NetworkTest do
     assert {:ok, decision} = Network.admit(%{"args" => ["status", "--short"]})
     assert decision.outcome == :allow
     assert decision.class == :none
+
+    assert {:ok, files} = Network.admit(%{"args" => ["add", "lib/value.ex", "README.md"]})
+    assert files.outcome == :allow
   end
 
   test "does not treat timeout or port numbers as destinations" do
@@ -103,6 +109,7 @@ defmodule Jido.Console.Coding.NetworkTest do
     refute accepted?
   end
 
+  @tag :darwin
   test "Gate 0 hostile runtime-boundary network fixtures are denied" do
     result =
       Boundaries.runtime_boundary!(

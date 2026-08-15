@@ -174,8 +174,11 @@ defmodule Jido.Console.Tui.View do
 
   defp title(state) do
     {width, _height} = state.size
-    Frame.fit(" Jido · #{Selection.label(state.selection)} " <> String.duplicate("─", width), width)
+    Frame.fit(title_prefix(state.selection) <> String.duplicate("─", width), width)
   end
+
+  defp title_prefix(nil), do: " Jido "
+  defp title_prefix(selection), do: " Jido · #{Selection.label(selection)} "
 
   defp review_rows([], _width, _limit), do: []
   defp review_rows(_reviews, _width, 0), do: []

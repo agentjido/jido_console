@@ -24,6 +24,7 @@ defmodule Jido.Console.Coding.RunTest do
     assert {:ok, run} = Run.reject(run, effect)
     assert File.read!(Path.join(root, "edit.txt")) == "before"
     assert run.rejected != []
+    assert hd(run.rejected).path == "edit.txt"
   end
 
   test "applies an approved effect and reverts only the current run", %{root: root} do

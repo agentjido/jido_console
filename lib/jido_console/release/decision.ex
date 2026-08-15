@@ -6,6 +6,7 @@ defmodule Jido.Console.Release.Decision do
   """
 
   alias Jido.Console.Providers.Redaction
+  alias Jido.Console.Release.Identity
 
   @epics Enum.map(1..28, fn index -> "jido_console-m1e" <> String.pad_leading(Integer.to_string(index), 2, "0") end)
 
@@ -41,9 +42,9 @@ defmodule Jido.Console.Release.Decision do
        %{
          "schema" => "jido.release-decision",
          "schema_version" => 1,
-         "version" => "0.1.0",
+         "version" => Keyword.get(opts, :version, Identity.version()),
          "decision" => Keyword.get(opts, :decision, "pass"),
-         "decided_on" => Keyword.get(opts, :decided_on, "2026-08-15"),
+         "decided_on" => Keyword.get(opts, :decided_on, Date.to_iso8601(Date.utc_today())),
          "evidence_revision" => Keyword.get(opts, :evidence_revision, "milestone-1"),
          "reviewer" => Keyword.get(opts, :reviewer, "jido_console-m1e29"),
          "critical_defects" => Keyword.get(opts, :critical_defects, []),

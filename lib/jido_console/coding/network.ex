@@ -9,6 +9,7 @@ defmodule Jido.Console.Coding.Network do
 
   @policy_id "jido.network.v1"
   @policy_version "1"
+  @file_suffixes ~w(ex exs erl hrl md txt json yaml yml lock html htm css js ts tsx rs go py rb sh bash zsh toml xml csv log pid so dylib beam hex)
 
   @type class :: :none | :loopback | :external
   @type outcome :: :allow | :deny
@@ -162,8 +163,23 @@ defmodule Jido.Console.Coding.Network do
   defp hostname?(token) do
     normalized = String.downcase(token)
 
-    String.contains?(normalized, ".") or
-      normalized in ["localhost", "localhost.localdomain"]
+    normalized in ["localhost", "localhost.localdomain"] or dns_name?(normalized)
+  end
+
+  defp dns_name?(token) do
+    labels = String.split(token, ".")
+
+    match?([_head, _tail | _rest], labels) and
+      Enum.all?(labels, &dns_label?/1) and
+      tld?(List.last(labels))
+  end
+
+  defp dns_label?(label) do
+    label != "" and String.match?(label, ~r/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/)
+  end
+
+  defp tld?(label) do
+    String.match?(label, ~r/\A[a-z]{2,24}\z/) and label not in @file_suffixes
   end
 
   defp classify_host(host) do

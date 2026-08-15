@@ -53,10 +53,10 @@ defmodule Jido.Console.Process.Tree do
   @doc "Stops every remaining member of the process group."
   @spec stop(pos_integer()) :: {:ok, stop_result()} | {:error, term()}
   def stop(os_pid) when is_integer(os_pid) and os_pid > 1 do
-    signal(os_pid, "-TERM")
-    wait_empty(os_pid, 200)
-    signal(os_pid, "-KILL")
-    wait_empty(os_pid, 200)
+    signal_all(snapshot(os_pid), "TERM")
+    wait_empty(os_pid, 300)
+    signal_all(snapshot(os_pid), "KILL")
+    wait_empty(os_pid, 300)
     report(os_pid)
   end
 
@@ -65,20 +65,21 @@ defmodule Jido.Console.Process.Tree do
   @doc "Lists living members of a process group without exposing them as evidence."
   @spec members(pos_integer()) :: [pos_integer()]
   def members(os_pid) when is_integer(os_pid) and os_pid > 1 do
-    pgrep = System.find_executable("pgrep") || "/usr/bin/pgrep"
-
-    case System.cmd(pgrep, ["-g", Integer.to_string(os_pid)], stderr_to_stdout: true) do
-      {output, 0} -> parse_pids(output)
-      {_output, _status} -> []
-    end
+    (pgrep(["-g", Integer.to_string(os_pid)]) ++ descendants(os_pid))
+    |> Enum.uniq()
+    |> Enum.filter(&alive?/1)
   end
 
   @doc "Returns true when the OS process is still alive."
   @spec alive?(pos_integer()) :: boolean()
   def alive?(pid) when is_integer(pid) and pid > 1 do
     case System.cmd(@ps, ["-o", "stat=", "-p", Integer.to_string(pid)], stderr_to_stdout: true) do
-      {status, 0} -> not String.starts_with?(String.trim(status), "Z")
-      {_output, _status} -> false
+      {status, 0} ->
+        trimmed = String.trim(status)
+        trimmed != "" and not String.starts_with?(trimmed, "Z")
+
+      {_output, _status} ->
+        false
     end
   end
 
@@ -100,6 +101,32 @@ defmodule Jido.Console.Process.Tree do
     }
   end
 
+  defp snapshot(os_pid) do
+    [os_pid | members(os_pid)]
+    |> Enum.uniq()
+    |> Enum.filter(&alive?/1)
+  end
+
+  defp descendants(os_pid) do
+    children = pgrep(["-P", Integer.to_string(os_pid)])
+    children ++ Enum.flat_map(children, &descendants/1)
+  end
+
+  defp signal_all(pids, signal) do
+    Enum.each(pids, fn pid ->
+      _result = System.cmd(@kill, ["-s", signal, "--", Integer.to_string(pid)], stderr_to_stdout: true)
+    end)
+
+    case pids do
+      [leader | _rest] ->
+        _result = System.cmd(@kill, ["-s", signal, "--", "-" <> Integer.to_string(leader)], stderr_to_stdout: true)
+        :ok
+
+      [] ->
+        :ok
+    end
+  end
+
   defp report(os_pid) do
     leftover = length(members(os_pid))
 
@@ -108,11 +135,6 @@ defmodule Jido.Console.Process.Tree do
     else
       {:error, {:cleanup_failed, leftover}}
     end
-  end
-
-  defp signal(os_pid, name) do
-    _result = System.cmd(@kill, [name, "-" <> Integer.to_string(os_pid)], stderr_to_stdout: true)
-    :ok
   end
 
   defp wait_empty(os_pid, timeout_ms) do
@@ -131,6 +153,15 @@ defmodule Jido.Console.Process.Tree do
       true ->
         Process.sleep(10)
         do_wait_empty(os_pid, deadline)
+    end
+  end
+
+  defp pgrep(args) do
+    executable = System.find_executable("pgrep") || "/usr/bin/pgrep"
+
+    case System.cmd(executable, args, stderr_to_stdout: true) do
+      {output, 0} -> parse_pids(output)
+      {_output, _status} -> []
     end
   end
 

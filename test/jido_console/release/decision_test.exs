@@ -5,6 +5,7 @@ defmodule Jido.Console.Release.DecisionTest do
 
   test "records a complete v0.1 decision without publishing" do
     assert {:ok, decision} = Decision.record()
+    assert decision["version"] == Jido.Console.Release.Identity.version()
     assert decision["decision"] == "pass"
     assert decision["durable_session_recovery"] == false
     assert length(decision["epics"]) == 28

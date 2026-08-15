@@ -127,7 +127,9 @@ defmodule Jido.Console.CodingTuiPtyTest do
 
     send_event(owner, ref, {:resize, 60, 18})
     resize_frame = assert_frame(["idle · Enter sends", "\e[18;3H"])
-    assert resize_frame =~ " Jido " <> String.duplicate("─", 54) <> "\e[K"
+    assert resize_frame =~ " Jido · "
+    assert resize_frame =~ "coding.restricted"
+    assert resize_frame =~ "\e[K"
     assert resize_frame =~ "\e[18;3H"
 
     send_event(owner, ref, {:paste, "Implement the fixed-window rate limiter."})
