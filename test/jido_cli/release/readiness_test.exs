@@ -59,6 +59,21 @@ defmodule Jido.Cli.Release.ReadinessTest do
     assert opts[:cd] == File.cwd!()
   end
 
+  test "runs the versioned coding scenario oracle" do
+    parent = self()
+
+    runner = fn "mix", args, _opts ->
+      send(parent, {:golden_command, args})
+      {"", 0}
+    end
+
+    assert %{"check" => "golden-task", "status" => "passed"} =
+             Readiness.run!("golden-task", command_runner: runner)
+
+    assert_receive {:golden_command, args}
+    assert "test/integration/coding_scenario_oracle_test.exs" in args
+  end
+
   defp source do
     %{
       "commit" => String.duplicate("a", 40),

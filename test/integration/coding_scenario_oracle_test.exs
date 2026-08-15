@@ -24,6 +24,19 @@ defmodule CodingScenario.OracleTest do
     assert first.revision == second.revision
     assert Oracle.observe!(first) == Oracle.observe!(second)
     assert Oracle.observe!(first)["changed_paths"] == []
+
+    assert first.scenario["decision_paths"] == %{
+             "approval" => "after",
+             "cancellation" => "before",
+             "current_run_revert" => "before",
+             "rejection" => "before"
+           }
+
+    assert first.scenario["production_artifact"] == %{
+             "program" => "bin/jido",
+             "provider_mode" => "recorded",
+             "working_directory" => "golden-workspace"
+           }
   end
 
   test "accepts the exact implementation, operation order, claims, and verification", %{tmp_dir: tmp_dir} do
