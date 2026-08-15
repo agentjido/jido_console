@@ -20,7 +20,7 @@ defmodule Jido.Console.Models.CatalogTest do
       assert is_map(entry.prompt_cache)
       assert is_list(entry.known_gaps)
 
-      if entry.provider == "openai" do
+      if entry.provider in ["openai", "anthropic"] do
         assert entry.tier == :supported
         assert String.starts_with?(entry.evidence_id, "harness:")
       else

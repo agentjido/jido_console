@@ -279,14 +279,7 @@ defmodule Jido.Console.Models.Catalog do
 
     [
       openai_gpt_4_1_mini(),
-      builtin(
-        "anthropic",
-        "claude-sonnet-4-20250514",
-        :available,
-        "pending:m1e11",
-        pending.("Awaiting Anthropic qualification"),
-        ["No v0.1 support claim until M1-E11 contract evidence passes"]
-      ),
+      anthropic_claude_sonnet_4(),
       builtin(
         "google",
         "gemini-2.5-flash",
@@ -304,6 +297,32 @@ defmodule Jido.Console.Models.Catalog do
         ["Local-only beta. Not a v0.1 supported-tier claim."]
       )
     ]
+  end
+
+  defp anthropic_claude_sonnet_4 do
+    evidence = "harness:anthropic:claude-sonnet-4-20250514"
+    supported = %{state: :supported, evidence: evidence, note: "Recorded Anthropic v0.1 contract"}
+
+    %{
+      provider: "anthropic",
+      model: "claude-sonnet-4-20250514",
+      tier: :supported,
+      evidence_id: evidence,
+      capabilities: Map.new(@capability_keys, &{&1, supported}),
+      limits: %{context_tokens: 200_000, output_tokens: 64_000},
+      cost: %{class: :standard, currency: "USD"},
+      cancellation: supported,
+      prompt_cache: %{
+        state: :supported,
+        evidence: evidence,
+        note: "Explicit prompt cache breakpoints are supported in the recorded contract"
+      },
+      known_gaps: [
+        "Recorded qualification does not call a live Anthropic endpoint",
+        "Prompt-cache TTL follows the provider default",
+        "Cost class is catalog metadata, not a live invoice"
+      ]
+    }
   end
 
   defp openai_gpt_4_1_mini do
