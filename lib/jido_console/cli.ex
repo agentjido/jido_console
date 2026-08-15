@@ -4,6 +4,8 @@ defmodule Jido.Console do
   @usage """
   Usage:
     jido
+    jido status
+    jido stop [--name NAME]
     jido run --agent FILE (--input FILE|- | --scenario FILE) [options]
     jido eval SUITE [options]
 
@@ -50,7 +52,7 @@ defmodule Jido.Console do
   defp dispatch_fast([flag]) when flag in ["--version", "-v"], do: print_version()
 
   defp dispatch_fast([command, flag])
-       when command in ["run", "eval"] and flag in ["--help", "-h"],
+       when command in ["run", "eval", "status", "stop"] and flag in ["--help", "-h"],
        do: print_help()
 
   defp dispatch_fast(_args), do: :continue
@@ -104,6 +106,12 @@ defmodule Jido.Console do
       [command | _rest] when command in ["run", "eval"] ->
         run_automation(args, opts)
 
+      ["status" | rest] ->
+        run_process_status(rest, opts)
+
+      ["stop" | rest] ->
+        run_process_stop(rest, opts)
+
       _args ->
         run_interactive(args, opts)
     end
@@ -137,6 +145,64 @@ defmodule Jido.Console do
       _other ->
         usage_error()
     end
+  end
+
+  defp run_process_status(args, opts) do
+    case OptionParser.parse(args, strict: [help: :boolean], aliases: [h: :help]) do
+      {options, [], []} ->
+        if Keyword.get(options, :help) do
+          print_help()
+        else
+          with {:ok, records} <- Jido.Console.Process.list(opts) do
+            IO.write(Jido.Console.Process.format_status(records))
+          end
+          |> normalize_process_result()
+        end
+
+      _other ->
+        usage_error()
+    end
+  end
+
+  defp run_process_stop(args, opts) do
+    case OptionParser.parse(args, strict: [help: :boolean, name: :string], aliases: [h: :help]) do
+      {options, [], []} ->
+        if Keyword.get(options, :help) do
+          print_help()
+        else
+          stop_processes(Keyword.get(options, :name), opts)
+        end
+
+      _other ->
+        usage_error()
+    end
+  end
+
+  defp stop_processes(nil, opts) do
+    with {:ok, records} <- Jido.Console.Process.stop_all(opts) do
+      if records == [] do
+        IO.write("jido: no owned background processes\n")
+      else
+        Enum.each(records, fn record -> IO.write(Jido.Console.Process.format_stop(record)) end)
+      end
+
+      :ok
+    end
+    |> normalize_process_result()
+  end
+
+  defp stop_processes(name, opts) do
+    with {:ok, record} <- Jido.Console.Process.stop(name, opts) do
+      IO.write(Jido.Console.Process.format_stop(record))
+    end
+    |> normalize_process_result()
+  end
+
+  defp normalize_process_result(:ok), do: :ok
+
+  defp normalize_process_result({:error, reason}) do
+    IO.puts(:stderr, "jido: #{format_error(reason)}")
+    {:error, 1}
   end
 
   defp run_automation(args, opts) do

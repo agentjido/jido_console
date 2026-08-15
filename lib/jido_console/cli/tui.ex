@@ -48,12 +48,15 @@ defmodule Jido.Console.Tui do
         spawn_monitor(fn -> runtime_owner(owner, runtime, agent, opts) end)
 
       try do
+        _ = Jido.Console.Process.register(:interactive, self(), opts)
+
         {result, state, workers} =
           loop(state, terminal, runtime, opts, %{pid: startup_pid, ref: startup_ref}, %{})
 
         Shutdown.run(state, workers, runtime, opts)
         result
       after
+        _ = Jido.Console.Process.stop("interactive", opts)
         stop_runtime_owner(startup_pid, startup_ref, shutdown_timeout(opts))
       end
     end

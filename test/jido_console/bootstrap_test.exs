@@ -105,9 +105,14 @@ defmodule Jido.Console.BootstrapTest do
     File.mkdir_p!(priv)
     on_exit(fn -> File.rm_rf!(priv) end)
 
+    home = Path.join(System.tmp_dir!(), "jido-bootstrap-home-#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf!(home) end)
+
     assert :ok =
              Bootstrap.start_applications(
                priv_dir: fn :time_zone_info -> String.to_charlist(priv) end,
+               jido_home: home,
+               name: :"jido-bootstrap-proc-#{System.unique_integer([:positive])}",
                ensure_all_started: fn :jido_console ->
                  send(test_pid, :started)
                  {:ok, [:jido_console]}

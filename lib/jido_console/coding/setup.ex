@@ -48,7 +48,13 @@ defmodule Jido.Console.Coding.Setup do
 
   @doc "Closes trusted local resources held by one resolved setup."
   @spec close(t()) :: :ok
-  def close(%__MODULE__{local_resources: resources}), do: Local.close(resources)
+  def close(%__MODULE__{local_resources: resources} = setup) do
+    if setup.local_resources do
+      _ = Jido.Console.Process.stop(Jido.Console.Process.spec(:coding_runtime).name)
+    end
+
+    Local.close(resources)
+  end
 
   @doc "Resolves file mentions and returns portable Jidoka context data."
   @spec prepare_prompt(t(), String.t()) :: {:ok, String.t(), map()} | {:error, term()}
@@ -117,19 +123,21 @@ defmodule Jido.Console.Coding.Setup do
             }
           }
 
-          {:ok,
-           %__MODULE__{
-             spec: spec,
-             extension_setup: extension_setup,
-             workspace: workspace,
-             instructions: instructions,
-             context: context,
-             pack_id: selection.pack_id,
-             profile_id: selection.profile_id,
-             local_resources: Map.get(local, :resources),
-             await_timeout_ms: if(selection.profile_id == Local.profile_id(), do: 180_000, else: 30_000),
-             turn_opts: ProviderOptions.turn_opts(selection.profile_id, Jidoka.Config.model_ref(spec.model))
-           }}
+          setup = %__MODULE__{
+            spec: spec,
+            extension_setup: extension_setup,
+            workspace: workspace,
+            instructions: instructions,
+            context: context,
+            pack_id: selection.pack_id,
+            profile_id: selection.profile_id,
+            local_resources: Map.get(local, :resources),
+            await_timeout_ms: if(selection.profile_id == Local.profile_id(), do: 180_000, else: 30_000),
+            turn_opts: ProviderOptions.turn_opts(selection.profile_id, Jidoka.Config.model_ref(spec.model))
+          }
+
+          register_coding_runtime(setup, opts)
+          {:ok, setup}
         end
 
       close_on_error(result, local)
@@ -143,6 +151,14 @@ defmodule Jido.Console.Coding.Setup do
         :erlang.raise(kind, reason, __STACKTRACE__)
     end
   end
+
+  defp register_coding_runtime(%__MODULE__{local_resources: %{manager: manager}}, opts)
+       when is_pid(manager) do
+    _ = Jido.Console.Process.register(:coding_runtime, manager, opts)
+    :ok
+  end
+
+  defp register_coding_runtime(_setup, _opts), do: :ok
 
   defp close_on_error({:ok, _setup} = success, _local), do: success
 
