@@ -25,14 +25,20 @@ defmodule Jido.Console.Providers.HarnessTest do
     end)
 
     Enum.each(results, fn result ->
+      entry = Enum.find(entries, &(&1.identity == result.identity))
       assert result.provider in Enum.map(entries, & &1.provider)
       assert result.identity in identities
       assert result.contract_version == Harness.contract_version()
       assert result.source_mode == :recorded
       assert result.status in Harness.statuses()
-      assert result.status != :pass
       assert is_binary(result.reason)
       assert is_binary(result.test_id)
+
+      if claimed_supported?(entry, result.capability) do
+        assert result.status == :pass
+      else
+        assert result.status != :pass
+      end
     end)
   end
 
@@ -105,5 +111,15 @@ defmodule Jido.Console.Providers.HarnessTest do
     refute streaming.reason =~ "abc123"
     refute streaming.reason =~ "/Users/mhostetler"
     assert Harness.report(results)["results"] != []
+  end
+
+  defp claimed_supported?(entry, :cancellation), do: entry.cancellation.state == :supported
+  defp claimed_supported?(entry, :prompt_cache), do: entry.prompt_cache.state == :supported
+
+  defp claimed_supported?(entry, capability) do
+    case Map.fetch(entry.capabilities, capability) do
+      {:ok, %{state: :supported}} -> true
+      _other -> false
+    end
   end
 end

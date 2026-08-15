@@ -19,7 +19,13 @@ defmodule Jido.Console.Models.CatalogTest do
       assert is_map(entry.cancellation)
       assert is_map(entry.prompt_cache)
       assert is_list(entry.known_gaps)
-      refute entry.tier == :supported
+
+      if entry.provider == "openai" do
+        assert entry.tier == :supported
+        assert String.starts_with?(entry.evidence_id, "harness:")
+      else
+        refute entry.tier == :supported
+      end
     end)
   end
 

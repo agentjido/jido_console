@@ -278,14 +278,7 @@ defmodule Jido.Console.Models.Catalog do
     pending = fn note -> %{state: :unknown, evidence: nil, note: note} end
 
     [
-      builtin(
-        "openai",
-        "gpt-4.1-mini",
-        :available,
-        "pending:m1e10",
-        pending.("Awaiting OpenAI qualification"),
-        ["No v0.1 support claim until M1-E10 contract evidence passes"]
-      ),
+      openai_gpt_4_1_mini(),
       builtin(
         "anthropic",
         "claude-sonnet-4-20250514",
@@ -311,6 +304,32 @@ defmodule Jido.Console.Models.Catalog do
         ["Local-only beta. Not a v0.1 supported-tier claim."]
       )
     ]
+  end
+
+  defp openai_gpt_4_1_mini do
+    evidence = "harness:openai:gpt-4.1-mini"
+    supported = %{state: :supported, evidence: evidence, note: "Recorded OpenAI v0.1 contract"}
+
+    %{
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      tier: :supported,
+      evidence_id: evidence,
+      capabilities: Map.new(@capability_keys, &{&1, supported}),
+      limits: %{context_tokens: 1_047_576, output_tokens: 32_768},
+      cost: %{class: :standard, currency: "USD"},
+      cancellation: supported,
+      prompt_cache: %{
+        state: :supported,
+        evidence: evidence,
+        note: "Automatic prompt cache; no explicit cache-control API"
+      },
+      known_gaps: [
+        "Recorded qualification does not call a live OpenAI endpoint",
+        "Prompt cache is automatic and not separately configurable",
+        "Cost class is catalog metadata, not a live invoice"
+      ]
+    }
   end
 
   defp builtin(provider, model, tier, evidence_id, feature, known_gaps) do

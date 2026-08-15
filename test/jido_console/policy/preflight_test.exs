@@ -47,15 +47,24 @@ defmodule Jido.Console.Policy.PreflightTest do
   end
 
   test "uses the built-in catalog for missing and unknown models" do
-    assert {:error, missing} =
+    assert {:ok, allowed} =
              Preflight.check(
                provider: "openai",
                model: "gpt-4.1-mini",
                required_features: [:streaming]
              )
 
+    assert allowed.outcome == :allow
+
+    assert {:error, missing} =
+             Preflight.check(
+               provider: "anthropic",
+               model: "claude-sonnet-4-20250514",
+               required_features: [:streaming]
+             )
+
     assert missing.outcome == :deny
-    assert missing.reason =~ "openai:gpt-4.1-mini"
+    assert missing.reason =~ "anthropic:claude-sonnet-4-20250514"
     assert missing.reason =~ "streaming"
 
     assert {:error, unknown} =
