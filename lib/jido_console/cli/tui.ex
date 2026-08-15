@@ -37,7 +37,9 @@ defmodule Jido.Console.Tui do
     state =
       State.new(nil, terminal.size,
         prepare_prompt: true,
-        runtime_status: :starting
+        runtime_status: :starting,
+        model: Keyword.get(opts, :model),
+        coding_profile: Keyword.get(opts, :coding_profile)
       )
 
     with :ok <- Terminal.draw(terminal, View.render(state)) do

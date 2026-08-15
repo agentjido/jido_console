@@ -1,7 +1,7 @@
 defmodule Jido.Console.Tui.View do
   @moduledoc "Pure frame renderer for the Jido TUI."
 
-  alias Jido.Console.Tui.{Editor, SafeText, State}
+  alias Jido.Console.Tui.{Editor, SafeText, Selection, State}
   alias Jido.Console.Tui.Turn.Tool
   alias Jido.Console.Terminal.Frame
 
@@ -25,7 +25,7 @@ defmodule Jido.Console.Tui.View do
     divider = String.duplicate("─", width)
     status = status_row(state)
 
-    rows = [title(width)] ++ transcript ++ review ++ [divider, status] ++ prompt
+    rows = [title(state)] ++ transcript ++ review ++ [divider, status] ++ prompt
     prompt_start = height - length(prompt) + 1
     cursor = {min(cursor_column + 3, width), prompt_start + cursor_row}
     Frame.new(width, height, rows, cursor: cursor)
@@ -169,9 +169,13 @@ defmodule Jido.Console.Tui.View do
 
   defp role(:user), do: "User"
   defp role(:project), do: "Project"
+  defp role(:system), do: "System"
   defp role(_role), do: "Assistant"
 
-  defp title(width), do: Frame.fit(" Jido " <> String.duplicate("─", width), width)
+  defp title(state) do
+    {width, _height} = state.size
+    Frame.fit(" Jido · #{Selection.label(state.selection)} " <> String.duplicate("─", width), width)
+  end
 
   defp review_rows([], _width, _limit), do: []
   defp review_rows(_reviews, _width, 0), do: []

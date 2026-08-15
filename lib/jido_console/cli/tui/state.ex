@@ -1,7 +1,7 @@
 defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
-  alias Jido.Console.Tui.{Editor, EventProjection, Turn}
+  alias Jido.Console.Tui.{Editor, EventProjection, Selection, Turn}
   alias Jido.Console.Runtime.Jidoka.Result, as: RuntimeResult
 
   @default_history_limit 100
@@ -36,6 +36,7 @@ defmodule Jido.Console.Tui.State do
             active_turn: nil,
             next_turn_id: 0,
             pending_review: nil,
+            selection: nil,
             dirty?: true,
             render_scheduled?: false
 
@@ -52,6 +53,8 @@ defmodule Jido.Console.Tui.State do
 
   @spec new(term(), {pos_integer(), pos_integer()}, keyword()) :: t()
   def new(session, size, opts \\ []) do
+    selection = Selection.init(opts)
+
     %__MODULE__{
       session: session,
       size: size,
@@ -59,7 +62,8 @@ defmodule Jido.Console.Tui.State do
       prepare_prompt?: Keyword.get(opts, :prepare_prompt, false),
       project_instructions: Keyword.get(opts, :project_instructions, []),
       history_limit: positive_limit(opts, :history_limit, @default_history_limit),
-      turn_limit: positive_limit(opts, :turn_limit, @default_turn_limit)
+      turn_limit: positive_limit(opts, :turn_limit, @default_turn_limit),
+      selection: selection
     }
   end
 
@@ -346,11 +350,31 @@ defmodule Jido.Console.Tui.State do
 
   def update(%__MODULE__{} = state, _event), do: {state, []}
 
-  defp submit_prompt(%__MODULE__{prepare_prompt?: true} = state, prompt) do
+  defp submit_prompt(state, prompt) do
+    case Selection.handle(prompt, state.selection) do
+      {:command, next, notice} ->
+        apply_command(state, next, notice)
+
+      :not_command ->
+        start_selected_turn(state, prompt)
+    end
+  end
+
+  defp start_selected_turn(state, prompt) do
+    case Selection.admit(state.selection) do
+      :ok ->
+        enqueue_turn(state, prompt)
+
+      {:error, reason} ->
+        {%{state | status: :error, error: reason, dirty?: true}, []}
+    end
+  end
+
+  defp enqueue_turn(%__MODULE__{prepare_prompt?: true} = state, prompt) do
     {%{state | pending_prompt: prompt, status: :resolving, error: nil, dirty?: true}, [{:prepare_prompt, prompt}]}
   end
 
-  defp submit_prompt(state, prompt) do
+  defp enqueue_turn(state, prompt) do
     turn = Turn.new(state.next_turn_id, prompt)
 
     state = remember_prompt(state, prompt)
@@ -549,5 +573,19 @@ defmodule Jido.Console.Tui.State do
       value when is_integer(value) and value > 0 -> value
       _other -> default
     end
+  end
+
+  defp apply_command(state, selection, notice) do
+    state = %{
+      state
+      | selection: selection,
+        editor: Editor.clear(state.editor),
+        messages: state.messages ++ [%{role: :system, content: notice}],
+        status: :idle,
+        error: nil,
+        dirty?: true
+    }
+
+    {state, []}
   end
 end
