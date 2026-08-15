@@ -12,9 +12,8 @@ Jido Console is a BEAM-native local coding harness built on
 [Jidoka](https://github.com/agentjido/jidoka). It provides an interactive
 terminal and deterministic automation for agent runs and evaluations.
 
-The product target is Jido Console. The current implementation still uses the
-legacy `jido_cli` package, `:jido_cli` application, and `Jido.Cli` namespace.
-The first release milestone owns that rename. The user command remains `jido`.
+The package, OTP application, and namespace are `jido_console`,
+`:jido_console`, and `Jido.Console`. The user command remains `jido`.
 
 ## Join the Pre-Launch Review
 

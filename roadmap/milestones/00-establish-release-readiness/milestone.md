@@ -17,7 +17,7 @@ Create a repeatable local release audit and an owned delivery graph before relea
 
 ## Outcome
 
-The team can audit a selected clean Jido CLI source without adding cost to normal development. It also knows the critical path, package boundaries, owners, and proof artifacts for Milestone 1.
+The team can audit a selected clean Jido Console source without adding cost to normal development. It also knows the critical path, package boundaries, owners, and proof artifacts for Milestone 1.
 
 Gate 0 does not make a product release. Every numbered milestone after this gate is a release milestone.
 

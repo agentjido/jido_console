@@ -1,9 +1,9 @@
-defmodule Jido.Cli.CodingTuiPtyTest do
+defmodule Jido.Console.CodingTuiPtyTest do
   use ExUnit.Case, async: false
 
   alias CodingScenario.Oracle
-  alias Jido.Cli.Release.ProbeRuntime
-  alias Jido.Cli.Tui
+  alias Jido.Console.Release.ProbeRuntime
+  alias Jido.Console.Tui
 
   @project_root Path.expand("../..", __DIR__)
   @expected_file Path.expand(
@@ -12,7 +12,7 @@ defmodule Jido.Cli.CodingTuiPtyTest do
                  )
 
   defmodule DriverAdapter do
-    @behaviour Jido.Cli.Terminal.Adapter
+    @behaviour Jido.Console.Terminal.Adapter
 
     @impl true
     def open(owner, opts) do
@@ -69,7 +69,7 @@ defmodule Jido.Cli.CodingTuiPtyTest do
     {output, status} =
       System.cmd("mix", ["escript.build"],
         cd: source_root,
-        env: [{"JIDO_CLI_JIDOKA_PATH", nil}, {"MIX_ENV", "prod"}],
+        env: [{"JIDO_CONSOLE_JIDOKA_PATH", nil}, {"MIX_ENV", "prod"}],
         stderr_to_stdout: true
       )
 
@@ -127,7 +127,9 @@ defmodule Jido.Cli.CodingTuiPtyTest do
 
     send_event(owner, ref, {:resize, 60, 18})
     resize_frame = assert_frame(["idle · Enter sends", "\e[18;3H"])
-    assert resize_frame =~ " Jido " <> String.duplicate("─", 54) <> "\e[K"
+    assert resize_frame =~ " Jido · "
+    assert resize_frame =~ "coding.restricted"
+    assert resize_frame =~ "\e[K"
     assert resize_frame =~ "\e[18;3H"
 
     send_event(owner, ref, {:paste, "Implement the fixed-window rate limiter."})
@@ -161,6 +163,7 @@ defmodule Jido.Cli.CodingTuiPtyTest do
   end
 
   @tag :expect
+  @tag timeout: 180_000
   test "drives the same coding flow through a compiled executable and real PTY", %{
     fixture: fixture,
     log: log

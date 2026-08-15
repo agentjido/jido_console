@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Jido.Release do
     if warm_runs < 1, do: Mix.raise("--warm-runs must be at least 1")
 
     result =
-      Jido.Cli.Release.Local.run!(
+      Jido.Console.Release.Local.run!(
         allow_dirty: Keyword.get(options, :allow_dirty, false),
         warm_runs: warm_runs
       )

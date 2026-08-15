@@ -1,20 +1,20 @@
 # Contributing to Jido Console
 
-The current `jido_cli` implementation follows the Jido ecosystem package
+The current `jido_console` implementation follows the Jido ecosystem package
 quality standards.
 
 - keep library code in `lib/`;
 - keep runnable agent and scenario examples in `examples/`;
 - keep controlled release fixtures in `release/fixtures/`;
-- validate command input through the `Jido.Cli.Automation.Command` Zoi schema;
-- normalize user-facing errors through `Jido.Cli.Error`;
+- validate command input through the `Jido.Console.Automation.Command` Zoi schema;
+- normalize user-facing errors through `Jido.Console.Error`;
 - keep automated output as the stable `jido.case-result` JSONL contract.
 
 ## Setup
 
 The default dependency is an exact Jidoka commit from GitHub. A clean checkout
 does not need a sibling Jidoka repository. Get dependencies from the
-`jido_cli` directory:
+`jido_console` directory:
 
 ```bash
 mix deps.get
@@ -24,8 +24,8 @@ To test an unpublished local Jidoka change, set an explicit path only in the
 development or test environment:
 
 ```bash
-JIDO_CLI_JIDOKA_PATH=../jidoka mix deps.get
-JIDO_CLI_JIDOKA_PATH=../jidoka mix test
+JIDO_CONSOLE_JIDOKA_PATH=../jidoka mix deps.get
+JIDO_CONSOLE_JIDOKA_PATH=../jidoka mix test
 ```
 
 Do not set this variable in production, CI, or a release build. The default
@@ -34,7 +34,7 @@ GitHub commit and `mix.lock` are the repeatable integration contract.
 The CLI also constrains ReqLLM to `~> 1.20.0`, the line tested by Jidoka. Update
 Jidoka and its adapter tests first. Then update the immutable Jidoka reference
 and ReqLLM lock here. Test both the default Git dependency and the local
-`JIDO_CLI_JIDOKA_PATH` workflow. A new ReqLLM minor line requires an explicit
+`JIDO_CONSOLE_JIDOKA_PATH` workflow. A new ReqLLM minor line requires an explicit
 constraint change in both repositories.
 
 CLI source must use the documented Jidoka facades and stable data contracts.

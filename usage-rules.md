@@ -1,6 +1,6 @@
-# Jido CLI Usage Rules
+# Jido Console Usage Rules
 
-Use these rules when generating code that invokes or depends on `jido_cli`.
+Use these rules when generating code that invokes or depends on `jido_console`.
 
 ## Commands
 

@@ -1,8 +1,17 @@
 # Jidoka release readiness
 
-Status: The blocker issues are closed. Dependency replacement is not ready.
+Status: Milestone 1 uses an immutable Git pin that includes the additive
+restricted v0.1 contracts.
 
-Jido Console is pinned to Jidoka commit `f19ce72e7591b3215e832e6e034e3752e84a3604`. This is an immutable source, but it is not the planned Jidoka v0.9.1 release.
+Jido Console is pinned to Jidoka commit
+`7a346949aeb5c829ee0fad7b6b38eb23839b1384`. That commit is `origin/main`
+after [Jidoka pull request 55](https://github.com/agentjido/jidoka/pull/55)
+landed the additive policy and restricted-execution contracts. It is
+not a Hex package and it is not the planned Jidoka v0.9.1 release.
+
+Known compatibility limits: Console uses only public Jidoka client, policy,
+and execution-environment facades. Restricted-path enforcement beyond those
+contracts remains Console work in later Milestone 1 epics.
 
 ## Blocker order
 
@@ -20,8 +29,8 @@ The issue state is planning data. It does not prove that a release contains the 
 
 Milestone 1 can replace the current pin only after Jidoka publishes an immutable version that contains the five changes. Jido Console must pin that exact version or commit and pass these existing checks:
 
-- `test/jido_cli/jidoka_dependency_test.exs`
-- `test/jido_cli/jidoka_public_api_boundary_test.exs`
-- `test/jido_cli/release/cross_repo_test.exs`
+- `test/jido_console/jidoka_dependency_test.exs`
+- `test/jido_console/jidoka_public_api_boundary_test.exs`
+- `test/jido_console/release/cross_repo_test.exs`
 
 A local path, a branch name, an unverified tag, or an issue state is not an approved production dependency. Beadwork item `jido_console-g0e10` owns changes to this decision.
