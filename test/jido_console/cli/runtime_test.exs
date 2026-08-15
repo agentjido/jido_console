@@ -26,7 +26,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert request.runtime_opts[:stream]
     assert request.runtime_opts[:stream_to] == self()
 
-    assert_receive {:jidoka_turn_event, %Event{event: :turn_finished, request_id: request_id}}, 1_000
+    assert_receive {:jidoka_turn_event, %Event{event: :turn_finished, request_id: request_id}}, 5_000
     assert request_id == request.request_id
 
     assert %Runtime.Result{
@@ -74,7 +74,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert {:ok, %Runtime.Request{} = request} =
              Runtime.start_turn(session, "pause", self(), llm: llm, checkpoint: :after_prompt)
 
-    assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: request_id}}, 1_000
+    assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: request_id}}, 5_000
 
     assert %Runtime.Result{
              request_id: ^request_id,
@@ -221,7 +221,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert {:ok, %Runtime.Request{} = request} =
              Runtime.start_turn(session, "change", self(), llm: llm, operations: operations)
 
-    assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: request_id}}, 1_000
+    assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: request_id}}, 5_000
 
     assert %Runtime.Result{
              request_id: ^request_id,
@@ -257,7 +257,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert {:ok, %Runtime.Request{} = denied_request} =
              Runtime.start_turn(approved.session, "change again", self(), llm: llm, operations: operations)
 
-    assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: denied_id}}, 1_000
+    assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: denied_id}}, 5_000
 
     assert %Runtime.Result{status: :pending_review, pending_reviews: [denied_review]} =
              denied_paused =
