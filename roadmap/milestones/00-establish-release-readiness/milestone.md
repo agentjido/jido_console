@@ -13,17 +13,17 @@ last_updated_in: 1.0.3
 
 ## Goal
 
-Create a repeatable evidence base and an owned delivery graph before release work starts.
+Create a repeatable local release audit and an owned delivery graph before release work starts.
 
 ## Outcome
 
-The team can compare each change with a known Jido CLI baseline. It also knows the critical path, package boundaries, owners, and proof artifacts for Milestone 1.
+The team can audit a selected clean Jido CLI source without adding cost to normal development. It also knows the critical path, package boundaries, owners, and proof artifacts for Milestone 1.
 
 Gate 0 does not make a product release. Every numbered milestone after this gate is a release milestone.
 
-## Generated Epics
+## Epics
 
-The [Gate 0 epic index](epics/README.md) splits this milestone into 15 epics. Each epic is the scope for exactly one pull request.
+The [epic index](epics/README.md) splits this milestone into 15 work items. The implementation branch keeps one commit for each work item.
 
 ## Work
 
@@ -64,4 +64,4 @@ The [Gate 0 epic index](epics/README.md) splits this milestone into 15 epics. Ea
 
 ## Release Effect
 
-Gate 0 does not make a release. It authorizes Milestone 1 work after the exit gate passes.
+Gate 0 does not make a release. `mix precommit` remains the normal development check. `mix jido.release.audit` is an explicit release-preparation task. Generated audit results stay local and are not source files. A future source-freeze review makes the release-readiness decision.

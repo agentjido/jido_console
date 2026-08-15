@@ -16,7 +16,7 @@ last_updated_in: 1.0.5
 
 ## Goal
 
-Record one final Gate 0 decision from the complete merged evidence set.
+Provide one explicit local audit of the complete readiness check set.
 
 ## Scope
 
@@ -28,12 +28,13 @@ Record one final Gate 0 decision from the complete merged evidence set.
 - Confirm the Jidoka plan, Tilde boundary, delivery graph, and traceability result.
 - Record the validated Beadwork export URI, revision, time, and digest.
 - Confirm release measurements, the first-user claim, and workflow controls exist.
-- Record pass, fail, blocked, and waived results without changing evidence.
+- Record pass and fail results without changing their source data.
+- Keep generated results local until a release source is frozen.
 
 ## Out of Scope
 
 - Product changes
-- A release or publish action
+- A release, upload, or publish action
 - Repair of a failed check
 - Milestone 1 implementation
 
@@ -43,27 +44,26 @@ This epic depends on G0-E01 through G0-E14 and merges last.
 
 ## Pull Request Boundary
 
-Deliver this epic in exactly one pull request. The pull request adds the final evidence manifest and decision record only. A failed check must return to its owning epic or a new approved corrective epic.
+The pull request adds the opt-in audit task. It does not add a generated result. Run the task again for the exact frozen source that a future release review selects.
 
 ## Acceptance Checks
 
-- Every Gate 0 work item has a linked result.
-- Every Gate 0 exit check has a current result from the declared source identity.
+- The audit can run all readiness checks or a named subset.
+- Each result identifies the exact clean source, lock file, and toolchain.
 - The two clean runs have the same semantic result.
 - No required result is missing, stale, or from an untracked source state.
 - The Beadwork export revision, digest, and freshness check match the traceability result.
-- A waiver names its authority, reason, limit, and end condition and cannot hide an exit-gate failure.
-- The final record gives one explicit decision: pass, fail, or blocked.
-- The audit does not publish a product release.
+- The default temporary result is removed after the run.
+- An explicit output path keeps one local result for review.
+- The audit does not upload or publish a product release.
 
 ## Proof Artifacts
 
-- Final Gate 0 evidence manifest
+- Local readiness audit manifest
 - Two clean-run identities and comparison result
 - Exit-check result matrix
-- Open-risk and waiver record
-- Gate 0 decision record
+- Exact source and toolchain identity
 
 ## Milestone Traceability
 
-This epic audits all Gate 0 work and exit requirements. It authorizes Milestone 1 work only when the exit gate passes.
+This epic supplies the audit mechanism. A future source-freeze review owns the certification decision and any retained result.
