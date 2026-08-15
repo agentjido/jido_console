@@ -11,6 +11,8 @@
     "jido_console-m1e22",
     "jido_console-m1e29"
   ],
+  "closed_at": "2026-08-15T14:52:11Z",
+  "close_reason": "Approvals bind to normalized effect identity plus workspace, run, profile, roots, network policy, and process owner. Replay and mismatches are denied.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e21-bind-approval-to-effects.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E21: Bind Approval to Exact Effects\n\n## Goal\n\nMake an approval valid only for the exact effect and normalized parameters that the user reviewed.\n\n## Scope\n\n- Define one stable effect identity for each approval request.\n- Normalize effect parameters before approval.\n- Include the normalized parameters in the approval binding.\n- Reject an approval for a different effect, workspace, run, or parameter set.\n- Reject approval replay after the effect has completed, failed, or changed.\n- Keep approval records free of credential values and raw secret content.\n- Return a clear denial when the approval identity is stale, repeated, or mismatched.\n\n## Out of Scope\n\n- Provider fallback consent.\n- General network or file policy changes.\n- Durable approval recovery after application restart.\n- Trust gained from a successful compile or test.\n\n## Dependencies\n\nThis epic depends on M1-E05 for the Jidoka policy contract, M1-E13 for the effective restricted profile, M1-E15 for file-boundary identity, M1-E16 for network-boundary identity, and M1-E17 for process ownership.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request adds effect identity, parameter normalization, approval binding, replay denial, and focused tests.\n\n## Acceptance Checks\n\n- Every approval request has one stable effect identity.\n- Normalized parameters are part of the approval identity.\n- An approval for another effect, run, workspace, or parameter set is rejected.\n- Replaying a completed or consumed approval is rejected.\n- A changed file root, network rule, process owner, or execution profile invalidates the approval.\n- Approval records contain no credential values or raw secret content.\n- The denial result identifies the reason without leaking sensitive data.\n\n## Proof Artifacts\n\n- Effect identity and parameter-normalization schema.\n- Approval binding examples.\n- Mismatch and replay denial results.\n- Profile, root, network, and process-owner invalidation results.\n- Redaction audit.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 requirement to bind approval to the exact effect identity and normalized parameters.",
   "id": "jido_console-m1e21",
@@ -23,8 +25,8 @@
     "v0.1"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M1-E21: Bind Approval to Exact Effects",
   "type": "epic",
-  "updated_at": "2026-08-15T14:44:05Z"
+  "updated_at": "2026-08-15T14:52:11Z"
 }
