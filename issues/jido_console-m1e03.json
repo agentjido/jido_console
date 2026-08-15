@@ -8,6 +8,8 @@
     "jido_console-m1e24",
     "jido_console-m1e29"
   ],
+  "closed_at": "2026-08-15T13:53:35Z",
+  "close_reason": "Added process catalog, home markers, supervisor shutdown, and jido status/stop. mix precommit passed.",
   "created": "",
   "description": "Roadmap source: `roadmap/milestones/01-ship-trustworthy-local-kernel/epics/m1-e03-control-local-process-lifecycle.md`\nRoadmap version: `1.0.6`\nTarget release: `v0.1`\nDelivery unit: `one_pull_request`\n\n# M1-E03: Control Local Process Status and Shutdown\n\n## Goal\n\nGive every Console background process a visible status and a reliable shutdown path.\n\n## Scope\n\n- Inventory each Console background process whose lifetime extends beyond one restricted command.\n- Define the status states and normal `jido` command behavior for each process.\n- Define owner, startup, readiness, failure, and shutdown behavior for each process.\n- Route normal shutdown through the owning supervisor or process owner.\n- Stop all owned background processes on normal application shutdown and owner exit.\n- Remove stale process state from the Jido home after confirmed shutdown.\n- Add deterministic checks for status, shutdown, and process cleanup.\n\n## Out of Scope\n\n- Remote or managed process control.\n- Multi-user process ownership.\n- General executor adapters from Milestone 6.\n- Durable process recovery after application restart.\n- Operating-system child trees created by one restricted run, which M1-E17 owns.\n\n## Dependencies\n\nThis epic depends on M1-E01 for the product command and on M1-E02 for process-local paths and state.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request defines and implements local process status and shutdown behavior. It must not add remote process control or restart recovery.\n\n## Acceptance Checks\n\n- Every local background process has a documented owner, status, readiness, failure, and shutdown contract.\n- Normal `jido` commands report status without exposing private process identifiers or credential values.\n- Shutdown is idempotent and reports a clear result when a process is already stopped.\n- Normal application shutdown and background-process owner exit leave no owned background process.\n- A background-process failure does not leave an unowned service process or stale active marker.\n- Shutdown tests pass from a clean isolated Jido home.\n\n## Proof Artifacts\n\n- Local process ownership and status matrix.\n- Command-level status and shutdown results.\n- Supervisor and background-process cleanup results.\n- Isolated home cleanup report.\n- Stale-process-state audit.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 1 work to define status and shutdown behavior for each local background process and to leave no owned process after shutdown.",
   "id": "jido_console-m1e03",
@@ -20,8 +22,8 @@
     "v0.1"
   ],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M1-E03: Control Local Process Status and Shutdown",
   "type": "epic",
-  "updated_at": "2026-08-15T13:48:22Z"
+  "updated_at": "2026-08-15T13:53:35Z"
 }
