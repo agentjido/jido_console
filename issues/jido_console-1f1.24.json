@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
   "created": "2026-08-16T13:00:16Z",
@@ -10,8 +10,8 @@
   ],
   "parent": "jido_console-1f1",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "F-04: Represent Run and Eval as exact command variants",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:54Z"
+  "updated_at": "2026-08-16T13:36:41Z"
 }
