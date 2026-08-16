@@ -10,9 +10,12 @@ defmodule Jido.Console.ErrorTest do
       assert Exception.message(Error.normalize("missing agent")) == "missing agent"
     end
 
-    test "passes an existing exception through unchanged" do
+    test "passes an existing project Splode error through unchanged" do
       original = Error.validation_error("boom")
       assert Error.normalize(original) == original
+      assert Error.splode_error?(original)
+      assert original.splode == Error
+      assert original.class == :invalid
     end
 
     test "shows the sanitized provider cause in a generic Jidoka execution error" do
@@ -76,14 +79,25 @@ defmodule Jido.Console.ErrorTest do
       assert %Error.UnknownCommandError{command: ["compare"]} =
                Error.normalize({:unknown_automation_command, ["compare"]})
 
-      assert %Error.OutputDirectoryNotEmptyError{path: "/tmp/x", entries: ["a"]} =
+      assert %Error.OutputDirectoryNotEmptyError{output_path: "/tmp/x", entries: ["a"]} =
                Error.normalize({:output_directory_not_empty, "/tmp/x", ["a"]})
     end
 
     test "falls back to an execution failure with a readable message" do
       normalized = Error.normalize({:some, :unknown, :reason})
       assert %Error.ExecutionFailureError{} = normalized
+      assert normalized.class == :execution
+      assert normalized.splode == Error
       assert is_binary(Exception.message(normalized))
+    end
+
+    test "wraps a non-Splode exception in the project internal class" do
+      normalized = Error.normalize(RuntimeError.exception("failed"))
+
+      assert %Error.Internal.UnknownError{} = normalized
+      assert normalized.class == :internal
+      assert normalized.splode == Error
+      assert Exception.message(normalized) == "failed"
     end
 
     test "explains an expired request and separates it from API-key errors" do
@@ -103,6 +117,43 @@ defmodule Jido.Console.ErrorTest do
       assert %Error.ConfigurationError{} = Error.config_error("bad config")
       assert %Error.ExecutionFailureError{} = Error.execution_error("boom")
       assert %Error.InternalError{} = Error.internal_error("oops")
+    end
+
+    test "aggregates project leaf errors with the configured Splode class" do
+      aggregate = Error.to_class([Error.validation_error("first"), Error.validation_error("second")])
+
+      assert %Error.Invalid{class: :invalid, splode: Error} = aggregate
+      assert Enum.map(aggregate.errors, &Exception.message/1) == ["first", "second"]
+      assert Enum.all?(aggregate.errors, &Error.splode_error?/1)
+    end
+  end
+
+  describe "redaction and portable errors" do
+    test "redacts messages and all structured fields at construction" do
+      error =
+        Error.InvalidOptionsError.exception(
+          message: "bad token=private-token",
+          options: [api_key: "sk-secretvalue123"],
+          details: %{prompt: "private prompt", authorization: "Bearer secret"}
+        )
+
+      encoded = inspect(error)
+
+      assert Exception.message(error) == "bad token=[REDACTED]"
+      refute encoded =~ "private-token"
+      refute encoded =~ "secretvalue"
+      refute encoded =~ "private prompt"
+      refute encoded =~ "Bearer secret"
+      assert error.options == [api_key: "[REDACTED]"]
+      assert error.details == %{prompt: "[OMITTED]", authorization: "[REDACTED]"}
+    end
+
+    test "serializes one normalized project error shape" do
+      assert Error.to_map({:invalid_jobs, 0}) == %{
+               category: :validation,
+               message: "--jobs must be a positive integer, got: 0",
+               value: 0
+             }
     end
   end
 end

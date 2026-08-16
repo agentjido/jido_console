@@ -1,15 +1,16 @@
 defmodule Jido.Console.Automation.ResultValue do
   @moduledoc "Builds portable error, usage, and evaluation values for result records."
 
+  alias Jido.Console.Error
+
   @doc "Returns a portable error map."
   @spec error(term()) :: map()
   def error(reason) do
     reason
-    |> Jidoka.normalize_error(operation: :automation)
-    |> Jidoka.error_to_map()
+    |> Error.to_map()
     |> portable_term()
   rescue
-    exception -> %{category: "internal", message: Exception.message(exception)}
+    exception -> %{category: "internal", message: exception |> Exception.message() |> Error.redact()}
   end
 
   @doc "Aggregates numeric usage fields across turns."

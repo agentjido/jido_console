@@ -637,9 +637,7 @@ defmodule Jido.Console.Tui.State do
   defp failure_kind({:selection, _previous}), do: :selection
 
   defp format_error(reason) do
-    reason
-    |> Jido.Console.Error.normalize()
-    |> Exception.message()
+    Jido.Console.Error.message(reason)
   rescue
     _exception -> inspect(reason)
   end

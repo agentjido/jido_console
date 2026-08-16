@@ -6,6 +6,7 @@ defmodule Jido.Console.Providers.Harness do
   checks require an explicit opt-in, a timeout, and a cancellation path.
   """
 
+  alias Jido.Console.Error
   alias Jido.Console.Models
   alias Jido.Console.Providers.{ContractResult, RecordedResults, Redaction}
 
@@ -109,7 +110,7 @@ defmodule Jido.Console.Providers.Harness do
             result(entry, dimension, :live, :blocked, "live check timed out")
 
           {:error, reason} ->
-            result(entry, dimension, :live, :fail, inspect(reason))
+            result(entry, dimension, :live, :fail, Error.message(reason))
         end
     end
   end

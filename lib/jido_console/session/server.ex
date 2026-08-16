@@ -974,7 +974,7 @@ defmodule Jido.Console.Session.Server do
   defp bounded_text(text) when is_binary(text), do: String.slice(text, 0, 200_000)
   defp bounded_text(value), do: value |> inspect(limit: 20) |> String.slice(0, 4_096)
   defp portable_reason(nil), do: nil
-  defp portable_reason(reason), do: reason |> inspect(limit: 20) |> String.slice(0, 4_096)
+  defp portable_reason(reason), do: reason |> Jido.Console.Error.message() |> String.slice(0, 4_096)
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

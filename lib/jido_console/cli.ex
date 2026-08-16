@@ -433,9 +433,7 @@ defmodule Jido.Console do
   defp print_version, do: IO.puts("jido #{version()}")
 
   defp format_error(reason) do
-    reason
-    |> Jido.Console.Error.normalize()
-    |> Exception.message()
+    Jido.Console.Error.message(reason)
   rescue
     _exception -> inspect(reason)
   end
