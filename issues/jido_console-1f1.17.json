@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [
     "jido_console-1f1.18",
@@ -13,8 +13,8 @@
   ],
   "parent": "jido_console-1f1",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "F-03: Define one generic tagged runtime result",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:51Z"
+  "updated_at": "2026-08-16T13:05:18Z"
 }
