@@ -21,19 +21,24 @@ defmodule Jido.Console.Providers.ContractResult do
   ]
   @statuses [:pass, :fail, :blocked, :not_applicable]
   @source_modes [:recorded, :live]
-  @fields [
-    :identity,
-    :dimension,
-    :contract_version,
-    :source_mode,
-    :status,
-    :reason,
-    :evidence_id,
-    :test_id
-  ]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              identity: Zoi.string(),
+              dimension: Zoi.enum(@dimensions),
+              contract_version: Zoi.literal(@contract_version),
+              source_mode: Zoi.enum(@source_modes),
+              status: Zoi.enum(@statuses),
+              reason: Zoi.string(),
+              evidence_id: Zoi.string(),
+              test_id: Zoi.string()
+            },
+            unrecognized_keys: :error
+          )
+  @fields Enum.map(@schema.fields, &elem(&1, 0))
 
-  @enforce_keys @fields
-  defstruct @fields
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           identity: String.t(),

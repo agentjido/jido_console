@@ -58,18 +58,40 @@ defmodule Jido.Console.Session.SupervisorTest do
     :ok = Elixir.DynamicSupervisor.terminate_child(sessions, pid)
     assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 1_000
     refute Process.alive?(pid)
-
-    Enum.reduce_while(1..20, :retry, fn _, _ ->
-      case Registry.lookup(session_id, registry) do
-        {:error, :not_found} ->
-          {:halt, :ok}
-
-        {:ok, _pid} ->
-          Process.sleep(5)
-          {:cont, :retry}
-      end
-    end)
-
     assert {:error, :not_found} = Registry.lookup(session_id, registry)
+  end
+
+  test "ensure and missing-supervisor paths return stable results", %{supervisor: supervisor} do
+    assert {:ok, pid} = Supervisor.ensure_started(name: supervisor)
+    assert pid == Process.whereis(supervisor)
+
+    missing_registry = :"missing-registry-#{System.unique_integer([:positive])}"
+    missing_sessions = :"missing-sessions-#{System.unique_integer([:positive])}"
+    assert {:error, :not_found} = Registry.lookup("missing", missing_registry)
+
+    assert {:error, :not_found} =
+             DynamicSupervisor.start_session(Placeholder,
+               session_id: "missing",
+               registry: missing_registry,
+               supervisor: missing_sessions
+             )
+
+    suffix = System.unique_integer([:positive])
+    name = :"ensured-session-sup-#{suffix}"
+    registry = :"ensured-session-reg-#{suffix}"
+    sessions = :"ensured-session-dyn-#{suffix}"
+    tasks = :"ensured-session-tasks-#{suffix}"
+
+    assert {:ok, ensured} =
+             Supervisor.ensure_started(
+               name: name,
+               registry: registry,
+               sessions: sessions,
+               tasks: tasks
+             )
+
+    on_exit(fn -> if Process.alive?(ensured), do: Process.exit(ensured, :shutdown) end)
+    assert Process.whereis(tasks)
+    assert {:ok, ^ensured} = Supervisor.ensure_started(name: name)
   end
 end

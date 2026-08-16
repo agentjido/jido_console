@@ -36,6 +36,24 @@ defmodule Jido.Console.Session.CatalogTest do
              Catalog.put_command(Catalog.new(), Map.put(command(), "permission", "all"))
   end
 
+  test "bounds invalid identities and unknown data for both declaration families" do
+    assert {:error, :invalid_declaration_identity} =
+             Catalog.put_command(Catalog.new(), %{command() | "id" => 1})
+
+    assert {:error, :unknown_data_overflow} =
+             Catalog.put_command(Catalog.new(), Map.put(command(), "large", String.duplicate("x", 5_000)))
+
+    assert {:error, :unknown_data_overflow} =
+             Catalog.put_command(Catalog.new(), Map.put(command(), "callback", fn -> :ok end))
+
+    assert {:ok, catalog} = Catalog.put_client(Catalog.new(), client())
+    assert {:ok, descriptor} = Catalog.fetch_client(catalog, "cli_tui")
+    assert Catalog.clients(catalog) == [descriptor]
+    assert {:error, :not_found} = Catalog.fetch_command(catalog, "missing")
+    assert {:error, :duplicate_declaration} = Catalog.put_client(catalog, client())
+    assert {:error, :conflicting_declaration} = Catalog.put_client(catalog, %{client() | "version" => "2"})
+  end
+
   defp command do
     %{
       "id" => "cmd_help",

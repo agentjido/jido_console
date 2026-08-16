@@ -133,6 +133,34 @@ defmodule Jido.Console.Automation.ResultTest do
     end
   end
 
+  test "exposes every reusable contract schema" do
+    functions = [
+      :case_result_schema,
+      :manifest_schema,
+      :summary_schema,
+      :lifecycle_schema,
+      :turn_schema,
+      :execution_schema,
+      :execution_environment_schema,
+      :capability_replay_schema,
+      :runtime_limits_schema,
+      :evaluation_schema,
+      :assertion_schema,
+      :usage_schema,
+      :error_schema,
+      :dimensions_schema,
+      :sources_schema
+    ]
+
+    Enum.each(functions, fn function ->
+      assert apply(Contract, function, []) != nil
+    end)
+
+    for function <- [:case_result!, :manifest!, :summary!, :lifecycle!] do
+      assert_raise ArgumentError, fn -> apply(Contract, function, [%{}]) end
+    end
+  end
+
   test "rejects required fields, invalid statuses, and negative bounds" do
     for invalid <- [
           Map.delete(valid_result(), :run_id),

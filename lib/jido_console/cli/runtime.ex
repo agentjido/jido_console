@@ -8,8 +8,19 @@ defmodule Jido.Console.Runtime do
 
     defmodule Ok do
       @moduledoc false
-      @enforce_keys [:content, :coding_reviews, :approval]
-      defstruct @enforce_keys
+
+      @schema Zoi.struct(
+                __MODULE__,
+                %{
+                  content: Zoi.string(),
+                  coding_reviews: Zoi.array(Zoi.map()),
+                  approval: Zoi.enum([:approved, :denied]) |> Zoi.nullable()
+                },
+                unrecognized_keys: :error
+              )
+
+      @enforce_keys Zoi.Struct.enforce_keys(@schema)
+      defstruct Zoi.Struct.struct_fields(@schema)
 
       @type t :: %__MODULE__{
               content: String.t(),
@@ -20,8 +31,19 @@ defmodule Jido.Console.Runtime do
 
     defmodule PendingReview do
       @moduledoc false
-      @enforce_keys [:reviews, :snapshot, :approval]
-      defstruct @enforce_keys
+
+      @schema Zoi.struct(
+                __MODULE__,
+                %{
+                  reviews: Zoi.array(),
+                  snapshot: Zoi.any(),
+                  approval: Zoi.enum([:approved, :denied]) |> Zoi.nullable()
+                },
+                unrecognized_keys: :error
+              )
+
+      @enforce_keys Zoi.Struct.enforce_keys(@schema)
+      defstruct Zoi.Struct.struct_fields(@schema)
 
       @type t :: %__MODULE__{
               reviews: [term()],
@@ -32,8 +54,19 @@ defmodule Jido.Console.Runtime do
 
     defmodule Hibernated do
       @moduledoc false
-      @enforce_keys [:snapshot, :reason, :approval]
-      defstruct @enforce_keys
+
+      @schema Zoi.struct(
+                __MODULE__,
+                %{
+                  snapshot: Zoi.any(),
+                  reason: Zoi.any(),
+                  approval: Zoi.enum([:approved, :denied]) |> Zoi.nullable()
+                },
+                unrecognized_keys: :error
+              )
+
+      @enforce_keys Zoi.Struct.enforce_keys(@schema)
+      defstruct Zoi.Struct.struct_fields(@schema)
 
       @type t :: %__MODULE__{
               snapshot: term(),
@@ -44,8 +77,18 @@ defmodule Jido.Console.Runtime do
 
     defmodule Cancelled do
       @moduledoc false
-      @enforce_keys [:cancellation, :approval]
-      defstruct @enforce_keys
+
+      @schema Zoi.struct(
+                __MODULE__,
+                %{
+                  cancellation: Zoi.any(),
+                  approval: Zoi.enum([:approved, :denied]) |> Zoi.nullable()
+                },
+                unrecognized_keys: :error
+              )
+
+      @enforce_keys Zoi.Struct.enforce_keys(@schema)
+      defstruct Zoi.Struct.struct_fields(@schema)
 
       @type t :: %__MODULE__{
               cancellation: term(),
@@ -55,8 +98,18 @@ defmodule Jido.Console.Runtime do
 
     defmodule Error do
       @moduledoc false
-      @enforce_keys [:reason, :approval]
-      defstruct @enforce_keys
+
+      @schema Zoi.struct(
+                __MODULE__,
+                %{
+                  reason: Zoi.any(),
+                  approval: Zoi.enum([:approved, :denied]) |> Zoi.nullable()
+                },
+                unrecognized_keys: :error
+              )
+
+      @enforce_keys Zoi.Struct.enforce_keys(@schema)
+      defstruct Zoi.Struct.struct_fields(@schema)
 
       @type t :: %__MODULE__{
               reason: term(),
@@ -64,8 +117,27 @@ defmodule Jido.Console.Runtime do
             }
     end
 
-    @enforce_keys [:request_id, :session, :handle, :outcome]
-    defstruct @enforce_keys ++ [raw: nil]
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                request_id: Zoi.string(),
+                session: Zoi.any(),
+                handle: Zoi.any(),
+                outcome:
+                  Zoi.union([
+                    Zoi.struct(Ok),
+                    Zoi.struct(PendingReview),
+                    Zoi.struct(Hibernated),
+                    Zoi.struct(Cancelled),
+                    Zoi.struct(Error)
+                  ]),
+                raw: Zoi.any() |> Zoi.optional() |> Zoi.default(nil)
+              },
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type outcome :: Ok.t() | PendingReview.t() | Hibernated.t() | Cancelled.t() | Error.t()
     @type t :: %__MODULE__{
@@ -197,8 +269,20 @@ defmodule Jido.Console.Runtime.Jidoka do
 
   defmodule Session do
     @moduledoc false
-    @enforce_keys [:data, :extension_host, :runtime_opts, :local_resources]
-    defstruct @enforce_keys
+
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                data: Zoi.struct(Jidoka.Session.Data),
+                extension_host: Zoi.struct(Jidoka.Extension.Host) |> Zoi.nullable(),
+                runtime_opts: Zoi.list(Zoi.tuple({Zoi.atom(), Zoi.any()})),
+                local_resources: Zoi.any()
+              },
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{
             data: Jidoka.Session.Data.t(),
@@ -210,8 +294,20 @@ defmodule Jido.Console.Runtime.Jidoka do
 
   defmodule Request do
     @moduledoc false
-    @enforce_keys [:request_id, :request, :session, :runtime_opts]
-    defstruct @enforce_keys
+
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                request_id: Zoi.string(),
+                request: Zoi.any(),
+                session: Zoi.struct(Session),
+                runtime_opts: Zoi.list(Zoi.tuple({Zoi.atom(), Zoi.any()}))
+              },
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{
             request_id: String.t(),

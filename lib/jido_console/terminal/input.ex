@@ -16,7 +16,17 @@ defmodule Jido.Console.Terminal.Input do
     {"\eOC", {:key, :right}}
   ]
 
-  defstruct buffer: "", paste: nil
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              buffer: Zoi.string() |> Zoi.optional() |> Zoi.default(""),
+              paste: Zoi.string() |> Zoi.nullish()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type event :: Jido.Console.Terminal.Adapter.event()
   @type t :: %__MODULE__{buffer: binary(), paste: binary() | nil}

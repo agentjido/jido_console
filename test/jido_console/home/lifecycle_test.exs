@@ -106,4 +106,68 @@ defmodule Jido.Console.Home.LifecycleTest do
     assert :state in emptied.removed
     refute File.exists?(state)
   end
+
+  test "reports invalid migration, restore, backup, and removal inputs", %{root: root, opts: opts} do
+    assert Lifecycle.confirmation_tokens() == %{
+             disposable: :remove_disposable,
+             retained: :remove_retained_user_data
+           }
+
+    missing = Path.join(root, "missing-cache")
+    assert {:ok, _result} = Lifecycle.migrate(opts ++ [previous_cache_root: missing])
+
+    source_file = Path.join(root, "cache-file")
+    File.write!(source_file, "not a directory")
+
+    assert {:error, {:migration_source_not_directory, ^source_file, :regular}} =
+             Lifecycle.migrate(opts ++ [previous_cache_root: source_file])
+
+    assert {:error, {:backup_not_directory, ^source_file, :regular}} =
+             Lifecycle.restore(source_file, opts)
+
+    empty_destination = Path.join(root, "empty-backup")
+    File.mkdir_p!(empty_destination)
+    assert {:ok, _result} = Lifecycle.backup(empty_destination, opts)
+
+    destination_file = Path.join(root, "backup-file")
+    File.write!(destination_file, "not a directory")
+
+    assert {:error, {:backup_destination_not_directory, ^destination_file, :regular}} =
+             Lifecycle.backup(destination_file, opts)
+
+    assert {:error, {:invalid_removal_confirmation, :wrong}} =
+             Lifecycle.remove(opts ++ [confirm: :wrong])
+
+    absent_home = [jido_home: Path.join(root, "absent-home"), confirm: :remove_retained_user_data]
+    assert {:ok, %{removed: removed}} = Lifecycle.remove(absent_home)
+    assert Enum.sort(removed) == [:artifacts, :cache, :logs, :run, :state]
+  end
+
+  test "reports invalid entries while it copies retained data", %{root: root, opts: opts} do
+    assert {:ok, _home} = Home.ensure(opts)
+    {:ok, state} = Home.path(:state, opts)
+
+    File.rmdir!(state)
+    File.write!(state, "not a directory")
+
+    assert {:error, {:backup_entry_not_directory, ^state, :regular}} =
+             Lifecycle.backup(Path.join(root, "file-entry-backup"), opts)
+
+    File.rm!(state)
+    File.mkdir_p!(state)
+    link = Path.join(state, "link")
+    File.ln_s!("missing-target", link)
+
+    assert {:error, {:unsupported_home_entry, ^link, :symlink}} =
+             Lifecycle.backup(Path.join(root, "link-entry-backup"), opts)
+
+    File.rm!(link)
+    nested = Path.join(state, "nested")
+    File.mkdir_p!(nested)
+    File.write!(Path.join(nested, "value"), "private")
+    File.chmod!(Path.join(nested, "value"), 0o600)
+
+    assert {:ok, result} = Lifecycle.backup(Path.join(root, "nested-backup"), opts)
+    assert "state" in result.entries
+  end
 end

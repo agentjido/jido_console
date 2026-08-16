@@ -1,8 +1,20 @@
 defmodule Jido.Console.Coding.Environment.Contract do
   @moduledoc "Secret-free restricted process environment policy for one coding setup."
 
-  @enforce_keys [:profile_id, :allowlist, :credential_refs, :home, :tmpdir]
-  defstruct @enforce_keys
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              profile_id: Zoi.string(),
+              allowlist: Zoi.array(Zoi.string()),
+              credential_refs: Zoi.array(Zoi.string()),
+              home: Zoi.string(),
+              tmpdir: Zoi.string()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           profile_id: String.t(),

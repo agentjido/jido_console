@@ -113,6 +113,38 @@ defmodule Jido.Console.Session.EventTest do
     assert {:error, :event_session_identity_missing} = Event.validate(empty)
   end
 
+  test "rejects invalid event classes, trust, origin, identities, and shapes" do
+    assert {:error, :invalid_event} = Event.classify(:invalid)
+    assert {:error, :invalid_event} = Event.validate(:invalid)
+    assert Event.origin_authority?(%{"origin" => %{"kind" => "host", "actor_id" => "user"}})
+    refute Event.origin_authority?(%{})
+
+    base = event_attrs("ses_1")
+
+    cases = [
+      {%{base | sequence: -1}, :invalid_event_sequence},
+      {%{base | durability: "durable"}, {:invalid_event_class, "durability"}},
+      {%{base | sensitivity: "unknown"}, {:invalid_event_class, "sensitivity"}},
+      {%{base | origin: %{"kind" => "client"}}, :invalid_event_origin},
+      {%{base | trust: %{"evidence" => "test"}}, :invalid_event_trust},
+      {%{base | identities: :invalid}, :invalid_event_identity},
+      {%{
+         base
+         | identities: [
+             %{"kind" => "session", "id" => "ses_1", "session_id" => "ses_1"},
+             %{"kind" => "session", "id" => "ses_1", "session_id" => "ses_1"}
+           ]
+       }, :event_identity_mismatch}
+    ]
+
+    for {attrs, expected} <- cases do
+      assert {:error, ^expected} = Event.classify(attrs)
+    end
+
+    assert {:error, :raw_runtime_forbidden} =
+             Event.classify(%{base | identities: [%{"kind" => "request", "id" => "request", "session_id" => self()}]})
+  end
+
   defp event_attrs(session_id) do
     %{
       type: "input_admitted",

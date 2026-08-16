@@ -9,8 +9,22 @@ defmodule Jido.Console.Release.ProbeRuntime do
 
   defmodule Session do
     @moduledoc false
-    @enforce_keys [:mode, :state, :workspace, :expected, :log, :verifier]
-    defstruct @enforce_keys
+
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                mode: Zoi.enum([:success, :workflow]),
+                state: Zoi.pid(),
+                workspace: Zoi.string() |> Zoi.nullable(),
+                expected: Zoi.string() |> Zoi.nullable(),
+                log: Zoi.string() |> Zoi.nullable(),
+                verifier: Zoi.enum([:mix_test, :private_runtime])
+              },
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{
             mode: :success | :workflow,
@@ -24,8 +38,21 @@ defmodule Jido.Console.Release.ProbeRuntime do
 
   defmodule Request do
     @moduledoc false
-    @enforce_keys [:request_id, :turn, :prompt, :owner, :session]
-    defstruct @enforce_keys
+
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                request_id: Zoi.string(),
+                turn: Zoi.integer() |> Zoi.positive(),
+                prompt: Zoi.string(),
+                owner: Zoi.pid(),
+                session: Zoi.struct(Session)
+              },
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{
             request_id: String.t(),

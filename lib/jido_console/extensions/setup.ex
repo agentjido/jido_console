@@ -1,9 +1,19 @@
 defmodule Jido.Console.Extensions.Setup do
   @moduledoc "Owns resolved extensions and derives runtime and trust views."
 
-  @enforce_keys [:entries, :trust]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              entries: Zoi.array(Zoi.tuple({Zoi.string(), Zoi.map(), Zoi.map()})),
+              trust: Zoi.any(),
+              recover_coding_errors: Zoi.boolean() |> Zoi.optional() |> Zoi.default(false)
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
   @derive {Inspect, except: [:entries]}
-  defstruct [:entries, :trust, recover_coding_errors: false]
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type runtime_entry :: map()
   @type trust_record :: map()

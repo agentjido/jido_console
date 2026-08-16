@@ -13,18 +13,6 @@ defmodule Jido.Console.Automation.Command do
   defmodule Run do
     @moduledoc "A validated `run` command with exactly one input source."
 
-    @type source :: {:input, String.t()} | {:scenario, String.t()}
-    @type t :: %__MODULE__{
-            agent: String.t(),
-            source: source(),
-            model: String.t() | nil,
-            output: String.t() | nil,
-            runtime_profile: String.t() | nil
-          }
-
-    @enforce_keys [:agent, :source]
-    defstruct [:agent, :source, :model, :output, :runtime_profile]
-
     @schema Zoi.struct(
               __MODULE__,
               %{
@@ -41,6 +29,18 @@ defmodule Jido.Console.Automation.Command do
               unrecognized_keys: :error
             )
 
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
+
+    @type source :: {:input, String.t()} | {:scenario, String.t()}
+    @type t :: %__MODULE__{
+            agent: String.t(),
+            source: source(),
+            model: String.t() | nil,
+            output: String.t() | nil,
+            runtime_profile: String.t() | nil
+          }
+
     @doc false
     @spec schema() :: Zoi.schema()
     def schema, do: @schema
@@ -48,16 +48,6 @@ defmodule Jido.Console.Automation.Command do
 
   defmodule Eval do
     @moduledoc "A validated `eval` command for one suite."
-
-    @type t :: %__MODULE__{
-            suite: String.t(),
-            jobs: pos_integer() | nil,
-            output: String.t() | nil,
-            runtime_profile: String.t() | nil
-          }
-
-    @enforce_keys [:suite]
-    defstruct [:suite, :jobs, :output, :runtime_profile]
 
     @schema Zoi.struct(
               __MODULE__,
@@ -69,6 +59,16 @@ defmodule Jido.Console.Automation.Command do
               },
               unrecognized_keys: :error
             )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
+
+    @type t :: %__MODULE__{
+            suite: String.t(),
+            jobs: pos_integer() | nil,
+            output: String.t() | nil,
+            runtime_profile: String.t() | nil
+          }
 
     @doc false
     @spec schema() :: Zoi.schema()

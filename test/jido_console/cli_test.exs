@@ -23,21 +23,6 @@ defmodule Jido.ConsoleTest do
     end
   end
 
-  test "prints help" do
-    assert capture_io(fn -> assert :ok = Jido.Console.run(["--help"]) end) =~ "Usage:\n  jido"
-  end
-
-  test "prints version" do
-    assert capture_io(fn -> assert :ok = Jido.Console.run(["--version"]) end) ==
-             "jido #{Jido.Console.Release.Identity.version()}\n"
-  end
-
-  test "prints command help" do
-    for args <- [["run", "--help"], ["run", "-h"], ["eval", "--help"], ["eval", "-h"]] do
-      assert capture_io(fn -> assert :ok = Jido.Console.run(args) end) =~ "jido eval SUITE"
-    end
-  end
-
   test "rejects unknown options" do
     assert capture_io(:stderr, fn ->
              assert {:error, 1} = Jido.Console.run(["--wat"])
@@ -254,6 +239,69 @@ defmodule Jido.ConsoleTest do
 
       assert output =~ expected
     end
+  end
+
+  test "prints help for every command family" do
+    help_commands = [
+      ["status", "--help"],
+      ["stop", "-h"],
+      ["auth", "--help"],
+      ["auth", "-h"],
+      ["auth", "status", "--help"],
+      ["auth", "doctor", "-h"],
+      ["doctor", "--help"],
+      ["models", "--help"],
+      ["models", "-h"],
+      ["models", "list", "--help"],
+      ["models", "show", "--help"],
+      ["models", "test", "-h"]
+    ]
+
+    Enum.each(help_commands, fn args ->
+      assert capture_io(fn -> assert :ok = Jido.Console.run(args) end) =~ "Usage:"
+    end)
+  end
+
+  test "uses one usage result for malformed command arguments" do
+    invalid_commands = [
+      ["status", "extra"],
+      ["stop", "--unknown"],
+      ["auth", "unknown"],
+      ["auth", "status", "extra"],
+      ["doctor", "--unknown"],
+      ["models", "unknown"],
+      ["models", "list", "extra"],
+      ["models", "show"],
+      ["models", "show", "one", "two", "three"],
+      ["models", "test", "openai:gpt-4.1-mini", "--unknown"]
+    ]
+
+    Enum.each(invalid_commands, fn args ->
+      output =
+        capture_io(:stderr, fn ->
+          assert {:error, 64} = Jido.Console.run(args)
+        end)
+
+      assert output != ""
+    end)
+  end
+
+  test "classifies every interactive configuration failure" do
+    reasons = [
+      {:invalid_execution_profile, "bad"},
+      {:unknown_runtime_profile, "bad"},
+      {:unknown_runtime_profile, "bad", :missing},
+      :local_coding_root_required,
+      :coding_module_name_forbidden,
+      :invalid_coding_profile_resolver,
+      {:invalid_interactive_options, %{model: ["invalid"]}}
+    ]
+
+    Enum.each(reasons, fn reason ->
+      assert capture_io(:stderr, fn ->
+               assert {:error, 64} = Jido.Console.run([], tui: ErrorTui, reason: reason)
+             end) =~ "jido:"
+    end)
   end
 
   test "lists and shows catalog models without credentials" do

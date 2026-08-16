@@ -7,6 +7,8 @@ defmodule Jido.Console.Session.InputTest do
     {:ok, input} = Input.admit("hello", session_id: Identity.new!(:session).id)
     assert input.status == :accepted
     assert Input.wakeup(input).text == input.text
+    assert {:ok, %{status: :started}} = Input.transition(input, :started)
+    assert {:error, {:invalid_input_status, :unknown}} = Input.transition(input, :unknown)
     assert Input.crash_limitation() =~ "Milestone 3"
   end
 end

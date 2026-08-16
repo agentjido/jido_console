@@ -73,6 +73,87 @@ defmodule Jido.Console.Tui.TurnTest do
     assert turn.changes == [%{"path" => "lib/value.ex"}]
   end
 
+  test "normalizes uncommon records and keeps all collections bounded" do
+    turn = Turn.new(5, "bounded", :invalid_context)
+    assert turn.attachments == []
+    assert Turn.put_changes(turn, :invalid).changes == []
+
+    normalized = Turn.put_changes(turn, [%URI{path: "/value"}, :plain]).changes
+    assert Enum.any?(normalized, &match?(%{path: "/value"}, &1))
+    assert Enum.any?(normalized, &match?(%{summary: ":plain"}, &1))
+
+    changes = normalized ++ Enum.map(1..100, &%{index: &1})
+    turn = Turn.put_changes(turn, changes)
+    assert length(turn.changes) == 100
+    refute Enum.any?(turn.changes, &match?(%{path: "/value"}, &1))
+
+    reviews = [
+      %{interrupt_id: "atom-interrupt", operation: "one"},
+      %{"interrupt_id" => "string-interrupt", "operation" => "two"},
+      %{id: "atom-id", operation: "three"},
+      %{"id" => "string-id", "operation" => "four"},
+      %URI{path: "/review"},
+      :plain_review
+    ]
+
+    turn = Turn.put_reviews(turn, reviews)
+    assert length(turn.reviews) == 6
+    assert Enum.all?(turn.reviews, &(&1.status == :pending))
+
+    turn = Turn.put_reviews(turn, [%{interrupt_id: "atom-interrupt", operation: "updated"}])
+    assert length(turn.reviews) == 6
+    assert Enum.find(turn.reviews, &(&1.id == "atom-interrupt")).operation == "updated"
+
+    turn = Turn.decide_review(turn, %{interrupt_id: "atom-interrupt"}, :approve)
+    failed = Turn.fail_review(turn, "approval expired")
+    assert Enum.find(failed.reviews, &(&1.id == "atom-interrupt")).status == :expired
+    assert Turn.fail_review(Turn.new(6, "none"), "failure").reviews == []
+
+    event = %EventProjection{
+      id: :unhandled,
+      request_id: "request-1",
+      seq: 0,
+      event: :unknown,
+      kind: :event,
+      data: %{}
+    }
+
+    turn = Turn.put_request(turn, %{request_id: "request-1"})
+    assert {:ok, unchanged} = Turn.apply_event(turn, event)
+    assert unchanged.assistant == turn.assistant
+
+    review_event = %{event | id: :review, seq: 1, kind: :review, data: %{summary: "no id"}}
+    assert {:ok, turn} = Turn.apply_event(unchanged, review_event)
+    assert Enum.any?(turn.reviews, &(&1[:summary] == "no id"))
+
+    turn =
+      Enum.reduce(0..200, turn, fn index, current ->
+        projection = %EventProjection{
+          id: {:tool, index},
+          request_id: "request-1",
+          seq: index + 2,
+          event: :effect_planned,
+          kind: :tool,
+          data: %{
+            id: index,
+            operation: "tool",
+            status: :planned,
+            summary: nil,
+            error: nil,
+            loop_index: nil
+          }
+        }
+
+        {:ok, next} = Turn.apply_event(current, projection)
+        next
+      end)
+
+    assert length(turn.tool_order) == 200
+    refute Map.has_key?(turn.tools, 0)
+    assert Map.has_key?(turn.tools, 200)
+    assert Turn.finish(turn, :completed, nil, reviews: :invalid, changes: :invalid).changes == []
+  end
+
   defp tool_projection(event, seq, effect_id) do
     projection(event, "request-1", seq,
       effect_id: effect_id,

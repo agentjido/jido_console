@@ -153,7 +153,6 @@ defmodule Jido.Console.Coding.LocalTest do
     assert result["stdout_truncated"]
     assert byte_size(result["stdout"]) <= 1_024
 
-    Process.sleep(20)
     {:messages, messages} = Process.info(self(), :messages)
     refute Enum.any?(messages, fn message -> match?({port, _data} when is_port(port), message) end)
   end
@@ -194,7 +193,6 @@ defmodule Jido.Console.Coding.LocalTest do
              )
 
     command_pid = pid_file |> File.read!() |> String.trim()
-    Process.sleep(20)
     {_output, status} = System.cmd("/bin/kill", ["-0", command_pid], stderr_to_stdout: true)
     refute status == 0
   end

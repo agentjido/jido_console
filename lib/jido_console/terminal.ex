@@ -8,8 +8,19 @@ defmodule Jido.Console.Terminal do
 
   alias Jido.Console.Terminal.Frame
 
-  @enforce_keys [:adapter, :handle, :ref, :size]
-  defstruct [:adapter, :handle, :ref, :size]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              adapter: Zoi.module(),
+              handle: Zoi.any(),
+              ref: Zoi.reference(),
+              size: Zoi.tuple({Zoi.integer() |> Zoi.positive(), Zoi.integer() |> Zoi.positive()})
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           adapter: module(),

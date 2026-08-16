@@ -4,20 +4,28 @@ defmodule Jido.Console.Extensions.Record do
   alias Jidoka.Extension.{CapabilitySet, Identity, PermissionSet, Registration}
 
   @version 1
-  @enforce_keys [:id, :source, :source_ref, :release, :sha256, :permissions, :capabilities, :modes, :scope]
-  defstruct version: @version,
-            id: nil,
-            source: nil,
-            source_ref: nil,
-            release: nil,
-            sha256: nil,
-            permissions: [],
-            capabilities: [],
-            modes: [],
-            scope: nil,
-            enabled: true,
-            command: nil,
-            record_path: nil
+  @struct_schema Zoi.struct(
+                   __MODULE__,
+                   %{
+                     version: Zoi.literal(@version) |> Zoi.optional() |> Zoi.default(@version),
+                     id: Zoi.string(),
+                     source: Zoi.enum([:built_in, :process]),
+                     source_ref: Zoi.string(),
+                     release: Zoi.string(),
+                     sha256: Zoi.string(),
+                     permissions: Zoi.array(Zoi.string()) |> Zoi.required() |> Zoi.default([]),
+                     capabilities: Zoi.array(Zoi.string()) |> Zoi.required() |> Zoi.default([]),
+                     modes: Zoi.array(Zoi.enum([:interactive, :automation])) |> Zoi.required() |> Zoi.default([]),
+                     scope: Zoi.enum([:user, :project]),
+                     enabled: Zoi.boolean() |> Zoi.optional() |> Zoi.default(true),
+                     command: Zoi.array(Zoi.string()) |> Zoi.nullish(),
+                     record_path: Zoi.string() |> Zoi.nullish()
+                   },
+                   unrecognized_keys: :error
+                 )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@struct_schema)
+  defstruct Zoi.Struct.struct_fields(@struct_schema)
 
   @type t :: %__MODULE__{}
 

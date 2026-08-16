@@ -127,6 +127,99 @@ defmodule Jido.Console.Models.CatalogTest do
              Catalog.load(model_policy: [policy], model_resolver: fn _identity -> {:ok, model} end)
   end
 
+  test "rejects every malformed catalog entry shape" do
+    base = valid_entry()
+    feature = base.capabilities.streaming
+
+    assert Catalog.revision() == "jido.models.v0.1"
+    assert {:ok, %{entries: [_entry]}} = Catalog.load(entries: [base])
+    assert {:error, :invalid_catalog} = Catalog.validate(:invalid)
+    assert Catalog.claimed_features(base) == []
+
+    invalid_entries = [
+      Map.delete(base, :provider),
+      Map.put(base, :provider, ""),
+      Map.delete(base, :model),
+      Map.delete(base, :evidence_id),
+      Map.delete(base, :capabilities),
+      put_in(base, [:capabilities, :streaming], :invalid),
+      put_in(base, [:capabilities, :streaming], %{feature | state: :invalid}),
+      put_in(base, [:capabilities, :streaming], Map.delete(feature, :note)),
+      Map.update!(base, :capabilities, &Map.delete(&1, :streaming)),
+      put_in(base, [:capabilities, :unknown], feature),
+      put_in(base, [:capabilities, 42], feature),
+      Map.put(base, :limits, %{}),
+      Map.put(base, :known_gaps, [:invalid]),
+      Map.put(base, :known_gaps, :invalid),
+      Map.put(base, :metadata, :invalid)
+    ]
+
+    Enum.each(invalid_entries, fn entry ->
+      assert {:error, _reason} = Catalog.validate([entry])
+    end)
+
+    string_entry =
+      base
+      |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
+      |> Map.put("tier", "available")
+
+    assert {:ok, %{entries: [%{tier: :available, metadata: %{source: :declared}}]}} =
+             Catalog.validate([string_entry])
+  end
+
+  test "fails closed for every malformed policy and resolver result" do
+    policy = valid_policy("openai:gpt-test")
+    model = executable_model("gpt-test")
+
+    assert {:error, :empty_model_policy} =
+             Catalog.load(model_policy: [], model_resolver: fn _identity -> {:ok, model} end)
+
+    assert {:error, :invalid_model_policy} =
+             Catalog.load(model_policy: :invalid, model_resolver: fn _identity -> {:ok, model} end)
+
+    assert {:error, :invalid_model_policy} =
+             Catalog.load(model_policy: [policy], model_resolver: :invalid)
+
+    assert {:error, :invalid_model_policy_entry} =
+             Catalog.load(model_policy: [:invalid], model_resolver: fn _identity -> {:ok, model} end)
+
+    invalid_policies = [
+      Map.put(policy, :identity, "invalid"),
+      Map.delete(policy, :identity),
+      Map.put(policy, :tier, :gold),
+      Map.delete(policy, :evidence_id),
+      Map.put(policy, :capabilities, :invalid),
+      Map.put(policy, :known_gaps, [:invalid]),
+      Map.put(policy, :known_gaps, :invalid)
+    ]
+
+    Enum.each(invalid_policies, fn invalid ->
+      assert {:error, _reason} =
+               Catalog.load(model_policy: [invalid], model_resolver: fn _identity -> {:ok, model} end)
+    end)
+
+    assert {:error, {:invalid_model_metadata_result, "openai:gpt-test", :invalid}} =
+             Catalog.load(model_policy: [policy], model_resolver: fn _identity -> :invalid end)
+
+    assert {:error, {:model_metadata_unavailable, "openai:gpt-test", RuntimeError}} =
+             Catalog.load(model_policy: [policy], model_resolver: fn _identity -> raise "missing" end)
+
+    mismatch = executable_model("other")
+
+    assert {:error, {:model_identity_mismatch, "openai:gpt-test", "openai:other"}} =
+             Catalog.load(model_policy: [policy], model_resolver: fn _identity -> {:ok, mismatch} end)
+
+    for {field, reason} <- [
+          {:retired, :supported_model_retired},
+          {:catalog_only, :supported_model_catalog_only}
+        ] do
+      unavailable = Map.put(model, field, true)
+
+      assert {:error, {^reason, "openai:gpt-test"}} =
+               Catalog.load(model_policy: [policy], model_resolver: fn _identity -> {:ok, unavailable} end)
+    end
+  end
+
   test "list and show consume the same validated catalog" do
     assert {:ok, entries} = Models.list()
     assert {:ok, shown} = Models.show("openai", "gpt-4.1-mini")

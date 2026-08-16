@@ -10,20 +10,26 @@ defmodule Jido.Console.Coding.Setup do
 
   @default_pack CodingPack.id()
 
-  @enforce_keys [
-    :spec,
-    :extension_setup,
-    :workspace,
-    :instructions,
-    :context,
-    :pack_id,
-    :profile_id,
-    :environment_contract,
-    :local_resources,
-    :await_timeout_ms,
-    :turn_opts
-  ]
-  defstruct @enforce_keys
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              spec: Zoi.struct(Jidoka.Agent.Spec),
+              extension_setup: Zoi.any(),
+              workspace: Zoi.struct(Workspace) |> Zoi.nullable(),
+              instructions: Zoi.array(Zoi.map()),
+              context: Zoi.map(),
+              pack_id: Zoi.string() |> Zoi.nullable(),
+              profile_id: Zoi.string() |> Zoi.nullable(),
+              environment_contract: Zoi.any(),
+              local_resources: Zoi.any(),
+              await_timeout_ms: Zoi.integer() |> Zoi.positive(),
+              turn_opts: Zoi.list(Zoi.tuple({Zoi.atom(), Zoi.any()}))
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           spec: Jidoka.Agent.Spec.t(),

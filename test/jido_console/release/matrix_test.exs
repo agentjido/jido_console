@@ -76,6 +76,15 @@ defmodule Jido.Console.Release.MatrixTest do
            }
   end
 
+  test "reports an unavailable identity for an empty comparison" do
+    assert Enum.map(Matrix.cells(), & &1.channel) == [:archive, :homebrew, :npm]
+
+    assert Matrix.compare([]) == %{
+             "status" => "fail",
+             "reason" => "payload identity unavailable"
+           }
+  end
+
   defp change_identity_version(result, version) do
     result
     |> put_in(["payload_identity", "version"], version)

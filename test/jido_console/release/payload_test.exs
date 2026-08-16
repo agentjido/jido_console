@@ -52,4 +52,45 @@ defmodule Jido.Console.Release.PayloadTest do
     assert {:ok, second} = Payload.seal(root, archive: archive, keypair: key)
     assert {:ok, %{"allowed_differences" => ["sealed_at"]}} = Payload.compare(first, second)
   end
+
+  test "normalizes missing files, checksum text, signatures, versions, licenses, and comparisons", %{root: root} do
+    archive_name = "jido-0.1.0-darwin-arm64.tar.gz"
+    archive = Path.join(root, archive_name)
+
+    assert {:error, :enoent} = Payload.checksum(root, archive_name)
+    assert {:error, :enoent} = Payload.archive_checksum(root)
+    assert {:error, {:missing_release_file, "missing"}} = Payload.checksums(root, ["missing"])
+    assert {:error, :archive_missing} = Payload.seal(root, archive: Path.join(root, "missing"))
+
+    key = Payload.generate_key()
+    assert {:ok, report} = Payload.seal(root, archive: archive, keypair: key)
+    assert {:ok, digest} = Payload.checksum(root, archive_name)
+    assert {:ok, ^digest} = Payload.archive_checksum(root)
+
+    assert {:error, {:payload_mismatch, ["version"]}} =
+             Payload.compare(report, %{report | "version" => "2.0.0"})
+
+    signature_path = Path.join(root, "payload.sig")
+    signature = File.read!(signature_path)
+    File.write!(signature_path, "not-base64")
+    assert {:error, :payload_signature_invalid} = Payload.verify(root, public_key: key.public)
+    File.write!(signature_path, signature)
+
+    payload_path = Path.join(root, "payload.json")
+    payload = File.read!(payload_path)
+    File.write!(payload_path, Jason.encode!(%{"version" => "2.0.0"}))
+    assert {:error, :version_mismatch} = Payload.verify(root, public_key: key.public)
+    File.write!(payload_path, payload)
+
+    license_path = Path.join(root, "LICENSE")
+    File.write!(license_path, "proprietary")
+    assert {:error, :license_mismatch} = Payload.verify(root, public_key: key.public)
+    File.write!(license_path, "Apache License Version 2.0")
+
+    checksums_path = Path.join(root, "checksums.txt")
+    File.write!(checksums_path, "malformed")
+    assert {:error, :checksum_malformed} = Payload.verify(root, public_key: key.public)
+    assert {:error, :archive_checksum_missing} = Payload.checksum(root, archive_name)
+    assert {:error, :archive_checksum_missing} = Payload.archive_checksum(root)
+  end
 end

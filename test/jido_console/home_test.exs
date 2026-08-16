@@ -32,6 +32,10 @@ defmodule Jido.Console.HomeTest do
   end
 
   test "each stable directory has one owner and purpose" do
+    assert Home.schema() == "jido.home"
+    assert Home.schema_version() == 1
+    assert is_binary(Home.previous_cache_root())
+
     directories = Home.directories()
 
     assert Map.keys(directories) |> Enum.sort() ==
@@ -73,6 +77,29 @@ defmodule Jido.Console.HomeTest do
     File.mkdir_p!(home_root)
     refute Home.in_home?(Path.join(root, "other"), jido_home: home_root)
     assert Home.in_home?(Path.join(home_root, "cache"), jido_home: home_root)
+  end
+
+  test "reports missing, unsafe, and non-directory home paths", %{root: root} do
+    missing = Path.join(root, "missing")
+    assert {:error, {:home_stat_failed, ^missing, :enoent}} = Home.check_private(missing)
+
+    unsafe = Path.join(root, "unsafe-check")
+    File.mkdir_p!(unsafe)
+    File.chmod!(unsafe, 0o755)
+    assert {:error, {:unsafe_permissions, ^unsafe, _mode}} = Home.check_private(unsafe)
+
+    home_file = Path.join(root, "home-file")
+    File.write!(home_file, "not a directory")
+    assert {:error, {:home_path_not_directory, ^home_file, :regular}} = Home.ensure(jido_home: home_file)
+
+    home_root = Path.join(root, "named-entry")
+    assert {:ok, _home} = Home.ensure(jido_home: home_root)
+    state = Path.join(home_root, "state")
+    File.rmdir!(state)
+    File.write!(state, "not a directory")
+
+    assert {:error, {:home_path_not_directory, ^state, :regular}} =
+             Home.ensure(jido_home: home_root)
   end
 
   test "production local product paths resolve through the home contract" do

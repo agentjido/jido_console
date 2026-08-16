@@ -12,8 +12,23 @@ defmodule Jido.Console.Tui.Turn do
 
   defmodule Tool do
     @moduledoc false
-    @enforce_keys [:id, :operation, :status, :events]
-    defstruct @enforce_keys ++ [:summary, :error, :loop_index]
+
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                id: Zoi.any(),
+                operation: Zoi.string() |> Zoi.nullable(),
+                status: Zoi.atom(),
+                events: Zoi.array(Zoi.map()),
+                summary: Zoi.string() |> Zoi.nullish(),
+                error: Zoi.string() |> Zoi.nullish(),
+                loop_index: Zoi.integer() |> Zoi.gte(0) |> Zoi.nullish()
+              },
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{
             id: term(),
@@ -26,21 +41,29 @@ defmodule Jido.Console.Tui.Turn do
           }
   end
 
-  @enforce_keys [
-    :id,
-    :prompt,
-    :attachments,
-    :assistant,
-    :tools,
-    :tool_order,
-    :reviews,
-    :outcome,
-    :changes,
-    :events,
-    :seen_events,
-    :status
-  ]
-  defstruct @enforce_keys ++ [request_id: nil, last_seq: nil]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              id: Zoi.integer() |> Zoi.gte(0),
+              prompt: Zoi.string(),
+              attachments: Zoi.array(Zoi.map()),
+              assistant: Zoi.string(),
+              tools: Zoi.map(Zoi.any(), Zoi.struct(Tool), []),
+              tool_order: Zoi.array(),
+              reviews: Zoi.array(Zoi.map()),
+              outcome: Zoi.map() |> Zoi.nullable(),
+              changes: Zoi.array(Zoi.map()),
+              events: Zoi.array(Zoi.map()),
+              seen_events: Zoi.struct(MapSet),
+              status: Zoi.atom(),
+              request_id: Zoi.string() |> Zoi.nullish(),
+              last_seq: Zoi.integer() |> Zoi.gte(0) |> Zoi.nullish()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           id: non_neg_integer(),

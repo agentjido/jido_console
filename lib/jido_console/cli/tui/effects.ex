@@ -14,6 +14,8 @@ defmodule Jido.Console.Tui.Effects do
   @spec dispatch(State.t(), [State.effect()], module(), keyword(), Workers.t()) ::
           {:continue | :exit, Workers.t()}
   def dispatch(state, effects, _runtime, opts, workers) do
+    session_client_module = Keyword.get(opts, :session_client_module, Client)
+
     Enum.reduce_while(effects, {:continue, workers}, fn
       :exit, {:continue, workers} ->
         {:halt, {:exit, workers}}
@@ -37,17 +39,17 @@ defmodule Jido.Console.Tui.Effects do
         {:cont, {:continue, workers}}
 
       {:start_turn, prompt}, {:continue, workers} ->
-        {:cont, {:continue, start_turn(workers, state.session_client, opts, prompt, %{})}}
+        {:cont, {:continue, start_turn(workers, state.session_client, session_client_module, opts, prompt, %{})}}
 
       {:start_turn, prompt, context}, {:continue, workers} ->
-        {:cont, {:continue, start_turn(workers, state.session_client, opts, prompt, context)}}
+        {:cont, {:continue, start_turn(workers, state.session_client, session_client_module, opts, prompt, context)}}
 
       {:cancel_turn, request}, {:continue, workers} ->
         cancel_opts = Keyword.get(opts, :cancel_opts, [])
 
         workers =
           Workers.start(workers, :session_cancel, fn ->
-            Client.cancel(state.session_client, request, cancel_opts)
+            session_client_module.cancel(state.session_client, request, cancel_opts)
           end)
 
         {:cont, {:continue, workers}}
@@ -57,7 +59,14 @@ defmodule Jido.Console.Tui.Effects do
         workers =
           Workers.start(workers, {:session_review, decision}, fn ->
             review_opts = Keyword.get(opts, :review_opts, [])
-            Client.respond_review(state.session_client, decision, request, review, review_opts)
+
+            session_client_module.respond_review(
+              state.session_client,
+              decision,
+              request,
+              review,
+              review_opts
+            )
           end)
 
         {:cont, {:continue, workers}}
@@ -115,6 +124,8 @@ defmodule Jido.Console.Tui.Effects do
   end
 
   defp apply_selection(selection, opts) do
+    timeout = Keyword.get(opts, :selection_apply_timeout, 60_000)
+
     case Keyword.get(opts, :runtime_owner) do
       pid when is_pid(pid) ->
         send(pid, {:reconfigure, self(), selection})
@@ -122,7 +133,7 @@ defmodule Jido.Console.Tui.Effects do
         receive do
           {:jido_runtime_reconfigure, ^pid, result} -> result
         after
-          60_000 -> {:error, :selection_apply_timeout}
+          timeout -> {:error, :selection_apply_timeout}
         end
 
       _missing ->
@@ -130,12 +141,12 @@ defmodule Jido.Console.Tui.Effects do
     end
   end
 
-  defp start_turn(workers, session_client, opts, prompt, context) do
+  defp start_turn(workers, session_client, client_module, opts, prompt, context) do
     turn_opts = opts |> Keyword.get(:turn_opts, []) |> Keyword.put(:context, context)
     await_opts = Keyword.get(opts, :await_opts, timeout: 30_000, cancel_on_timeout: false)
 
     Workers.start(workers, :session_start_turn, fn ->
-      Client.start_turn(session_client, prompt, turn_opts: turn_opts, await_opts: await_opts)
+      client_module.start_turn(session_client, prompt, turn_opts: turn_opts, await_opts: await_opts)
     end)
   end
 

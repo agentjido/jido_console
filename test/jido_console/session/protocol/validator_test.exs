@@ -115,6 +115,39 @@ defmodule Jido.Console.Session.Protocol.ValidatorTest do
              Validator.validate(envelope(%{"family" => "control", "type" => "attach"}), catalog: catalog)
   end
 
+  test "rejects invalid envelopes, payload shapes, local fields, and collection bounds" do
+    assert {:error, :invalid_protocol_envelope} = Validator.validate(%{})
+    assert {:error, {:invalid_protocol_name, "other"}} = Validator.validate(envelope(%{"protocol" => "other"}))
+    assert {:error, {:invalid_protocol_json, _reason}} = Validator.validate_json("{")
+    assert {:error, :invalid_protocol_payload} = Validator.validate(envelope(%{"payload" => []}))
+
+    catalog = Generated.catalog()
+    [local_field | _rest] = catalog["client_local_fields"]
+
+    assert {:error, :client_local_forbidden} =
+             Validator.validate(envelope(%{"payload" => %{"text" => "hello", local_field => true}}))
+
+    bounds = catalog["bounds"]
+
+    oversized_list = Enum.to_list(0..bounds["max_list_items"])
+
+    assert {:error, :oversized_protocol_list} =
+             Validator.validate(envelope(%{"payload" => %{"text" => oversized_list}}))
+
+    oversized_map = Map.new(0..bounds["max_map_keys"], &{Integer.to_string(&1), &1})
+    assert {:error, :oversized_protocol_map} = Validator.validate(envelope(%{"payload" => %{"text" => oversized_map}}))
+
+    too_many_unknown =
+      0..bounds["max_unknown_keys"]
+      |> Map.new(&{"unknown_#{&1}", &1})
+      |> Map.put("text", "hello")
+
+    assert {:error, :unknown_data_overflow} = Validator.validate(envelope(%{"payload" => too_many_unknown}))
+
+    assert {:error, :unknown_data_overflow} =
+             Validator.validate(envelope(%{"payload" => %{"text" => "hello", "callback" => fn -> :ok end}}))
+  end
+
   defp envelope(overrides) do
     %{
       "protocol" => "jido.session",

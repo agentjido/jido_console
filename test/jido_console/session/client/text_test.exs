@@ -14,4 +14,11 @@ defmodule Jido.Console.Session.Client.TextTest do
     assert text == "run_started\ngap after 3\nerror: boom"
     refute text =~ "#PID"
   end
+
+  test "uses nested and fallback failure reasons" do
+    assert Text.render(%{"type" => "delivery_gap"}) == "gap after 0"
+    assert Text.render(%{"type" => "run_failed", "payload" => %{"reason" => "nested"}}) == "error: nested"
+    assert Text.render(%{"type" => "run_failed"}) == "error: failed"
+    assert Text.render(:invalid) == "unknown"
+  end
 end

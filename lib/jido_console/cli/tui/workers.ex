@@ -8,8 +8,15 @@ defmodule Jido.Console.Tui.Workers do
 
   defmodule Worker do
     @moduledoc false
-    @enforce_keys [:pid, :ref, :kind]
-    defstruct @enforce_keys
+
+    @schema Zoi.struct(
+              __MODULE__,
+              %{pid: Zoi.pid(), ref: Zoi.reference(), kind: Zoi.any()},
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{
             pid: pid(),

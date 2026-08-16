@@ -7,8 +7,19 @@ defmodule Jido.Console.Session.Request do
   cancellation, and result correlation.
   """
 
-  @enforce_keys [:id, :request_id, :run_id, :session_id]
-  defstruct @enforce_keys
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              id: Zoi.string(),
+              request_id: Zoi.string(),
+              run_id: Zoi.string(),
+              session_id: Zoi.string()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           id: String.t(),

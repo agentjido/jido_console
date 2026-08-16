@@ -96,6 +96,80 @@ defmodule Jido.Console.Session.ProtocolTest do
              Protocol.envelope(schema, "command", "invoke_command", %{"authority_from" => "transport"})
   end
 
+  test "schema and JSON failures have stable results" do
+    invalid = Path.join(System.tmp_dir!(), "jido-protocol-invalid-#{System.unique_integer([:positive])}.json")
+    on_exit(fn -> File.rm(invalid) end)
+    File.write!(invalid, "{")
+
+    assert {:error, {:protocol_schema_invalid, message}} = Protocol.schema(path: invalid)
+    assert is_binary(message)
+    assert {:error, {:protocol_schema_unreadable, :enoent}} = Protocol.schema(path: invalid <> ".missing")
+
+    assert {:error, :protocol_json_not_object} = Protocol.decode("[]")
+    assert {:error, {:protocol_json_invalid, %Jason.DecodeError{}}} = Protocol.decode("{")
+    assert {:error, error} = Protocol.encode(%{"pid" => self()})
+    assert error.__struct__ == Elixir.Protocol.UndefinedError
+  end
+
+  test "missing and invalid declarations are reported without exceptions", %{schema: schema} do
+    assert {:ok, %{"rule" => "additive"}} = Protocol.compatibility(schema, :protocol)
+    assert {:error, :protocol_identity_missing} = Protocol.identity(%{})
+    assert {:error, :protocol_compatibility_missing} = Protocol.compatibility(%{}, :protocol)
+
+    assert {:error, {:unknown_protocol_family, "missing"}} =
+             Protocol.compatibility(schema, "missing")
+
+    assert {:error, {:unknown_protocol_type, "command", "missing"}} =
+             Protocol.type(schema, "command", "missing")
+
+    missing_types = %{"families" => %{"command" => %{}}}
+    assert {:error, :protocol_types_missing} = Protocol.types(missing_types, "command")
+    assert {:error, {:unknown_protocol_family, "event"}} = Protocol.types(%{}, "event")
+
+    invalid_locality = put_in(schema, ["families", "command", "types", "submit_input", "locality"], "remote")
+
+    assert {:error, {:protocol_locality_missing, "command", "submit_input"}} =
+             Protocol.locality(invalid_locality, "command", "submit_input")
+
+    assert Protocol.client_local_fields(%{}) == []
+    assert {:error, :protocol_bounds_missing} = Protocol.bounds(%{})
+    assert {:error, :protocol_authority_missing} = Protocol.authority(%{})
+    refute Protocol.authority_field?(%{}, "permission")
+    assert Protocol.never_grant_from(%{}) == []
+
+    assert {:ok, envelope} = Protocol.envelope(schema, "interaction", "draft_changed")
+    assert envelope["id"] =~ "plt_interaction_"
+
+    assert {:error, defects} = Protocol.review(%{})
+    assert :protocol_identity_missing in defects
+    assert :protocol_bounds_missing in defects
+    assert :protocol_authority_missing in defects
+    assert {:unknown_protocol_family, "command"} in defects
+
+    malformed =
+      schema
+      |> put_in(["families", "command", "version"], nil)
+      |> put_in(["families", "command", "compatibility"], "breaking")
+      |> put_in(["families", "command", "types"], %{
+        "invalid" => "not a declaration",
+        "incomplete" => %{"locality" => "remote"}
+      })
+      |> put_in(["families", "event"], %{})
+      |> put_in(["bounds"], %{})
+      |> put_in(["authority"], %{"never_grant_from" => ["renderer"]})
+
+    assert {:error, defects} = Protocol.review(malformed)
+    assert {:family_version_missing, "command"} in defects
+    assert {:type_invalid, "command", "invalid"} in defects
+    assert {:type_incomplete, "command", "incomplete", ["fields"]} in defects
+    assert {:type_locality_invalid, "command", "incomplete"} in defects
+    assert :protocol_types_missing in defects
+    assert {:bounds_incomplete, _missing} = Enum.find(defects, &match?({:bounds_incomplete, _}, &1))
+
+    assert {:authority_denial_incomplete, _missing} =
+             Enum.find(defects, &match?({:authority_denial_incomplete, _}, &1))
+  end
+
   defp sibling(name) do
     Protocol.schema_path() |> Path.dirname() |> Path.join(name)
   end

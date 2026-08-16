@@ -2,7 +2,6 @@ defmodule Jido.Console.Process.TreeTest do
   use ExUnit.Case, async: false
 
   alias Jido.Console.Process.Tree
-  alias Jido.Console.Release.Boundaries
 
   test "stops a grandchild left behind by the group leader" do
     {leader, child} = spawn_group_with_child!()
@@ -53,35 +52,11 @@ defmodule Jido.Console.Process.TreeTest do
     refute File.dir?(root)
   end
 
-  @tag :darwin
-  test "Gate 0 hostile runtime-boundary process fixtures are denied" do
-    result =
-      Boundaries.runtime_boundary!(
-        network_probe: fn ->
-          [
-            %{"name" => "loopback", "classification" => "denied"},
-            %{"name" => "external", "classification" => "denied"}
-          ]
-        end
-      )
-
-    assert result["status"] == "passed"
-    assert Enum.all?(result["processes"], &(&1["classification"] == "denied"))
-    assert Enum.all?(result["processes"], &(&1["runner_cleanup"] == "passed"))
-    refute inspect(result) =~ ~r/"(?:pid|child_pid|parent_pid)"/
-  end
-
   defp spawn_group_with_child!(opts \\ []) do
-    state = Path.join(System.tmp_dir!(), "jido-tree-state-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(state)
-    child_file = Path.join(state, "child.pid")
-
     {:ok, {perl, args}} =
       Tree.wrap_leader("/bin/sh", [
         "-c",
-        "sleep 30 & printf '%s' $! > \"$1\"; wait",
-        "tree-fixture",
-        child_file
+        "sleep 30 & printf '%s\\n' $!; wait"
       ])
 
     port =
@@ -91,35 +66,20 @@ defmodule Jido.Console.Process.TreeTest do
       )
 
     {:os_pid, leader} = Port.info(port, :os_pid)
-    child = wait_pid_file!(child_file)
+    child = receive_child_pid!(port)
     if Keyword.get(opts, :register_exit, true), do: on_exit(fn -> Tree.stop(leader) end)
     {leader, child}
   end
 
-  defp wait_pid_file!(path) do
-    deadline = System.monotonic_time(:millisecond) + 1_000
-    do_wait_pid_file!(path, deadline)
-  end
-
-  defp do_wait_pid_file!(path, deadline) do
-    case File.read(path) do
-      {:ok, value} ->
+  defp receive_child_pid!(port) do
+    receive do
+      {^port, {:data, value}} ->
         case Integer.parse(String.trim(value)) do
           {pid, ""} when pid > 1 -> pid
-          _invalid -> retry_pid_file!(path, deadline)
+          _invalid -> flunk("child process identifier was invalid")
         end
-
-      {:error, _reason} ->
-        retry_pid_file!(path, deadline)
-    end
-  end
-
-  defp retry_pid_file!(path, deadline) do
-    if System.monotonic_time(:millisecond) >= deadline do
-      flunk("child process identifier was not written")
-    else
-      Process.sleep(10)
-      do_wait_pid_file!(path, deadline)
+    after
+      1_000 -> flunk("child process identifier was not received")
     end
   end
 

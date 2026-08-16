@@ -11,27 +11,35 @@ defmodule Jido.Console.Tui.State do
   @review_limit 100
   @max_scroll_offset 1_000_000
 
-  @enforce_keys [:session, :size]
-  defstruct session: nil,
-            session_client: nil,
-            size: nil,
-            editor: %Editor{},
-            history: [],
-            history_index: nil,
-            history_draft: nil,
-            history_limit: @default_history_limit,
-            scroll_offset: 0,
-            turn_limit: @default_turn_limit,
-            messages: [],
-            activity: :idle,
-            prepare_prompt?: false,
-            project_instructions: [],
-            coding_reviews: [],
-            turns: [],
-            next_turn_id: 0,
-            selection: nil,
-            dirty?: true,
-            render_scheduled?: false
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              session: Zoi.any(),
+              size: Zoi.tuple({Zoi.integer() |> Zoi.positive(), Zoi.integer() |> Zoi.positive()}),
+              session_client: Zoi.any() |> Zoi.nullish(),
+              editor: Zoi.struct(Editor) |> Zoi.optional() |> Zoi.default(%Editor{}),
+              history: Zoi.array(Zoi.string()) |> Zoi.optional() |> Zoi.default([]),
+              history_index: Zoi.integer() |> Zoi.gte(0) |> Zoi.nullish(),
+              history_draft: Zoi.string() |> Zoi.nullish(),
+              history_limit: Zoi.integer() |> Zoi.positive() |> Zoi.optional() |> Zoi.default(@default_history_limit),
+              scroll_offset: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0),
+              turn_limit: Zoi.integer() |> Zoi.positive() |> Zoi.optional() |> Zoi.default(@default_turn_limit),
+              messages: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
+              activity: Zoi.any() |> Zoi.optional() |> Zoi.default(:idle),
+              prepare_prompt?: Zoi.boolean() |> Zoi.optional() |> Zoi.default(false),
+              project_instructions: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
+              coding_reviews: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
+              turns: Zoi.array() |> Zoi.optional() |> Zoi.default([]),
+              next_turn_id: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0),
+              selection: Zoi.any() |> Zoi.nullish(),
+              dirty?: Zoi.boolean() |> Zoi.optional() |> Zoi.default(true),
+              render_scheduled?: Zoi.boolean() |> Zoi.optional() |> Zoi.default(false)
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type effect ::
           {:start_turn, String.t()}

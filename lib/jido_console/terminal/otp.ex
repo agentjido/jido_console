@@ -14,8 +14,11 @@ defmodule Jido.Console.Terminal.OTP do
 
   defmodule Handle do
     @moduledoc false
-    @enforce_keys [:pid]
-    defstruct [:pid]
+
+    @schema Zoi.struct(__MODULE__, %{pid: Zoi.pid()}, unrecognized_keys: :error)
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{pid: pid()}
   end

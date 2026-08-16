@@ -73,8 +73,9 @@ defmodule Jido.Console.Providers.HarnessTest do
     assert Enum.all?(blocked, &(&1.source_mode == :live and &1.status == :blocked))
 
     runner = fn _entry, _dimension, _opts ->
-      Process.sleep(5_000)
-      {:ok, :pass, "should not finish"}
+      receive do
+        :finish -> {:ok, :pass, "should not finish"}
+      end
     end
 
     assert {:ok, timed_out} =

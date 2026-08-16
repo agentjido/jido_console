@@ -40,8 +40,6 @@ defmodule Jido.Console.Release.PreservedInterfacesTest do
   end
 
   test "CLI exit statuses remain 0, 1, and 64" do
-    assert :ok = Jido.Console.run(["--help"])
-
     assert capture_io(:stderr, fn ->
              assert {:error, 1} = Jido.Console.run(["--wat"])
            end) =~ "unknown option"

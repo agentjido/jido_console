@@ -82,6 +82,60 @@ defmodule Jido.Console.Release.ContractTest do
     assert {:error, :launcher_uses_release_eval} = Contract.validate_layout(root, metadata())
   end
 
+  test "rejects malformed metadata, package entries, and launcher variants" do
+    assert Contract.schema_version() == 1
+    assert_raise ArgumentError, fn -> Contract.root_name("invalid", @target) end
+    assert_raise ArgumentError, fn -> apply(Contract, :root_name, [123, @target]) end
+    assert_raise ArgumentError, fn -> Contract.archive_name(@version, "other") end
+    assert_raise ArgumentError, fn -> Contract.homebrew_inputs(metadata(), "short") end
+    assert {:error, {:metadata_not_a_map, :invalid}} = Contract.validate_metadata(:invalid)
+
+    assert {:error, :invalid_file_inventory} =
+             metadata()
+             |> Map.put("files", [
+               %{"path" => "../secret", "sha256" => String.duplicate("a", 64), "size" => 1}
+             ])
+             |> Contract.validate_metadata()
+
+    assert {:error, _reason} =
+             metadata()
+             |> Map.put("files", :invalid)
+             |> Contract.validate_metadata()
+
+    assert {:error, {:invalid_field, "root", "wrong", _expected}} =
+             metadata()
+             |> Map.put("root", "wrong")
+             |> Contract.validate_metadata()
+
+    root = package_fixture()
+
+    assert {:error, {:invalid_root_name, "wrong", _expected}} =
+             Contract.validate_layout(Path.join(Path.dirname(root), "wrong"), metadata())
+
+    File.rm!(Path.join(root, "LICENSE"))
+    assert {:error, {:missing_package_path, "LICENSE"}} = Contract.validate_layout(root, metadata())
+    File.write!(Path.join(root, "LICENSE"), "license")
+
+    launcher = Path.join(root, "bin/jido")
+    File.chmod!(launcher, 0o644)
+    assert {:error, {:invalid_executable, _stat}} = Contract.validate_layout(root, metadata())
+    File.rm!(launcher)
+    assert {:error, {:missing_package_path, "bin/jido"}} = Contract.validate_layout(root, metadata())
+
+    variants = [
+      {"exit 0\n", :launcher_has_no_portable_shell_header},
+      {"#!/bin/sh\nunset BINDIR ROOTDIR\nexec private -extra \"$@\"\n", :launcher_does_not_use_private_runtime},
+      {"#!/bin/sh\nunset BINDIR ROOTDIR\nexec libexec/private \"$@\"\n", :launcher_does_not_preserve_arguments},
+      {"#!/bin/sh\nexec libexec/private -extra \"$@\"\n", :launcher_does_not_isolate_parent_beam}
+    ]
+
+    for {body, expected} <- variants do
+      File.write!(launcher, body)
+      File.chmod!(launcher, 0o755)
+      assert {:error, ^expected} = Contract.validate_layout(root, metadata())
+    end
+  end
+
   defp metadata do
     Contract.metadata!(
       version: @version,

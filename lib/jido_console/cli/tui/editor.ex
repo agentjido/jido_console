@@ -6,7 +6,17 @@ defmodule Jido.Console.Tui.Editor do
 
   @max_graphemes 65_536
 
-  defstruct text: "", cursor: 0
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              text: Zoi.string() |> Zoi.optional() |> Zoi.default(""),
+              cursor: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0)
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{text: String.t(), cursor: non_neg_integer()}
 

@@ -262,6 +262,89 @@ defmodule Jido.Console.Tui.ViewTest do
     assert Enum.join(frame.rows, "\n") =~ "review truncated"
   end
 
+  test "renders fallback tool, approval, review, role, title, and activity states" do
+    tool = %Turn.Tool{
+      id: "other",
+      operation: nil,
+      status: :unknown,
+      events: [],
+      summary: nil,
+      error: nil,
+      loop_index: nil
+    }
+
+    reviews = [
+      %{operation: "deny", status: :denied, arguments_summary: nil},
+      %{operation: "expire", status: :expired, error: "old"},
+      %{operation: "fail", status: :failed, error: "bad"},
+      %{operation: "approve", status: :complete, decision: :approve, arguments_summary: "value"},
+      %{operation: "other", status: :unknown, arguments_summary: "%{}"}
+    ]
+
+    turn = %{
+      Turn.new(0, "prompt")
+      | tools: %{"other" => tool},
+        tool_order: ["other"],
+        reviews: reviews
+    }
+
+    coding_reviews = [
+      %{
+        "kind" => "edit",
+        "path" => "redacted.ex",
+        "status" => "no_change",
+        "after_sha256" => "same",
+        "diff" => %{"redacted" => true}
+      },
+      %{"kind" => "edit", "path" => "none.ex", "status" => "cancelled", "after_sha256" => "none", "diff" => nil},
+      %{"kind" => "state", "path" => "interrupt.ex", "status" => "interrupted"},
+      %{"kind" => "state", "path" => nil, "status" => "unexpected"}
+    ]
+
+    state = %{
+      State.new(:session, {100, 40})
+      | selection: nil,
+        turns: [turn],
+        coding_reviews: coding_reviews,
+        activity: {:preparing, :other}
+    }
+
+    text = state |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
+
+    for expected <- [
+          " Jido ",
+          "[unknown] tool",
+          "[denied] deny",
+          "[expired] expire · old",
+          "[review failed] fail · bad",
+          "[approve] approve · value",
+          "[review unknown] other",
+          "[no change] redacted.ex",
+          "diff redacted",
+          "[cancelled] none.ex",
+          "[interrupted] interrupt.ex",
+          "[failed] coding mutation",
+          "other"
+        ] do
+      assert text =~ expected
+    end
+
+    legacy = %{
+      State.new(:session, {50, 14})
+      | messages: [
+          %{role: :user, content: "question"},
+          %{role: :system, content: "rule"},
+          %{role: :other, content: "answer"}
+        ]
+    }
+
+    legacy_text = legacy |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
+
+    for expected <- ["User", "question", "System", "rule", "Assistant", "answer"] do
+      assert legacy_text =~ expected
+    end
+  end
+
   test "view source cannot read files, run commands, or modify Git" do
     source = File.read!("lib/jido_console/cli/tui/view.ex")
 

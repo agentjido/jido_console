@@ -30,4 +30,36 @@ defmodule Jido.Console.Session.PermissionTest do
                decision: :denied
              })
   end
+
+  test "rejects incomplete and crossed responses and expires by event" do
+    attrs = %{
+      id: "approval",
+      principal: "user",
+      rule: "write",
+      control: "control",
+      effect: "effect",
+      session_id: "session",
+      run_id: "run",
+      request_id: "request",
+      scope: "workspace"
+    }
+
+    assert {:error, :incomplete_permission_request} =
+             Permission.request(Permission.new(), %{attrs | scope: ""})
+
+    assert {:ok, table, _request} = Permission.request(Permission.new(), attrs)
+
+    assert {:error, :cross_session_result} =
+             Permission.respond(table, %{id: "approval", session_id: "other", principal: "user", decision: :approved})
+
+    assert {:error, :cross_principal_result} =
+             Permission.respond(table, %{id: "approval", session_id: "session", principal: "other", decision: :approved})
+
+    assert {:error, :invalid_permission_decision} =
+             Permission.respond(table, %{id: "approval", session_id: "session", principal: "user", decision: :other})
+
+    assert {:ok, empty} = Permission.expire(table, "approval")
+    assert empty.pending == %{}
+    assert {:error, :stale_result} = Permission.expire(empty, "approval")
+  end
 end

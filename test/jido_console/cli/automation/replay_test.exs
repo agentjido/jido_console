@@ -1,6 +1,8 @@
 defmodule Jido.Console.Automation.ReplayTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureIO
+
   alias Jido.Console.Automation.Engine.Jidoka, as: JidokaEngine
   alias Jido.Console.Automation.{Loader, Plan, Result}
   alias Jido.Console.Automation.Replay
@@ -200,14 +202,19 @@ defmodule Jido.Console.Automation.ReplayTest do
     mismatch_output = Path.join(root, "mismatch-output")
     {:ok, mismatch_stdout} = StringIO.open("")
 
-    assert {:error, 1} =
-             Jido.Console.run(
-               ["eval", suite_path, "--output", mismatch_output],
-               execution_profile_resolver: resolver,
-               runtime_opts: [llm: live_llm],
-               output_device: mismatch_stdout,
-               run_id: "mismatch-run"
-             )
+    mismatch_diagnostic =
+      capture_io(:stderr, fn ->
+        assert {:error, 1} =
+                 Jido.Console.run(
+                   ["eval", suite_path, "--output", mismatch_output],
+                   execution_profile_resolver: resolver,
+                   runtime_opts: [llm: live_llm],
+                   output_device: mismatch_stdout,
+                   run_id: "mismatch-run"
+                 )
+      end)
+
+    assert mismatch_diagnostic =~ "automated run failed"
 
     {_input, mismatch_text} = StringIO.contents(mismatch_stdout)
 
@@ -219,12 +226,17 @@ defmodule Jido.Console.Automation.ReplayTest do
     bad_output = Path.join(root, "bad-output")
     bad_resolver = profile_resolver(fixture_path, "sha256:" <> String.duplicate("0", 64))
 
-    assert {:error, 64} =
-             Jido.Console.run(
-               ["eval", suite_path, "--output", bad_output],
-               execution_profile_resolver: bad_resolver,
-               output_device: stdout
-             )
+    invalid_fixture_diagnostic =
+      capture_io(:stderr, fn ->
+        assert {:error, 64} =
+                 Jido.Console.run(
+                   ["eval", suite_path, "--output", bad_output],
+                   execution_profile_resolver: bad_resolver,
+                   output_device: stdout
+                 )
+      end)
+
+    assert invalid_fixture_diagnostic =~ "replay_fixture_digest_mismatch"
 
     refute File.exists?(bad_output)
   end
@@ -255,6 +267,95 @@ defmodule Jido.Console.Automation.ReplayTest do
     assert record["capability_replay"]["status"] == "matched"
     assert record["evaluation"]["status"] == "passed"
     refute_receive :example_live_provider_called
+  end
+
+  test "rejects malformed replay profiles and accepts an inline fixture", %{root: root} do
+    fixture = fixture_for(cell(), final_capabilities("inline"))
+    {:ok, json} = Fixture.encode_json(fixture)
+    directory = Path.join(root, "fixture-directory")
+    File.mkdir_p!(directory)
+
+    assert {:ok, %{mode: :live}} = Replay.resolve(nil)
+    assert {:error, :invalid_replay_profile_environment} = Replay.resolve(:invalid)
+    assert :ok = Replay.stop(nil)
+
+    assert {:error, {:invalid_replay_profile, 42}} =
+             Replay.resolve(%{registration: %{metadata: %{"jido_console.replay" => 42}}})
+
+    invalid_profiles = [
+      {%{"mode" => "live"}, {:invalid_replay_profile_mode, "live"}},
+      {%{"mode" => nil}, {:invalid_replay_profile_mode, nil}},
+      {%{"mode" => "replay"}, :missing_replay_fixture_source},
+      {%{"mode" => "replay", "max_bytes" => 0}, {:invalid_replay_fixture_limit, 0}},
+      {%{"mode" => "replay", "fixture_path" => directory}, :replay_fixture_not_regular},
+      {%{"mode" => "replay", "fixture_path" => Path.join(root, "missing")}, {:replay_fixture_unavailable, :enoent}},
+      {%{"mode" => "replay", "fixture_json" => json, "fixture_digest" => 42}, {:invalid_replay_fixture_digest, 42}},
+      {%{"mode" => "replay", "fixture_json" => json, "fixture_digest" => "bad"},
+       {:invalid_replay_fixture_digest, "digest must use an immutable sha256 value"}},
+      {%{
+         "mode" => "replay",
+         "fixture_json" => json,
+         "fixture_digest" => fixture.digest,
+         "compatibility" => "bad"
+       }, {:invalid_replay_compatibility, "bad"}}
+    ]
+
+    for {metadata, expected} <- invalid_profiles do
+      environment = %{registration: %{metadata: %{"jido_console.replay" => metadata}}}
+      assert {:error, ^expected} = Replay.resolve(environment)
+    end
+
+    unsafe = %{
+      "mode" => "replay",
+      "fixture_json" => json,
+      "fixture_digest" => fixture.digest,
+      "compatibility" => %{"token" => "secret"}
+    }
+
+    assert {:error, {:invalid_replay_compatibility, _reason}} =
+             Replay.resolve(%{registration: %{metadata: %{"jido_console.replay" => unsafe}}})
+
+    inline = %{
+      "mode" => "replay",
+      "fixture_json" => json,
+      "fixture_digest" => fixture.digest,
+      "compatibility" => nil
+    }
+
+    assert {:ok, replay} = Replay.resolve(%{registration: %{metadata: %{jido_console_replay: inline}}})
+    assert {:ok, player} = Replay.open(replay)
+    assert Replay.put_runtime([keep: true], player)[:capabilities]
+    assert :ok = Replay.stop(player)
+    assert :ok = Replay.stop(player)
+  end
+
+  test "finds portable missing and extra call mismatch forms" do
+    fixture = fixture_for(one_turn_cell(), final_capabilities("unused"))
+    replay = replay_config(fixture)
+
+    errors = [
+      {:capability_replay_missing_call, :invalid_summary},
+      ["capability_replay_missing_call", %{"class" => "llm", "action" => "call"}],
+      ["capability_replay_extra_calls", 1, 1]
+    ]
+
+    for error <- errors do
+      {:ok, player} = Replay.open(replay)
+
+      result =
+        Result.new(one_turn_cell(),
+          execution: %{status: :error, started_at: "2026-01-01T00:00:00Z", duration_ms: 1},
+          turns: [],
+          error: Result.error(:fixture),
+          extensions: %{}
+        )
+        |> Map.put(:error, error)
+
+      finalized = Replay.finalize(result, replay, player)
+      assert finalized.execution.status == :error
+      assert finalized.capability_replay.status == :mismatch
+      assert finalized.capability_replay.mismatch.kind in [:missing_call, :extra_calls]
+    end
   end
 
   defp fixture_for(cell, capabilities) do

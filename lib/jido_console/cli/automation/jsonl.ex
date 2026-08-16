@@ -4,7 +4,21 @@ defmodule Jido.Console.Automation.JSONL do
   alias Jido.Console.Automation.Contract
   alias Jido.Console.Automation.JSONL.{Artifact, Tracker}
 
-  defstruct [:root, :tracker, :artifact_io, :output_writer, :utc_now, stdout: :stdio]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              root: Zoi.string() |> Zoi.nullish(),
+              tracker: Zoi.pid() |> Zoi.nullish(),
+              artifact_io: Zoi.map() |> Zoi.nullish(),
+              output_writer: Zoi.function(arity: 2) |> Zoi.nullish(),
+              utc_now: Zoi.function(arity: 0) |> Zoi.nullish(),
+              stdout: Zoi.any() |> Zoi.optional() |> Zoi.default(:stdio)
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           root: String.t() | nil,

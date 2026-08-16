@@ -356,6 +356,48 @@ defmodule Jido.Console.Automation.LimitsTest do
     assert result.runtime_limits.applied.cell_timeout_ms == 5_000
   end
 
+  test "normalizes limits and reports each local limit category" do
+    suite = %{jobs: 2, repeats: 1, limits: %{}, scenarios: [%{turns: [%{}, %{}]}]}
+
+    assert {:ok, resolved} =
+             Limits.resolve(%{suite | limits: %{"max_total_cost" => 2.0, "provider_concurrency" => %{openai: 1}}}, 1,
+               cancel_active_on_limit: true
+             )
+
+    assert resolved.cancel_active_on_stop
+    assert Limits.provider_key(%{dimensions: %{model_ref: ""}}) == "unknown"
+    assert Limits.provider_limit(resolved, %{dimensions: %{model_ref: "other:model"}}) == 2
+    assert Limits.cell_timeout_ms(resolved) == 300_000
+    assert Limits.jidoka(resolved).max_total_cost == 2.0
+    assert Limits.manifest(resolved).observed.total_tokens == 0
+    assert Limits.receive_timeout(resolved, 3_599_999) == 1
+
+    cost_limits = limits(%{"*" => 1}, max_total_cost: 1.0)
+    costly = %{execution: %{turn_count: 1}, usage: %{total_cost: 1.5, ignored: "value"}}
+    assert %{kind: :total_cost} = Limits.stop_reason(cost_limits, [costly], 1)
+
+    assert {:error, {:invalid_automation_limit_ceiling, :invalid}} =
+             Limits.resolve(suite, 1, automation_limit_ceiling: :invalid)
+
+    assert {:error, {:invalid_automation_limits, :requested, :invalid}} =
+             Limits.resolve(%{suite | limits: :invalid}, 1, [])
+
+    assert {:error, {:invalid_provider_concurrency, "", 1}} =
+             Limits.resolve(%{suite | limits: %{provider_concurrency: %{"" => 1}}}, 1, [])
+
+    assert {:error, {:invalid_provider_concurrency, :invalid}} =
+             Limits.resolve(%{suite | limits: %{provider_concurrency: :invalid}}, 1, [])
+
+    assert {:error, {:automation_turn_limit_exceeded, 2, 1}} =
+             Limits.resolve(suite, 1, automation_limit_ceiling: %{max_turns_per_cell: 1})
+
+    execution = %{turn_count: 1, duration_ms: 10}
+    assert %{exceeded: %{kind: :cell_timeout}} = Limits.result(cost_limits, nil, execution, %{}, {:error, [:timeout]})
+
+    elapsed = put_in(cost_limits, [:applied, :cell_timeout_ms], 10)
+    assert %{exceeded: %{kind: :cell_timeout}} = Limits.result(elapsed, nil, execution, %{"total_tokens" => "bad"}, nil)
+  end
+
   defp receive_started(count) do
     Enum.map(1..count, fn _index ->
       receive do

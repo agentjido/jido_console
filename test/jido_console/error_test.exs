@@ -100,6 +100,44 @@ defmodule Jido.Console.ErrorTest do
       assert Exception.message(normalized) == "failed"
     end
 
+    test "maps every dependency class into a project class" do
+      cases = [
+        {Jidoka.Error.validation_error("invalid"), Error.InvalidInputError, :validation},
+        {Jidoka.Error.config_error("bad config"), Error.ConfigurationError, :configuration},
+        {Jidoka.Error.execution_error("failed"), Error.ExecutionFailureError, :execution},
+        {Jidoka.Error.Internal.UnknownError.exception(message: "unknown"), Error.InternalError, :internal}
+      ]
+
+      Enum.each(cases, fn {reason, module, category} ->
+        assert %^module{} = normalized = Error.normalize(reason)
+        assert Error.category(normalized) == category
+        assert Error.message(normalized) != ""
+      end)
+
+      assert %Error.ExecutionFailureError{} = Error.normalize(:unmapped_atom)
+    end
+
+    test "extracts useful messages from nested Jidoka execution details" do
+      cases = [
+        {%{errors: [:ignored, %{message: "nested failure"}]}, nil, "nested failure"},
+        {%{cause: :timeout, operation: :operation}, nil, "Jidoka execution failed: timeout."},
+        {%{operation: :llm}, nil, "The LLM request failed."},
+        {%{}, :output, "Jidoka execution failed during the output phase."},
+        {%{cause: {"not-an-atom", :reason}}, nil, "Jidoka execution failed"}
+      ]
+
+      Enum.each(cases, fn {details, phase, expected} ->
+        reason =
+          Jidoka.Error.ExecutionError.exception(
+            message: "Jidoka execution failed",
+            phase: phase,
+            details: details
+          )
+
+        assert Exception.message(Error.normalize(reason)) =~ expected
+      end)
+    end
+
     test "explains an expired request and separates it from API-key errors" do
       normalized = Error.normalize(:request_expired)
       message = Exception.message(normalized)
@@ -154,6 +192,35 @@ defmodule Jido.Console.ErrorTest do
                message: "--jobs must be a positive integer, got: 0",
                value: 0
              }
+    end
+
+    test "redacts structs and tuples and serializes aggregate errors" do
+      assert Error.redact(%URI{scheme: "https", host: "example.test"}) == %{
+               authority: nil,
+               fragment: nil,
+               host: "example.test",
+               path: nil,
+               port: nil,
+               query: nil,
+               scheme: "https",
+               userinfo: nil
+             }
+
+      assert Error.redact({:ok, %{api_key: "private"}}) == {:ok, %{api_key: "[REDACTED]"}}
+
+      aggregate = Error.to_class([Error.validation_error("first"), Error.validation_error("second")])
+
+      mapped = Error.to_map(aggregate)
+      assert mapped.category == :validation
+      assert mapped.message =~ "first"
+
+      assert mapped.errors == [
+               %{category: :validation, message: "first"},
+               %{category: :validation, message: "second"}
+             ]
+
+      assert %Error.InvalidOptionsError{} = Error.normalize({:invalid_options, [:flag]})
+      assert %Error.InvalidInputError{} = Error.InvalidInputError.exception(%{message: nil})
     end
   end
 end

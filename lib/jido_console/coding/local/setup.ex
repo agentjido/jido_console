@@ -3,8 +3,21 @@ defmodule Jido.Console.Coding.Local.Setup do
 
   alias Jido.Console.Coding.Local.Resources
 
-  @enforce_keys [:mutation, :shell, :git, :verify, :disable_tools, :resources]
-  defstruct [:mutation, :shell, :git, :verify, :disable_tools, :resources]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              mutation: Zoi.any(),
+              shell: Zoi.any(),
+              git: Zoi.any(),
+              verify: Zoi.any(),
+              disable_tools: Zoi.array(Zoi.string()),
+              resources: Zoi.any()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           mutation: struct(),

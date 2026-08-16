@@ -25,8 +25,21 @@ defmodule Jido.Console.Tui.EventProjection do
   ]
   @terminal_events [:turn_finished, :turn_hibernated, :turn_failed]
 
-  @enforce_keys [:id, :request_id, :seq, :event, :kind, :data]
-  defstruct @enforce_keys
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              id: Zoi.any(),
+              request_id: Zoi.string(),
+              seq: Zoi.integer() |> Zoi.gte(0),
+              event: Zoi.atom(),
+              kind: Zoi.enum([:assistant_delta, :tool, :review, :outcome, :event]),
+              data: Zoi.map()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type kind :: :assistant_delta | :tool | :review | :outcome | :event
   @type t :: %__MODULE__{

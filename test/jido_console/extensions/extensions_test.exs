@@ -5,6 +5,8 @@ defmodule Jido.Console.ExtensionsTest do
   alias Jido.Console.Extensions.Setup
   alias Jido.Console.Extensions.Trust
   alias Jidoka.Agent
+  alias Jidoka.Agent.Spec.Operation
+  alias Jidoka.Effect.{Intent, Journal}
   alias Jidoka.Extension.Request
 
   @hash "sha256:" <> String.duplicate("a", 64)
@@ -213,6 +215,121 @@ defmodule Jido.Console.ExtensionsTest do
     assert_receive {:closed, ^second_id}
   end
 
+  test "routes extension operations, falls back, and recovers coding errors" do
+    owner = self()
+    request = Request.new!(id: "acme.tools")
+
+    operations = [
+      Operation.new!(name: "acme.run", idempotency: :pure),
+      Operation.new!(name: "acme.fail", idempotency: :pure)
+    ]
+
+    factory = fn _binding, _config, _context ->
+      {:ok, :instance,
+       %{
+         namespace: "acme.tools",
+         tools: operations,
+         tool_handlers: %{
+           "acme.run" => fn arguments, _context -> {:ok, Map.fetch!(arguments, "value")} end,
+           "acme.fail" => fn _arguments, _context ->
+             {:error, Jidoka.CodingPack.Error.new(:write_failed, %{path: "safe.txt"})}
+           end
+         },
+         result: %{"answer" => 42},
+         ui_data: %{"panel" => "ready"},
+         close: fn _instance -> send(owner, :tools_closed) end
+       }}
+    end
+
+    runtime = runtime_entry("acme.tools", factory)
+
+    setup =
+      Setup.not_requested()
+      |> Setup.prepend(runtime, %{"id" => "acme.tools"}, recover_coding_errors: true)
+
+    spec =
+      Agent.Spec.new!(
+        id: "extension_tools_agent",
+        instructions: "Test.",
+        model: %{provider: :test, id: "model"},
+        extensions: [request]
+      )
+
+    {:ok, session} = Jidoka.Session.Data.start(spec, session_id: "extension-tools")
+
+    base = fn _intent, _journal, _context ->
+      send(owner, :base_operation)
+      {:ok, :base}
+    end
+
+    assert {:ok, opened} =
+             Extensions.open(session, [request], setup, :interactive, operations: base)
+
+    capability = Keyword.fetch!(opened.runtime_opts, :operations)
+    journal = Journal.new!()
+    context = Jidoka.Context.new!(%{})
+
+    assert {:ok, "value"} =
+             capability.(operation_intent("acme.run", %{"value" => "value"}), journal, context)
+
+    assert {:ok, :base} = capability.(operation_intent("base.run"), journal, context)
+    assert_receive :base_operation
+
+    assert {:ok, recovered} = capability.(operation_intent("acme.fail"), journal, context)
+    assert recovered["status"] == "error"
+    assert recovered["retryable"]
+    assert recovered["code"] == "write_failed"
+    assert recovered["details"] == %{path: "safe.txt"}
+
+    assert {:ok, results} = Extensions.results(opened.host)
+
+    assert results["acme.tools"] == %{
+             "result" => %{"answer" => 42},
+             "ui_data" => %{"panel" => "ready"}
+           }
+
+    assert {:ok, _evidence} = Extensions.close(opened.host)
+    assert_receive :tools_closed
+    assert {:ok, %{}} = Extensions.results(nil)
+    assert {:ok, []} = Extensions.close(nil)
+  end
+
+  test "closes an opened extension when operation compilation fails" do
+    owner = self()
+    request = Request.new!(id: "acme.conflict")
+
+    operation =
+      Operation.new!(
+        name: "acme.invalid",
+        idempotency: :pure,
+        metadata: %{"parameters_schema" => "not a schema"}
+      )
+
+    factory = fn _binding, _config, _context ->
+      {:ok, :instance,
+       %{
+         namespace: "acme.conflict",
+         tools: [operation],
+         tool_handlers: %{"acme.invalid" => fn _, _ -> :ok end},
+         close: fn _instance -> send(owner, :conflict_closed) end
+       }}
+    end
+
+    setup = Setup.trusted([{runtime_entry("acme.conflict", factory), %{"id" => "acme.conflict"}}])
+
+    spec =
+      Agent.Spec.new!(
+        id: "extension_conflict_agent",
+        instructions: "Test.",
+        model: %{provider: :test, id: "model"},
+        extensions: [request]
+      )
+
+    {:ok, session} = Jidoka.Session.Data.start(spec, session_id: "extension-conflict")
+    assert {:error, _reason} = Extensions.open(session, [request], setup, :interactive)
+    assert_receive :conflict_closed
+  end
+
   defp built_in_record(id) do
     %{
       "id" => id,
@@ -233,5 +350,26 @@ defmodule Jido.Console.ExtensionsTest do
 
   defp file_digest(path) do
     "sha256:" <> (:crypto.hash(:sha256, File.read!(path)) |> Base.encode16(case: :lower))
+  end
+
+  defp runtime_entry(id, factory) do
+    registration =
+      Jidoka.Extension.Registration.new!(%{
+        identity: %{
+          id: id,
+          source_type: :built_in,
+          source_ref: "builtin:#{id}",
+          release: "1",
+          content_hash: @hash,
+          trust: :trusted
+        },
+        capabilities: ["#{id}.run"]
+      })
+
+    %{registration: registration, factory: factory}
+  end
+
+  defp operation_intent(name, arguments \\ %{}) do
+    Intent.new(:operation, %{name: name, arguments: arguments})
   end
 end

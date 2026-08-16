@@ -15,8 +15,18 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   defmodule Request do
     @moduledoc false
 
-    @enforce_keys [:cell, :client, :request]
-    defstruct @enforce_keys
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                cell: Zoi.map(),
+                client: Zoi.any(),
+                request: Zoi.any()
+              },
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{
             cell: map(),
@@ -28,8 +38,21 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   defmodule OwnedRequest do
     @moduledoc false
 
-    @enforce_keys [:cell, :sequence, :started_at, :started_ms]
-    defstruct [:cell, :sequence, :started_at, :started_ms, :extension_host, :replay_player]
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                cell: Zoi.map(),
+                sequence: Zoi.struct(Jidoka.Session.Sequence.Request),
+                started_at: Zoi.struct(DateTime),
+                started_ms: Zoi.integer(),
+                extension_host: Zoi.any() |> Zoi.nullish(),
+                replay_player: Zoi.any() |> Zoi.nullish()
+              },
+              unrecognized_keys: :error
+            )
+
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
 
     @type t :: %__MODULE__{
             cell: map(),

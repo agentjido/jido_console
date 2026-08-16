@@ -41,6 +41,71 @@ defmodule Jido.Console.Tui.StateTest do
     assert state.messages |> List.last() |> Map.fetch!(:content) == "Hi there"
   end
 
+  test "handles inert activity input and incomplete restored transcripts" do
+    state = State.new(:session, {80, 24}, catalog_entries: [], history_limit: 0, turn_limit: 0)
+    assert state.history_limit == 100
+    assert state.turn_limit == 100
+    assert {^state, []} = State.update(state, {:terminal, {:key, :up}})
+    assert {^state, []} = State.update(state, {:terminal, {:key, :down}})
+    assert {^state, []} = State.update(state, {:turn_result, :invalid})
+
+    preparing = %{state | activity: {:preparing, {:prompt, "prompt"}}}
+
+    for input <- [
+          {:terminal, {:text, "ignored"}},
+          {:terminal, {:paste, "ignored"}},
+          {:terminal, {:key, :newline}},
+          {:terminal, {:key, :left}}
+        ] do
+      assert {^preparing, []} = State.update(preparing, input)
+    end
+
+    previous = state.selection
+    selecting = %{state | activity: {:preparing, {:selection, previous}}, selection: %{model: "new"}}
+    {failed, []} = State.update(selecting, {:prompt_error, :selection_failed})
+    assert failed.selection == previous
+    assert {:failed, :selection, :selection_failed, _message} = failed.activity
+
+    request = session_request("review")
+    turn = Turn.new(1, "prompt")
+
+    pending =
+      Result.pending_review("review", :session, :handle, [%{id: "review"}])
+      |> put_in([Access.key!(:outcome), Access.key!(:reviews)], [])
+
+    review_state = %{state | activity: {:review, request, turn, pending, :awaiting}}
+
+    for input <- [
+          {:terminal, {:paste, "ignored"}},
+          {:terminal, {:key, :newline}},
+          {:terminal, {:text, "a"}}
+        ] do
+      assert {^review_state, []} = State.update(review_state, input)
+    end
+
+    {unchanged, []} = State.update(state, {:coding_review, [%{path: "lib/value.ex"}]})
+    assert unchanged.activity == :idle
+
+    snapshot = %{
+      "payload" => %{
+        "state" => %{
+          "transcript" => [
+            %{"type" => "unknown", "payload" => %{}},
+            %{"type" => "run_started", "payload" => %{"prompt" => "hello", "request_id" => "one"}},
+            %{"type" => "model_delta", "payload" => %{"text" => "answer"}},
+            %{"type" => "run_completed", "payload" => %{}},
+            %{"type" => "run_started", "payload" => %{"prompt" => "again", "request_id" => "two"}}
+          ]
+        }
+      }
+    }
+
+    restored = State.restore_snapshot(state, snapshot)
+    assert {:starting, {:turn, %Turn{prompt: "again"}}} = restored.activity
+    assert Enum.map(restored.messages, & &1.content) == ["hello", "answer", "again"]
+    assert [%Turn{status: :finished}] = restored.turns
+  end
+
   test "commits a normalized runtime result for the active request" do
     session =
       struct!(Runtime.Session,

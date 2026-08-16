@@ -3,8 +3,21 @@ defmodule Jido.Console.Terminal.Frame do
 
   alias Jido.Console.Terminal.PlainText
 
-  @enforce_keys [:width, :height, :rows]
-  defstruct [:width, :height, :rows, :cursor]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              width: Zoi.integer() |> Zoi.positive(),
+              height: Zoi.integer() |> Zoi.positive(),
+              rows: Zoi.array(Zoi.string()),
+              cursor:
+                Zoi.tuple({Zoi.integer() |> Zoi.positive(), Zoi.integer() |> Zoi.positive()})
+                |> Zoi.nullish()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type cursor :: {pos_integer(), pos_integer()} | nil
   @type t :: %__MODULE__{

@@ -151,12 +151,11 @@ defmodule Jido.Console.Release.Boundaries do
     fixture = process_fixture!()
 
     try do
-      outcome = execute_process_case!(name, fixture)
-      child = read_child_pid!(fixture)
-      product_stopped_child? = until(fn -> not process_alive?(child) end, 150)
-      stop_process(child)
+      {outcome, child} = execute_process_case!(name, fixture)
+      product_stopped_child? = is_nil(child) or until(fn -> not process_alive?(child) end, 150)
+      if child, do: stop_process(child)
 
-      unless until(fn -> not process_alive?(child) end, 500) do
+      unless is_nil(child) or until(fn -> not process_alive?(child) end, 500) do
         raise "runtime-boundary runner could not stop the #{name} child process"
       end
 
@@ -178,14 +177,17 @@ defmodule Jido.Console.Release.Boundaries do
         adapter_command!(fixture.executable, ["owner_exit", fixture.state], 10_000, workspace_root: fixture.workspace)
       end)
 
-    wait_for_child!(fixture)
+    child = wait_for_child!(fixture, "owner_exit")
     Process.exit(owner, :kill)
 
-    receive do
-      {:DOWN, ^monitor, :process, ^owner, _reason} -> "owner_exit"
-    after
-      1_000 -> raise "runtime-boundary owner did not exit"
-    end
+    outcome =
+      receive do
+        {:DOWN, ^monitor, :process, ^owner, _reason} -> "owner_exit"
+      after
+        1_000 -> raise "runtime-boundary owner did not exit"
+      end
+
+    {outcome, child}
   end
 
   defp execute_process_case!(name, fixture) do
@@ -200,10 +202,15 @@ defmodule Jido.Console.Release.Boundaries do
         )
       end)
 
-    wait_for_child!(fixture)
-    if name == "cancellation", do: Token.request(token)
-    result = Task.await(task, 6_000)
-    result["status"]
+    if name == "timeout" do
+      result = Task.await(task, 6_000)
+      {result["status"], read_child_pid(fixture) |> List.first()}
+    else
+      child = wait_for_child!(fixture, name)
+      if name == "cancellation", do: Token.request(token)
+      result = Task.await(task, 6_000)
+      {result["status"], child}
+    end
   end
 
   defp adapter_command!(executable, args, timeout, extra_opts \\ []) do
@@ -279,9 +286,11 @@ defmodule Jido.Console.Release.Boundaries do
     %{root: root, workspace: workspace, state: state, executable: executable}
   end
 
-  defp wait_for_child!(fixture) do
-    unless until(fn -> File.regular?(Path.join(fixture.state, "child.pid")) end, 1_000) do
-      raise "runtime-boundary child process did not start"
+  defp wait_for_child!(fixture, name) do
+    if until(fn -> read_child_pid(fixture) != [] end, 10_000) do
+      read_child_pid!(fixture)
+    else
+      raise "runtime-boundary #{name} child process did not start"
     end
   end
 

@@ -94,6 +94,59 @@ defmodule Jido.Console.Release.DecisionTest do
     assert {:error, :invalid_release_decision} = Decision.authorize_publication(forged)
   end
 
+  test "normalizes malformed, duplicate, and mismatched proof sets" do
+    assert {:error, :invalid_decision_metadata} = Decision.record(decided_on: "")
+
+    assert {:ok, missing} = Decision.record()
+    assert Decision.status(missing) == :blocked
+    assert Decision.version(missing) == Jido.Console.Release.Identity.version()
+    assert {:error, {:release_decision_not_passed, :blocked}} = Decision.authorize_publication(missing)
+
+    missing_map = Decision.to_map(missing)
+    assert missing_map["epics"] == []
+    assert missing_map["channels"] == []
+    assert missing_map["critical_defects"] == []
+
+    malformed_sets = [
+      [reviews: :invalid, channels: channels(), critical_defects: []],
+      [reviews: reviews(), channels: :invalid, critical_defects: []],
+      [reviews: reviews(), channels: channels(), critical_defects: :invalid]
+    ]
+
+    for opts <- malformed_sets do
+      assert {:ok, decision} = Decision.record(opts)
+      assert Decision.status(decision) == :blocked
+    end
+
+    changed_reviews =
+      reviews()
+      |> Map.put("unexpected", %{"result" => "pass", "proof" => "proof"})
+      |> Map.put("jido_console-m1e01", :invalid)
+
+    assert {:ok, changed} = complete_decision(reviews: changed_reviews)
+    assert Decision.status(changed) == :blocked
+
+    [archive, homebrew, npm] = channels()
+    duplicate_channels = [archive, archive, homebrew, npm, %{"channel" => "unexpected"}, :invalid]
+    assert {:ok, duplicate} = complete_decision(channels: duplicate_channels)
+    assert Decision.status(duplicate) == :blocked
+
+    different_identity =
+      put_in(homebrew, ["payload_identity", "checksum"], String.duplicate("b", 64))
+
+    assert {:ok, mismatch} = complete_decision(channels: [archive, different_identity, npm])
+    assert Decision.status(mismatch) == :fail
+
+    defects = [
+      %{"id" => "duplicate", "severity" => "critical", "status" => "closed", "proof" => "proof"},
+      %{"id" => "duplicate", "severity" => "critical", "status" => "closed", "proof" => "proof"},
+      %{"id" => "invalid"}
+    ]
+
+    assert {:ok, defects_blocked} = complete_decision(critical_defects: defects)
+    assert Decision.status(defects_blocked) == :blocked
+  end
+
   defp complete_decision(overrides \\ []) do
     defaults = [reviews: reviews(), channels: channels(), critical_defects: []]
     Decision.record(Keyword.merge(defaults, overrides))

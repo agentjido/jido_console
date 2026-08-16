@@ -16,19 +16,25 @@ defmodule Jido.Console.Release.Decision do
 
   @channels Channel.channels()
   @allowed_options [:reviews, :channels, :critical_defects, :decided_on, :evidence_revision, :reviewer]
-  @enforce_keys [
-    :status,
-    :version,
-    :reviews,
-    :channels,
-    :critical_defects,
-    :blocking_reasons,
-    :failures,
-    :decided_on,
-    :evidence_revision,
-    :reviewer
-  ]
-  defstruct @enforce_keys
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              status: Zoi.enum([:pass, :fail, :blocked]),
+              version: Zoi.string(),
+              reviews: Zoi.any(),
+              channels: Zoi.any(),
+              critical_defects: Zoi.any(),
+              blocking_reasons: Zoi.array(),
+              failures: Zoi.array(),
+              decided_on: Zoi.string(),
+              evidence_revision: Zoi.string(),
+              reviewer: Zoi.string()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @opaque t :: %__MODULE__{
             status: :pass | :fail | :blocked,

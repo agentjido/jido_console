@@ -335,7 +335,6 @@ defmodule Jido.Console.TuiTest do
 
     @impl true
     def await(request, _opts) do
-      Process.sleep(25)
       send(request.controller, {:await, self()})
 
       receive do

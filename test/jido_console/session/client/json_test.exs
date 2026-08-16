@@ -10,4 +10,15 @@ defmodule Jido.Console.Session.Client.JSONTest do
     assert source =~ "Automation.JSONL"
     refute source =~ "JSONL.write"
   end
+
+  test "sanitizes live runtime values and atoms recursively" do
+    assert {:ok, json} =
+             JSON.encode(%{
+               type: :event,
+               nested: [%{pid: self(), function: fn -> :ok end, reference: make_ref()}]
+             })
+
+    assert %{"type" => "event", "nested" => [%{"pid" => nil, "function" => nil, "reference" => nil}]} =
+             Jason.decode!(json)
+  end
 end

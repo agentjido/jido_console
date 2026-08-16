@@ -15,5 +15,11 @@ defmodule Jido.Console.Session.QueueTest do
     {:ok, queues} = Queue.add(Queue.new(), :follow_up, string_item)
     {:ok, emptied} = Queue.remove(queues, :follow_up, "inp_3")
     assert emptied.follow_up == []
+
+    assert {:error, :invalid_queue_item} = Queue.add(Queue.new(), :steering, %{})
+    assert {:error, {:unknown_queue, :other}} = Queue.add(Queue.new(), :other, item)
+    assert {:error, {:unknown_queue, :other}} = Queue.remove(Queue.new(), :other, "inp_1")
+    assert {:error, :queue_empty} = Queue.consume(Queue.new(), :steering)
+    assert {:error, {:unknown_queue, :other}} = Queue.show(Queue.new(), :other)
   end
 end

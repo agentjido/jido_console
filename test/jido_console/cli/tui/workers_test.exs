@@ -101,4 +101,37 @@ defmodule Jido.Console.Tui.WorkersTest do
       Process.flag(:trap_exit, previous_trap_exit)
     end
   end
+
+  test "handles missing, stopped, thrown, reaped, and timed-out workers" do
+    assert Workers.stop(%{}, self()) == %{}
+    assert :ok = Workers.stop_all(%{})
+
+    stopped = spawn(fn -> :ok end)
+    stopped_ref = Process.monitor(stopped)
+    assert_receive {:DOWN, ^stopped_ref, :process, ^stopped, :normal}
+    assert :ok = Workers.reap(stopped, 0)
+
+    running = spawn(fn -> Process.sleep(:infinity) end)
+    assert :ok = Workers.reap(running, 100)
+    refute Process.alive?(running)
+
+    workers = Workers.start(%{}, :throwing, fn -> throw(:failed_effect) end)
+    [{worker_pid, _worker}] = Map.to_list(workers)
+    assert_receive {:jido_tui_effect_result, ^worker_pid, {:crash, {:throw, :failed_effect}}}
+    assert Workers.stop(workers, worker_pid) == %{}
+
+    stale_pid = spawn(fn -> :ok end)
+    stale_monitor = Process.monitor(stale_pid)
+    assert_receive {:DOWN, ^stale_monitor, :process, ^stale_pid, :normal}
+    stale_ref = make_ref()
+    stale = %{stale_pid => %Workers.Worker{pid: stale_pid, ref: stale_ref, kind: :stale}}
+    send(self(), {:DOWN, make_ref(), :process, stale_pid, :normal})
+    assert :ok = Workers.stop_all(stale, 0)
+
+    wrong_ref_workers = Workers.start(%{}, :blocked, fn -> Process.sleep(:infinity) end)
+    [{blocked_pid, blocked}] = Map.to_list(wrong_ref_workers)
+    assert :error = Workers.take_down(wrong_ref_workers, blocked_pid, make_ref())
+    assert {:ok, ^blocked, %{}} = Workers.take_down(wrong_ref_workers, blocked_pid, blocked.ref)
+    assert :ok = Workers.reap(blocked_pid, 100)
+  end
 end

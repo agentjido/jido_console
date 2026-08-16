@@ -30,8 +30,14 @@ defmodule Jido.Console.ProcessTest do
 
   test "catalog documents owner, readiness, and shutdown for each process" do
     catalog = Process.catalog()
+    assert Process.statuses() == [:starting, :ready, :running, :stopping, :stopped, :failed]
     assert Map.has_key?(catalog, :interactive)
     assert Map.has_key?(catalog, :coding_runtime)
+    assert Process.spec(:interactive) == catalog.interactive
+    assert Process.format_status([]) == "jido: no owned background processes\n"
+
+    assert Process.format_stop(%{name: "interactive", status: :running}) ==
+             "jido: interactive is running\n"
 
     Enum.each(catalog, fn {_kind, spec} ->
       assert spec.owner != ""
@@ -193,6 +199,54 @@ defmodule Jido.Console.ProcessTest do
     assert {:ok, []} = Process.list(opts)
   end
 
+  test "normalizes missing, malformed, live, and undeletable stored markers", %{opts: opts} do
+    identity = Contract.identity(:interactive)
+    assert {:error, :process_not_found} = Store.get(identity, opts)
+    assert :ok = Store.delete(identity, opts)
+
+    assert {:ok, _home} = Jido.Console.Home.ensure(opts)
+    {:ok, dir} = Jido.Console.Home.path(:run, opts)
+    path = Path.join(dir, "interactive.interactive.json")
+
+    File.write!(path, Jason.encode!(:invalid))
+    assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} = Store.get(identity, opts)
+
+    invalid = %{
+      "failure" => nil,
+      "kind" => "unknown_process_kind",
+      "name" => "interactive",
+      "owner_os_pid" => nil,
+      "readiness" => "ready",
+      "status" => "running"
+    }
+
+    File.write!(path, Jason.encode!(invalid))
+    assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} = Store.get(identity, opts)
+
+    File.rm!(path)
+    File.mkdir!(path)
+
+    assert {:error, {:process_marker_delete_failed, ^identity, _reason}} = Store.delete(identity, opts)
+    File.rmdir!(path)
+
+    {:ok, live} =
+      Contract.restore(%{
+        kind: :interactive,
+        name: "interactive",
+        status: :running,
+        readiness: "ready",
+        failure: nil,
+        owner_os_pid: String.to_integer(System.pid())
+      })
+
+    assert {:ok, _record} = Store.put(live, opts)
+    assert {:ok, []} = Store.reap(opts)
+
+    stopped = %{live | status: :stopped}
+    assert {:ok, _record} = Store.put(stopped, opts)
+    assert {:ok, []} = Store.reap(opts)
+  end
+
   test "the application owns one default process manager" do
     application = Elixir.Process.whereis(Jido.Console.Supervisor)
     manager = Elixir.Process.whereis(Jido.Console.Process.Supervisor)
@@ -220,7 +274,14 @@ defmodule Jido.Console.ProcessTest do
     Elixir.Process.exit(first, :kill)
     assert_receive {:DOWN, ^first_ref, :process, ^first, :killed}
 
-    second = wait_for_replacement(name, first)
+    second =
+      supervisor
+      |> Supervisor.which_children()
+      |> Enum.find_value(fn
+        {Jido.Console.Process.Supervisor, pid, :worker, _modules} when pid != first -> pid
+        _child -> nil
+      end)
+
     assert is_pid(second)
     assert Elixir.Process.alive?(second)
 
@@ -298,18 +359,5 @@ defmodule Jido.Console.ProcessTest do
   defp assert_receive_gone(pid) do
     ref = Elixir.Process.monitor(pid)
     assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 200
-  end
-
-  defp wait_for_replacement(name, previous) do
-    Enum.reduce_while(1..20, nil, fn _, _acc ->
-      case Elixir.Process.whereis(name) do
-        pid when is_pid(pid) and pid != previous ->
-          {:halt, pid}
-
-        _missing ->
-          Elixir.Process.sleep(5)
-          {:cont, nil}
-      end
-    end)
   end
 end
