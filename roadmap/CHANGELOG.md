@@ -4,6 +4,30 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-08-16
+
+### Added
+
+- Add Milestone 3 planning readiness checks for durable-record ownership,
+  acknowledgement, recovery topology, session-generation fencing, storage
+  evaluation, commit reconciliation, crash injection, and recovery operations.
+- Add Milestone 3 work and exit gates for recovery startup, stale-generation
+  rejection, bounded storage-writer delivery, client recovery after restart,
+  fork authority, and measured recovery limits.
+- Add permanent rules that prohibit raw runtime-event client paths, require a
+  receiver-side delivery bound, and fence earlier session generations.
+
+### Changed
+
+- Make Milestone 2 require each production client to consume only canonical
+  Console protocol data through `Session.Client`.
+- Define bounded client delivery as a bound on the receiving mailbox and copied
+  payload data, not only sender-side delivery bookkeeping.
+- Reserve full snapshots for attach and explicit recovery instead of each
+  ordinary live update.
+- Add the Milestone 2 closeout and Milestone 3 design handoff to the immediate
+  build order.
+
 ## [1.0.9] - 2026-08-16
 
 ### Changed

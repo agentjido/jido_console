@@ -9,7 +9,7 @@ depends_on: [M2-E31]
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.1.0
 ---
 
 # M2-E32: Remove the Old TUI-Owned Session Path
@@ -22,6 +22,7 @@ Remove the former TUI-owned session and turn path after client parity passes.
 
 - Delete the old TUI session and turn ownership path.
 - Remove tests, adapters, and documentation that support only the deleted path.
+- Remove direct raw Jidoka and runtime-event broadcasts to the TUI and remove the legacy TUI runtime-event projection path.
 - Keep the migrated TUI on `Session.Client` as the only supported terminal path.
 - Prove that no compatibility shim retains duplicate ownership.
 
@@ -45,6 +46,7 @@ Deliver this epic in exactly one pull request. The pull request removes the old 
 - No production path gives the TUI ownership of a Jidoka session, active run, queue, or event order.
 - The TUI uses only `Session.Client` and the supervised session owner.
 - The deleted path has no compatibility shim or fallback.
+- No production TUI module consumes or projects a raw Jidoka or runtime event.
 - TUI, automation, text, and JSON parity tests continue to pass.
 - Source-boundary checks reject the removed ownership path.
 

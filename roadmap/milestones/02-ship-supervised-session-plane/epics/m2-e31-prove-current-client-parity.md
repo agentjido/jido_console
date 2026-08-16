@@ -9,7 +9,7 @@ depends_on: [M2-E27, M2-E28, M2-E29, M2-E30]
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.1.0
 ---
 
 # M2-E31: Prove Current-Client Parity
@@ -20,10 +20,11 @@ Prove that every current client observes the same session behavior.
 
 ## Scope
 
-- Run one contract suite against the TUI, automation, text, and JSON clients.
+- Run one contract suite through the production TUI, automation, text, and JSON paths, not only adapter observation helpers.
 - Compare ordered outcomes, capability behavior, errors, cancellation, and gap recovery.
 - Prove automation backward compatibility for schemas, artifacts, output, and exit statuses.
 - Record parity evidence from deterministic provider-free fixtures.
+- Fail the proof if a production client receives a raw Jidoka or runtime event outside `Session.Client`.
 
 ## Out of Scope
 
@@ -44,6 +45,7 @@ Deliver this epic in exactly one proof-only pull request. The pull request adds 
 
 - One contract suite runs each current client against the same deterministic fixtures.
 - Each client observes the same ordered outcomes and capability results.
+- Each production client consumes only canonical Console protocol data through `Session.Client`.
 - Client-specific rendering does not change session state or semantic outcomes.
 - Automation schemas, artifacts, standard output, and exit statuses remain backward-compatible.
 - Duplicate, stale, cross-session, and gap cases fail or recover as the shared contract specifies.

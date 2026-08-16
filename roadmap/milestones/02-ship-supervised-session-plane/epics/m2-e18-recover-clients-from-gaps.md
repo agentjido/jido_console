@@ -9,7 +9,7 @@ depends_on: [M2-E11, M2-E17]
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.1.0
 ---
 
 # M2-E18: Recover Clients from Delivery Gaps
@@ -25,6 +25,7 @@ Let a client recover from a delivery gap through an explicit snapshot and replay
 - Replay an available event suffix after a snapshot when the client requests it.
 - Validate snapshot and replay identities before applying them to a client projection.
 - Reset client delivery state after successful recovery and resume bounded updates.
+- Use full snapshots for attach and explicit recovery. Do not use a full snapshot as each ordinary live update.
 - Reject stale, cross-session, invalid-order, and malformed recovery data.
 - Distinguish delivery-gap recovery from application-restart recovery and durable resume.
 
@@ -51,6 +52,7 @@ Deliver this epic in exactly one pull request. The pull request adds gap message
 - Recovery checks session identity, sequence, protocol version, and bounded data size.
 - Stale, cross-session, invalid-order, and malformed recovery data is rejected.
 - A recovered client resumes bounded delivery from the correct acknowledged sequence.
+- Normal live delivery resumes with ordered semantic updates and does not send a full snapshot for each update.
 - A delivery gap is not described as application-restart recovery or durable resume.
 
 ## Proof Artifacts

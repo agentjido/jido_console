@@ -9,7 +9,7 @@ depends_on: [M2-E07, M2-E13]
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.1.0
 ---
 
 # M2-E17: Bound Client Delivery
@@ -25,7 +25,9 @@ Deliver session updates to each client with bounded memory and explicit acknowle
 - Keep delivery state separate for each client and separate from canonical session history.
 - Coalesce only updates that the protocol marks safe to coalesce.
 - Detect when a client falls behind and emit an explicit gap signal.
-- Ensure a slow or stopped client cannot cause unlimited session mailbox growth.
+- Route every client-bound live message, including model and tool stream updates, through this delivery boundary.
+- Ensure a slow or stopped client cannot cause unlimited growth in the receiving process mailbox or copied payload data.
+- Prove the receiver bound from the receiving process. A finite sender-side pending list is not sufficient evidence.
 - Keep client delivery process-lifetime only; do not add restart-safe receipts.
 
 ## Out of Scope
@@ -50,7 +52,9 @@ Deliver this epic in exactly one pull request. The pull request adds bounded cli
 - Acknowledgements identify the client, session, and delivered sequence.
 - Unsafe updates are never coalesced or dropped silently.
 - Safe coalescing does not change the latest semantic state.
-- A slow or stopped client cannot cause unlimited session mailbox growth.
+- Every client-bound live message uses the bounded delivery boundary.
+- A slow or stopped client stays within the declared receiving mailbox and copied-payload bound, or the server emits one gap and stops delivery until recovery.
+- Sender-side delivery metadata can stay bounded while the receiver does not read, without mailbox growth beyond the declared limit.
 - A client that falls behind receives an explicit gap signal.
 - Delivery state is not treated as durable input or restart-safe receipt state.
 
@@ -58,7 +62,7 @@ Deliver this epic in exactly one pull request. The pull request adds bounded cli
 
 - Client delivery state machine
 - Acknowledgement and coalescing contract
-- Slow-client and stopped-client boundedness results
+- Slow-client and stopped-client receiver-mailbox and payload-memory results
 - Gap detection result
 - Mailbox-growth limit evidence
 

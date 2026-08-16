@@ -9,7 +9,7 @@ depends_on: [M2-E16, M2-E18, M2-E20, M2-E21, M2-E22, M2-E23, M2-E24, M2-E25]
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.1.0
 ---
 
 # M2-E26: Establish the Session.Client Contract
@@ -32,6 +32,7 @@ supervised session.
   results, and extension-hook results through the contract.
 - Add a reusable behavior and contract test suite for all client drivers.
 - Keep the contract renderer-neutral and independent of client adapter code.
+- Prohibit a client-adapter raw Jidoka or runtime-event stream outside this contract.
 - Do not migrate the TUI, automation, text, or JSON adapters in this epic.
 
 ## Out of Scope
@@ -66,6 +67,7 @@ acknowledgement, and recovery tests. It must not migrate an existing adapter.
 - Command effects, model content, view details, permission results, and hook
   results use the same renderer-neutral contract.
 - The reusable behavior suite can run against each future client driver.
+- A client cannot bypass bounded delivery with a raw Jidoka or runtime-event subscription.
 - No TUI, automation, text, or JSON adapter is migrated by this epic.
 - Deterministic tests cover attach, detach, input, output, snapshot, control,
   capability, acknowledgement, gap, and recovery behavior.

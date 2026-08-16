@@ -1,6 +1,6 @@
 # Jido Console Roadmap
 
-Roadmap version: **1.0.9**
+Roadmap version: **1.1.0**
 
 Roadmap status: **proposed**
 
@@ -80,7 +80,9 @@ The `milestone.md` file is the roadmap milestone item. It owns the goal, outcome
 3. Rename the product and establish Jido home, provider, model, credential, and release contracts.
 4. Make restricted execution the default and pass the production-artifact golden coding task.
 5. Add the semantic protocol, one supervised session owner, and current-client migration as one v0.2 quality target.
-6. Add restart-safe input, the shared Console-to-Jidoka watermark, and exact recovery.
+6. Close v0.2 only after every production client consumes canonical Console updates, a stopped receiver has a measured mailbox bound, and snapshot and gap recovery pass without a raw runtime-event bypass.
+7. Before Milestone 3 epic generation, freeze the durable-record inventory, acknowledgement rule, recovery topology, session-generation fence, storage evaluation, commit-reconciliation state machine, and crash matrix.
+8. Add restart-safe input, the shared Console-to-Jidoka watermark, and exact recovery.
 
 ## Common Milestone Release Gate
 
@@ -143,6 +145,9 @@ All channel candidates must wrap the same tested native payload. Add another pla
 28. A trusted-workspace mode is not a sandbox and cannot satisfy a restricted-execution claim.
 29. Homebrew, npm, and direct archives wrap the same tested native payload.
 30. Tilde remains a reviewed source reference unless a new decision changes that boundary.
+31. A client consumes canonical Console protocol data. It never consumes a raw Jidoka or runtime event stream.
+32. A client-delivery bound includes the receiving process mailbox and copied payload data. Bounded sender bookkeeping alone is not sufficient.
+33. Recovery fences results from every earlier session generation and does not expose a ready session or wake execution before reconciliation completes.
 
 ## Release Evidence Policy
 

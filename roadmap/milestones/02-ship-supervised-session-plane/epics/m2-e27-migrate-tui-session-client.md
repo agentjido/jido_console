@@ -9,7 +9,7 @@ depends_on: [M2-E26]
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.1.0
 ---
 
 # M2-E27: Migrate the TUI to Session.Client
@@ -24,6 +24,7 @@ Make the terminal UI a `Session.Client` of the supervised semantic session.
 - Preserve renderer-only local state, including input drafts, terminal dimensions, and cursor state.
 - Support TUI detach and reattach while work continues in the session.
 - Render ordered semantic events, snapshots, gaps, and outcomes through the client contract.
+- Remove raw Jidoka and runtime-event input from the TUI live-render path.
 
 ## Out of Scope
 
@@ -46,6 +47,7 @@ Deliver this epic in exactly one pull request. The pull request migrates the TUI
 - The TUI can detach during active work and reattach to the same session without stopping the work.
 - Input drafts, terminal dimensions, and renderer state remain local to the TUI client.
 - The TUI observes the same ordered semantic outcomes after reattachment.
+- The TUI live renderer consumes only canonical Console protocol data from `Session.Client`.
 - TUI reducer, terminal, and cleanup tests pass.
 
 ## Proof Artifacts
