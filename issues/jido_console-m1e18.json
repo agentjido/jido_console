@@ -22,7 +22,6 @@
     "effort:medium",
     "milestone-1",
     "one-pr",
-    "readiness:planned",
     "roadmap",
     "v0.1"
   ],
@@ -30,5 +29,5 @@
   "status": "closed",
   "title": "M1-E18: Add the Model Commands",
   "type": "epic",
-  "updated_at": "2026-08-15T14:46:14Z"
+  "updated_at": "2026-08-16T19:27:14Z"
 }
