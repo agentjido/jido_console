@@ -9,9 +9,15 @@
     "audit-finding"
   ],
   "parent": "jido_console-1f1",
+  "comments": [
+    {
+      "text": "Implemented on jido_console-1f1.25/source-gates at 4948a9b. Release source gates now run locked dependencies, mix precommit, coverage, and cross-repository compatibility in order. Added deterministic order and failure-status tests. Validation: 9 focused release tooling tests passed; mix precommit passed. Full mix jido.check reached coverage but its full suite had two timing failures and then stalled; both failed tests passed on direct rerun.",
+      "timestamp": "2026-08-16T13:34:26Z"
+    }
+  ],
   "priority": 0,
   "status": "in_progress",
   "title": "F-31: Make precommit own shared source gates",
   "type": "task",
-  "updated_at": "2026-08-16T13:05:32Z"
+  "updated_at": "2026-08-16T13:34:26Z"
 }
