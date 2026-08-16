@@ -1,6 +1,6 @@
 # Jido Console Roadmap
 
-Roadmap version: **1.0.8**
+Roadmap version: **1.0.9**
 
 Roadmap status: **proposed**
 
@@ -12,6 +12,7 @@ Roadmap status: **proposed**
 - Main namespace: `Jido.Console`
 - User command: `jido`
 - Runtime foundation: Jidoka
+- Publication policy: disabled; build and audit candidate artifacts only
 
 The current `jido_console` code is the implementation base. Tilde supplies reviewed architecture and renderer patterns. Tilde is not a runtime dependency.
 
@@ -52,9 +53,9 @@ Jidoka owns execution truth. Jido Console owns user-visible session truth. One d
 
 ## Roadmap Sequence
 
-Gate 0 is a readiness milestone and does not make a release. Every numbered directory in `roadmap/milestones/` is one release milestone that must ship a working, installable release.
+Gate 0 is a readiness milestone. Every numbered directory in `roadmap/milestones/` is one quality milestone. It must produce a working, installable candidate and complete evidence. Publication is a separate maintainer decision and is disabled.
 
-| Stage | File | Main result | Release point |
+| Stage | File | Main result | Quality target |
 | --- | --- | --- | --- |
 | Gate 0 | [Establish release readiness](milestones/00-establish-release-readiness/milestone.md) | Repeatable evidence and an owned delivery graph | No release |
 | Milestone 1 | [Ship the trustworthy local kernel](milestones/01-ship-trustworthy-local-kernel/milestone.md) | Safe local multi-model coding | v0.1 |
@@ -75,40 +76,40 @@ The `milestone.md` file is the roadmap milestone item. It owns the goal, outcome
 ## Immediate Build Order
 
 1. Pass Gate 0 and link the Milestone 1 delivery graph.
-2. Land the Milestone 1 Jidoka policy and execution contracts. Keep later Jidoka changes in their owning release milestones.
+2. Land the Milestone 1 Jidoka policy and execution contracts. Keep later Jidoka changes in their owning quality milestones.
 3. Rename the product and establish Jido home, provider, model, credential, and release contracts.
 4. Make restricted execution the default and pass the production-artifact golden coding task.
-5. Add the semantic protocol, one supervised session owner, and current-client migration as one v0.2 release train.
+5. Add the semantic protocol, one supervised session owner, and current-client migration as one v0.2 quality target.
 6. Add restart-safe input, the shared Console-to-Jidoka watermark, and exact recovery.
 
 ## Common Milestone Release Gate
 
-Every numbered milestone must pass these checks in addition to its milestone-specific gate:
+This is a source-quality gate. It does not authorize or require publication. Every numbered milestone must pass these checks in addition to its milestone-specific gate:
 
-- Build one production artifact from a clean checkout.
-- Install, start, update, and remove the artifact for each platform and channel pair claimed by that release.
-- Run all earlier release workflows and compatibility fixtures.
+- Build one production-candidate artifact from a clean checkout.
+- Install, start, update, and remove the candidate artifact for each platform and channel pair in the support claim.
+- Run all earlier candidate workflows and compatibility fixtures.
 - Demonstrate the new milestone outcome through the production artifact.
-- Publish a runnable quick start and one complete workflow for the new capability.
+- Produce a runnable quick start and one complete workflow for the new capability.
 - Record failure, cancellation, recovery, and cleanup evidence for each new owned process or external boundary.
-- Publish the support matrix, known limits, security boundary, and rollback or repair path.
+- Record the support matrix, known limits, security boundary, and rollback or repair path.
 - Pass deterministic tests, package quality gates, dependency checks, secret checks, and release checks.
-- Show that no known critical defect invalidates a release claim.
-- Link the roadmap milestone, generated epics, Beadwork work graph, proof artifacts, and release record.
+- Show that no known critical defect invalidates the quality claim.
+- Link the roadmap milestone, generated epics, Beadwork work graph, proof artifacts, and quality record.
 
-A milestone is complete only when the working release and its evidence exist. A merge, internal architecture stage, or demonstration from a development checkout is not enough.
+A milestone is complete only when the working candidate and its evidence exist. A merge, internal architecture stage, or demonstration from a development checkout is not enough. Do not create a tag, GitHub release, archive publication, Homebrew publication, or npm publication unless a later maintainer decision enables publication.
 
 ## Platform and Channel Policy
 
 Use an explicit platform-by-channel matrix. A blank matrix cell is not a support claim.
 
-The required v0.1 cells are:
+The required v0.1 candidate checks are:
 
 | Platform | Direct archive | Homebrew | npm |
 | --- | --- | --- | --- |
 | macOS ARM64 | Required | Required | Required |
 
-All channels must wrap the same tested native release payload. Add another platform or channel pair only after its native payload passes the common and platform-specific gates.
+All channel candidates must wrap the same tested native payload. Add another platform or channel pair only after its native payload passes the common and platform-specific gates.
 
 ## Permanent Architecture Rules
 

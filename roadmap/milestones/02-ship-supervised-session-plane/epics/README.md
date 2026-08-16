@@ -42,7 +42,7 @@ The epic files define scope, epic dependencies, acceptance checks, and proof. Be
 | [M2-E32 Old TUI path removal](m2-e32-remove-old-tui-session-path.md) | `jido_console-m2e32` | The TUI-owned session and turn path is deleted after parity passes. | M2-E31 |
 | [M2-E33 v0.2 production candidate](m2-e33-prove-v0-2-production-candidate.md) | `jido_console-m2e33` | The exact production candidate passes the session-plane workflow and all common release checks. | M2-E32 |
 | [M2-E34 v0.2 release audit](m2-e34-audit-v0-2-release.md) | `jido_console-m2e34` | One evidence-only audit records the v0.2 release decision. | M2-E01 through M2-E33 |
-| [M2-E35 v0.2 publication](m2-e35-publish-v0-2-release.md) | `jido_console-m2e35` | The protected workflow publishes and records the approved v0.2 release. | M2-E34 |
+| [M2-E35 skipped v0.2 publication](m2-e35-publish-v0-2-release.md) | `jido_console-m2e35` | The roadmap records the maintainer decision to skip v0.2 publication. | M2-E34 |
 
 ## Dependency Diagram
 
@@ -84,7 +84,7 @@ flowchart TB
     E32["M2-E32<br/>Remove old path"]
     E33["M2-E33<br/>Production candidate"]
     E34["M2-E34<br/>Release audit"]
-    E35["M2-E35<br/>Publish v0.2"]
+    E35["M2-E35<br/>Skip publication"]
 
     E01 --> E02
     E01 --> E05
@@ -190,7 +190,7 @@ flowchart TB
 ## Merge Plan
 
 1. Start from the approved Milestone 1 source baseline. Run M2-E01 and M2-E03
-   in parallel. M1-E30 remains a separate deferred publication item.
+   in parallel. M1-E30 is intentionally not published.
 2. Run M2-E02 and M2-E04 when their direct dependencies pass.
 3. Run M2-E05 after request cleanup and the protocol schema. Run M2-E07 and M2-E21 after protocol generation.
 4. Run M2-E06 after the Jidoka changes. Run M2-E08 after M2-E07.
@@ -205,7 +205,8 @@ flowchart TB
 13. Run M2-E31, then remove the old path in M2-E32.
 14. Prove the exact production candidate in M2-E33.
 15. Merge the evidence-only M2-E34 audit after every candidate proof passes.
-16. Merge M2-E35 last. Its protected workflow publishes and records v0.2.
+16. Record M2-E35 as intentionally not published after M2-E34. Do not invoke
+    the release workflow.
 
 ## Pull Request Rule
 

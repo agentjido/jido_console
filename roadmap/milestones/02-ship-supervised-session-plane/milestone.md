@@ -6,7 +6,7 @@ status: proposed
 depends_on: [milestone-1]
 release: v0.2
 introduced_in: 0.1.0
-last_updated_in: 1.0.8
+last_updated_in: 1.0.9
 ---
 
 # Milestone 2: Ship the Semantic and Supervised Session Plane
@@ -26,6 +26,13 @@ This milestone combines the former semantic-core, session-owner, and client-conv
 Milestone 2 starts from the approved Milestone 1 source baseline on `main`.
 Deferred public v0.1 publication in M1-E30 does not block Milestone 2 source
 work.
+
+## Delivery Policy
+
+Milestone 2 is a source-quality milestone. Production-candidate proof and the
+evidence audit are required. Publication is intentionally skipped. M2-E35
+records this decision and does not create a tag, package, archive, or public
+release.
 
 ## Generated Epics
 
@@ -81,4 +88,6 @@ The [Milestone 2 epic index](epics/README.md) splits this milestone into 35 epic
 
 ## Release Effect
 
-Ship Jido Console v0.2 with the canonical supervised session plane and current-client migration complete.
+Record a quality-approved v0.2 source milestone with the canonical supervised
+session plane and current-client migration complete. Do not publish a tag or
+package.

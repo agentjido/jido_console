@@ -4,6 +4,17 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.9] - 2026-08-16
+
+### Changed
+
+- Disable publication while keeping production-candidate proof and quality
+  audits mandatory.
+- Record M2-E35 as intentionally skipped without a tag, package, archive, or
+  public release.
+- Require Milestone 3 planning to end in candidate proof and an evidence-only
+  quality audit without a publication epic.
+
 ## [1.0.8] - 2026-08-15
 
 ### Added

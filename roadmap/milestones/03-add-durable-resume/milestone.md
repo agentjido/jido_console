@@ -6,7 +6,7 @@ status: proposed
 depends_on: [milestone-2]
 release: v0.3
 introduced_in: 0.1.0
-last_updated_in: 1.0.2
+last_updated_in: 1.0.9
 ---
 
 # Milestone 3: Add Durable Resume, Fork, and Audit
@@ -18,6 +18,12 @@ Recover acknowledged session and execution state after an application restart.
 ## Outcome
 
 A session can use exact resume when the Console and Jidoka records share one verified durable watermark. It can use a clearly named transcript-only mode when exact recovery is not possible.
+
+## Delivery Policy
+
+Milestone 3 requires production-candidate proof and an evidence-only quality
+audit. Its delivery graph must not include tag, package, archive, or public
+release work while publication is disabled.
 
 ## Work
 
@@ -63,4 +69,6 @@ A session can use exact resume when the Console and Jidoka records share one ver
 
 ## Release Effect
 
-Ship Jido Console v0.3 with durable resume, fork, and audit. This is the first release with a complete continuity claim.
+Complete and record the v0.3-quality source milestone with durable resume,
+fork, and audit. This is the first quality target with a complete continuity
+claim. Do not publish a tag or package.

@@ -1,62 +1,60 @@
 ---
 epic: M2-E35
 type: epic
-title: Publish and Record Jido Console v0.2
-status: proposed
+title: Record the Decision to Skip v0.2 Publication
+status: skipped
 milestone: milestone-2
 beadwork_id: jido_console-m2e35
 depends_on: [M2-E34]
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.0.7
-last_updated_in: 1.0.7
+last_updated_in: 1.0.9
 ---
 
-# M2-E35: Publish and Record Jido Console v0.2
+# M2-E35: Record the Decision to Skip v0.2 Publication
 
 ## Goal
 
-Publish and record the audited Jido Console v0.2 release.
+Record the maintainer decision to keep the v0.2 quality evidence without
+publishing a release.
 
 ## Scope
 
-- Publish through the protected release workflow after the v0.2 audit approves the exact payload.
-- Publish the same tested native payload through every claimed channel.
-- Create the immutable version tag and release record.
-- Record checksums, provenance, channel results, and partial-publish handling.
+- Preserve the production-candidate proof and evidence audit from M2-E33 and
+  M2-E34.
+- Mark publication as intentionally skipped in the roadmap and Beadwork.
+- Keep the audited source milestone available as the Milestone 3 baseline.
 
 ## Out of Scope
 
-- A new payload, source commit, or support claim.
-- A release when the audit is blocked.
-- New platform or channel claims.
-- Post-release feature work.
+- A version tag or GitHub release.
+- Archive, Homebrew, or npm publication.
+- A new payload, source commit, support claim, or feature.
 
 ## Dependencies
 
-This epic depends on M2-E34 for the approved audit of the exact v0.2 source and payload.
+This decision record depends on M2-E34 for the approved audit of the exact v0.2 source and candidate payload.
 
 ## Pull Request Boundary
 
-Deliver this epic in exactly one release pull request. The pull request binds the audited source and payload and invokes the protected release workflow after merge. The workflow publishes and records only the audited v0.2 payload. The pull request must not claim publication before the workflow succeeds.
+Deliver this decision record in the roadmap administration pull request. Do not invoke a release workflow.
 
 ## Acceptance Checks
 
-- The protected release workflow accepts only the source and payload approved by M2-E34.
-- Every claimed channel receives the same tested native payload, version, checksums, and provenance.
-- The immutable v0.2 tag and release record identify the exact source and payload.
-- Partial publish failure has a recorded stop, repair, or rollback path.
-- The published release record links the roadmap milestone, epics, proof, audit, and channel evidence.
-- The release record states that accepted input can be lost on an application crash before Milestone 3.
+- M2-E33 candidate proof and M2-E34 audit evidence remain unchanged.
+- The roadmap and Beadwork record publication as intentionally skipped.
+- No v0.2 tag, GitHub release, archive, Homebrew formula, or npm package is
+  published.
+- The Milestone 3 plan uses the audited source milestone as its baseline.
 
 ## Proof Artifacts
 
-- Protected-workflow publication record.
-- Immutable tag and release record.
-- Channel publication evidence.
-- Checksums and provenance record.
-- Partial-publish handling record.
+- Maintainer decision in the roadmap changelog.
+- Closed Beadwork record with `disposition:not-published`.
+- M2-E33 production-candidate proof and M2-E34 quality-audit evidence.
 
 ## Milestone Traceability
 
-This epic owns the Milestone 2 release effect: publish and record Jido Console v0.2.
+This epic records that Milestone 2 meets its source-quality effect without
+public v0.2 publication.
