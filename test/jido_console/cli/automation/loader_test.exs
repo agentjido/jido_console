@@ -64,6 +64,51 @@ defmodule Jido.Console.Automation.LoaderTest do
     assert turn.assertions == %{contains: "Hi"}
   end
 
+  test "rejects invalid source choices before referenced file IO", %{root: root} do
+    scenario_path = Path.join(root, "invalid-source.yml")
+
+    File.write!(scenario_path, """
+    scenario:
+      id: invalid_source
+      context:
+        file: missing-context.json
+      turns:
+        - input:
+            text: Hello
+            file: missing-prompt.md
+    """)
+
+    assert {:error, {:document_schema_invalid, {:scenario, ^scenario_path}, _errors}} =
+             Loader.load_scenario(scenario_path)
+
+    File.write!(scenario_path, """
+    scenario:
+      id: empty_source
+      context:
+        file: missing-context.json
+      turns:
+        - input: {}
+    """)
+
+    assert {:error, {:document_schema_invalid, {:scenario, ^scenario_path}, _errors}} =
+             Loader.load_scenario(scenario_path)
+
+    suite_path = Path.join(root, "invalid-suite-source.yml")
+
+    File.write!(suite_path, """
+    suite:
+      id: invalid_suite_source
+      agents: [agent.yml]
+      scenarios: [missing-scenario.yml]
+      models:
+        - source: agent
+          ref: openai:gpt-4o-mini
+    """)
+
+    assert {:error, {:document_schema_invalid, {:suite, ^suite_path}, _errors}} =
+             Loader.load_suite(suite_path)
+  end
+
   test "loads a suite matrix and referenced scenarios", %{root: root} do
     write_agent(Path.join(root, "a.yml"), "agent_a")
     write_agent(Path.join(root, "b.yml"), "agent_b")
@@ -133,7 +178,7 @@ defmodule Jido.Console.Automation.LoaderTest do
         })
       )
 
-      assert {:error, {:invalid_execution_profile, ^invalid}} =
+      assert {:error, {:document_schema_invalid, {:scenario, ^scenario_path}, _errors}} =
                Loader.load_scenario(scenario_path)
     end
 
@@ -260,40 +305,41 @@ defmodule Jido.Console.Automation.LoaderTest do
              Loader.scenario_from_input(Path.join(root, "prompt.txt"))
   end
 
-  test "rejects invalid scenario forms and assertions", %{root: root} do
+  test "rejects invalid scenario forms and assertions through the input schema", %{root: root} do
     cases = [
-      {"missing.yml", "version: 1\nscenario:\n  id: missing\n", :missing_scenario_turns},
-      {"empty.yml", "version: 1\nscenario:\n  id: empty\n  turns: []\n", :invalid_turns},
-      {"bad-turn.yml", "version: 1\nscenario:\n  id: bad\n  turns: [text]\n", :invalid_turn},
-      {"bad-input.yml", "version: 1\nscenario:\n  id: bad\n  turns:\n    - input: 3\n", :invalid_text_source},
+      {"missing.yml", "version: 1\nscenario:\n  id: missing\n"},
+      {"empty.yml", "version: 1\nscenario:\n  id: empty\n  turns: []\n"},
+      {"bad-turn.yml", "version: 1\nscenario:\n  id: bad\n  turns: [text]\n"},
+      {"bad-input.yml", "version: 1\nscenario:\n  id: bad\n  turns:\n    - input: 3\n"},
       {"bad-assertion.yml",
-       "version: 1\nscenario:\n  id: bad\n  request:\n    input: Hello\n  assertions:\n    score: 1\n",
-       :unsupported_assertions}
+       "version: 1\nscenario:\n  id: bad\n  request:\n    input: Hello\n  assertions:\n    score: 1\n"}
     ]
 
-    for {name, contents, expected} <- cases do
+    for {name, contents} <- cases do
       path = Path.join(root, name)
       File.write!(path, contents)
-      assert {:error, reason} = Loader.load_scenario(path)
-      assert inspect(reason) =~ Atom.to_string(expected)
+
+      assert {:error, {:document_schema_invalid, {:scenario, ^path}, _errors}} =
+               Loader.load_scenario(path)
     end
   end
 
-  test "rejects invalid suite forms", %{root: root} do
+  test "rejects invalid suite forms through the input schema", %{root: root} do
     write_single_scenario(Path.join(root, "scenario.yml"))
 
     cases = [
-      {"agents", "agents: []", :invalid_suite_agents},
-      {"scenarios", "agents: [42]\n  scenarios: []", :invalid_suite_agent},
-      {"models", "agents: [agent.yml]\n  scenarios: [scenario.yml]\n  models: []", :invalid_suite_models},
-      {"repeats", "agents: [agent.yml]\n  scenarios: [scenario.yml]\n  repeats: 0", :invalid_positive_integer}
+      {"agents", "agents: []"},
+      {"scenarios", "agents: [42]\n  scenarios: []"},
+      {"models", "agents: [agent.yml]\n  scenarios: [scenario.yml]\n  models: []"},
+      {"repeats", "agents: [agent.yml]\n  scenarios: [scenario.yml]\n  repeats: 0"}
     ]
 
-    for {name, body, expected} <- cases do
+    for {name, body} <- cases do
       path = Path.join(root, "#{name}.yml")
       File.write!(path, "version: 1\nsuite:\n  id: bad\n  #{body}\n")
-      assert {:error, reason} = Loader.load_suite(path)
-      assert inspect(reason) =~ Atom.to_string(expected)
+
+      assert {:error, {:document_schema_invalid, {:suite, ^path}, _errors}} =
+               Loader.load_suite(path)
     end
   end
 

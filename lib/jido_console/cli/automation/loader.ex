@@ -13,20 +13,23 @@ defmodule Jido.Console.Automation.Loader do
 
     with {:ok, document, contents} <- Source.decode_file(path, opts),
          :ok <- version_one(document, path),
-         {:ok, suite} <- required_map(document, "suite", path),
-         {:ok, id} <- required_id(suite, "id", path),
-         :ok <- reject_execution_controls(suite),
-         {:ok, run} <- optional_section(suite, "run"),
-         :ok <- reject_execution_controls(run),
-         {:ok, limits} <- optional_section(run, "limits"),
-         {:ok, execution_profile} <- optional_profile(Map.get(run, "execution_profile")),
+         {:ok, raw_suite} <- required_map(document, "suite", path),
+         :ok <- reject_execution_controls(raw_suite),
+         :ok <- SuiteEntries.reject_agent_execution_controls(raw_suite),
+         {:ok, raw_run} <- optional_section(raw_suite, "run"),
+         :ok <- reject_execution_controls(raw_run),
+         {:ok, document} <- InputSchema.validate_suite(document, path),
+         suite = Map.fetch!(document, "suite"),
+         id = Map.fetch!(suite, "id"),
+         run = Map.get(suite, "run", %{}),
+         limits = Map.get(run, "limits", %{}),
+         execution_profile = Map.get(run, "execution_profile"),
          {:ok, agents} <- SuiteEntries.agents(suite, Path.dirname(path)),
          {:ok, scenarios} <- SuiteEntries.scenarios(suite, Path.dirname(path), opts, &load_scenario/2),
          {:ok, models} <- SuiteEntries.models(suite),
-         {:ok, repeats} <- positive_integer(matrix_value(suite, "repeats", 1), :repeats),
-         {:ok, jobs} <- positive_integer(run_value(suite, "jobs", 1), :jobs),
+         repeats = matrix_value(suite, "repeats", 1),
+         jobs = run_value(suite, "jobs", 1),
          {:ok, output} <- optional_output(run_value(suite, "output", nil), Path.dirname(path)),
-         {:ok, _validated_document} <- InputSchema.validate_suite(document, path),
          :ok <- unique_values(agents, :key, :agent),
          :ok <- unique_values(scenarios, :id, :scenario),
          :ok <- unique_values(models, :key, :model) do
@@ -55,13 +58,14 @@ defmodule Jido.Console.Automation.Loader do
 
     with {:ok, document, contents} <- Source.decode_file(path, opts),
          :ok <- version_one(document, path),
-         {:ok, scenario} <- required_map(document, "scenario", path),
-         {:ok, id} <- required_id(scenario, "id", path),
-         :ok <- reject_execution_controls(scenario),
-         {:ok, execution_profile} <- optional_profile(Map.get(scenario, "execution_profile")),
+         {:ok, raw_scenario} <- required_map(document, "scenario", path),
+         :ok <- reject_execution_controls(raw_scenario),
+         {:ok, document} <- InputSchema.validate_scenario(document, path),
+         scenario = Map.fetch!(document, "scenario"),
+         id = Map.fetch!(scenario, "id"),
+         execution_profile = Map.get(scenario, "execution_profile"),
          {:ok, context} <- Source.data(Map.get(scenario, "context"), Path.dirname(path), opts),
          {:ok, turns} <- scenario_turns(scenario, context, path, opts),
-         {:ok, _validated_document} <- InputSchema.validate_scenario(document, path),
          :ok <- unique_values(turns, :id, :turn) do
       {:ok,
        %{
@@ -112,8 +116,7 @@ defmodule Jido.Console.Automation.Loader do
     Digest.hex(value)
   end
 
-  defp scenario_turns(%{"turns" => turns}, common_context, path, opts)
-       when is_list(turns) and turns != [] do
+  defp scenario_turns(%{"turns" => turns}, common_context, path, opts) do
     turns
     |> Enum.with_index(1)
     |> Enum.reduce_while({:ok, []}, fn {turn, index}, {:ok, acc} ->
@@ -125,72 +128,23 @@ defmodule Jido.Console.Automation.Loader do
     |> reverse_result()
   end
 
-  defp scenario_turns(%{"turns" => turns}, _context, path, _opts),
-    do: {:error, {:invalid_turns, path, turns}}
-
-  defp scenario_turns(%{"request" => request} = scenario, common_context, path, opts)
-       when is_map(request) do
-    turn = %{
-      "id" => Map.get(request, "id", "turn-1"),
-      "input" => Map.get(request, "input"),
-      "context" => Map.get(request, "context"),
-      "assertions" => Map.get(scenario, "assertions", %{})
-    }
-
-    with {:ok, normalized} <-
-           normalize_turn(turn, 1, common_context, Path.dirname(path), opts) do
-      {:ok, [normalized]}
-    end
-  end
-
-  defp scenario_turns(_scenario, _context, path, _opts),
-    do: {:error, {:missing_scenario_turns, path}}
-
-  defp normalize_turn(turn, index, common_context, base_dir, opts) when is_map(turn) do
-    request = Map.get(turn, "request", %{})
-    input = Map.get(turn, "input", Map.get(request, "input"))
-    turn_context = Map.get(turn, "context", Map.get(request, "context"))
-
-    with {:ok, id} <- optional_id(Map.get(turn, "id"), "turn-#{index}"),
-         {:ok, input} <- Source.text(input, base_dir, opts),
-         {:ok, context} <- Source.data(turn_context, base_dir, opts),
-         {:ok, assertions} <- assertions(Map.get(turn, "assertions", %{})) do
+  defp normalize_turn(turn, index, common_context, base_dir, opts) do
+    with {:ok, input} <- Source.text(Map.fetch!(turn, "input"), base_dir, opts),
+         {:ok, context} <- Source.data(Map.get(turn, "context"), base_dir, opts) do
       {:ok,
        %{
-         id: id,
+         id: Map.get(turn, "id", "turn-#{index}"),
          input: input,
          context: Map.merge(common_context, context),
-         assertions: assertions
+         assertions: normalize_assertions(Map.get(turn, "assertions", %{}))
        }}
     end
   end
 
-  defp normalize_turn(turn, _index, _context, _base_dir, _opts),
-    do: {:error, {:invalid_turn, turn}}
-
-  defp assertions(nil), do: {:ok, %{}}
-
-  defp assertions(assertions) when is_map(assertions) do
-    supported = ["contains", "equals", "operation_called"]
-    unknown = assertions |> Map.keys() |> Enum.reject(&(&1 in supported))
-
-    if unknown == [] do
-      with {:ok, contains} <- string_or_list(Map.get(assertions, "contains"), :contains),
-           {:ok, equals} <- optional_string(Map.get(assertions, "equals")),
-           {:ok, operations} <-
-             string_or_list(Map.get(assertions, "operation_called"), :operation_called) do
-        result =
-          %{}
-          |> maybe_put(:contains, contains)
-          |> maybe_put(:equals, equals)
-          |> maybe_put(:operation_called, operations)
-
-        {:ok, result}
-      end
-    else
-      {:error, {:unsupported_assertions, unknown}}
-    end
+  defp normalize_assertions(assertions) do
+    %{}
+    |> maybe_put(:contains, Map.get(assertions, "contains"))
+    |> maybe_put(:equals, Map.get(assertions, "equals"))
+    |> maybe_put(:operation_called, Map.get(assertions, "operation_called"))
   end
-
-  defp assertions(value), do: {:error, {:invalid_assertions, value}}
 end

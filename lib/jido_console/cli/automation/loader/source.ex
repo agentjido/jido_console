@@ -5,22 +5,10 @@ defmodule Jido.Console.Automation.Loader.Source do
   import Jido.Console.Automation.Loader.Fields, only: [map_value: 2, resolve_path: 2]
 
   @doc false
-  @spec text(term(), Path.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
-  def text(text, _base_dir, _opts) when is_binary(text) and text != "", do: {:ok, text}
-
-  def text(source, base_dir, opts) when is_map(source) do
-    text = Map.get(source, "text")
-    file = Map.get(source, "file")
-
-    cond do
-      is_binary(text) and not is_nil(file) -> {:error, :multiple_text_sources}
-      is_binary(text) and text != "" -> {:ok, text}
-      is_binary(file) and file != "" -> read_text(resolve_path(base_dir, file), opts)
-      true -> {:error, {:invalid_text_source, source}}
-    end
-  end
-
-  def text(source, _base_dir, _opts), do: {:error, {:invalid_text_source, source}}
+  @spec text(Jido.Console.Automation.InputSchema.text_source(), Path.t(), keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def text({:text, text}, _base_dir, _opts), do: {:ok, text}
+  def text({:file, file}, base_dir, opts), do: read_text(resolve_path(base_dir, file), opts)
 
   @doc false
   @spec data(term(), Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
