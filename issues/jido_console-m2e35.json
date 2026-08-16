@@ -19,11 +19,15 @@
     {
       "text": "Reopened during administrative cleanup on 2026-08-16. The supervised session plane is on main, but no v0.2 tag or GitHub release exists. Close this issue only after the protected publication workflow and public release checks pass.",
       "timestamp": "2026-08-16T19:22:28Z"
+    },
+    {
+      "text": "Maintainer decision on 2026-08-16: publication is intentionally skipped. Quality and release-readiness checks remain required, but no tag, GitHub release, archive, Homebrew formula, or npm package will be published.",
+      "timestamp": "2026-08-16T19:24:46Z"
     }
   ],
   "priority": 1,
   "status": "open",
   "title": "M2-E35: Publish and Record Jido Console v0.2",
   "type": "epic",
-  "updated_at": "2026-08-16T19:24:45Z"
+  "updated_at": "2026-08-16T19:24:46Z"
 }
