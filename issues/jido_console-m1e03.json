@@ -17,7 +17,6 @@
     "effort:medium",
     "milestone-1",
     "one-pr",
-    "readiness:planned",
     "roadmap",
     "v0.1"
   ],
@@ -25,5 +24,5 @@
   "status": "closed",
   "title": "M1-E03: Control Local Process Status and Shutdown",
   "type": "epic",
-  "updated_at": "2026-08-15T13:53:35Z"
+  "updated_at": "2026-08-16T19:27:09Z"
 }
