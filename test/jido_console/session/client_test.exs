@@ -3,6 +3,34 @@ defmodule Jido.Console.Session.ClientTest do
 
   alias Jido.Console.Session.{Client, Identity, Supervisor}
 
+  test "the public interface contains only handle-owned client operations" do
+    assert Client.__info__(:functions) ==
+             [
+               ack: 2,
+               attach: 1,
+               attach: 2,
+               await: 2,
+               await: 3,
+               cancel: 3,
+               cancel_and_wait: 3,
+               cancel_and_wait: 4,
+               capabilities: 0,
+               configure_runtime: 3,
+               configure_runtime: 4,
+               detach: 1,
+               detach_async: 1,
+               recover: 2,
+               respond_review: 4,
+               respond_review: 5,
+               runtime_info: 1,
+               send_input: 2,
+               snapshot: 1,
+               start_operation: 2,
+               start_turn: 2,
+               start_turn: 3
+             ]
+  end
+
   test "a client can attach and detach with exact session identity" do
     suffix = System.unique_integer([:positive])
     opts = [name: :"client-#{suffix}", registry: :"client-reg-#{suffix}", sessions: :"client-dyn-#{suffix}"]

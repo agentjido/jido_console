@@ -4,17 +4,10 @@ defmodule Jido.Console.Session.Client do
   """
 
   alias Jido.Console.Session.{
-    Cancellation,
     Delivery,
-    Drain,
-    Effect,
-    Hook,
     Identity,
     Input,
-    Permission,
-    Queue,
     Request,
-    Result,
     Server
   }
 
@@ -108,30 +101,6 @@ defmodule Jido.Console.Session.Client do
     Server.respond_review(handle.server, handle.client.id, decision, request, review, opts)
   end
 
-  @doc "Steers the active run."
-  @spec steer(t(), Queue.t(), map()) :: {:ok, Queue.t()} | {:error, term()}
-  def steer(_handle, queues, item), do: Queue.add(queues, :steering, item)
-
-  @doc "Queues follow-up input."
-  @spec queue(t(), Queue.t(), map()) :: {:ok, Queue.t()} | {:error, term()}
-  def queue(_handle, queues, item), do: Queue.add(queues, :follow_up, item)
-
-  @doc "Removes a queued item."
-  @spec remove(t(), Queue.t(), atom(), String.t()) :: {:ok, Queue.t()} | {:error, term()}
-  def remove(_handle, queues, kind, input_id), do: Queue.remove(queues, kind, input_id)
-
-  @doc "Requests two-stage cancellation."
-  @spec cancel(map(), Drain.t()) :: Cancellation.t()
-  def cancel(identity, drain), do: Cancellation.request(identity, drain)
-
-  @doc "Approves a pending permission."
-  @spec approve(Permission.t(), map()) :: {:ok, Permission.t(), atom()} | {:error, term()}
-  def approve(table, response), do: Permission.respond(table, Map.put(response, :decision, :approved))
-
-  @doc "Rejects a pending permission."
-  @spec reject(Permission.t(), map()) :: {:ok, Permission.t(), atom()} | {:error, term()}
-  def reject(table, response), do: Permission.respond(table, Map.put(response, :decision, :denied))
-
   @doc "Returns a snapshot of the session."
   @spec snapshot(t()) :: map()
   def snapshot(handle), do: handle.server |> Server.state() |> Jido.Console.Session.Reducer.snapshot()
@@ -151,16 +120,4 @@ defmodule Jido.Console.Session.Client do
   @doc "Returns capability names advertised by this contract."
   @spec capabilities() :: [String.t()]
   def capabilities, do: ~w(attach detach input output snapshot control capability ack recover)
-
-  @doc "Wraps a typed effect, result, permission, and hook outcome."
-  @spec outcomes(Effect.t(), Result.t(), atom(), map()) :: map()
-  def outcomes(effect, result, permission, hook) do
-    %{
-      effect: Effect.to_protocol(effect),
-      result: Result.to_protocol(result),
-      permission: permission,
-      hook: hook,
-      loads_extensions?: Hook.loads_extensions?()
-    }
-  end
 end
