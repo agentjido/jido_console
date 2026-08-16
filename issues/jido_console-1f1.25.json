@@ -5,11 +5,13 @@
   "created": "2026-08-16T13:00:17Z",
   "description": "Audit rank: 25 of 30.\n\nOwner: JC-19 Build, CI, and repository quality.\nEvidence: mix.exs:98-112; dev/jido_console/release/local.ex:72-94.\nWork: Keep format, compile, xref, Credo, Dialyzer, and Doctor only in the precommit alias. Make release source gates run locked dependencies, mix precommit, coverage, and cross-repository compatibility.\nAcceptance: precommit, jido.check, and release use one shared source-gate owner and preserve command order and failure status.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.25",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-31: Make precommit own shared source gates",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:17Z"
+  "updated_at": "2026-08-16T13:00:54Z"
 }
