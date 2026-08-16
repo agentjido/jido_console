@@ -15,7 +15,6 @@ defmodule Jido.Console.Session.Client do
           session: Identity.t(),
           client: Identity.t(),
           server: pid(),
-          delivery: Delivery.t(),
           snapshot: map()
         }
 
@@ -30,7 +29,6 @@ defmodule Jido.Console.Session.Client do
          session: Identity.new!(:session, id: session_id, session_id: session_id),
          client: client,
          server: server,
-         delivery: Delivery.new(client_id: client.id, session_id: session_id),
          snapshot: snapshot
        }}
     end
@@ -112,9 +110,9 @@ defmodule Jido.Console.Session.Client do
   end
 
   @doc "Recovers from an explicit gap."
-  @spec recover(t(), [map()]) :: {:ok, Delivery.t(), term()} | {:error, term()}
-  def recover(handle, suffix) do
-    Server.recover(handle.server, handle.client.id, suffix)
+  @spec recover(t()) :: {:ok, Delivery.t(), term()} | {:error, term()}
+  def recover(handle) do
+    Server.recover(handle.server, handle.client.id)
   end
 
   @doc "Returns capability names advertised by this contract."

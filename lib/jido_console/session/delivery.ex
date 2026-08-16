@@ -5,37 +5,55 @@ defmodule Jido.Console.Session.Delivery do
 
   @default_bound 32
 
-  @type t :: %{
+  @type open :: %{
+          status: :open,
           client_id: String.t(),
           session_id: String.t(),
           pending: [map()],
           last_acked: non_neg_integer(),
-          bound: pos_integer(),
-          gap?: boolean()
+          highest_offered: non_neg_integer(),
+          bound: pos_integer()
         }
+
+  @type gapped :: %{
+          status: :gapped,
+          client_id: String.t(),
+          session_id: String.t(),
+          last_acked: non_neg_integer(),
+          current_sequence: non_neg_integer(),
+          bound: pos_integer()
+        }
+
+  @type t :: open() | gapped()
 
   @doc "Starts delivery state for one client."
   @spec new(keyword()) :: t()
   def new(opts) do
     %{
+      status: :open,
       client_id: Keyword.fetch!(opts, :client_id),
       session_id: Keyword.fetch!(opts, :session_id),
       pending: [],
-      last_acked: Keyword.get(opts, :last_acked, 0),
-      bound: Keyword.get(opts, :bound, @default_bound),
-      gap?: false
+      last_acked: 0,
+      highest_offered: 0,
+      bound: Keyword.get(opts, :bound, @default_bound)
     }
   end
 
   @doc "Offers one update. Unsafe updates are never dropped silently."
   @spec offer(t(), map()) :: {:ok, t(), map() | nil} | {:gap, t(), map() | nil}
-  def offer(%{gap?: true} = state, _update), do: {:gap, state, nil}
+  def offer(%{status: :gapped} = state, _update), do: {:gap, state, nil}
 
-  def offer(state, update) do
+  def offer(%{status: :open} = state, update) do
     sequence = seq(update)
 
     if coalescible?(update) and coalescible_tail?(state.pending) do
-      {:ok, %{state | pending: List.replace_at(state.pending, -1, update)}, update}
+      {:ok,
+       %{
+         state
+         | pending: List.replace_at(state.pending, -1, update),
+           highest_offered: max(state.highest_offered, sequence)
+       }, update}
     else
       offer_or_gap(state, update, sequence)
     end
@@ -49,9 +67,22 @@ defmodule Jido.Console.Session.Delivery do
         "current_sequence" => sequence
       }
 
-      {:gap, %{state | pending: [], gap?: true}, gap}
+      {:gap,
+       %{
+         status: :gapped,
+         client_id: state.client_id,
+         session_id: state.session_id,
+         last_acked: state.last_acked,
+         current_sequence: sequence,
+         bound: state.bound
+       }, gap}
     else
-      {:ok, %{state | pending: state.pending ++ [update]}, update}
+      {:ok,
+       %{
+         state
+         | pending: state.pending ++ [update],
+           highest_offered: max(state.highest_offered, sequence)
+       }, update}
     end
   end
 
@@ -69,12 +100,18 @@ defmodule Jido.Console.Session.Delivery do
       client_id != state.client_id or session_id != state.session_id ->
         {:error, :identity_mismatch}
 
+      state.status == :gapped ->
+        {:error, :delivery_gapped}
+
       sequence < state.last_acked ->
         {:error, :stale_ack}
 
+      sequence > state.highest_offered ->
+        {:error, :future_ack}
+
       true ->
         pending = Enum.reject(state.pending, fn update -> seq(update) <= sequence end)
-        {:ok, %{state | pending: pending, last_acked: sequence, gap?: false}}
+        {:ok, %{state | pending: pending, last_acked: sequence}}
     end
   end
 

@@ -542,7 +542,7 @@ defmodule Jido.Console.Tui do
     sequence = snapshot["payload"]["sequence"] || snapshot["sequence"] || 0
 
     case Client.ack(handle, sequence) do
-      {:ok, delivery} -> %{state | session_client: %{handle | delivery: delivery}}
+      {:ok, _delivery} -> state
       {:error, _reason} -> state
     end
   end
@@ -550,8 +550,8 @@ defmodule Jido.Console.Tui do
   defp recover_session_client(%State{session_client: nil} = state), do: state
 
   defp recover_session_client(%State{session_client: handle} = state) do
-    case Client.recover(handle, []) do
-      {:ok, delivery, _recovered} -> %{state | session_client: %{handle | delivery: delivery}}
+    case Client.recover(handle) do
+      {:ok, _delivery, _recovered} -> state
       {:error, _reason} -> state
     end
   end

@@ -163,16 +163,10 @@ defmodule Jido.Console.Session.Server do
     GenServer.call(server, {:ack, client_id, session_id, sequence})
   end
 
-  @doc "Replaces one attached client's delivery state after recovery."
-  @spec put_delivery(name(), String.t(), Delivery.t()) :: {:ok, Delivery.t()} | {:error, term()}
-  def put_delivery(server, client_id, delivery) do
-    GenServer.call(server, {:put_delivery, client_id, delivery})
-  end
-
   @doc "Recovers one attached client from a delivery gap."
-  @spec recover(name(), String.t(), [map()]) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
-  def recover(server, client_id, suffix) do
-    GenServer.call(server, {:recover, client_id, suffix})
+  @spec recover(name(), String.t()) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
+  def recover(server, client_id) do
+    GenServer.call(server, {:recover, client_id})
   end
 
   @doc "Stops one live session server."
@@ -395,34 +389,19 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  def handle_call({:recover, client_id, suffix}, _from, state) do
+  def handle_call({:recover, client_id}, _from, state) do
     case Map.fetch(state.clients, client_id) do
       :error ->
         {:reply, {:error, :not_attached}, state}
 
       {:ok, client} ->
-        case Recovery.recover(state.state, client.delivery, suffix) do
+        case Recovery.recover(state.state, client.delivery) do
           {:ok, delivery, recovered} ->
             clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
             {:reply, {:ok, delivery, recovered}, %{state | clients: clients}}
 
           {:error, _reason} = error ->
             {:reply, error, state}
-        end
-    end
-  end
-
-  def handle_call({:put_delivery, client_id, delivery}, _from, state) do
-    case Map.fetch(state.clients, client_id) do
-      :error ->
-        {:reply, {:error, :not_attached}, state}
-
-      {:ok, client} ->
-        if delivery.client_id == client_id and delivery.session_id == state.session.id do
-          clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
-          {:reply, {:ok, delivery}, %{state | clients: clients}}
-        else
-          {:reply, {:error, :identity_mismatch}, state}
         end
     end
   end

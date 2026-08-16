@@ -19,7 +19,7 @@ defmodule Jido.Console.Session.ClientTest do
                configure_runtime: 4,
                detach: 1,
                detach_async: 1,
-               recover: 2,
+               recover: 1,
                respond_review: 4,
                respond_review: 5,
                runtime_info: 1,
@@ -39,6 +39,7 @@ defmodule Jido.Console.Session.ClientTest do
     session = Identity.new!(:session)
 
     assert {:ok, handle} = Client.attach(session.id, registry: opts[:registry], supervisor: opts[:sessions])
+    refute Map.has_key?(handle, :delivery)
     assert {:ok, input} = Client.send_input(handle, "hello")
     assert input.status == :accepted
     assert input.identity.session_id == session.id

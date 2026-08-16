@@ -19,35 +19,32 @@ defmodule Jido.Console.Session.Recovery do
     }
   end
 
-  @doc "Recovers a client from a snapshot and optional event suffix."
-  @spec recover(State.t(), Delivery.t(), [map()]) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
-  def recover(state, delivery, suffix) when is_list(suffix) do
-    if delivery.session_id != state.session_id do
-      {:error, :cross_session_result}
-    else
-      case owned_suffix?(state, suffix) do
-        :ok ->
-          {:ok, %{delivery | pending: [], last_acked: state.sequence, gap?: false}, state}
+  @doc "Recovers a gapped client from the session owner's current snapshot."
+  @spec recover(State.t(), Delivery.t()) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
+  def recover(state, delivery) do
+    cond do
+      delivery.session_id != state.session_id ->
+        {:error, :cross_session_result}
 
-        {:error, _reason} = error ->
-          error
-      end
+      delivery.status != :gapped ->
+        {:error, :recovery_not_required}
+
+      true ->
+        recovered = %{
+          status: :open,
+          client_id: delivery.client_id,
+          session_id: delivery.session_id,
+          pending: [],
+          last_acked: state.sequence,
+          highest_offered: state.sequence,
+          bound: delivery.bound
+        }
+
+        {:ok, recovered, state}
     end
   end
 
   @doc "Limitation recorded for Milestone 3."
   @spec limitation() :: String.t()
   def limitation, do: "Delivery-gap recovery is not application-restart recovery or durable resume."
-
-  defp owned_suffix?(_state, []), do: :ok
-
-  defp owned_suffix?(state, suffix) do
-    ids = MapSet.new(state.history, & &1["id"])
-
-    if Enum.all?(suffix, fn event -> MapSet.member?(ids, event["id"]) end) do
-      :ok
-    else
-      {:error, :unknown_recovery_suffix}
-    end
-  end
 end

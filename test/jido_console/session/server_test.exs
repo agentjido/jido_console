@@ -60,8 +60,8 @@ defmodule Jido.Console.Session.ServerTest do
     assert delivery.last_acked == sequence
     assert delivery.pending == []
 
-    assert {:ok, recovered, _state} = Server.recover(server, client.id, [])
-    refute recovered.gap?
+    assert {:error, :future_ack} = Server.ack(server, client.id, session.id, sequence + 1)
+    assert {:error, :recovery_not_required} = Server.recover(server, client.id)
     assert :ok = Server.stop(server)
     refute Process.alive?(server)
   end
