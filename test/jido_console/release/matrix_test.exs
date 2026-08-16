@@ -1,7 +1,7 @@
 defmodule Jido.Console.Release.MatrixTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Release.{Matrix, PayloadFixture}
+  alias Jido.Console.Release.{Channel, Matrix, PayloadFixture}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-matrix-#{System.unique_integer([:positive])}")
@@ -53,5 +53,36 @@ defmodule Jido.Console.Release.MatrixTest do
     homebrew = Enum.find(report["supported_cells"], &(&1["channel"] == "homebrew"))
     assert Enum.map(homebrew["stages"], & &1["status"]) == ["fail", "not_run", "not_run", "not_run"]
     assert report["comparison"]["status"] == "pass"
+  end
+
+  test "reports the fields that differ between valid channel identities", %{root: root, payload: payload, key: key} do
+    assert {:ok, report} =
+             Matrix.verify(payload, public_key: key.public, root: Path.join(root, "identity-mismatch"))
+
+    results =
+      Enum.map(report["supported_cells"], fn
+        %{"channel" => "homebrew"} = result -> change_identity_version(result, "0.2.0")
+        result -> result
+      end)
+
+    assert Enum.all?(results, fn result ->
+             channel = String.to_existing_atom(result["channel"])
+             Channel.validate_result(result, channel) == :ok
+           end)
+
+    assert Matrix.compare(results) == %{
+             "status" => "fail",
+             "reason" => "payload identity mismatch: version"
+           }
+  end
+
+  defp change_identity_version(result, version) do
+    result
+    |> put_in(["payload_identity", "version"], version)
+    |> Map.update!("stages", fn stages ->
+      Enum.map(stages, fn stage ->
+        if Map.has_key?(stage, "version"), do: Map.put(stage, "version", version), else: stage
+      end)
+    end)
   end
 end

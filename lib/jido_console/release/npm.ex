@@ -11,6 +11,18 @@ defmodule Jido.Console.Release.Npm do
   @entry "@agentjido/jido-console"
   @target "@agentjido/jido-console-darwin-arm64"
 
+  @type install :: %{
+          channel: :npm,
+          root: String.t(),
+          executable: String.t(),
+          payload_identity: Channel.payload_identity(),
+          entry_root: String.t(),
+          payload_root: String.t(),
+          flow: :global | :local | :exec | :npx,
+          entry_package: String.t(),
+          target_package: String.t()
+        }
+
   @doc "Returns the supported npm entry package name."
   @spec entry_name() :: String.t()
   def entry_name, do: @entry
@@ -63,8 +75,10 @@ defmodule Jido.Console.Release.Npm do
   def lifecycle(payload_dir, prefix, opts \\ []) do
     flow = Keyword.get(opts, :npm_flow, :global)
 
-    Channel.execute(:npm, Channel.identity(payload_dir), %{
-      install: fn state ->
+    Channel.execute(
+      :npm,
+      Channel.identity(payload_dir),
+      fn ->
         case install(payload_dir, prefix, flow, opts) do
           {:ok, install} ->
             evidence =
@@ -77,19 +91,19 @@ defmodule Jido.Console.Release.Npm do
                 "executable" => Path.relative_to(install.executable, prefix)
               })
 
-            {:ok, Map.put(state, :install, install), evidence}
+            {:ok, install, evidence}
 
           {:error, reason} ->
             {:error, reason}
         end
       end,
-      first_run: fn %{install: install} = state ->
+      fn install ->
         case Channel.first_run(install) do
-          {:ok, evidence} -> {:ok, state, Map.put(evidence, "flow", Atom.to_string(flow))}
+          {:ok, evidence} -> {:ok, Map.put(evidence, "flow", Atom.to_string(flow))}
           {:error, reason} -> {:error, reason}
         end
       end,
-      update: fn %{install: install} = state ->
+      fn install ->
         case install(payload_dir, prefix, flow, opts) do
           {:ok, updated} ->
             evidence =
@@ -99,23 +113,18 @@ defmodule Jido.Console.Release.Npm do
                 "target_package" => @target
               })
 
-            {:ok, Map.put(state, :install, updated), evidence}
+            {:ok, updated, evidence}
 
           {:error, reason} ->
             {:error, reason}
         end
       end,
-      remove: fn %{install: install} = state ->
-        case remove(install) do
-          {:ok, evidence} -> {:ok, state, evidence}
-          {:error, reason} -> {:error, reason}
-        end
-      end
-    })
+      &remove/1
+    )
   end
 
   @doc "Installs the entry and target packages for one npm flow."
-  @spec install(Path.t(), Path.t(), atom(), keyword()) :: {:ok, Channel.install()} | {:error, term()}
+  @spec install(Path.t(), Path.t(), atom(), keyword()) :: {:ok, install()} | {:error, term()}
   def install(payload_dir, prefix, flow, opts \\ []) when flow in [:global, :local, :exec, :npx] do
     with {:ok, packages} <- packages(payload_dir),
          :ok <- reject_install_scripts(packages),
@@ -123,20 +132,22 @@ defmodule Jido.Console.Release.Npm do
          {:ok, install} <- Channel.install_payload(:npm, payload_dir, paths.target, opts),
          :ok <- install_entry_executable(install.executable, paths.entry_executable, paths.executable) do
       {:ok,
-       Map.merge(install, %{
+       %{
+         channel: :npm,
          root: prefix,
          executable: paths.executable,
+         payload_identity: install.payload_identity,
          entry_root: paths.entry,
          payload_root: paths.target,
          flow: flow,
          entry_package: @entry,
          target_package: @target
-       })}
+       }}
     end
   end
 
   @doc "Removes the entry package, target package, and executable link."
-  @spec remove(map()) :: {:ok, map()} | {:error, term()}
+  @spec remove(install()) :: {:ok, map()} | {:error, term()}
   def remove(install) do
     case File.rm_rf(install.root) do
       {:ok, _files} ->

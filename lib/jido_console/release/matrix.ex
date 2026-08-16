@@ -53,7 +53,9 @@ defmodule Jido.Console.Release.Matrix do
     end
   end
 
-  defp compare(results) do
+  @doc false
+  @spec compare([Channel.result()]) :: map()
+  def compare(results) do
     identities = results |> Enum.map(& &1["payload_identity"]) |> Enum.uniq()
 
     case identities do
@@ -76,7 +78,7 @@ defmodule Jido.Console.Release.Matrix do
 
     fields
     |> Enum.filter(fn field -> identities |> Enum.map(& &1[field]) |> Enum.uniq() |> length() > 1 end)
-    |> Enum.map_join(", ")
+    |> Enum.join(", ")
     |> case do
       "" -> "payload identity unavailable"
       changed -> "payload identity mismatch: #{changed}"

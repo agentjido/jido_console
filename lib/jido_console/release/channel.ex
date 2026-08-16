@@ -17,12 +17,18 @@ defmodule Jido.Console.Release.Channel do
   @type channel :: :archive | :homebrew | :npm
   @type payload_identity :: %{required(String.t()) => String.t() | map()}
   @type install :: %{
+          optional(atom()) => term(),
           channel: channel(),
           root: String.t(),
           executable: String.t(),
           payload_identity: payload_identity()
         }
   @type result :: map()
+  @type stage_error :: {:error, term()}
+  @type install_callback :: (-> {:ok, map(), map()} | stage_error())
+  @type first_run_callback :: (map() -> {:ok, map()} | stage_error())
+  @type update_callback :: (map() -> {:ok, map(), map()} | stage_error())
+  @type remove_callback :: (map() -> {:ok, map()} | stage_error())
 
   @doc "Returns the required channel identifiers."
   @spec channels() :: [channel()]
@@ -35,36 +41,28 @@ defmodule Jido.Console.Release.Channel do
   @doc "Executes and reports the archive lifecycle."
   @spec lifecycle(Path.t(), Path.t(), keyword()) :: result()
   def lifecycle(payload_dir, prefix, opts \\ []) do
-    execute(:archive, identity(payload_dir), %{
-      install: fn state ->
+    execute(
+      :archive,
+      identity(payload_dir),
+      fn ->
         case install_payload(:archive, payload_dir, prefix, opts) do
-          {:ok, install} -> {:ok, Map.put(state, :install, install), install_evidence(install, "archive")}
+          {:ok, install} -> {:ok, install, install_evidence(install, "archive")}
           {:error, reason} -> {:error, reason}
         end
       end,
-      first_run: fn %{install: install} = state ->
-        case first_run(install) do
-          {:ok, evidence} -> {:ok, state, evidence}
-          {:error, reason} -> {:error, reason}
-        end
-      end,
-      update: fn %{install: install} = state ->
+      &first_run/1,
+      fn install ->
         case install_payload(:archive, payload_dir, install.root, opts) do
           {:ok, updated} ->
             evidence = identity_evidence("update", updated.payload_identity, %{"method" => "archive"})
-            {:ok, Map.put(state, :install, updated), evidence}
+            {:ok, updated, evidence}
 
           {:error, reason} ->
             {:error, reason}
         end
       end,
-      remove: fn %{install: install} = state ->
-        case remove(install, opts) do
-          {:ok, evidence} -> {:ok, state, evidence}
-          {:error, reason} -> {:error, reason}
-        end
-      end
-    })
+      &remove(&1, opts)
+    )
   end
 
   @doc "Reads the identity that all channel results must report."
@@ -91,15 +89,19 @@ defmodule Jido.Console.Release.Channel do
   end
 
   @doc "Runs four owner-supplied stages and returns one common channel result."
-  @spec execute(channel(), {:ok, payload_identity()} | {:error, term()}, map()) :: result()
-  def execute(channel, {:ok, identity}, callbacks) when channel in @channels and is_map(callbacks) do
-    {stages, _state} = execute_stages(@stages, callbacks, %{}, [])
-    result(channel, identity, stages)
-  end
-
-  def execute(channel, {:error, reason}, _callbacks) when channel in @channels do
-    stages = [failed_stage(:install, reason) | not_run_stages(tl(@stages))]
-    result(channel, unavailable_identity(), stages)
+  @spec execute(
+          channel(),
+          {:ok, payload_identity()} | {:error, term()},
+          install_callback(),
+          first_run_callback(),
+          update_callback(),
+          remove_callback()
+        ) :: result()
+  def execute(channel, identity_result, install, first_run, update, remove) when channel in @channels do
+    case identity_result do
+      {:ok, identity} -> execute_install(channel, identity, install, first_run, update, remove)
+      {:error, reason} -> failed_result(channel, unavailable_identity(), [], :install, reason, tl(@stages))
+    end
   end
 
   @doc "Validates one complete owner result before matrix comparison."
@@ -208,19 +210,39 @@ defmodule Jido.Console.Release.Channel do
     )
   end
 
-  defp execute_stages([], _callbacks, state, completed), do: {Enum.reverse(completed), state}
-
-  defp execute_stages([stage | remaining], callbacks, state, completed) do
-    expected_stage = Atom.to_string(stage)
-
-    case Map.fetch!(callbacks, stage).(state) do
-      {:ok, next_state, %{"stage" => ^expected_stage, "status" => "pass"} = evidence} ->
-        execute_stages(remaining, callbacks, next_state, [evidence | completed])
+  defp execute_install(channel, identity, install_callback, first_run, update, remove) do
+    case install_callback.() do
+      {:ok, install, evidence} ->
+        execute_first_run(channel, identity, first_run, update, remove, install, [evidence])
 
       {:error, reason} ->
-        stages = Enum.reverse(completed) ++ [failed_stage(stage, reason)] ++ not_run_stages(remaining)
-        {stages, state}
+        failed_result(channel, identity, [], :install, reason, [:first_run, :update, :remove])
     end
+  end
+
+  defp execute_first_run(channel, identity, first_run, update, remove, install, completed) do
+    case first_run.(install) do
+      {:ok, evidence} -> execute_update(channel, identity, update, remove, install, completed ++ [evidence])
+      {:error, reason} -> failed_result(channel, identity, completed, :first_run, reason, [:update, :remove])
+    end
+  end
+
+  defp execute_update(channel, identity, update, remove, install, completed) do
+    case update.(install) do
+      {:ok, updated, evidence} -> execute_remove(channel, identity, remove, updated, completed ++ [evidence])
+      {:error, reason} -> failed_result(channel, identity, completed, :update, reason, [:remove])
+    end
+  end
+
+  defp execute_remove(channel, identity, remove, install, completed) do
+    case remove.(install) do
+      {:ok, evidence} -> result(channel, identity, completed ++ [evidence])
+      {:error, reason} -> failed_result(channel, identity, completed, :remove, reason, [])
+    end
+  end
+
+  defp failed_result(channel, identity, completed, stage, reason, remaining) do
+    result(channel, identity, completed ++ [failed_stage(stage, reason)] ++ not_run_stages(remaining))
   end
 
   defp result(channel, identity, stages) do
