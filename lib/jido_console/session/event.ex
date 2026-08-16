@@ -29,9 +29,10 @@ defmodule Jido.Console.Session.Event do
          :ok <- require_trust(attrs),
          :ok <- preserve_identities(attrs),
          :ok <- reject_origin_authority(attrs),
+         {:ok, schema} <- Protocol.schema(),
          {:ok, envelope} <-
            Protocol.envelope(
-             schema(),
+             schema,
              "event",
              attrs["type"],
              Map.put(attrs, "id", attrs["id"] || default_event_id(attrs))
@@ -49,11 +50,6 @@ defmodule Jido.Console.Session.Event do
   end
 
   def origin_authority?(_attrs), do: false
-
-  defp schema do
-    {:ok, schema} = Protocol.schema()
-    schema
-  end
 
   defp require_sequence(%{"sequence" => sequence}) when is_integer(sequence) and sequence >= 0, do: :ok
   defp require_sequence(_attrs), do: {:error, :invalid_event_sequence}

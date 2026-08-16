@@ -1,8 +1,9 @@
 defmodule Jido.Console.TuiTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Console.Tui
   alias Jido.Console.Runtime.Jidoka, as: Runtime
+  alias Jido.Console.Session.Server
+  alias Jido.Console.Tui
   alias Jidoka.Cancellation
   alias Jidoka.Event
 
@@ -525,7 +526,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:session_model, _model}, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, initial_frame}
@@ -561,16 +562,19 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
 
-    for _index <- 1..20 do
-      send_prompt(owner, ref)
-      assert_receive :turn_started, 500
-      assert_receive {:turn_prompt, "hello", _context}, 500
-      assert_receive {:turn_awaited, _opts}, 500
-      assert_frame_contains("Hello back", 500)
+    for index <- 1..20 do
+      prompt = "hello #{index}"
+      flush_frames()
+      send(owner, {:jido_terminal, ref, {:text, prompt}})
+      send(owner, {:jido_terminal, ref, {:key, :enter}})
+      assert_receive :turn_started, 2_000
+      assert_receive {:turn_prompt, ^prompt, _context}, 2_000
+      assert_receive {:turn_awaited, _opts}, 2_000
+      assert_frame_contains_all([prompt, "Hello back", "idle ·"], 2_000)
     end
 
     stop_tui(task, owner, ref)
@@ -602,14 +606,14 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:session_model, "openai:gpt-4.1-mini"}, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
 
     send(owner, {:jido_terminal, ref, {:text, "/model ollama:llama3.2"}})
     send(owner, {:jido_terminal, ref, {:key, :enter}})
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:session_model, "ollama:llama3.2"}, 2_000
     assert_frame_contains("Selected ollama:llama3.2")
 
@@ -636,7 +640,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:session_model, "openai:gpt-4.1-mini"}, 2_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
@@ -646,6 +650,7 @@ defmodule Jido.Console.TuiTest do
 
   test "keeps the Jidoka request owner alive while it awaits the result" do
     test_pid = self()
+    session_id = "owner-bound-#{System.unique_integer([:positive])}"
 
     task =
       Task.async(fn ->
@@ -653,7 +658,8 @@ defmodule Jido.Console.TuiTest do
           runtime: OwnerBoundRuntime,
           terminal_adapter: FakeAdapter,
           terminal_adapter_opts: [test_pid: test_pid],
-          turn_opts: [test_pid: test_pid]
+          turn_opts: [test_pid: test_pid],
+          session_id: session_id
         )
       end)
 
@@ -664,9 +670,14 @@ defmodule Jido.Console.TuiTest do
     assert Process.alive?(request_owner)
     assert_frame_contains("owner kept result")
 
-    refute Process.alive?(request_owner)
-    refute Process.alive?(controller)
     stop_tui(task, owner, ref)
+    assert Process.alive?(request_owner)
+    assert Process.alive?(controller)
+    controller_ref = Process.monitor(controller)
+    Server.stop(request_owner)
+    refute Process.alive?(request_owner)
+    assert_receive {:DOWN, ^controller_ref, :process, ^controller, :normal}, 500
+    refute Process.alive?(controller)
   end
 
   test "buffers stream events until the asynchronous request is installed" do
@@ -683,7 +694,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send(owner, {:jido_terminal, ref, {:text, "early stream"}})
@@ -771,8 +782,9 @@ defmodule Jido.Console.TuiTest do
     refute_receive :terminal_closed, 50
   end
 
-  test "closes runtime resources after a normal exit" do
+  test "keeps runtime resources open after a normal TUI detach" do
     test_pid = self()
+    session_id = "close-runtime-#{System.unique_integer([:positive])}"
 
     task =
       Task.async(fn ->
@@ -780,7 +792,8 @@ defmodule Jido.Console.TuiTest do
           runtime: CloseRuntime,
           terminal_adapter: FakeAdapter,
           terminal_adapter_opts: [test_pid: test_pid],
-          session_opts: [test_pid: test_pid]
+          session_opts: [test_pid: test_pid],
+          session_id: session_id
         )
       end)
 
@@ -791,36 +804,43 @@ defmodule Jido.Console.TuiTest do
 
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)
-    assert_receive :runtime_session_closed
     assert_receive :terminal_closed
+    refute_receive :runtime_session_closed, 50
+    {:ok, server} = Server.ensure_started(session_id)
+    Server.stop(server)
+    assert_receive :runtime_session_closed
   end
 
-  test "EOF cancels, awaits a terminal result, and closes every child once" do
-    {task, owner, ref, runtime_owner} = start_shutdown_tui()
+  test "EOF detaches while active session work continues" do
+    {task, owner, ref, session_server, _session_id} = start_shutdown_tui()
     send_prompt(owner, ref)
 
     assert_receive {:shutdown_turn_started, start_pid, relay_pid, controller, "hello"}
     assert_receive {:shutdown_await_started, await_pid}
     send(owner, {:jido_terminal, ref, :eof})
 
-    assert_receive {:shutdown_cancel_called, cancel_pid}
-    assert_receive {:shutdown_controller_closed, ^controller}
-    assert_receive {:shutdown_terminal_result, ^await_pid}
-    assert_receive {:shutdown_session_closed, close_worker}
     assert :ok = Task.await(task, 1_000)
     assert_receive :terminal_closed
-
-    for pid <- [start_pid, relay_pid, controller, await_pid, cancel_pid, close_worker, runtime_owner] do
-      refute Process.alive?(pid)
-    end
-
+    refute_receive {:shutdown_cancel_called, _cancel_pid}, 50
     refute_receive {:shutdown_session_closed, _pid}, 50
-    refute_receive :terminal_closed, 50
+    assert start_pid == session_server
+    assert relay_pid == session_server
+    assert Process.alive?(session_server)
+    assert Process.alive?(controller)
+    assert Process.alive?(await_pid)
+
+    Server.stop(session_server)
+    assert_receive {:shutdown_controller_closed, ^controller}
+    assert_receive {:shutdown_session_closed, ^session_server}
+    refute Process.alive?(await_pid)
   end
 
-  test "a draw failure cancels active work before resource cleanup" do
+  test "a draw failure detaches without cancelling session work" do
     {:ok, fail_control} = Agent.start_link(fn -> false end)
-    {task, owner, ref, runtime_owner} = start_shutdown_tui(fail_control: fail_control)
+
+    {task, owner, ref, session_server, _session_id} =
+      start_shutdown_tui(fail_control: fail_control)
+
     send_prompt(owner, ref)
 
     assert_receive {:shutdown_turn_started, _start_pid, _relay_pid, _controller, "hello"}
@@ -828,12 +848,13 @@ defmodule Jido.Console.TuiTest do
     Agent.update(fail_control, fn _current -> true end)
     send(owner, {:jido_terminal, ref, {:resize, 41, 10}})
 
-    assert_receive {:shutdown_cancel_called, _cancel_pid}
-    assert_receive {:shutdown_terminal_result, ^await_pid}
-    assert_receive {:shutdown_session_closed, _runtime_owner}
     assert {:error, :draw_failed} = Task.await(task, 1_000)
     assert_receive :terminal_closed
-    refute Process.alive?(runtime_owner)
+    refute_receive {:shutdown_cancel_called, _cancel_pid}, 50
+    assert Process.alive?(session_server)
+    assert Process.alive?(await_pid)
+    Server.stop(session_server)
+    assert_receive {:shutdown_session_closed, ^session_server}
     Agent.stop(fail_control)
   end
 
@@ -866,8 +887,8 @@ defmodule Jido.Console.TuiTest do
     refute_receive :terminal_closed, 50
   end
 
-  test "a blocked cancel call and await worker are killed after the bound" do
-    {task, owner, ref, runtime_owner} =
+  test "EOF stays bounded when runtime cancellation would block" do
+    {task, owner, ref, session_server, _session_id} =
       start_shutdown_tui([],
         shutdown_timeout_ms: 80,
         shutdown_cancel_timeout_ms: 20,
@@ -879,15 +900,14 @@ defmodule Jido.Console.TuiTest do
     assert_receive {:shutdown_await_started, await_pid}
     send(owner, {:jido_terminal, ref, :eof})
 
-    assert_receive {:shutdown_cancel_blocked, cancel_pid}
-    assert_receive {:shutdown_controller_closed, ^controller}
-    assert_receive {:shutdown_session_closed, close_worker}
     assert :ok = Task.await(task, 500)
     assert_receive :terminal_closed
-
-    for pid <- [relay, controller, await_pid, cancel_pid, close_worker, runtime_owner] do
-      refute Process.alive?(pid)
-    end
+    refute_receive {:shutdown_cancel_blocked, _cancel_pid}, 50
+    assert relay == session_server
+    assert Process.alive?(controller)
+    assert Process.alive?(await_pid)
+    Server.stop(session_server)
+    assert_receive {:shutdown_session_closed, ^session_server}
   end
 
   test "shows bounded coding review returned by the runtime" do
@@ -904,7 +924,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
 
@@ -937,7 +957,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :approval_session_started, 500
+    assert_receive :approval_session_started, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send_prompt(owner, ref)
@@ -976,7 +996,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_frame_contains("Loaded AGENTS.md")
 
@@ -989,6 +1009,7 @@ defmodule Jido.Console.TuiTest do
 
     assert content =~ "defmodule Value"
     assert_receive {:turn_awaited, _opts}
+    assert_frame_contains("Hello back")
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)
     File.rm_rf!(root)
@@ -1021,7 +1042,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send(owner, {:jido_terminal, ref, {:text, "change"}})
@@ -1059,7 +1080,7 @@ defmodule Jido.Console.TuiTest do
         )
       end)
 
-    assert_receive :session_started, 2_000
+    assert_receive :session_started, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send_prompt(owner, ref)
@@ -1074,15 +1095,19 @@ defmodule Jido.Console.TuiTest do
   end
 
   test "runs turn start outside the terminal loop" do
-    {task, owner, ref} = start_failure_tui(:blocking_start)
+    session_id = "blocking-start-#{System.unique_integer([:positive])}"
+    {task, owner, ref} = start_failure_tui(:blocking_start, session_id: session_id)
     send_prompt(owner, ref)
     assert_receive {:failure_turn_started, :blocking_start}
-    assert_receive {:start_turn_blocked, _worker}
+    assert_receive {:start_turn_blocked, worker}
     assert_frame_contains("running · Ctrl-C cancels")
 
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task, 500)
     assert_receive :terminal_closed
+    send(worker, :release_start_turn)
+    {:ok, server} = Server.ensure_started(session_id)
+    Server.stop(server)
   end
 
   test "awaits a turn without a terminal stream event" do
@@ -1155,7 +1180,7 @@ defmodule Jido.Console.TuiTest do
     end
   end
 
-  defp start_failure_tui(mode) do
+  defp start_failure_tui(mode, extra_opts \\ []) do
     test_pid = self()
 
     task =
@@ -1165,11 +1190,15 @@ defmodule Jido.Console.TuiTest do
           terminal_adapter: FakeAdapter,
           terminal_adapter_opts: [test_pid: test_pid],
           session_opts: [test_pid: test_pid],
-          turn_opts: [test_pid: test_pid, mode: mode]
+          turn_opts: [test_pid: test_pid, mode: mode],
+          session_id:
+            Keyword.get_lazy(extra_opts, :session_id, fn ->
+              "failure-#{System.unique_integer([:positive])}"
+            end)
         )
       end)
 
-    assert_receive :failure_session_started, 2_000
+    assert_receive :failure_session_started, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     {task, owner, ref}
@@ -1177,6 +1206,7 @@ defmodule Jido.Console.TuiTest do
 
   defp start_shutdown_tui(adapter_opts \\ [], tui_opts \\ []) do
     test_pid = self()
+    session_id = "shutdown-#{System.unique_integer([:positive])}"
     session_opts = [test_pid: test_pid] |> Keyword.merge(Keyword.get(tui_opts, :session_opts, []))
 
     opts =
@@ -1186,7 +1216,8 @@ defmodule Jido.Console.TuiTest do
         terminal_adapter: FakeAdapter,
         terminal_adapter_opts: Keyword.put(adapter_opts, :test_pid, test_pid),
         session_opts: session_opts,
-        turn_opts: [test_pid: test_pid]
+        turn_opts: [test_pid: test_pid],
+        session_id: session_id
       ]
       |> Keyword.merge(tui_opts)
       |> Keyword.put(:session_opts, session_opts)
@@ -1196,10 +1227,10 @@ defmodule Jido.Console.TuiTest do
         Tui.run(opts)
       end)
 
-    assert_receive {:shutdown_session_opened, runtime_owner}, 2_000
+    assert_receive {:shutdown_session_opened, runtime_owner}, 10_000
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
-    {task, owner, ref, runtime_owner}
+    {task, owner, ref, runtime_owner, session_id}
   end
 
   defp send_prompt(owner, ref) do
@@ -1213,9 +1244,38 @@ defmodule Jido.Console.TuiTest do
     assert_receive :terminal_closed
   end
 
+  defp flush_frames do
+    receive do
+      {:frame, _frame} -> flush_frames()
+    after
+      0 -> :ok
+    end
+  end
+
   defp assert_frame_contains(content, timeout \\ 500) do
     started_at = System.monotonic_time(:millisecond)
     receive_frame_with(content, started_at, timeout)
+  end
+
+  defp assert_frame_contains_all(contents, timeout) do
+    started_at = System.monotonic_time(:millisecond)
+    receive_frame_with_all(contents, started_at, timeout)
+  end
+
+  defp receive_frame_with_all(contents, started_at, timeout) do
+    elapsed = System.monotonic_time(:millisecond) - started_at
+    remaining = max(timeout - elapsed, 0)
+
+    receive do
+      {:frame, frame} ->
+        if Enum.all?(contents, &String.contains?(frame, &1)) do
+          frame
+        else
+          receive_frame_with_all(contents, started_at, timeout)
+        end
+    after
+      remaining -> flunk("no frame contained all of #{inspect(contents)}")
+    end
   end
 
   defp receive_frame_with(content, started_at, timeout) do

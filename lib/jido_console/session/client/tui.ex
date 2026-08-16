@@ -22,4 +22,14 @@ defmodule Jido.Console.Session.Client.TUI do
     _ = Client.detach(handle)
     Client.attach(handle.session.id, opts)
   end
+
+  @doc "Returns ordered semantic event types visible to the TUI client."
+  @spec observe(Client.t()) :: [String.t()]
+  def observe(handle) do
+    handle
+    |> Client.snapshot()
+    |> get_in(["payload", "state", "transcript"])
+    |> List.wrap()
+    |> Enum.map(& &1["type"])
+  end
 end

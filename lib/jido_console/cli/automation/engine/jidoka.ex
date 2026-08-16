@@ -5,6 +5,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
 
   alias Jido.Console.Automation.{Limits, Replay, Result}
   alias Jido.Console.Extensions
+  alias Jido.Console.Session.{Client, Server}
   alias Jido.Console.Session.Client.Automation, as: SessionAutomation
   alias Jidoka.Effect.OperationResult
   alias Jidoka.Eval
@@ -12,6 +13,19 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   alias Jidoka.Session.Sequence
 
   defmodule Request do
+    @moduledoc false
+
+    @enforce_keys [:cell, :client, :request]
+    defstruct @enforce_keys
+
+    @type t :: %__MODULE__{
+            cell: map(),
+            client: Jido.Console.Session.Client.t(),
+            request: Jido.Console.Session.Request.t()
+          }
+  end
+
+  defmodule OwnedRequest do
     @moduledoc false
 
     @enforce_keys [:cell, :sequence, :started_at, :started_ms]
@@ -39,9 +53,38 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   def start(cell, opts) do
     started_at = utc_now(opts)
     started_ms = monotonic_ms(opts)
+    session_id = session_id(cell)
 
-    with {:ok, session} <- Jidoka.Session.start(cell.spec, session_id: session_id(cell)),
-         {:ok, _client} <- SessionAutomation.attach_cell(session_id(cell), Keyword.take(opts, [:registry, :supervisor])),
+    with {:ok, client} <-
+           SessionAutomation.attach_cell(
+             session_id,
+             Keyword.take(opts, [:registry, :supervisor, :tasks])
+           ) do
+      spec = [
+        start: fn owner -> start_owned(cell, opts, started_at, started_ms, owner, session_id) end,
+        await: fn owned -> await_owned(owned, opts) end,
+        cancel: fn owned, cancel_opts -> Jidoka.cancel(owned.sequence, cancel_opts) end,
+        request_id: "cell-" <> cell.cell_id,
+        run_id: cell.run_id
+      ]
+
+      case Client.start_operation(client, spec) do
+        {:ok, %Jido.Console.Session.Request{} = request} ->
+          {:ok, %Request{cell: cell, client: client, request: request}}
+
+        {:error, reason} ->
+          cleanup_client(client)
+          {:error, reason}
+      end
+    end
+  rescue
+    exception -> {:error, exception}
+  catch
+    kind, reason -> {:error, {kind, reason}}
+  end
+
+  defp start_owned(cell, opts, started_at, started_ms, owner, session_id) do
+    with {:ok, session} <- Jidoka.Session.start(cell.spec, session_id: session_id),
          {:ok, extension_runtime} <-
            Extensions.open(
              session,
@@ -50,15 +93,11 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
              :automation,
              operations: Keyword.get(cell.runtime_opts, :operations)
            ) do
-      start_sequence(cell, extension_runtime, opts, started_at, started_ms)
+      start_sequence(cell, extension_runtime, opts, started_at, started_ms, owner)
     end
-  rescue
-    exception -> {:error, exception}
-  catch
-    kind, reason -> {:error, {kind, reason}}
   end
 
-  defp start_sequence(cell, extension_runtime, opts, started_at, started_ms) do
+  defp start_sequence(cell, extension_runtime, opts, started_at, started_ms, owner) do
     replay = Map.get(cell, :capability_replay, %{mode: :live})
 
     case Replay.open(replay) do
@@ -69,7 +108,8 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
           replay_player,
           opts,
           started_at,
-          started_ms
+          started_ms,
+          owner
         )
 
       {:error, reason} ->
@@ -78,7 +118,15 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
     end
   end
 
-  defp start_sequence_request(cell, extension_runtime, replay_player, opts, started_at, started_ms) do
+  defp start_sequence_request(
+         cell,
+         extension_runtime,
+         replay_player,
+         opts,
+         started_at,
+         started_ms,
+         owner
+       ) do
     request_inputs = Enum.map(cell.scenario.turns, &request_input(&1, cell))
 
     runtime_opts =
@@ -86,6 +134,8 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
       |> sequence_runtime_opts(opts)
       |> Keyword.merge(extension_runtime.runtime_opts)
       |> Replay.put_runtime(replay_player)
+      |> Keyword.put(:stream, true)
+      |> Keyword.put(:stream_to, owner)
 
     case Jidoka.Session.run_sequence_async(extension_runtime.session, request_inputs, runtime_opts) do
       {:ok, sequence} ->
@@ -96,7 +146,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
         )
 
         {:ok,
-         %Request{
+         %OwnedRequest{
            cell: cell,
            sequence: sequence,
            started_at: started_at,
@@ -124,6 +174,13 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
 
   @impl true
   def await(%Request{} = request, opts) do
+    timeout = Keyword.get(opts, :automation_await_timeout, :infinity)
+    result = Client.await(request.client, request.request, timeout)
+    cleanup_client(request.client)
+    result
+  end
+
+  defp await_owned(%OwnedRequest{} = request, opts) do
     await_opts = [timeout: await_timeout(request.cell, opts)]
 
     result =
@@ -230,7 +287,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
 
   @impl true
   def cancel(%Request{} = request, opts) do
-    Jidoka.cancel(request.sequence, opts)
+    Client.cancel_and_wait(request.client, request.request, opts)
   end
 
   defp map_sequence_result(cell, sequence, opts, started_at, started_ms, extension_results) do
@@ -443,7 +500,10 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   defp operation_name(%{operation: operation}), do: operation
   defp operation_name(_operation), do: nil
 
-  defp session_id(cell), do: "sess-" <> String.slice(cell.cell_id, 0, 32)
+  defp session_id(cell) do
+    suffix = System.unique_integer([:positive, :monotonic])
+    "sess-#{String.slice(cell.cell_id, 0, 24)}-#{suffix}"
+  end
 
   defp sequence_runtime_opts(cell, opts) do
     cell.runtime_opts
@@ -497,4 +557,12 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   end
 
   defp elapsed_ms(started_ms, opts), do: max(monotonic_ms(opts) - started_ms, 0)
+
+  defp cleanup_client(client) do
+    _ = Client.detach(client)
+    Server.stop(client.server)
+    :ok
+  catch
+    :exit, _reason -> :ok
+  end
 end

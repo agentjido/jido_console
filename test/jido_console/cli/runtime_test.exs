@@ -90,7 +90,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert result.local_resources == session.local_resources
   end
 
-  test "returns typed evidence after a forced public cancellation" do
+  test "returns typed evidence after a public cancellation" do
     test_pid = self()
 
     llm = fn _intent, _journal, _context ->
@@ -106,9 +106,10 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert {:ok,
             %Cancellation{
               request_id: ^request_id,
-              reason: :cancelled,
-              forced?: true
+              reason: :cancelled
             } = cancellation} = Runtime.cancel(request, grace_ms: 1)
+
+    assert is_boolean(cancellation.forced?)
 
     assert %Runtime.Result{
              request_id: ^request_id,

@@ -1,8 +1,9 @@
 defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
-  alias Jido.Console.Tui.{Editor, EventProjection, Selection, Turn}
+  alias Jido.Console.Tui.{Editor, EventProjection, SafeText, Selection, Turn}
   alias Jido.Console.Runtime.Jidoka.Result, as: RuntimeResult
+  alias Jido.Console.Session.Request, as: SessionRequest
 
   @default_history_limit 100
   @default_turn_limit 100
@@ -47,9 +48,8 @@ defmodule Jido.Console.Tui.State do
           | {:start_turn, String.t(), map()}
           | {:prepare_prompt, String.t()}
           | {:apply_selection, map()}
-          | {:await_turn, term()}
           | {:cancel_turn, term()}
-          | {:respond_review, :approve | :deny, term(), term()}
+          | {:respond_review, :approve | :deny, SessionRequest.t(), term(), term()}
           | :exit
 
   @type t :: %__MODULE__{}
@@ -58,7 +58,7 @@ defmodule Jido.Console.Tui.State do
   def new(session, size, opts \\ []) do
     selection = Selection.init(opts)
 
-    %__MODULE__{
+    state = %__MODULE__{
       session: session,
       session_client: Keyword.get(opts, :session_client),
       size: size,
@@ -69,7 +69,44 @@ defmodule Jido.Console.Tui.State do
       turn_limit: positive_limit(opts, :turn_limit, @default_turn_limit),
       selection: selection
     }
+
+    restore_snapshot(
+      state,
+      Keyword.get(opts, :session_snapshot),
+      Keyword.get(opts, :session_request)
+    )
   end
+
+  @doc "Restores renderer state from a bounded semantic session snapshot."
+  @spec restore_snapshot(t(), map() | nil, SessionRequest.t() | nil) :: t()
+  def restore_snapshot(state, snapshot, active_request \\ nil)
+
+  def restore_snapshot(%__MODULE__{} = state, %{"payload" => %{"state" => semantic}}, active_request)
+      when is_map(semantic) do
+    transcript = Map.get(semantic, "transcript", [])
+
+    restored =
+      Enum.reduce(transcript, %{turns: [], messages: [], active: nil, next_id: 0}, fn event, acc ->
+        restore_event(acc, event)
+      end)
+
+    request = if restored.active, do: active_request, else: nil
+    active_turn = if restored.active, do: put_snapshot_request(restored.active, request), else: nil
+
+    %{
+      state
+      | messages: retain(restored.messages, state.turn_limit * 2),
+        turns: retain(restored.turns, state.turn_limit),
+        active_turn: active_turn,
+        next_turn_id: restored.next_id,
+        request: request,
+        streaming: if(active_turn, do: active_turn.assistant, else: ""),
+        status: if(active_turn, do: :running, else: state.status),
+        dirty?: true
+    }
+  end
+
+  def restore_snapshot(%__MODULE__{} = state, _snapshot, _active_request), do: state
 
   @spec update(t(), term()) :: {t(), [effect()]}
   def update(%__MODULE__{status: :review} = state, {:terminal, {:text, text}})
@@ -204,7 +241,7 @@ defmodule Jido.Console.Tui.State do
         startup_error: nil,
         submit_when_ready?: false,
         previous_selection: nil,
-        status: :idle,
+        status: if(state.request, do: :running, else: :idle),
         error: nil,
         project_instructions: instructions,
         dirty?: true
@@ -233,6 +270,13 @@ defmodule Jido.Console.Tui.State do
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :enter}}), do: {state, []}
 
+  def update(
+        %__MODULE__{request: nil, active_turn: %Turn{}} = state,
+        {:terminal, {:key, :ctrl_c}}
+      ) do
+    {%{state | status: :cancelling, dirty?: true}, []}
+  end
+
   def update(%__MODULE__{request: nil} = state, {:terminal, {:key, key}})
       when key in [:escape, :ctrl_c],
       do: {state, [:exit]}
@@ -251,9 +295,11 @@ defmodule Jido.Console.Tui.State do
     changed(state, size: {columns, rows})
   end
 
-  def update(%__MODULE__{} = state, {:turn_started, request}) do
+  def update(%__MODULE__{} = state, {:turn_started, %SessionRequest{} = request}) do
     {turn, next_turn_id} = ensure_turn(state)
     turn = Turn.put_request(turn, request)
+
+    cancel? = state.status == :cancelling
 
     state = %{
       state
@@ -261,11 +307,11 @@ defmodule Jido.Console.Tui.State do
         active_turn: turn,
         next_turn_id: next_turn_id,
         finishing?: false,
-        status: :running,
+        status: if(cancel?, do: :cancelling, else: :running),
         dirty?: true
     }
 
-    {state, [{:await_turn, request}]}
+    if cancel?, do: {state, [{:cancel_turn, request}]}, else: {state, []}
   end
 
   def update(%__MODULE__{active_turn: %Turn{} = turn} = state, {:jidoka, event}) do
@@ -537,7 +583,7 @@ defmodule Jido.Console.Tui.State do
     {%{
        state
        | session: result.session,
-         request: nil,
+         request: state.request,
          active_turn: turn,
          next_turn_id: next_turn_id,
          pending_review: result,
@@ -565,7 +611,7 @@ defmodule Jido.Console.Tui.State do
          status: :responding_review,
          error: nil,
          dirty?: true
-     }, [{:respond_review, decision, result, review}]}
+     }, [{:respond_review, decision, state.request, result, review}]}
   end
 
   defp respond_to_review(state, _decision), do: {state, []}
@@ -611,4 +657,36 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp runtime_selection_changed?(_left, _right), do: false
+
+  defp restore_event(acc, %{"type" => "run_started", "payload" => payload}) do
+    prompt = Map.get(payload, "prompt", "")
+    turn = Turn.new(acc.next_id, prompt) |> Turn.put_request(%{request_id: payload["request_id"]})
+    messages = if prompt == "", do: acc.messages, else: acc.messages ++ [%{role: :user, content: prompt}]
+    %{acc | active: turn, messages: messages, next_id: acc.next_id + 1}
+  end
+
+  defp restore_event(%{active: %Turn{} = turn} = acc, %{"type" => "model_delta", "payload" => payload}) do
+    data = Map.get(payload, "data") || %{}
+    delta = data["delta"] || data["text"] || data["content"] || ""
+    assistant = String.slice(turn.assistant <> SafeText.clean(delta), 0, 200_000)
+    %{acc | active: %{turn | assistant: assistant}}
+  end
+
+  defp restore_event(%{active: %Turn{} = turn} = acc, %{"type" => type, "payload" => payload})
+       when type in ["run_completed", "run_failed"] do
+    status = if type == "run_completed", do: :completed, else: :failed
+    content = payload["content"] || turn.assistant
+    error = payload["error"] || payload["reason"]
+    turn = Turn.finish(turn, status, content, error: error)
+
+    messages =
+      if turn.assistant == "", do: acc.messages, else: acc.messages ++ [%{role: :assistant, content: turn.assistant}]
+
+    %{acc | active: nil, messages: messages, turns: acc.turns ++ [turn]}
+  end
+
+  defp restore_event(acc, _event), do: acc
+
+  defp put_snapshot_request(turn, %SessionRequest{} = request), do: Turn.put_request(turn, request)
+  defp put_snapshot_request(turn, _request), do: turn
 end

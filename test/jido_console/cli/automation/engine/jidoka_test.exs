@@ -467,6 +467,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> Map.put(:runtime_opts, llm: llm)
 
     assert {:ok, request} = Engine.start(cell, [])
+    refute Map.has_key?(request, :sequence)
     assert_receive {:engine_sequence_started, capability_pid}, 5_000
 
     assert {:ok, %Cancellation{} = cancellation} = Engine.cancel(request, grace_ms: 500)

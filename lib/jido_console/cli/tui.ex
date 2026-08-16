@@ -10,7 +10,6 @@ defmodule Jido.Console.Tui do
 
   @frame_interval_ms 33
   @shutdown_timeout_ms 250
-  @resource_close_timeout_ms 250
 
   @spec run(keyword()) :: :ok | {:error, term()}
   def run(opts \\ []) do
@@ -47,27 +46,39 @@ defmodule Jido.Console.Tui do
   end
 
   defp run_terminal_loop(terminal, runtime, agent, opts) do
-    session_client = attach_session_client(opts)
+    with {:ok, session_client} <- attach_session_client(opts) do
+      runtime_info =
+        case Client.runtime_info(session_client) do
+          {:ok, info} -> info
+          {:error, _reason} -> %{}
+        end
 
-    state =
-      State.new(
-        nil,
-        terminal.size,
-        [
-          prepare_prompt: true,
-          runtime_status: :starting,
-          model: Keyword.get(opts, :model),
-          coding_profile: Keyword.get(opts, :coding_profile),
-          session_client: session_client
-        ] ++ Keyword.take(opts, [:catalog_entries])
-      )
+      state =
+        State.new(
+          nil,
+          terminal.size,
+          [
+            prepare_prompt: true,
+            runtime_status: :starting,
+            model: Keyword.get(opts, :model),
+            coding_profile: Keyword.get(opts, :coding_profile),
+            session_client: session_client,
+            session_snapshot: session_client.snapshot,
+            session_request: Map.get(runtime_info, :active_request)
+          ] ++ Keyword.take(opts, [:catalog_entries])
+        )
 
+      run_attached_terminal(terminal, runtime, agent, session_client, state, opts)
+    end
+  end
+
+  defp run_attached_terminal(terminal, runtime, agent, session_client, state, opts) do
     with :ok <- Terminal.draw(terminal, View.render(state)) do
       {state, []} = State.update(state, :rendered)
       owner = self()
 
       {startup_pid, startup_ref} =
-        spawn_monitor(fn -> runtime_owner(owner, runtime, agent, opts) end)
+        spawn_monitor(fn -> runtime_owner(owner, runtime, agent, session_client, opts) end)
 
       try do
         _ = Jido.Console.Process.register(:interactive, self(), process_opts(opts))
@@ -78,23 +89,24 @@ defmodule Jido.Console.Tui do
         Shutdown.run(state, workers, runtime, opts)
         result
       after
+        detach_session_client(session_client)
         _ = Jido.Console.Process.stop("interactive", process_opts(opts))
         stop_runtime_owner(startup_pid, startup_ref, shutdown_timeout(opts))
       end
     end
   end
 
-  defp runtime_owner(owner, runtime, agent, opts) do
+  defp runtime_owner(owner, runtime, agent, session_client, opts) do
     owner_monitor = Process.monitor(owner)
-    result = safe_start_runtime(runtime, agent, opts)
+    result = safe_start_runtime(runtime, agent, session_client, opts)
 
     if runtime_owner_stopping?(owner_monitor) do
-      close_startup_result(runtime, result)
+      :ok
     else
       send(owner, {:jido_runtime_startup, self(), result})
 
       case result do
-        {:ok, startup} -> runtime_owner_loop(owner_monitor, runtime, agent, startup)
+        {:ok, startup} -> runtime_owner_loop(owner_monitor, runtime, agent, session_client, startup)
         {:error, _reason} -> :ok
       end
     end
@@ -109,13 +121,13 @@ defmodule Jido.Console.Tui do
     end
   end
 
-  defp safe_start_runtime(runtime, agent, opts) do
+  defp safe_start_runtime(runtime, agent, session_client, opts) do
     startup = Keyword.get(opts, :runtime_startup, fn -> :ok end)
 
     if is_function(startup, 0) do
       with :ok <- startup.(),
-           {:ok, coding} <- Setup.prepare(agent, opts) do
-        start_runtime_session(runtime, agent, coding, opts)
+           {:ok, info} <- Client.runtime_info(session_client) do
+        select_runtime_start(info, runtime, agent, session_client, opts)
       end
     else
       {:error, :invalid_runtime_startup}
@@ -126,25 +138,51 @@ defmodule Jido.Console.Tui do
     kind, reason -> {:error, {kind, reason}}
   end
 
-  defp start_runtime_session(runtime, agent, coding, opts) do
+  defp select_runtime_start(
+         %{configured?: true, client_setup: coding},
+         runtime,
+         agent,
+         session_client,
+         opts
+       )
+       when not is_nil(coding) do
+    if Keyword.get(opts, :force_runtime_configure, false) do
+      prepare_runtime_start(runtime, agent, session_client, opts)
+    else
+      {:ok, %{coding: coding, opts: ready_opts(opts, coding), session: session_client}}
+    end
+  end
+
+  defp select_runtime_start(_info, runtime, agent, session_client, opts),
+    do: prepare_runtime_start(runtime, agent, session_client, opts)
+
+  defp prepare_runtime_start(runtime, agent, session_client, opts) do
+    with {:ok, coding} <- Setup.prepare(agent, opts) do
+      start_runtime_session(runtime, agent, session_client, coding, opts)
+    end
+  end
+
+  defp start_runtime_session(runtime, agent, session_client, coding, opts) do
     session_opts =
       opts
       |> Keyword.get(:session_opts, [])
       |> Keyword.put(:extension_setup, coding.extension_setup)
       |> Keyword.put(:agent_spec_override, coding.spec)
       |> Keyword.put(:local_resources, coding.local_resources)
+      |> Keyword.put(:owned_resource, coding)
+      |> Keyword.put(:resource_closer, {Setup, :close, []})
+      |> Keyword.put(:client_setup, Setup.client_setup(coding))
 
-    case runtime.start_session(agent, session_opts) do
-      {:ok, session} ->
+    case Client.configure_runtime(session_client, runtime, agent, session_opts) do
+      :ok ->
         {:ok,
          %{
            coding: coding,
            opts: ready_opts(opts, coding),
-           session: session
+           session: session_client
          }}
 
       {:error, reason} ->
-        Setup.close(coding)
         {:error, reason}
     end
   rescue
@@ -167,79 +205,40 @@ defmodule Jido.Console.Tui do
     |> Keyword.put(:coding_setup_resolved, coding)
   end
 
-  defp runtime_owner_loop(owner_monitor, runtime, agent, startup) do
+  defp runtime_owner_loop(owner_monitor, runtime, agent, session_client, startup) do
     receive do
       {:reconfigure, caller, selection} ->
-        result = reconfigure_runtime(runtime, agent, startup, selection)
+        result = reconfigure_runtime(runtime, agent, session_client, startup, selection)
         send(caller, {:jido_runtime_reconfigure, self(), result})
 
         case result do
-          {:ok, next} -> runtime_owner_loop(owner_monitor, runtime, agent, next)
-          {:error, _reason} -> runtime_owner_loop(owner_monitor, runtime, agent, startup)
+          {:ok, next} -> runtime_owner_loop(owner_monitor, runtime, agent, session_client, next)
+          {:error, _reason} -> runtime_owner_loop(owner_monitor, runtime, agent, session_client, startup)
         end
 
       {:close, _owner} ->
-        close_startup_result(runtime, {:ok, startup})
+        :ok
 
       {:DOWN, ^owner_monitor, :process, _owner, _reason} ->
-        close_startup_result(runtime, {:ok, startup})
+        :ok
     end
   end
 
-  defp reconfigure_runtime(runtime, agent, startup, selection) do
+  defp reconfigure_runtime(runtime, agent, session_client, startup, selection) do
     opts =
       startup.opts
       |> Keyword.put(:model, selection.model)
       |> Keyword.put(:coding_profile, selection.profile_id)
       |> Keyword.drop([:turn_opts, :await_opts, :coding_setup_resolved])
+      |> Keyword.put(:force_runtime_configure, true)
 
-    case safe_start_runtime(runtime, agent, opts) do
+    case safe_start_runtime(runtime, agent, session_client, opts) do
       {:ok, next} ->
-        close_startup_result(runtime, {:ok, startup})
         {:ok, next}
 
       {:error, reason} ->
         {:error, reason}
     end
-  end
-
-  defp close_startup_result(runtime, {:ok, startup}) do
-    previous_trap_exit = Process.flag(:trap_exit, true)
-
-    try do
-      close_resources(runtime, startup)
-    after
-      Process.flag(:trap_exit, previous_trap_exit)
-    end
-  end
-
-  defp close_startup_result(_runtime, {:error, _reason}), do: :ok
-
-  defp close_resources(runtime, startup) do
-    closers =
-      [
-        fn -> close_runtime_session(runtime, startup.session) end,
-        fn -> Setup.close(startup.coding) end
-      ]
-      |> Map.new(fn closer ->
-        {pid, ref} =
-          :erlang.spawn_opt(
-            fn -> safe_close(closer) end,
-            [:link, :monitor]
-          )
-
-        {pid, ref}
-      end)
-
-    remaining = await_resource_closers(closers, System.monotonic_time(:millisecond) + @resource_close_timeout_ms)
-
-    Enum.each(remaining, fn {pid, _ref} ->
-      Process.unlink(pid)
-      if Process.alive?(pid), do: Process.exit(pid, :kill)
-    end)
-
-    _remaining = await_resource_closers(remaining, System.monotonic_time(:millisecond) + 100)
-    :ok
   end
 
   defp stop_runtime_owner(startup_pid, startup_ref, timeout_ms) do
@@ -254,31 +253,6 @@ defmodule Jido.Console.Tui do
 
     Process.demonitor(startup_ref, [:flush])
     :ok
-  end
-
-  defp close_runtime_session(runtime, session) do
-    if function_exported?(runtime, :close_session, 1), do: runtime.close_session(session), else: :ok
-  end
-
-  defp safe_close(fun) do
-    _result = fun.()
-    :ok
-  rescue
-    _exception -> :ok
-  catch
-    _kind, _reason -> :ok
-  end
-
-  defp await_resource_closers(closers, _deadline) when map_size(closers) == 0, do: closers
-
-  defp await_resource_closers(closers, deadline) do
-    receive do
-      {:DOWN, ref, :process, pid, _reason} when is_map_key(closers, pid) ->
-        closers = if Map.get(closers, pid) == ref, do: Map.delete(closers, pid), else: closers
-        await_resource_closers(closers, deadline)
-    after
-      max(deadline - System.monotonic_time(:millisecond), 0) -> closers
-    end
   end
 
   defp open_terminal(opts) do
@@ -301,10 +275,13 @@ defmodule Jido.Console.Tui do
       {:jido_terminal, ref, event} when ref == terminal.ref ->
         continue(state, {:terminal, event}, terminal, runtime, opts, startup, workers)
 
-      {:jidoka_turn_event, event} ->
+      {:session_runtime_event, _session_id, request, event} when request == state.request ->
         continue(state, {:jidoka, event}, terminal, runtime, opts, startup, workers)
 
-      {:jido_turn_result, request, result} ->
+      {:session_runtime_started, _session_id, request} ->
+        continue(state, {:turn_started, request}, terminal, runtime, opts, startup, workers)
+
+      {:session_runtime_result, _session_id, request, result} ->
         continue(
           state,
           {:turn_result, request, result},
@@ -314,6 +291,19 @@ defmodule Jido.Console.Tui do
           startup,
           workers
         )
+
+      {:session_runtime_error, _session_id, request, reason} when request == state.request ->
+        continue(state, {:turn_result, request, {:error, reason}}, terminal, runtime, opts, startup, workers)
+
+      {:session_control_result, _session_id, _request, {:error, :request_already_finished}} ->
+        loop(state, terminal, runtime, opts, startup, workers)
+
+      {:session_control_result, _session_id, request, {:error, reason}}
+      when request == state.request ->
+        continue(state, {:turn_result, request, {:error, reason}}, terminal, runtime, opts, startup, workers)
+
+      {:session_control_result, _session_id, _request, _result} ->
+        loop(state, terminal, runtime, opts, startup, workers)
 
       {:jido_tui_effect_result, worker_pid, outcome} ->
         handle_effect_result(
@@ -328,8 +318,6 @@ defmodule Jido.Console.Tui do
         )
 
       {:jido_runtime_startup, ^startup_pid, {:ok, startup}} ->
-        state = attach_session_client_if_needed(state, opts)
-
         continue(
           state,
           {:runtime_ready, startup.session, startup.coding.instructions},
@@ -489,54 +477,9 @@ defmodule Jido.Console.Tui do
           workers
         )
 
-      {:start_turn, relay_pid, {:turn_started, request}} ->
-        {state, effects} = State.update(state, {:turn_started, request})
-
-        workers =
-          workers
-          |> Workers.promote_request_owner(worker.pid, request)
-          |> Workers.activate_relay(relay_pid, request)
-
-        continue_transition(state, effects, terminal, runtime, opts, startup, workers)
-
-      {:start_turn, relay_pid, event} ->
-        workers = workers |> Workers.stop(worker.pid) |> Workers.stop(relay_pid)
-        continue(state, event, terminal, runtime, opts, startup, workers)
-
-      {:review_result, relay_pid, result} ->
-        workers = Workers.stop(workers, relay_pid)
-        continue(state, {:turn_result, result}, terminal, runtime, opts, startup, workers)
-
-      {:request_result, request, result} ->
-        finish_request_effect(
-          state,
-          request,
-          result,
-          terminal,
-          runtime,
-          opts,
-          startup,
-          workers
-        )
-
       :ignore ->
         loop(state, terminal, runtime, opts, startup, workers)
     end
-  end
-
-  defp finish_request_effect(
-         state,
-         request,
-         result,
-         terminal,
-         runtime,
-         opts,
-         startup,
-         workers
-       ) do
-    {state, effects} = State.update(state, {:turn_result, request, result})
-    workers = if state.request == request, do: workers, else: Workers.stop_subject(workers, request)
-    continue_transition(state, effects, terminal, runtime, opts, startup, workers)
   end
 
   defp handle_worker_down(
@@ -616,23 +559,23 @@ defmodule Jido.Console.Tui do
     end
   end
 
-  defp attach_session_client_if_needed(%State{session_client: nil} = state, opts) do
-    %{state | session_client: attach_session_client(opts)}
-  end
-
-  defp attach_session_client_if_needed(state, _opts), do: state
-
   defp attach_session_client(opts) do
-    supervisor_opts = Keyword.take(opts, [:name, :registry, :sessions])
+    supervisor_opts = Keyword.take(opts, [:name, :registry, :tasks, :sessions])
     _ = Jido.Console.Session.Supervisor.ensure_started(supervisor_opts)
     session_id = Keyword.get_lazy(opts, :session_id, fn -> Identity.new!(:session).id end)
 
-    case SessionTUI.attach(session_id, Keyword.take(opts, [:registry, :supervisor])) do
-      {:ok, handle} -> handle
-      {:error, _reason} -> nil
+    case SessionTUI.attach(session_id, Keyword.take(opts, [:registry, :supervisor, :tasks])) do
+      {:ok, handle} -> {:ok, handle}
+      {:error, reason} -> {:error, {:session_attach_failed, reason}}
     end
   rescue
-    _exception -> nil
+    exception -> {:error, {:session_attach_failed, exception}}
+  end
+
+  defp detach_session_client(handle) do
+    Client.detach_async(handle)
+  catch
+    :exit, _reason -> :ok
   end
 
   defp process_opts(opts), do: Keyword.take(opts, [:name, :jido_home, :id])

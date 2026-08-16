@@ -1,57 +1,55 @@
 defmodule Jido.Console.Tui.EffectsTest do
   use ExUnit.Case, async: true
 
+  alias Jido.Console.Session.Request
   alias Jido.Console.Tui.{Effects, State, Workers}
-  alias Jidoka.Event
 
-  defmodule ReviewRuntime do
-    def approve(result, review, opts) do
-      emit_review_event(opts)
-      send(Keyword.fetch!(opts, :test_pid), {:review_response, :approve, self(), opts[:stream_to]})
-      {:approved, result, review}
-    end
+  defmodule SessionServer do
+    use GenServer
 
-    def deny(result, review, opts) do
-      emit_review_event(opts)
-      send(Keyword.fetch!(opts, :test_pid), {:review_response, :deny, self(), opts[:stream_to]})
-      {:denied, result, review}
-    end
+    def start_link(test_pid), do: GenServer.start_link(__MODULE__, test_pid)
 
-    defp emit_review_event(opts) do
-      event = Event.build(:turn_started, [], request_id: "review-request")
-      send(Keyword.fetch!(opts, :stream_to), {:jidoka_turn_event, event})
+    @impl true
+    def init(test_pid), do: {:ok, test_pid}
+
+    @impl true
+    def handle_call({:respond_review, "client", decision, request, review, opts}, from, test_pid) do
+      send(test_pid, {:review_response, decision, request, review, opts, elem(from, 0)})
+      {:reply, {:ok, :requested}, test_pid}
     end
   end
 
-  test "runs approval and denial responses in monitored workers" do
-    state = State.new(:session, {80, 24})
+  test "runs approval and denial requests in monitored workers" do
+    {:ok, server} = SessionServer.start_link(self())
+
+    handle = %{server: server, client: %{id: "client"}}
+    state = %{State.new(:session, {80, 24}) | session_client: handle}
+
+    request = %Request{
+      id: "session-request",
+      request_id: "runtime-request",
+      run_id: "run",
+      session_id: "session"
+    }
 
     for decision <- [:approve, :deny] do
-      effect = {:respond_review, decision, :paused_result, :review}
+      effect = {:respond_review, decision, request, :paused_result, :review}
 
       assert {:continue, workers} =
                Effects.dispatch(
                  state,
                  [effect],
-                 ReviewRuntime,
+                 :unused_runtime,
                  [review_opts: [test_pid: self()]],
                  %{}
                )
 
-      assert_receive {:review_response, ^decision, worker_pid, relay_pid}, 500
-      assert worker_pid != relay_pid
-      assert_receive {:jidoka_turn_event, %Event{request_id: "review-request"}}, 500
+      assert_receive {:review_response, ^decision, ^request, :review, opts, worker_pid}, 500
+      assert opts[:test_pid] == self()
       assert_receive {:jido_tui_effect_result, ^worker_pid, outcome}, 500
       assert {:ok, worker, remaining} = Workers.pop(workers, worker_pid)
-
-      expected =
-        case decision do
-          :approve -> {:approved, :paused_result, :review}
-          :deny -> {:denied, :paused_result, :review}
-        end
-
-      assert {:review_result, ^relay_pid, ^expected} = Effects.complete(worker, outcome)
-      assert %{} = Workers.stop(remaining, relay_pid)
+      assert :ignore = Effects.complete(worker, outcome)
+      assert remaining == %{}
     end
   end
 end

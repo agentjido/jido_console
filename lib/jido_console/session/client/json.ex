@@ -6,6 +6,8 @@ defmodule Jido.Console.Session.Client.JSON do
   `Jido.Console.Automation.JSONL`.
   """
 
+  alias Jido.Console.Session.Client
+
   @doc "Encodes one semantic event as JSON."
   @spec encode(map()) :: {:ok, String.t()} | {:error, term()}
   def encode(event) when is_map(event) do
@@ -16,6 +18,23 @@ defmodule Jido.Console.Session.Client.JSON do
   @spec encode_stream([map()]) :: {:ok, String.t()} | {:error, term()}
   def encode_stream(events) when is_list(events) do
     Jason.encode(Enum.map(events, &sanitize/1))
+  end
+
+  @doc "Returns ordered semantic event types after JSON projection."
+  @spec observe(Client.t()) :: [String.t()]
+  def observe(handle) do
+    events =
+      handle
+      |> Client.snapshot()
+      |> get_in(["payload", "state", "transcript"])
+      |> List.wrap()
+
+    with {:ok, encoded} <- encode_stream(events),
+         {:ok, decoded} <- Jason.decode(encoded) do
+      Enum.map(decoded, & &1["type"])
+    else
+      _error -> []
+    end
   end
 
   defp sanitize(value) when is_pid(value) or is_reference(value) or is_function(value), do: nil

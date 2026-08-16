@@ -1,7 +1,7 @@
 defmodule Jido.Console.Coding.Setup do
   @moduledoc "Trusted CLI selection and context for the removable Jidoka coding pack."
 
-  alias Jido.Console.Coding.{FileMentions, Local, Profile, ProviderOptions, Selection, WorkspaceConfig}
+  alias Jido.Console.Coding.{ClientSetup, FileMentions, Local, Profile, ProviderOptions, Selection, WorkspaceConfig}
   alias Jido.Console.Extensions
   alias Jidoka.CodingPack
   alias Jidoka.CodingPack.{Instructions, Workspace}
@@ -58,12 +58,34 @@ defmodule Jido.Console.Coding.Setup do
     Local.close(resources)
   end
 
+  @doc "Returns the bounded coding context that attached clients can use."
+  @spec client_setup(t()) :: ClientSetup.t()
+  def client_setup(%__MODULE__{} = setup) do
+    %ClientSetup{
+      workspace: setup.workspace,
+      instructions: setup.instructions,
+      context: setup.context,
+      await_timeout_ms: setup.await_timeout_ms,
+      turn_opts: setup.turn_opts
+    }
+  end
+
   @doc "Resolves file mentions and returns portable Jidoka context data."
   @spec prepare_prompt(t(), String.t()) :: {:ok, String.t(), map()} | {:error, term()}
   def prepare_prompt(%__MODULE__{workspace: nil, context: context}, prompt),
     do: {:ok, unescape(prompt), context}
 
   def prepare_prompt(%__MODULE__{workspace: workspace, context: context}, prompt) do
+    with {:ok, prompt, files} <- FileMentions.resolve(workspace, prompt) do
+      coding = context["coding"] |> Map.put("files", files)
+      {:ok, prompt, put_in(context, ["coding"], coding)}
+    end
+  end
+
+  def prepare_prompt(%ClientSetup{workspace: nil, context: context}, prompt),
+    do: {:ok, unescape(prompt), context}
+
+  def prepare_prompt(%ClientSetup{workspace: workspace, context: context}, prompt) do
     with {:ok, prompt, files} <- FileMentions.resolve(workspace, prompt) do
       coding = context["coding"] |> Map.put("files", files)
       {:ok, prompt, put_in(context, ["coding"], coding)}

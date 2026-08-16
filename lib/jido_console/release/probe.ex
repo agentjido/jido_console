@@ -1,6 +1,8 @@
 defmodule Jido.Console.Release.Probe do
   @moduledoc false
 
+  alias Jido.Console.Session.{Registry, Server}
+
   @doc false
   @spec configured?(keyword()) :: boolean()
   def configured?(opts \\ []) do
@@ -39,6 +41,7 @@ defmodule Jido.Console.Release.Probe do
   defp run_tui_probe(args, mode, opts) do
     delay_ms = probe_delay_ms(opts)
     sleep = Keyword.get(opts, :sleep, &Process.sleep/1)
+    session_id = "release-probe-session-#{System.unique_integer([:positive, :monotonic])}"
 
     startup = fn ->
       sleep.(delay_ms)
@@ -51,12 +54,27 @@ defmodule Jido.Console.Release.Probe do
       runtime: Jido.Console.Release.ProbeRuntime,
       runtime_startup: startup,
       coding_pack: :disabled,
+      session_id: session_id,
       session_opts: probe_session_opts(mode, opts)
     ]
 
-    case cli_run.(args, tui_opts) do
+    result =
+      try do
+        cli_run.(args, tui_opts)
+      after
+        stop_probe_session(session_id)
+      end
+
+    case result do
       :ok -> 0
       {:error, status} -> status
+    end
+  end
+
+  defp stop_probe_session(session_id) do
+    case Registry.lookup(session_id) do
+      {:ok, server} -> Server.stop(server)
+      {:error, :not_found} -> :ok
     end
   end
 

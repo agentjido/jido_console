@@ -71,6 +71,7 @@ defmodule Jido.Console.Release.EntryTest do
     assert_receive {:tui, ["chat"], success_opts}
     assert success_opts[:runtime] == Jido.Console.Release.ProbeRuntime
     assert success_opts[:coding_pack] == :disabled
+    assert String.starts_with?(success_opts[:session_id], "release-probe-session-")
     assert success_opts[:session_opts][:probe_mode] == :success
 
     workflow_opts =

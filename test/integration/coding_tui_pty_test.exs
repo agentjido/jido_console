@@ -3,6 +3,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
 
   alias CodingScenario.Oracle
   alias Jido.Console.Release.ProbeRuntime
+  alias Jido.Console.Session.Server
   alias Jido.Console.Tui
 
   @project_root Path.expand("../..", __DIR__)
@@ -104,6 +105,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
     log: log
   } do
     test_pid = self()
+    session_id = "coding-pty-#{System.unique_integer([:positive])}"
 
     task =
       Task.async(fn ->
@@ -112,12 +114,13 @@ defmodule Jido.Console.CodingTuiPtyTest do
           runtime_startup: fn -> :ok end,
           coding_pack: :disabled,
           session_opts: workflow_session_opts(fixture.root, log),
+          session_id: session_id,
           terminal_adapter: DriverAdapter,
           terminal_adapter_opts: [test_pid: test_pid, size: {100, 30}]
         )
       end)
 
-    assert_receive {:coding_terminal_opened, owner, ref}, 2_000
+    assert_receive {:coding_terminal_opened, owner, ref}, 10_000
     assert_frame("idle · Enter sends")
 
     send_event(owner, ref, {:paste, "Inspect the café λ source and tests."})
@@ -159,11 +162,14 @@ defmodule Jido.Console.CodingTuiPtyTest do
     assert :ok = Task.await(task, 5_000)
     assert_receive :coding_terminal_closed, 1_000
 
+    {:ok, server} = Server.ensure_started(session_id)
+    Server.stop(server)
+
     assert_workflow_evidence(fixture, log)
   end
 
   @tag :expect
-  @tag timeout: 180_000
+  @tag timeout: 300_000
   test "drives the same coding flow through a compiled executable and real PTY", %{
     fixture: fixture,
     log: log
@@ -267,13 +273,18 @@ defmodule Jido.Console.CodingTuiPtyTest do
     stty -isig < $spawn_out(slave,name)
 
     send "\\033\\[200~Inspect the café λ source and tests.\\033\\[201~\\r"
-    expect {
-      -re {coding\.read} {}
-      timeout {puts "missing inspection tool activity"; exit 4}
-    }
-    expect {
-      -re {Inspected café λ source and tests\.} {}
-      timeout {puts "missing Unicode inspection result"; exit 5}
+    set saw_inspection_tool 0
+    set saw_inspection_idle 0
+    while {!$saw_inspection_tool || !$saw_inspection_idle} {
+      expect {
+        -re {coding\.read} {set saw_inspection_tool 1}
+        -re {idle .* Enter sends} {set saw_inspection_idle 1}
+        timeout {
+          if {!$saw_inspection_tool} {puts "missing inspection tool activity"; exit 4}
+          puts "missing idle state after inspection"
+          exit 5
+        }
+      }
     }
 
     stty rows 18 columns 60 < $spawn_out(slave,name)

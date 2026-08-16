@@ -1,31 +1,38 @@
 defmodule Jido.Console.Session.Parity do
-  @moduledoc "Compares ordered Session.Client outcomes across current surfaces."
+  @moduledoc "Compares live Session.Client observations across current surfaces."
 
-  alias Jido.Console.Session.Client.{JSON, Text}
+  alias Jido.Console.Session.Client.{Automation, JSON, Text, TUI}
 
-  @doc "Returns ordered type names observed by every current client."
-  @spec observe([map()]) :: %{tui: [String.t()], automation: [String.t()], text: [String.t()], json: [String.t()]}
-  def observe(events) when is_list(events) do
-    types = Enum.map(events, & &1["type"])
+  @type handles :: %{
+          required(:tui) => Jido.Console.Session.Client.t(),
+          required(:automation) => Jido.Console.Session.Client.t(),
+          required(:text) => Jido.Console.Session.Client.t(),
+          required(:json) => Jido.Console.Session.Client.t()
+        }
 
+  @doc "Returns ordered event types observed from four live attachments."
+  @spec observe(handles()) :: %{
+          tui: [String.t()],
+          automation: [String.t()],
+          text: [String.t()],
+          json: [String.t()]
+        }
+  def observe(%{tui: tui, automation: automation, text: text, json: json}) do
     %{
-      tui: types,
-      automation: types,
-      text: events |> Text.transcript() |> String.split("\n", trim: true),
-      json: json_types(events)
+      tui: TUI.observe(tui),
+      automation: Automation.observe(automation),
+      text: Text.observe(text),
+      json: JSON.observe(json)
     }
   end
 
-  @doc "Returns true when TUI, automation, text, and JSON observe the same types."
-  @spec same_outcomes?([map()]) :: boolean()
-  def same_outcomes?(events) do
-    observed = observe(events)
-    observed.tui == observed.automation and length(observed.tui) == length(events)
-  end
+  @doc "Returns true when all four live clients observe the same ordered events."
+  @spec same_outcomes?(handles()) :: boolean()
+  def same_outcomes?(handles) do
+    observed = observe(handles)
 
-  defp json_types(events) do
-    {:ok, json} = JSON.encode_stream(events)
-    {:ok, decoded} = Jason.decode(json)
-    Enum.map(decoded, & &1["type"])
+    observed.tui == observed.automation and
+      observed.tui == observed.text and
+      observed.tui == observed.json
   end
 end

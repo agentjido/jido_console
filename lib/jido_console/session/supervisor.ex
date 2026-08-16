@@ -1,6 +1,7 @@
 defmodule Jido.Console.Session.Supervisor do
   @moduledoc """
-  Supervises the session registry and dynamic session supervisor.
+  Supervises the session registry, runtime tasks, and dynamic session
+  supervisor.
 
   This topology is process-lifetime only. It does not recover sessions after
   an application restart.
@@ -34,13 +35,20 @@ defmodule Jido.Console.Session.Supervisor do
 
   @impl true
   def init(opts) do
+    name = Keyword.get(opts, :name, __MODULE__)
     registry = Keyword.get(opts, :registry, Jido.Console.Session.Registry)
     sessions = Keyword.get(opts, :sessions, Jido.Console.Session.DynamicSupervisor)
 
-    children = [
-      {Jido.Console.Session.Registry, name: registry},
-      {Jido.Console.Session.DynamicSupervisor, name: sessions}
-    ]
+    task_children =
+      case Keyword.fetch(opts, :tasks) do
+        {:ok, tasks} -> [{Task.Supervisor, name: tasks}]
+        :error when name == __MODULE__ -> [{Task.Supervisor, name: Jido.Console.Session.TaskSupervisor}]
+        :error -> []
+      end
+
+    children =
+      [{Jido.Console.Session.Registry, name: registry}] ++
+        task_children ++ [{Jido.Console.Session.DynamicSupervisor, name: sessions}]
 
     Supervisor.init(children, strategy: :one_for_all)
   end

@@ -9,7 +9,7 @@ defmodule Jido.Console.JidokaCompatibilityTest do
 
   @jidoka_ref "701cf25a5c922755f4c53f25eb9721f1c85adf0a"
 
-  test "the pinned Jidoka source is one immutable Git commit" do
+  test "production uses the immutable pin and the compatibility gate uses its explicit checkout" do
     assert Identity.jidoka_ref() == @jidoka_ref
 
     {_app, options} =
@@ -17,10 +17,19 @@ defmodule Jido.Console.JidokaCompatibilityTest do
       |> Keyword.fetch!(:deps)
       |> Enum.find(fn {app, _options} -> app == :jidoka end)
 
-    assert options[:github] == "agentjido/jidoka"
-    assert options[:ref] == @jidoka_ref
-    refute Keyword.has_key?(options, :path)
-    refute Keyword.has_key?(options, :branch)
+    case System.get_env("JIDO_CONSOLE_JIDOKA_PATH") do
+      nil ->
+        assert options[:github] == "agentjido/jidoka"
+        assert options[:ref] == @jidoka_ref
+        refute Keyword.has_key?(options, :path)
+        refute Keyword.has_key?(options, :branch)
+
+      checkout ->
+        assert Path.expand(options[:path]) == Path.expand(checkout)
+        refute Keyword.has_key?(options, :github)
+        refute Keyword.has_key?(options, :ref)
+        refute Keyword.has_key?(options, :branch)
+    end
   end
 
   test "the pinned release exposes the v0.1 restricted compatibility contract" do

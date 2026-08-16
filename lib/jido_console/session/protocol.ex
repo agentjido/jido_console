@@ -10,6 +10,9 @@ defmodule Jido.Console.Session.Protocol do
   """
 
   @schema_name "jido.session.v1.json"
+  @schema_source Path.expand("../../../priv/session/protocol/#{@schema_name}", __DIR__)
+  @external_resource @schema_source
+  @schema_contents File.read!(@schema_source)
   @families ~w(command event interaction response outcome snapshot replay control)
   @required_type_keys ~w(locality fields)
   @shared "shared"
@@ -20,17 +23,22 @@ defmodule Jido.Console.Session.Protocol do
   @type type_name :: String.t()
   @type locality :: String.t()
 
-  @doc "Loads the canonical protocol schema from priv."
+  @doc "Loads the canonical protocol schema embedded at compile time or from an explicit path."
   @spec schema(keyword()) :: {:ok, schema()} | {:error, term()}
   def schema(opts \\ []) do
-    path = Keyword.get_lazy(opts, :path, &schema_path/0)
-
-    with {:ok, contents} <- File.read(path),
+    with {:ok, contents} <- schema_contents(opts),
          {:ok, decoded} <- Jason.decode(contents) do
       {:ok, decoded}
     else
       {:error, %Jason.DecodeError{} = error} -> {:error, {:protocol_schema_invalid, Exception.message(error)}}
       {:error, reason} -> {:error, {:protocol_schema_unreadable, reason}}
+    end
+  end
+
+  defp schema_contents(opts) do
+    case Keyword.fetch(opts, :path) do
+      {:ok, path} -> File.read(path)
+      :error -> {:ok, @schema_contents}
     end
   end
 

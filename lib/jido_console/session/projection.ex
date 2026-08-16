@@ -25,7 +25,16 @@ defmodule Jido.Console.Session.Projection do
         trust: %{evidence: "jidoka-projection", policy: "session-owner"},
         identities: identities(projected, opts),
         request_id: projected[:request_id],
-        run_id: projected[:turn_id]
+        run_id: projected[:turn_id],
+        jidoka_sequence: projected[:seq],
+        jidoka_event: projected[:event],
+        terminal: projected[:terminal?],
+        effect_id: projected[:effect_id],
+        effect_kind: projected[:effect_kind],
+        operation: projected[:operation],
+        status: projected[:status],
+        data: projected[:data],
+        error: projected[:error]
       })
     end
   end

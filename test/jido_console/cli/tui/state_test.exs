@@ -3,6 +3,7 @@ defmodule Jido.Console.Tui.StateTest do
 
   alias Jido.Console.Tui.State
   alias Jido.Console.Runtime.Jidoka, as: Runtime
+  alias Jido.Console.Session.Request, as: SessionRequest
   alias Jidoka.Cancellation
   alias Jidoka.Event
 
@@ -12,8 +13,8 @@ defmodule Jido.Console.Tui.StateTest do
     {state, [{:start_turn, "hello"}]} = State.update(state, {:terminal, {:key, :enter}})
     assert state.messages == [%{role: :user, content: "hello"}]
 
-    request = %{request_id: "request-1"}
-    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+    request = session_request("request-1")
+    {state, []} = State.update(state, {:turn_started, request})
 
     delta =
       Event.build(:llm_delta, [],
@@ -96,8 +97,8 @@ defmodule Jido.Console.Tui.StateTest do
     {state, [{:start_turn, "Review value.ex", ^context}]} =
       State.update(state, {:prompt_ready, "Review value.ex", context})
 
-    request = %{request_id: "request-1"}
-    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+    request = session_request("request-1")
+    {state, []} = State.update(state, {:turn_started, request})
 
     delta =
       Event.build(:llm_delta, [],
@@ -125,14 +126,14 @@ defmodule Jido.Console.Tui.StateTest do
   end
 
   test "keeps one wrapped turn through repeated approval and denial pauses" do
-    request = %{request_id: "request-1"}
+    request = session_request("request-1")
     first_review = review("review-1", "write_file", %{"path" => "\e[31mlib/a.ex\e[0m"})
     second_review = review("review-2", "shell", %{"command" => "mix test\e[2J"})
 
     state = State.new(:session, {80, 24})
     {state, []} = State.update(state, {:terminal, {:text, "change it"}})
     {state, [{:start_turn, "change it"}]} = State.update(state, {:terminal, {:key, :enter}})
-    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+    {state, []} = State.update(state, {:turn_started, request})
 
     first_pause = runtime_result(:pending_review, request, :wrapped_session_1, pending_reviews: [first_review])
     {state, []} = State.update(state, {:turn_result, request, first_pause})
@@ -142,7 +143,7 @@ defmodule Jido.Console.Tui.StateTest do
     assert state.turns == []
     assert state.active_turn.reviews |> hd() |> Map.fetch!(:arguments_summary) == "%{\"path\" => \"lib/a.ex\"}"
 
-    assert {state, [{:respond_review, :approve, ^first_pause, ^first_review}]} =
+    assert {state, [{:respond_review, :approve, ^request, ^first_pause, ^first_review}]} =
              State.update(state, {:terminal, {:text, "a"}})
 
     assert state.status == :responding_review
@@ -153,7 +154,7 @@ defmodule Jido.Console.Tui.StateTest do
     assert state.session == :wrapped_session_2
     assert state.status == :review
 
-    assert {state, [{:respond_review, :deny, ^second_pause, ^second_review}]} =
+    assert {state, [{:respond_review, :deny, ^request, ^second_pause, ^second_review}]} =
              State.update(state, {:terminal, {:text, "d"}})
 
     denied =
@@ -173,7 +174,7 @@ defmodule Jido.Console.Tui.StateTest do
   end
 
   test "records an expired approval without losing its decision" do
-    request = %{request_id: "request-1"}
+    request = session_request("request-1")
 
     pending =
       runtime_result(:pending_review, request, :wrapped_session,
@@ -181,7 +182,7 @@ defmodule Jido.Console.Tui.StateTest do
       )
 
     state = State.new(:session, {80, 24})
-    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+    {state, []} = State.update(state, {:turn_started, request})
     {state, []} = State.update(state, {:turn_result, request, pending})
     {state, [_effect]} = State.update(state, {:terminal, {:text, "a"}})
 
@@ -266,8 +267,8 @@ defmodule Jido.Console.Tui.StateTest do
     state = State.new(:session, {80, 24})
     assert {_state, [:exit]} = State.update(state, {:terminal, {:key, :ctrl_c}})
 
-    request = %{request_id: "request-1"}
-    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+    request = session_request("request-1")
+    {state, []} = State.update(state, {:turn_started, request})
 
     assert {state, [{:cancel_turn, ^request}]} =
              State.update(state, {:terminal, {:key, :ctrl_c}})
@@ -366,12 +367,12 @@ defmodule Jido.Console.Tui.StateTest do
     state = State.new(:session, {80, 24})
     assert {^state, []} = State.update(state, {:terminal, {:key, :enter}})
 
-    request = %{request_id: "request-1"}
+    request = session_request("request-1")
 
     pre_request = %{state | editor: Jido.Console.Tui.Editor.from_text("second"), status: :running}
     assert {^pre_request, []} = State.update(pre_request, {:terminal, {:key, :enter}})
 
-    {state, [{:await_turn, ^request}]} = State.update(state, {:turn_started, request})
+    {state, []} = State.update(state, {:turn_started, request})
     assert {^state, []} = State.update(state, {:terminal, {:key, :enter}})
     assert {^state, []} = State.update(state, {:terminal, {:key, :escape}})
   end
@@ -386,8 +387,8 @@ defmodule Jido.Console.Tui.StateTest do
     idle = State.new(:session, {80, 24})
     assert {^idle, []} = State.update(idle, {:jidoka, other_delta})
 
-    request = %{request_id: "current"}
-    {running, [{:await_turn, ^request}]} = State.update(idle, {:turn_started, request})
+    request = session_request("current")
+    {running, []} = State.update(idle, {:turn_started, request})
     assert {^running, []} = State.update(running, {:jidoka, other_delta})
 
     current_delta =
@@ -399,8 +400,7 @@ defmodule Jido.Console.Tui.StateTest do
     {running, []} = State.update(running, {:jidoka, current_delta})
     assert running.streaming == "accepted"
 
-    {opaque, [{:await_turn, :opaque}]} = State.update(idle, {:turn_started, :opaque})
-    assert {^opaque, []} = State.update(opaque, {:jidoka, other_delta})
+    assert {^idle, []} = State.update(idle, {:turn_started, :opaque})
   end
 
   test "normalizes all supported turn results" do
@@ -542,6 +542,15 @@ defmodule Jido.Console.Tui.StateTest do
       reason: :manual,
       created_at_ms: 0,
       expires_at_ms: 30_000
+    }
+  end
+
+  defp session_request(request_id) do
+    %SessionRequest{
+      id: "session-#{request_id}",
+      request_id: request_id,
+      run_id: "run-#{request_id}",
+      session_id: "session"
     }
   end
 end
