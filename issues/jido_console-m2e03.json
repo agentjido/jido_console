@@ -15,7 +15,6 @@
     "effort:large",
     "milestone-2",
     "one-pr",
-    "readiness:ready",
     "roadmap",
     "v0.2"
   ],
@@ -29,5 +28,5 @@
   "status": "closed",
   "title": "M2-E03: Define the Canonical Session Protocol",
   "type": "epic",
-  "updated_at": "2026-08-15T23:23:55Z"
+  "updated_at": "2026-08-16T19:27:09Z"
 }
