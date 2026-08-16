@@ -2,8 +2,9 @@ defmodule Jido.Console.Session.Protocol.Validator do
   @moduledoc """
   Validates protocol envelopes against the generated catalog.
 
-  Unknown payload fields are retained only within declared bounds and cannot
-  grant authority, permission, or control.
+  A declared payload field is valid only for its exact family and type.
+  Undeclared extension fields are retained only within declared bounds and
+  cannot grant authority, permission, or control.
   """
 
   alias Jido.Console.Session.Protocol.Generated
@@ -19,9 +20,9 @@ defmodule Jido.Console.Session.Protocol.Validator do
 
     with :ok <- require_envelope(value),
          :ok <- compatible_version(value, catalog),
-         :ok <- known_type(value, catalog),
-         :ok <- reject_client_local_payload(value, catalog),
-         {:ok, payload} <- bound_payload(value["payload"] || %{}, catalog) do
+         {:ok, contract} <- type_contract(value, catalog),
+         :ok <- reject_client_local_payload(value, contract, catalog),
+         {:ok, payload} <- validate_payload(value, contract, catalog) do
       {:ok, Map.put(value, "payload", payload)}
     end
   end
@@ -60,20 +61,19 @@ defmodule Jido.Console.Session.Protocol.Validator do
     end
   end
 
-  defp known_type(%{"family" => family, "type" => type}, catalog) do
+  defp type_contract(%{"family" => family, "type" => type}, catalog) do
     case get_in(catalog, ["families", family, "types", type]) do
-      declaration when is_map(declaration) -> :ok
+      contract when is_map(contract) -> {:ok, contract}
       _other -> {:error, {:unknown_protocol_type, family, type}}
     end
   end
 
-  defp reject_client_local_payload(%{"family" => family, "type" => type, "payload" => payload}, catalog)
+  defp reject_client_local_payload(%{"payload" => payload}, contract, catalog)
        when is_map(payload) do
-    declaration = get_in(catalog, ["families", family, "types", type])
     local_fields = MapSet.new(catalog["client_local_fields"] || [])
 
     cond do
-      declaration["locality"] != "shared" ->
+      contract["locality"] != "shared" ->
         :ok
 
       Enum.any?(Map.keys(payload), &MapSet.member?(local_fields, &1)) ->
@@ -84,18 +84,56 @@ defmodule Jido.Console.Session.Protocol.Validator do
     end
   end
 
-  defp reject_client_local_payload(%{"payload" => payload}, _catalog) when not is_map(payload) do
+  defp reject_client_local_payload(%{"payload" => payload}, _contract, _catalog) when not is_map(payload) do
     {:error, :invalid_protocol_payload}
   end
 
-  defp reject_client_local_payload(_value, _catalog), do: :ok
+  defp reject_client_local_payload(_value, _contract, _catalog), do: :ok
 
-  defp bound_payload(payload, catalog) when is_map(payload) do
+  defp validate_payload(%{"family" => family, "type" => type} = value, contract, catalog) do
+    payload = value["payload"] || %{}
+
+    with :ok <- require_payload_fields(payload, family, type, contract),
+         :ok <- reject_sibling_fields(payload, family, type, contract, catalog) do
+      bound_payload(payload, contract, catalog)
+    end
+  end
+
+  defp require_payload_fields(payload, family, type, contract) when is_map(payload) do
+    missing = List.wrap(contract["required_fields"]) -- Map.keys(payload)
+
+    if missing == [] do
+      :ok
+    else
+      {:error, {:missing_protocol_fields, family, type, missing}}
+    end
+  end
+
+  defp require_payload_fields(_payload, _family, _type, _contract), do: {:error, :invalid_protocol_payload}
+
+  defp reject_sibling_fields(payload, family, type, contract, catalog) when is_map(payload) do
+    known = MapSet.new(contract["known_fields"] || [])
+
+    unexpected =
+      payload
+      |> Map.keys()
+      |> Enum.reject(&MapSet.member?(known, &1))
+      |> Enum.filter(&MapSet.member?(family_field_set(catalog, family), &1))
+      |> Enum.sort()
+
+    if unexpected == [] do
+      :ok
+    else
+      {:error, {:unexpected_protocol_fields, family, type, unexpected}}
+    end
+  end
+
+  defp bound_payload(payload, contract, catalog) when is_map(payload) do
     bounds = catalog["bounds"]
     authority = catalog["authority"]
     unknown_limit = bounds["max_unknown_bytes"]
     unknown_keys = bounds["max_unknown_keys"]
-    known = known_field_set(catalog)
+    known = MapSet.new(contract["known_fields"] || [])
 
     with :ok <- bound_value(payload, bounds),
          :ok <- reject_unknown_authority(payload, known, authority) do
@@ -116,8 +154,6 @@ defmodule Jido.Console.Session.Protocol.Validator do
       end
     end
   end
-
-  defp bound_payload(_payload, _catalog), do: {:error, :invalid_protocol_payload}
 
   defp bound_value(value, bounds) when is_binary(value) do
     limit = bounds["max_text_bytes"]
@@ -169,19 +205,18 @@ defmodule Jido.Console.Session.Protocol.Validator do
     if leaked == [], do: :ok, else: {:error, {:unknown_authority_field, leaked}}
   end
 
-  defp known_field_set(catalog) do
-    catalog["families"]
-    |> Enum.flat_map(fn {_family, entry} ->
-      entry
-      |> Map.get("types", %{})
-      |> Enum.flat_map(fn {_name, declaration} -> List.wrap(declaration["fields"]) end)
+  defp family_field_set(catalog, family) do
+    catalog
+    |> get_in(["families", family, "types"])
+    |> List.wrap()
+    |> Enum.flat_map(fn
+      types when is_map(types) ->
+        Enum.flat_map(types, fn {_name, contract} -> List.wrap(contract["known_fields"]) end)
+
+      _other ->
+        []
     end)
     |> MapSet.new()
-    |> MapSet.union(
-      MapSet.new(
-        ~w(sequence durability sensitivity origin trust unknown content view reason text attachments arguments)
-      )
-    )
   end
 
   defp authority_fields(%{"authority_fields" => fields}) when is_list(fields), do: fields

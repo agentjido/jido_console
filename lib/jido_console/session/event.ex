@@ -35,7 +35,9 @@ defmodule Jido.Console.Session.Event do
              schema,
              "event",
              attrs["type"],
-             Map.put(attrs, "id", attrs["id"] || default_event_id(attrs))
+             attrs
+             |> Map.delete("type")
+             |> Map.put("id", attrs["id"] || default_event_id(attrs))
            ) do
       Validator.validate(envelope)
     end

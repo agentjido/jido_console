@@ -12,6 +12,9 @@
     "sensitivity": "public",
     "origin": {"kind": "client", "actor_id": "cli_tui"},
     "trust": {"evidence": "admitted", "policy": "session-owner"},
+    "identities": [
+      {"kind": "session", "id": "ses_demo", "session_id": "ses_demo"}
+    ],
     "input_id": "inp_1",
     "client_id": "cli_tui"
   }

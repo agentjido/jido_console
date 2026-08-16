@@ -16,8 +16,10 @@ defmodule Jido.Console.Session.Projection do
          :ok <- reject_duplicate(projected, Keyword.get(opts, :seen, MapSet.new())),
          :ok <- reject_invalid_order(projected, Keyword.get(opts, :last_jidoka_seq)),
          {:ok, session} <- session_identity(opts) do
-      Event.classify(%{
-        type: console_type(projected),
+      type = console_type(projected)
+
+      %{
+        type: type,
         id: event_id(projected, opts),
         session_id: session.id,
         sequence: Keyword.fetch!(opts, :sequence),
@@ -25,19 +27,10 @@ defmodule Jido.Console.Session.Projection do
         sensitivity: sensitivity(projected),
         origin: %{kind: "jidoka", actor_id: projected[:request_id] || "jidoka"},
         trust: %{evidence: "jidoka-projection", policy: "session-owner"},
-        identities: identities(projected, session),
-        request_id: projected[:request_id],
-        run_id: projected[:turn_id],
-        jidoka_sequence: projected[:seq],
-        jidoka_event: projected[:event],
-        terminal: projected[:terminal?],
-        effect_id: projected[:effect_id],
-        effect_kind: projected[:effect_kind],
-        operation: projected[:operation],
-        status: projected[:status],
-        data: projected[:data],
-        error: projected[:error]
-      })
+        identities: identities(projected, session)
+      }
+      |> Map.merge(protocol_fields(type, projected))
+      |> Event.classify()
     end
   end
 
@@ -69,6 +62,34 @@ defmodule Jido.Console.Session.Projection do
   defp console_type(%{event: event}) when event in ["llm_delta", :llm_delta], do: "model_delta"
   defp console_type(%{terminal?: true}), do: "run_completed"
   defp console_type(_projected), do: "run_progress"
+
+  defp protocol_fields("model_delta", projected) do
+    %{
+      text: get_in(projected, [:data, "delta"]),
+      run_id: projected[:turn_id] || projected[:request_id]
+    }
+  end
+
+  defp protocol_fields("run_completed", projected) do
+    %{
+      outcome_id: projected[:effect_id] || projected[:request_id],
+      run_id: projected[:turn_id] || projected[:request_id]
+    }
+  end
+
+  defp protocol_fields("run_failed", projected) do
+    %{
+      reason: projected[:error] || projected[:status],
+      run_id: projected[:turn_id] || projected[:request_id]
+    }
+  end
+
+  defp protocol_fields("run_progress", projected) do
+    %{
+      summary: projected[:data] || projected[:status],
+      run_id: projected[:turn_id] || projected[:request_id]
+    }
+  end
 
   defp event_id(projected, opts) do
     request_id = projected[:request_id] || "jidoka"

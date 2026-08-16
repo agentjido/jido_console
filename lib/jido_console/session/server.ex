@@ -789,12 +789,12 @@ defmodule Jido.Console.Session.Server do
 
     case Projection.project(event, opts) do
       {:ok, projected} ->
-        if projected["payload"]["terminal"] == true do
-          track_projection(state, projected)
+        if projected["type"] in ["run_completed", "run_failed"] do
+          track_projection(state, event)
         else
           case admit_event_state(state, projected) do
             {:ok, state} ->
-              track_projection(state, projected)
+              track_projection(state, event)
 
             {:error, reason, state} ->
               broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
@@ -811,9 +811,10 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp track_projection(state, projected) do
-    payload = projected["payload"]
-    key = {payload["request_id"], payload["jidoka_sequence"]}
+  defp track_projection(state, event) do
+    request_id = runtime_request_id(event)
+    sequence = runtime_sequence(event)
+    key = {request_id, sequence}
 
     active = %{
       state.active
@@ -821,8 +822,8 @@ defmodule Jido.Console.Session.Server do
         last_jidoka_seq:
           Map.put(
             state.active.last_jidoka_seq,
-            payload["request_id"],
-            payload["jidoka_sequence"]
+            request_id,
+            sequence
           )
     }
 
@@ -845,11 +846,9 @@ defmodule Jido.Console.Session.Server do
         identities: [
           Identity.to_protocol(state.session),
           %{"kind" => "request", "id" => request.id, "session_id" => state.session.id}
-        ],
-        request_id: request.request_id,
-        run_id: request.run_id
+        ]
       }
-      |> Map.merge(extra)
+      |> Map.merge(owner_event_fields(type, request, extra))
 
     with {:ok, event} <- Event.classify(attrs),
          {:ok, state} <- admit_event_state(state, event) do
@@ -861,6 +860,26 @@ defmodule Jido.Console.Session.Server do
 
   defp admit_control(state, type, request, control),
     do: admit_owner_event(state, type, request, %{"control" => control})
+
+  defp owner_event_fields("run_started", request, extra) do
+    Map.merge(extra, %{"run_id" => request.run_id, "turn_id" => request.request_id})
+  end
+
+  defp owner_event_fields("run_completed", request, extra) do
+    %{"run_id" => request.run_id, "outcome_id" => request.id, "content" => extra["content"]}
+  end
+
+  defp owner_event_fields("run_failed", request, extra) do
+    %{"run_id" => request.run_id, "reason" => extra["error"] || extra["status"]}
+  end
+
+  defp owner_event_fields("control_requested", request, extra) do
+    %{"control_id" => request.id, "control" => extra["control"]}
+  end
+
+  defp owner_event_fields("control_completed", request, extra) do
+    %{"control_id" => request.id, "result" => extra["control"]}
+  end
 
   defp admit_event_state(state, event) do
     case Reducer.apply_event(state.state, event) do
@@ -970,6 +989,8 @@ defmodule Jido.Console.Session.Server do
   defp bounded_append(items, item), do: Enum.take(items ++ [item], -@completed_limit)
   defp runtime_request_id(%{request_id: request_id}), do: request_id
   defp runtime_request_id(_event), do: nil
+  defp runtime_sequence(%{seq: sequence}), do: sequence
+  defp runtime_sequence(_event), do: nil
   defp bounded_text(nil), do: nil
   defp bounded_text(text) when is_binary(text), do: String.slice(text, 0, 200_000)
   defp bounded_text(value), do: value |> inspect(limit: 20) |> String.slice(0, 4_096)

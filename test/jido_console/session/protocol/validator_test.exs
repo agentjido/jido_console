@@ -16,10 +16,24 @@ defmodule Jido.Console.Session.Protocol.ValidatorTest do
       assert Generated.types(family) == types
     end)
 
+    input_admitted = get_in(Generated.catalog(), ["families", "event", "types", "input_admitted"])
+
+    assert input_admitted == %{
+             "known_fields" => ~w(client_id durability identities input_id origin sensitivity sequence trust),
+             "locality" => "shared",
+             "required_fields" => ~w(durability identities origin sensitivity sequence trust)
+           }
+
     typescript = File.read!(Path.join(Path.dirname(Protocol.schema_path()), "generated.ts"))
     assert typescript =~ "export const protocolDigest = #{inspect(digest)}"
     assert typescript =~ "export type CommandType"
     assert typescript =~ "export type ControlType"
+    assert typescript =~ "export interface EventInputAdmittedEnvelope"
+    assert typescript =~ ~s(family: "event";)
+    assert typescript =~ ~s(type: "input_admitted";)
+    assert typescript =~ ~s("sequence": unknown;)
+    assert typescript =~ ~s("input_id"?: unknown;)
+    assert typescript =~ "export type ProtocolEnvelope ="
     assert typescript =~ "knownType("
   end
 
@@ -53,6 +67,24 @@ defmodule Jido.Console.Session.Protocol.ValidatorTest do
              Validator.validate(envelope(%{"payload" => %{"text" => oversized}}))
 
     assert {:error, :invalid_protocol_shape} = Validator.validate(["not", "an", "object"])
+  end
+
+  test "required and sibling type fields use the exact generated contract" do
+    input_admitted = event_envelope("input_admitted", %{"input_id" => "inp_1", "client_id" => "cli_1"})
+
+    assert {:error, {:missing_protocol_fields, "event", "input_admitted", ["sequence"]}} =
+             input_admitted
+             |> update_in(["payload"], &Map.delete(&1, "sequence"))
+             |> Validator.validate()
+
+    assert {:error, {:unexpected_protocol_fields, "event", "input_admitted", ["run_id"]}} =
+             input_admitted
+             |> put_in(["payload", "run_id"], "run_1")
+             |> Validator.validate()
+
+    assert {:error, {:unexpected_protocol_fields, "command", "request_snapshot", ["text"]}} =
+             envelope(%{"type" => "request_snapshot", "payload" => %{"client_id" => "cli_1", "text" => "wrong"}})
+             |> Validator.validate()
   end
 
   test "bounded unknown data is retained and cannot grant authority" do
@@ -93,5 +125,24 @@ defmodule Jido.Console.Session.Protocol.ValidatorTest do
       "payload" => %{"text" => "hello"}
     }
     |> Map.merge(overrides)
+  end
+
+  defp event_envelope(type, fields) do
+    envelope(%{
+      "family" => "event",
+      "type" => type,
+      "payload" =>
+        Map.merge(
+          %{
+            "sequence" => 1,
+            "durability" => "process",
+            "sensitivity" => "public",
+            "origin" => %{"kind" => "session", "actor_id" => "ses_1"},
+            "trust" => %{"evidence" => "test", "policy" => "session-owner"},
+            "identities" => [%{"kind" => "session", "id" => "ses_1", "session_id" => "ses_1"}]
+          },
+          fields
+        )
+    })
   end
 end

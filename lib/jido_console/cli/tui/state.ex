@@ -682,8 +682,7 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp restore_event(%{active: %Turn{} = turn} = acc, %{"type" => "model_delta", "payload" => payload}) do
-    data = Map.get(payload, "data") || %{}
-    delta = data["delta"] || data["text"] || data["content"] || ""
+    delta = payload["text"] || ""
     assistant = String.slice(turn.assistant <> SafeText.clean(delta), 0, 200_000)
     %{acc | active: %{turn | assistant: assistant}}
   end

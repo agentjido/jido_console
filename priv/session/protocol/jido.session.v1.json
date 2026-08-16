@@ -135,7 +135,7 @@
       "version": "1",
       "compatibility": "additive",
       "description": "Ordered semantic session events allocated by the session owner.",
-      "required": ["sequence", "durability", "sensitivity", "origin", "trust"],
+      "required": ["sequence", "durability", "sensitivity", "origin", "trust", "identities"],
       "types": {
         "input_admitted": {"locality": "shared", "fields": ["input_id", "client_id"]},
         "input_started": {"locality": "shared", "fields": ["input_id", "run_id"]},
@@ -144,7 +144,7 @@
         "input_cancelled": {"locality": "shared", "fields": ["input_id", "reason"]},
         "run_started": {"locality": "shared", "fields": ["run_id", "turn_id"]},
         "run_progress": {"locality": "shared", "fields": ["run_id", "summary"]},
-        "run_completed": {"locality": "shared", "fields": ["run_id", "outcome_id"]},
+        "run_completed": {"locality": "shared", "fields": ["run_id", "outcome_id", "content"]},
         "run_failed": {"locality": "shared", "fields": ["run_id", "reason"]},
         "worker_started": {"locality": "shared", "fields": ["worker_id", "run_id", "request_id"]},
         "worker_completed": {"locality": "shared", "fields": ["worker_id", "run_id", "request_id"]},

@@ -10,7 +10,8 @@ defmodule Jido.Console.Session.ProjectionTest do
 
     assert {:ok, console_event} = Projection.project(event, sequence: 3, session: session)
     assert console_event["payload"]["sequence"] == 3
-    assert console_event["payload"]["request_id"] == "req_proj"
+    assert console_event["payload"]["run_id"] == "trn_1"
+    assert console_event["payload"]["outcome_id"] == "req_proj"
     assert console_event["type"] == "run_completed"
     assert console_event["id"] == "plt_req_proj_0"
     assert console_event["session_id"] == session.id
