@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T13:00:12Z",
+  "description": "Audit rank: 9 of 30.\n\nOwner: JC-14 Session delivery.\nEvidence: lib/jido_console/session/delivery.ex:8-77; recovery.ex:22-50; server.ex:163-167,412-423; cli/tui.ex:553-558.\nWork: Represent delivery as open or gapped with exact owned fields. Acknowledge only offered sequences in open state. Only recovery can exit a gap. Remove Server.put_delivery/3 and recovery suffix arguments. Use Server.recover/2, Client.recover/1, and Recovery.recover/2.\nAcceptance: Future acknowledgements fail. Acknowledgement cannot clear a gap. Recovery is the only gap exit. Callers cannot import delivery state.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
+  "id": "jido_console-1f1.9",
+  "labels": [],
+  "parent": "jido_console-1f1",
+  "priority": 0,
+  "status": "open",
+  "title": "F-23: Use tagged delivery state and owner-controlled recovery",
+  "type": "task",
+  "updated_at": "2026-08-16T13:00:12Z"
+}
