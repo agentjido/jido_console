@@ -43,7 +43,8 @@ defmodule Jido.Console.Session.EventTest do
       identities: [%{"kind" => "request", "id" => "req_1", "session_id" => "ses_1"}]
     }
 
-    assert {:error, :invalid_event_sequence} = Event.classify(base)
+    assert {:error, {:missing_protocol_fields, "event", "input_admitted", ["sequence"]}} =
+             Event.classify(base)
 
     assert {:error, :origin_cannot_grant_authority} =
              Event.classify(
@@ -84,6 +85,32 @@ defmodule Jido.Console.Session.EventTest do
     assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: missing})
     assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: nil_id})
     assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: empty})
+  end
+
+  test "validates classified envelopes without constructing missing identities" do
+    session = Identity.new!(:session)
+
+    {:ok, event} =
+      Event.classify(%{
+        type: "run_started",
+        session_id: session.id,
+        sequence: 1,
+        durability: "process",
+        sensitivity: "public",
+        origin: %{kind: "session", actor_id: session.id},
+        trust: %{evidence: "test", policy: "session-owner"},
+        identities: [Identity.to_protocol(session)]
+      })
+
+    assert {:ok, ^event} = Event.validate(event)
+
+    missing = update_in(event, ["payload"], &Map.delete(&1, "identities"))
+    empty = put_in(event, ["payload", "identities"], [])
+
+    assert {:error, {:missing_protocol_fields, "event", "run_started", ["identities"]}} =
+             Event.validate(missing)
+
+    assert {:error, :event_session_identity_missing} = Event.validate(empty)
   end
 
   defp event_attrs(session_id) do

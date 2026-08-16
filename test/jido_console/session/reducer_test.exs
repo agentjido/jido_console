@@ -53,8 +53,58 @@ defmodule Jido.Console.Session.ReducerTest do
     other = classified(Identity.new!(:session), "run_completed", 2)
     assert {:error, :cross_session_event} = Reducer.apply_event(state, other)
 
-    assert {:error, :cross_session_event} =
+    assert {:error, :invalid_event_session_id} =
              Reducer.apply_event(state, Map.delete(classified(session, "run_completed", 2), "session_id"))
+  end
+
+  test "raw events with missing, mixed, or foreign identities cannot enter history" do
+    session = Identity.new!(:session)
+    state = State.new(session)
+    event = classified(session, "run_started", 1)
+
+    missing = update_in(event, ["payload"], &Map.delete(&1, "identities"))
+
+    mixed =
+      update_in(event, ["payload", "identities"], fn identities ->
+        identities ++ [%{"kind" => "request", "id" => "req_foreign", "session_id" => "ses_foreign"}]
+      end)
+
+    foreign =
+      put_in(event, ["payload", "identities"], [
+        %{"kind" => "session", "id" => "ses_foreign", "session_id" => session.id}
+      ])
+
+    assert {:error, {:missing_protocol_fields, "event", "run_started", ["identities"]}} =
+             Reducer.apply_event(state, missing)
+
+    assert {:error, :event_identity_mismatch} = Reducer.apply_event(state, mixed)
+    assert {:error, :event_identity_mismatch} = Reducer.apply_event(state, foreign)
+    assert state.history == []
+
+    {:ok, admitted} = Reducer.apply_event(state, event)
+
+    assert {:error, _reason} = Reducer.apply_event(admitted, missing)
+    assert admitted.history == [event]
+  end
+
+  test "replay rejects missing, mixed, and foreign identities before history changes" do
+    session = Identity.new!(:session)
+    first = classified(session, "run_started", 1)
+    second = classified(session, "run_completed", 2)
+
+    invalid_events = [
+      update_in(second, ["payload"], &Map.delete(&1, "identities")),
+      update_in(second, ["payload", "identities"], fn identities ->
+        identities ++ [%{"kind" => "request", "id" => "req_foreign", "session_id" => "ses_foreign"}]
+      end),
+      put_in(second, ["payload", "identities"], [
+        %{"kind" => "session", "id" => "ses_foreign", "session_id" => session.id}
+      ])
+    ]
+
+    for invalid <- invalid_events do
+      assert {:error, _reason} = Reducer.replay([first, invalid], State.new(session))
+    end
   end
 
   defp reduce(state, events), do: Reducer.replay(events, state)

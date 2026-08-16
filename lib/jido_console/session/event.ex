@@ -22,13 +22,7 @@ defmodule Jido.Console.Session.Event do
     attrs = stringify(attrs)
 
     with :ok <- reject_runtime(attrs),
-         :ok <- require_sequence(attrs),
-         :ok <- require_class(attrs, "durability", @durabilities),
-         :ok <- require_class(attrs, "sensitivity", @sensitivities),
-         :ok <- require_origin(attrs),
-         :ok <- require_trust(attrs),
          {:ok, attrs} <- canonicalize_identities(attrs),
-         :ok <- reject_origin_authority(attrs),
          {:ok, schema} <- Protocol.schema(),
          {:ok, envelope} <-
            Protocol.envelope(
@@ -39,11 +33,23 @@ defmodule Jido.Console.Session.Event do
              |> Map.delete("type")
              |> Map.put("id", attrs["id"] || default_event_id(attrs))
            ) do
-      Validator.validate(envelope)
+      validate(envelope)
     end
   end
 
   def classify(_attrs), do: {:error, :invalid_event}
+
+  @doc "Validates one classified event envelope and its canonical session identity."
+  @spec validate(map()) :: {:ok, t()} | {:error, term()}
+  def validate(event) when is_map(event) do
+    with :ok <- reject_runtime(event),
+         {:ok, event} <- Validator.validate(event),
+         :ok <- validate_event_semantics(event) do
+      {:ok, event}
+    end
+  end
+
+  def validate(_event), do: {:error, :invalid_event}
 
   @doc "Returns true when origin is treated as descriptive data only."
   @spec origin_authority?(map()) :: boolean()
@@ -104,6 +110,27 @@ defmodule Jido.Console.Session.Event do
     end
   end
 
+  defp validate_event_semantics(%{
+         "family" => "event",
+         "session_id" => session_id,
+         "payload" => payload
+       })
+       when is_binary(session_id) and session_id != "" and is_map(payload) do
+    with :ok <- require_sequence(payload),
+         :ok <- require_class(payload, "durability", @durabilities),
+         :ok <- require_class(payload, "sensitivity", @sensitivities),
+         :ok <- require_origin(payload),
+         :ok <- require_trust(payload),
+         {:ok, identities} <- identities(payload),
+         :ok <- identities_belong_to_session(identities, session_id),
+         :ok <- require_session_identity(identities, session_id) do
+      reject_origin_authority(payload)
+    end
+  end
+
+  defp validate_event_semantics(%{"family" => "event"}), do: {:error, :invalid_event_session_id}
+  defp validate_event_semantics(_event), do: {:error, :invalid_event_envelope}
+
   defp ensure_session_identity(identities, session_id) do
     case Enum.filter(identities, &(&1["kind"] == "session")) do
       [] ->
@@ -115,6 +142,14 @@ defmodule Jido.Console.Session.Event do
 
       _other ->
         {:error, :event_identity_mismatch}
+    end
+  end
+
+  defp require_session_identity(identities, session_id) do
+    case Enum.filter(identities, &(&1["kind"] == "session")) do
+      [%{"id" => ^session_id}] -> :ok
+      [] -> {:error, :event_session_identity_missing}
+      _other -> {:error, :event_identity_mismatch}
     end
   end
 

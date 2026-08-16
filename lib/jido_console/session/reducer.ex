@@ -6,18 +6,22 @@ defmodule Jido.Console.Session.Reducer do
   model, tool, or renderer.
   """
 
-  alias Jido.Console.Session.State
+  alias Jido.Console.Session.{Event, State}
 
   @doc "Applies one classified event to semantic state."
   @spec apply_event(State.t(), map()) :: {:ok, State.t()} | {:error, term()}
   def apply_event(state, event) when is_map(event) do
+    with {:ok, event} <- Event.validate(event),
+         :ok <- require_session(state, event) do
+      reduce(state, event)
+    end
+  end
+
+  defp reduce(state, event) do
     payload = event["payload"] || %{}
     sequence = payload["sequence"]
 
     cond do
-      event["session_id"] != state.session_id ->
-        {:error, :cross_session_event}
-
       Enum.any?(state.history, &(&1["id"] == event["id"])) ->
         {:ok, state}
 
@@ -32,6 +36,9 @@ defmodule Jido.Console.Session.Reducer do
         |> then(&with(:ok <- State.validate(&1), do: {:ok, &1}))
     end
   end
+
+  defp require_session(%{session_id: session_id}, %{"session_id" => session_id}), do: :ok
+  defp require_session(_state, _event), do: {:error, :cross_session_event}
 
   @doc "Replays an event stream from initial state."
   @spec replay([map()], State.t()) :: {:ok, State.t()} | {:error, term()}

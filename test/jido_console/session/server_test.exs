@@ -1,7 +1,7 @@
 defmodule Jido.Console.Session.ServerTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Session.{Event, Identity, Input, Server, Supervisor}
+  alias Jido.Console.Session.{Identity, Input, Server, Supervisor}
 
   setup do
     suffix = System.unique_integer([:positive])
@@ -13,7 +13,11 @@ defmodule Jido.Console.Session.ServerTest do
     %{server: server, session: session, opts: opts}
   end
 
-  test "the server owns event order and rejects a second owner", %{server: server, session: session, opts: opts} do
+  test "the server owns sequence allocation and rejects a second owner", %{
+    server: server,
+    session: session,
+    opts: opts
+  } do
     client = Identity.new!(:client, session_id: session.id)
     assert {:ok, snapshot} = Server.attach(server, client)
     assert snapshot["payload"]["sequence"] == 0
@@ -23,11 +27,11 @@ defmodule Jido.Console.Session.ServerTest do
     second = Server.next_sequence(server)
     assert first == 1
     assert second == 2
-    {:ok, event} = classify(session, "run_started", first)
-    assert {:ok, state} = Server.admit_event(server, event)
-    assert state.sequence == 1
-    assert_receive {:session_updated, session_id, _snapshot}
-    assert session_id == session.id
+    assert Server.state(server).sequence == 0
+  end
+
+  test "the server exposes no raw admission bypass for missing, mixed, or foreign identities" do
+    refute {:admit_event, 2} in Server.__info__(:functions)
   end
 
   test "clients can detach and reattach while the session stays alive", %{server: server, session: session} do
@@ -48,19 +52,11 @@ defmodule Jido.Console.Session.ServerTest do
     {:ok, foreign} = Input.admit("nope", session_id: other.id)
     assert {:error, :cross_session_result} = Server.admit_input(server, foreign)
 
-    sequence = Server.next_sequence(server)
-    {:ok, event} = classify(session, "run_started", sequence)
-    assert {:ok, _} = Server.admit_event(server, event)
-    assert_receive {:session_updated, session_id, snapshot}
-    assert session_id == session.id
-    assert snapshot["coalesce"] == true
-
-    sequence = snapshot["payload"]["sequence"]
-    assert {:ok, delivery} = Server.ack(server, client.id, session.id, sequence)
-    assert delivery.last_acked == sequence
+    assert {:ok, delivery} = Server.ack(server, client.id, session.id, 0)
+    assert delivery.last_acked == 0
     assert delivery.pending == []
 
-    assert {:error, :future_ack} = Server.ack(server, client.id, session.id, sequence + 1)
+    assert {:error, :future_ack} = Server.ack(server, client.id, session.id, 1)
     assert {:error, :recovery_not_required} = Server.recover(server, client.id)
     assert :ok = Server.stop(server)
     refute Process.alive?(server)
@@ -73,19 +69,5 @@ defmodule Jido.Console.Session.ServerTest do
 
     other = Identity.new!(:request, session_id: Identity.new!(:session).id, id: "req_other")
     assert {:error, :cross_session_result} = Server.admit_result(server, other, :nope)
-  end
-
-  defp classify(session, type, sequence) do
-    Event.classify(%{
-      type: type,
-      id: "plt_event_#{sequence}",
-      session_id: session.id,
-      sequence: sequence,
-      durability: "process",
-      sensitivity: "public",
-      origin: %{kind: "session", actor_id: session.id},
-      trust: %{evidence: "owner", policy: "session-owner"},
-      identities: [Identity.to_protocol(session)]
-    })
   end
 end

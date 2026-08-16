@@ -138,10 +138,6 @@ defmodule Jido.Console.Session.Server do
     GenServer.call(server, {:respond_review, client_id, decision, request, review, opts})
   end
 
-  @doc "Admits a classified event through the reducer."
-  @spec admit_event(name(), map()) :: {:ok, State.t()} | {:error, term()}
-  def admit_event(server, event), do: GenServer.call(server, {:admit_event, event})
-
   @doc "Allocates the next Console sequence for an owner-built event."
   @spec next_sequence(name()) :: non_neg_integer()
   def next_sequence(server), do: GenServer.call(server, :next_sequence)
@@ -355,13 +351,6 @@ defmodule Jido.Console.Session.Server do
   def handle_call(:next_sequence, _from, state) do
     next = max(state.reserved, state.state.sequence) + 1
     {:reply, next, %{state | reserved: next}}
-  end
-
-  def handle_call({:admit_event, event}, _from, state) do
-    case admit_event_state(state, event) do
-      {:ok, state} -> {:reply, {:ok, state.state}, state}
-      {:error, reason, state} -> {:reply, {:error, reason}, state}
-    end
   end
 
   def handle_call({:admit_input, input}, _from, state) do
