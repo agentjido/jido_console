@@ -22,7 +22,7 @@ defmodule Jido.Console.Tui.Effects do
         coding = Keyword.fetch!(opts, :coding_setup_resolved)
 
         workers =
-          Workers.start(workers, {:prepare_prompt, prompt}, nil, fn ->
+          Workers.start(workers, {:prepare_prompt, prompt}, fn ->
             prepare_prompt(coding, prompt, opts)
           end)
 
@@ -30,7 +30,7 @@ defmodule Jido.Console.Tui.Effects do
 
       {:apply_selection, selection}, {:continue, workers} ->
         workers =
-          Workers.start(workers, {:apply_selection, selection}, nil, fn ->
+          Workers.start(workers, {:apply_selection, selection}, fn ->
             apply_selection(selection, opts)
           end)
 
@@ -46,16 +46,16 @@ defmodule Jido.Console.Tui.Effects do
         cancel_opts = Keyword.get(opts, :cancel_opts, [])
 
         workers =
-          Workers.start(workers, :session_cancel, request, fn ->
+          Workers.start(workers, :session_cancel, fn ->
             Client.cancel(state.session_client, request, cancel_opts)
           end)
 
         {:cont, {:continue, workers}}
 
-      {:respond_review, decision, request, result, review}, {:continue, workers}
+      {:respond_review, decision, request, _result, review}, {:continue, workers}
       when decision in [:approve, :deny] ->
         workers =
-          Workers.start(workers, {:session_review, decision}, result, fn ->
+          Workers.start(workers, {:session_review, decision}, fn ->
             review_opts = Keyword.get(opts, :review_opts, [])
             Client.respond_review(state.session_client, decision, request, review, review_opts)
           end)
@@ -134,7 +134,7 @@ defmodule Jido.Console.Tui.Effects do
     turn_opts = opts |> Keyword.get(:turn_opts, []) |> Keyword.put(:context, context)
     await_opts = Keyword.get(opts, :await_opts, timeout: 30_000, cancel_on_timeout: false)
 
-    Workers.start(workers, :session_start_turn, nil, fn ->
+    Workers.start(workers, :session_start_turn, fn ->
       Client.start_turn(session_client, prompt, turn_opts: turn_opts, await_opts: await_opts)
     end)
   end

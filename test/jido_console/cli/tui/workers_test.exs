@@ -9,7 +9,7 @@ defmodule Jido.Console.Tui.WorkersTest do
 
     try do
       workers =
-        Workers.start(%{}, :blocked, nil, fn ->
+        Workers.start(%{}, :blocked, fn ->
           send(test_pid, {:worker_blocked, self()})
           receive do: (:never -> :ok)
         end)
@@ -27,7 +27,7 @@ defmodule Jido.Console.Tui.WorkersTest do
     test_pid = self()
 
     workers =
-      Workers.start(%{}, :example, :unused_subject, fn ->
+      Workers.start(%{}, :example, fn ->
         send(test_pid, {:effect_worker, self()})
         :done
       end)
@@ -49,7 +49,7 @@ defmodule Jido.Console.Tui.WorkersTest do
     test_pid = self()
 
     workers =
-      Workers.start(%{}, :example, nil, fn ->
+      Workers.start(%{}, :example, fn ->
         send(test_pid, {:effect_worker, self()})
         :done
       end)
@@ -65,7 +65,7 @@ defmodule Jido.Console.Tui.WorkersTest do
   end
 
   test "ignores DOWN after a completed result removes the worker" do
-    workers = Workers.start(%{}, :example, nil, fn -> :done end)
+    workers = Workers.start(%{}, :example, fn -> :done end)
     [{worker_pid, worker}] = Map.to_list(workers)
 
     assert_receive {:jido_tui_effect_result, ^worker_pid, {:ok, :done}}
@@ -75,7 +75,7 @@ defmodule Jido.Console.Tui.WorkersTest do
   end
 
   test "records crashes as effect results" do
-    workers = Workers.start(%{}, :example, nil, fn -> raise "failed effect" end)
+    workers = Workers.start(%{}, :example, fn -> raise "failed effect" end)
     [{worker_pid, worker}] = Map.to_list(workers)
 
     assert_receive {:jido_tui_effect_result, ^worker_pid, {:crash, %RuntimeError{message: "failed effect"}}}
@@ -89,7 +89,7 @@ defmodule Jido.Console.Tui.WorkersTest do
 
     try do
       workers =
-        Workers.start(%{}, :blocked, nil, fn ->
+        Workers.start(%{}, :blocked, fn ->
           send(test_pid, {:worker_blocked, self()})
           receive do: (:never -> :ok)
         end)

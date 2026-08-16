@@ -20,8 +20,8 @@ defmodule Jido.Console.Tui.Workers do
 
   @type t :: %{optional(pid()) => Worker.t()}
 
-  @spec start(t(), term(), term(), (-> term())) :: t()
-  def start(workers, kind, _subject, fun) when is_map(workers) and is_function(fun, 0) do
+  @spec start(t(), term(), (-> term())) :: t()
+  def start(workers, kind, fun) when is_map(workers) and is_function(fun, 0) do
     owner = self()
 
     {pid, ref} =
