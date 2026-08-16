@@ -30,7 +30,7 @@ defmodule Jido.Console.Process do
   def list(opts \\ []) do
     with {:ok, _reaped} <- Store.reap(opts),
          {:ok, records} <- Store.list(opts) do
-      {:ok, Enum.map(records, &public_record/1)}
+      {:ok, Enum.map(records, &Contract.public/1)}
     end
   end
 
@@ -56,7 +56,7 @@ defmodule Jido.Console.Process do
   @spec reap(keyword()) :: {:ok, [process_record()]} | {:error, term()}
   def reap(opts \\ []) do
     with {:ok, records} <- Store.reap(opts) do
-      {:ok, Enum.map(records, &public_record/1)}
+      {:ok, Enum.map(records, &Contract.public/1)}
     end
   end
 
@@ -81,8 +81,4 @@ defmodule Jido.Console.Process do
   @spec format_stop(process_record()) :: String.t()
   def format_stop(%{status: :stopped, name: name}), do: "jido: stopped #{name}\n"
   def format_stop(%{status: status, name: name}), do: "jido: #{name} is #{status}\n"
-
-  defp public_record(record) do
-    Map.take(record, [:id, :kind, :name, :owner, :status, :readiness, :failure])
-  end
 end

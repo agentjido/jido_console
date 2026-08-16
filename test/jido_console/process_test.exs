@@ -4,7 +4,7 @@ defmodule Jido.Console.ProcessTest do
   import ExUnit.CaptureIO
 
   alias Jido.Console.Process
-  alias Jido.Console.Process.Store
+  alias Jido.Console.Process.{Contract, Store}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-process-#{System.unique_integer([:positive])}")
@@ -43,13 +43,18 @@ defmodule Jido.Console.ProcessTest do
   test "status reports owned processes without private identifiers", %{opts: opts} do
     pid = spawn(fn -> Elixir.Process.sleep(:infinity) end)
     assert {:ok, record} = Process.register(:interactive, pid, opts)
+    refute Map.has_key?(record, :id)
     refute Map.has_key?(record, :owner_pid)
+    refute Map.has_key?(record, :owner_os_pid)
     refute inspect(record) =~ :erlang.pid_to_list(pid) |> List.to_string()
 
     assert {:ok, [listed]} = Process.list(opts)
     assert listed.name == "interactive"
     assert listed.status == :ready
     assert listed.owner == "tui"
+    refute Map.has_key?(listed, :id)
+    refute Map.has_key?(listed, :owner_pid)
+    refute Map.has_key?(listed, :owner_os_pid)
     refute inspect(listed) =~ :erlang.pid_to_list(pid) |> List.to_string()
 
     output = Process.format_status([listed])
@@ -75,6 +80,61 @@ defmodule Jido.Console.ProcessTest do
     assert {:error, :process_already_registered} = Process.register(:interactive, second, opts)
     Elixir.Process.exit(first, :kill)
     Elixir.Process.exit(second, :kill)
+  end
+
+  test "rejects an id that conflicts with the contract identity", %{opts: opts} do
+    owner = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+
+    assert {:error, {:process_identity_conflict, "interactive", "custom"}} =
+             Process.register(:interactive, owner, Keyword.put(opts, :id, "custom"))
+
+    assert {:ok, record} = Process.register(:interactive, owner, opts)
+    assert record.name == "interactive"
+    Elixir.Process.exit(owner, :kill)
+  end
+
+  test "stored markers use only the stored projection", %{opts: opts} do
+    owner = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+    assert {:ok, _record} = Process.register(:coding_runtime, owner, opts)
+    {:ok, dir} = Jido.Console.Home.path(:run, opts)
+
+    assert {:ok, encoded} = File.read(Path.join(dir, "coding_runtime.coding-runtime.json"))
+    assert {:ok, marker} = Jason.decode(encoded)
+
+    assert Map.keys(marker) |> Enum.sort() ==
+             ~w(failure kind name owner_os_pid readiness status)
+
+    refute Map.has_key?(marker, "id")
+    refute Map.has_key?(marker, "owner")
+    refute Map.has_key?(marker, "owner_pid")
+    Elixir.Process.exit(owner, :kill)
+  end
+
+  test "stored lookup validates kind and contract name as one identity", %{opts: opts} do
+    identity = Contract.identity(:interactive)
+    record = Contract.live(:interactive, self(), nil)
+    assert {:ok, _record} = Store.put(record, opts)
+    assert {:ok, stored} = Store.get(identity, opts)
+    assert Contract.key(stored) == identity
+
+    {:ok, dir} = Jido.Console.Home.path(:run, opts)
+    path = Path.join(dir, "interactive.interactive.json")
+    {:ok, marker} = path |> File.read!() |> Jason.decode()
+    File.write!(path, Jason.encode!(Map.put(marker, "id", "custom")))
+
+    assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} =
+             Store.get(identity, opts)
+
+    File.write!(path, Jason.encode!(%{marker | "name" => "coding-runtime"}))
+
+    assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} =
+             Store.get(identity, opts)
+
+    wrong_path = Path.join(dir, "coding_runtime.coding-runtime.json")
+    File.write!(wrong_path, Jason.encode!(marker))
+
+    assert {:error, {:process_marker_invalid, ^wrong_path, :process_identity_conflict}} =
+             Store.get(Contract.identity(:coding_runtime), opts)
   end
 
   test "skips invalid process markers instead of crashing status", %{opts: opts} do
@@ -139,20 +199,19 @@ defmodule Jido.Console.ProcessTest do
   test "stale active markers are reaped from an isolated home", %{opts: opts} do
     assert {:ok, _} = Jido.Console.Home.ensure(opts)
 
-    stale = %{
-      id: "interactive",
-      kind: :interactive,
-      name: "interactive",
-      owner: "tui",
-      status: :running,
-      readiness: "terminal and runtime are ready",
-      failure: nil,
-      owner_pid: nil
-    }
+    {:ok, stale} =
+      Contract.restore(%{
+        kind: :interactive,
+        name: "interactive",
+        status: :running,
+        readiness: "terminal and runtime are ready",
+        failure: nil,
+        owner_os_pid: nil
+      })
 
     assert {:ok, _} = Store.put(stale, opts)
     assert {:ok, [reaped]} = Process.reap(opts)
-    assert reaped.id == "interactive"
+    assert reaped.name == "interactive"
     assert {:ok, []} = Process.list(opts)
   end
 

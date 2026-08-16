@@ -578,7 +578,7 @@ defmodule Jido.Console.Tui do
     :exit, _reason -> :ok
   end
 
-  defp process_opts(opts), do: Keyword.take(opts, [:name, :jido_home, :id])
+  defp process_opts(opts), do: Keyword.take(opts, [:name, :jido_home])
 
   defp with_runtime_owner(opts, pid) when is_pid(pid), do: Keyword.put(opts, :runtime_owner, pid)
 end

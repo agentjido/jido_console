@@ -2,6 +2,9 @@ defmodule Jido.Console.Process.Store do
   @moduledoc "Persists process markers under the Jido home run directory."
 
   alias Jido.Console.Home
+  alias Jido.Console.Process.Contract
+
+  @stored_keys ~w(failure kind name owner_os_pid readiness status)
 
   @doc "Lists stored process markers."
   @spec list(keyword()) :: {:ok, [map()]} | {:error, term()}
@@ -23,32 +26,34 @@ defmodule Jido.Console.Process.Store do
   end
 
   @doc "Writes one process marker."
-  @spec put(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec put(Contract.live_record(), keyword()) :: {:ok, Contract.live_record()} | {:error, term()}
   def put(record, opts \\ []) when is_map(record) do
+    identity = Contract.key(record)
+
     with {:ok, dir} <- ensure_run_dir(opts),
-         path = Path.join(dir, filename(record.id)),
-         :ok <- File.write(path, Jason.encode!(encode(record))),
+         path = Path.join(dir, filename(identity)),
+         :ok <- File.write(path, Jason.encode!(encode(Contract.stored(record)))),
          :ok <- File.chmod(path, Home.file_mode()) do
       {:ok, record}
     end
   end
 
   @doc "Reads one process marker."
-  @spec get(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def get(id, opts \\ []) when is_binary(id) do
+  @spec get(Contract.identity(), keyword()) :: {:ok, Contract.live_record()} | {:error, term()}
+  def get(identity, opts \\ []) when is_tuple(identity) do
     with {:ok, dir} <- run_dir(opts) do
-      read_file(Path.join(dir, filename(id)))
+      read_file(Path.join(dir, filename(identity)))
     end
   end
 
   @doc "Deletes one process marker after confirmed shutdown."
-  @spec delete(String.t(), keyword()) :: :ok | {:error, term()}
-  def delete(id, opts \\ []) when is_binary(id) do
+  @spec delete(Contract.identity(), keyword()) :: :ok | {:error, term()}
+  def delete(identity, opts \\ []) when is_tuple(identity) do
     with {:ok, dir} <- run_dir(opts) do
-      case File.rm(Path.join(dir, filename(id))) do
+      case File.rm(Path.join(dir, filename(identity))) do
         :ok -> :ok
         {:error, :enoent} -> :ok
-        {:error, reason} -> {:error, {:process_marker_delete_failed, id, reason}}
+        {:error, reason} -> {:error, {:process_marker_delete_failed, identity, reason}}
       end
     end
   end
@@ -59,7 +64,7 @@ defmodule Jido.Console.Process.Store do
     with {:ok, records} <- list(opts) do
       reaped =
         Enum.filter(records, fn record ->
-          stale?(record) and match?(:ok, delete(record.id, opts))
+          stale?(record) and match?(:ok, delete(Contract.key(record), opts))
         end)
 
       {:ok, reaped}
@@ -99,22 +104,22 @@ defmodule Jido.Console.Process.Store do
   defp read_file(path) do
     with {:ok, contents} <- File.read(path),
          {:ok, decoded} <- Jason.decode(contents),
-         {:ok, record} <- decode(decoded) do
+         {:ok, record} <- decode(decoded),
+         true <- Path.basename(path) == filename(Contract.key(record)) do
       {:ok, record}
     else
       {:error, :enoent} -> {:error, :process_not_found}
+      false -> {:error, {:process_marker_invalid, path, :process_identity_conflict}}
       {:error, reason} -> {:error, {:process_marker_invalid, path, reason}}
     end
   end
 
-  defp filename(id), do: "#{id}.json"
+  defp filename({kind, name}), do: "#{kind}.#{name}.json"
 
   defp encode(record) do
     %{
-      "id" => record.id,
       "kind" => Atom.to_string(record.kind),
       "name" => record.name,
-      "owner" => record.owner,
       "status" => Atom.to_string(record.status),
       "readiness" => record.readiness,
       "failure" => record[:failure],
@@ -123,24 +128,19 @@ defmodule Jido.Console.Process.Store do
   end
 
   defp decode(map) when is_map(map) do
-    with {:ok, kind} <- existing_atom(Map.get(map, "kind")),
+    with true <- Enum.sort(Map.keys(map)) == @stored_keys,
+         {:ok, kind} <- existing_atom(Map.get(map, "kind")),
          {:ok, status} <- existing_atom(Map.get(map, "status")),
-         id when is_binary(id) and id != "" <- Map.get(map, "id"),
          name when is_binary(name) <- Map.get(map, "name"),
-         owner when is_binary(owner) <- Map.get(map, "owner"),
          readiness when is_binary(readiness) <- Map.get(map, "readiness") do
-      {:ok,
-       %{
-         id: id,
-         kind: kind,
-         name: name,
-         owner: owner,
-         status: status,
-         readiness: readiness,
-         failure: Map.get(map, "failure"),
-         owner_pid: nil,
-         owner_os_pid: os_pid(Map.get(map, "owner_os_pid"))
-       }}
+      Contract.restore(%{
+        kind: kind,
+        name: name,
+        status: status,
+        readiness: readiness,
+        failure: Map.get(map, "failure"),
+        owner_os_pid: os_pid(Map.get(map, "owner_os_pid"))
+      })
     else
       _invalid -> {:error, :invalid_process_marker}
     end

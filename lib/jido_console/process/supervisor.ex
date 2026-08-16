@@ -65,24 +65,34 @@ defmodule Jido.Console.Process.Supervisor do
   @impl true
   @spec handle_call(term(), GenServer.from(), map()) :: {:reply, term(), map()}
   def handle_call({:register, kind, pid, register_opts}, _from, state) do
-    spec = Contract.spec(kind)
-    id = Keyword.get(register_opts, :id, spec.name)
+    identity = Contract.identity(kind)
 
-    case Map.get(state.processes, id) do
-      %{record: %{owner_pid: owner}} when is_pid(owner) ->
-        if Elixir.Process.alive?(owner) do
-          {:reply, {:error, :process_already_registered}, state}
-        else
-          do_register(kind, pid, id, spec, state)
+    case validate_requested_identity(identity, register_opts) do
+      :ok ->
+        case Map.get(state.processes, identity) do
+          %{record: %{owner_pid: owner}} when is_pid(owner) ->
+            if Elixir.Process.alive?(owner) do
+              {:reply, {:error, :process_already_registered}, state}
+            else
+              do_register(kind, pid, identity, state)
+            end
+
+          _other ->
+            do_register(kind, pid, identity, state)
         end
 
-      _other ->
-        do_register(kind, pid, id, spec, state)
+      {:error, _reason} = error ->
+        {:reply, error, state}
     end
   end
 
   def handle_call({:stop, name}, _from, state) do
-    {reply, state} = stop_one(state, name)
+    {reply, state} =
+      case Contract.identity_for_name(name) do
+        {:ok, identity} -> stop_one(state, identity)
+        {:error, _reason} = error -> {error, state}
+      end
+
     {:reply, reply, state}
   end
 
@@ -90,8 +100,8 @@ defmodule Jido.Console.Process.Supervisor do
     {records, state} =
       state.processes
       |> Map.keys()
-      |> Enum.reduce({[], state}, fn id, {acc, state} ->
-        case stop_one(state, id) do
+      |> Enum.reduce({[], state}, fn identity, {acc, state} ->
+        case stop_one(state, identity) do
           {{:ok, record}, state} -> {[record | acc], state}
           {{:error, _reason}, state} -> {acc, state}
         end
@@ -107,10 +117,10 @@ defmodule Jido.Console.Process.Supervisor do
 
   def handle_info({:DOWN, mon, :process, pid, reason}, state) do
     case Enum.find(state.processes, fn {_id, entry} -> entry.monitor == mon or entry.record.owner_pid == pid end) do
-      {id, entry} ->
+      {identity, entry} ->
         status = if reason == :normal, do: :stopped, else: :failed
         _ = finalize(entry.record, status, failure_text(reason), state.opts)
-        {:noreply, %{state | processes: Map.delete(state.processes, id)}}
+        {:noreply, %{state | processes: Map.delete(state.processes, identity)}}
 
       nil ->
         {:noreply, state}
@@ -198,22 +208,22 @@ defmodule Jido.Console.Process.Supervisor do
 
   defp keep_parent(_result), do: :ok
 
-  defp stop_one(state, name) do
-    case Map.pop(state.processes, name) do
+  defp stop_one(state, identity) do
+    case Map.pop(state.processes, identity) do
       {%{record: record, monitor: mon}, processes} ->
         Elixir.Process.demonitor(mon, [:flush])
         stop_owner(record)
         {:ok, stopped} = finalize(record, :stopped, nil, state.opts)
-        {{:ok, public_record(stopped)}, %{state | processes: processes}}
+        {{:ok, Contract.public(stopped)}, %{state | processes: processes}}
 
       {nil, _processes} ->
-        case Store.get(name, state.opts) do
+        case Store.get(identity, state.opts) do
           {:ok, record} ->
             {:ok, stopped} = finalize(record, :stopped, nil, state.opts)
-            {{:ok, public_record(stopped)}, state}
+            {{:ok, Contract.public(stopped)}, state}
 
           {:error, :process_not_found} ->
-            {{:ok, already_stopped(name)}, state}
+            {{:ok, already_stopped(identity)}, state}
 
           {:error, _reason} = error ->
             {error, state}
@@ -226,7 +236,7 @@ defmodule Jido.Console.Process.Supervisor do
 
     result =
       if status in [:stopped, :failed] do
-        with :ok <- Store.delete(record.id, opts), do: {:ok, updated}
+        with :ok <- Store.delete(Contract.key(record), opts), do: {:ok, updated}
       else
         Store.put(updated, opts)
       end
@@ -237,16 +247,12 @@ defmodule Jido.Console.Process.Supervisor do
   defp readiness_for(:stopped, _record), do: "stopped"
   defp readiness_for(:failed, _record), do: "failed"
 
-  defp already_stopped(name) do
-    spec =
-      Enum.find_value(Contract.catalog(), fn {_kind, spec} ->
-        if spec.name == name, do: spec
-      end) || %{name: name, owner: "unknown", readiness: "stopped"}
+  defp already_stopped({kind, name}) do
+    spec = Contract.spec(kind)
 
     %{
-      id: name,
-      kind: :interactive,
-      name: spec.name,
+      kind: kind,
+      name: name,
       owner: spec.owner,
       status: :stopped,
       readiness: "already stopped",
@@ -254,29 +260,19 @@ defmodule Jido.Console.Process.Supervisor do
     }
   end
 
-  defp stopped_record(record), do: public_record(%{record | status: :stopped, readiness: "stopped"})
+  defp stopped_record(record), do: Contract.public(%{record | status: :stopped, readiness: "stopped"})
 
-  defp do_register(kind, pid, id, spec, state) do
-    record = %{
-      id: id,
-      kind: kind,
-      name: spec.name,
-      owner: spec.owner,
-      status: :ready,
-      readiness: spec.readiness,
-      failure: nil,
-      owner_pid: pid,
-      owner_os_pid: beam_os_pid()
-    }
+  defp do_register(kind, pid, identity, state) do
+    record = Contract.live(kind, pid, beam_os_pid())
 
     mon = Elixir.Process.monitor(pid)
 
     case Store.put(record, state.opts) do
       {:ok, stored} ->
-        public = public_record(stored)
+        public = Contract.public(stored)
 
         {:reply, {:ok, public},
-         %{state | processes: Map.put(state.processes, record.id, %{record: stored, monitor: mon})}}
+         %{state | processes: Map.put(state.processes, identity, %{record: stored, monitor: mon})}}
 
       {:error, _reason} = error ->
         Elixir.Process.demonitor(mon, [:flush])
@@ -306,7 +302,18 @@ defmodule Jido.Console.Process.Supervisor do
   defp failure_text(:normal), do: nil
   defp failure_text(reason), do: inspect(reason)
 
-  defp public_record(record) do
-    Map.take(record, [:id, :kind, :name, :owner, :status, :readiness, :failure])
+  defp validate_requested_identity(identity, opts) do
+    expected = Contract.name(identity)
+
+    case Keyword.fetch(opts, :id) do
+      :error ->
+        :ok
+
+      {:ok, ^expected} ->
+        :ok
+
+      {:ok, requested} ->
+        {:error, {:process_identity_conflict, expected, requested}}
+    end
   end
 end

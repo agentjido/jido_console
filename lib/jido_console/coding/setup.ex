@@ -178,7 +178,7 @@ defmodule Jido.Console.Coding.Setup do
 
   defp register_coding_runtime(%__MODULE__{local_resources: %{manager: manager}}, opts)
        when is_pid(manager) do
-    _ = Jido.Console.Process.register(:coding_runtime, manager, Keyword.take(opts, [:name, :jido_home, :id]))
+    _ = Jido.Console.Process.register(:coding_runtime, manager, Keyword.take(opts, [:name, :jido_home]))
     :ok
   end
 
