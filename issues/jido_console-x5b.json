@@ -2,7 +2,8 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m2e09",
-    "jido_console-m2e32"
+    "jido_console-m2e32",
+    "jido_console-m2e37"
   ],
   "blocks": [],
   "created": "2026-08-16T19:22:28Z",
@@ -21,5 +22,5 @@
   "status": "open",
   "title": "Plan the Milestone 3 durable-resume delivery graph",
   "type": "task",
-  "updated_at": "2026-08-16T23:17:55Z"
+  "updated_at": "2026-08-16T23:48:32Z"
 }
