@@ -14,8 +14,7 @@ defmodule Jido.Console.ExtensionsAutomationIntegrationTest do
     @impl true
     def await({cell, _opts}, _await_opts) do
       Jido.Console.Automation.Result.new(cell,
-        execution: %{status: :ok, started_at: "2026-08-12T12:00:00Z", duration_ms: 1, turn_count: 0},
-        evaluation: %{status: :unscored, assertion_count: 0, failed_assertion_count: 0}
+        execution: %{status: :ok, started_at: "2026-08-12T12:00:00Z", duration_ms: 1}
       )
     end
 
@@ -203,6 +202,8 @@ defmodule Jido.Console.ExtensionsAutomationIntegrationTest do
     assert stderr =~ "automated run failed"
     [result] = decode_jsonl(stdout)
     assert result["execution"]["status"] == "error"
+    assert result["execution"]["turn_count"] == length(result["turns"])
+    assert result["evaluation"]["status"] == "not_run"
     assert result["error"]
   end
 

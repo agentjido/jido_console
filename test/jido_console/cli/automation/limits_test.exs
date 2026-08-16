@@ -28,12 +28,9 @@ defmodule Jido.Console.Automation.LimitsTest do
         execution: %{
           status: :ok,
           started_at: "2026-08-12T12:00:00Z",
-          duration_ms: 1,
-          turn_count: 1
+          duration_ms: 1
         },
-        evaluation: %{status: :passed, assertion_count: 1, failed_assertion_count: 0},
-        turns: [],
-        usage: %{total_tokens: 10, total_cost: 0.1},
+        turns: [turn()],
         error: nil
       )
     end
@@ -43,6 +40,8 @@ defmodule Jido.Console.Automation.LimitsTest do
       send(Keyword.fetch!(opts, :test_pid), :stop_cancelled)
       {:error, :request_already_finished}
     end
+
+    defp turn, do: Jido.Console.Automation.LimitsTest.result_turn()
   end
 
   defmodule UsageEngine do
@@ -57,18 +56,30 @@ defmodule Jido.Console.Automation.LimitsTest do
         execution: %{
           status: :ok,
           started_at: "2026-08-12T12:00:00Z",
-          duration_ms: 1,
-          turn_count: 1
+          duration_ms: 1
         },
-        evaluation: %{status: :passed, assertion_count: 1, failed_assertion_count: 0},
-        turns: [],
-        usage: %{total_tokens: 10, total_cost: 0.1},
+        turns: [turn()],
         error: nil
       )
     end
 
     @impl true
     def cancel(_request, _opts), do: {:error, :request_already_finished}
+
+    defp turn, do: Jido.Console.Automation.LimitsTest.result_turn()
+  end
+
+  def result_turn do
+    %{
+      turn_id: "turn",
+      input: "input",
+      status: :ok,
+      duration_ms: 1,
+      response: nil,
+      evaluation: %{status: :passed, assertions: [%{name: :contains, status: :passed}]},
+      observations: %{},
+      usage: %{total_tokens: 10, total_cost: 0.1}
+    }
   end
 
   setup do
@@ -337,6 +348,7 @@ defmodule Jido.Console.Automation.LimitsTest do
 
     assert result.execution.status == :error
     assert result.execution.turn_count == 1
+    assert result.usage["total_tokens"] == 7
     assert result.runtime_limits.status == :exceeded
     assert result.runtime_limits.exceeded == %{kind: :total_tokens, limit: 5, observed: 7}
     assert result.runtime_limits.observed.total_tokens == 7

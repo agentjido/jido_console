@@ -19,18 +19,28 @@ defmodule Jido.Console.AutomationTest do
         execution: %{
           status: :ok,
           started_at: "2026-08-12T12:00:00Z",
-          duration_ms: cell.sequence,
-          turn_count: 1
+          duration_ms: cell.sequence
         },
-        evaluation: %{status: :passed, assertion_count: 1, failed_assertion_count: 0},
-        turns: [],
-        usage: %{total_tokens: 10},
+        turns: [turn(:passed, %{total_tokens: 10})],
         error: nil
       )
     end
 
     @impl true
     def cancel(_request, _opts), do: {:error, :request_already_finished}
+
+    defp turn(status, usage) do
+      %{
+        turn_id: "turn",
+        input: "input",
+        status: :ok,
+        duration_ms: 1,
+        response: nil,
+        evaluation: %{status: status, assertions: [%{name: :contains, status: status}]},
+        observations: %{},
+        usage: usage
+      }
+    end
   end
 
   defmodule FailedEngine do
@@ -45,15 +55,27 @@ defmodule Jido.Console.AutomationTest do
         execution: %{
           status: :ok,
           started_at: "2026-08-12T12:00:00Z",
-          duration_ms: 1,
-          turn_count: 0
+          duration_ms: 1
         },
-        evaluation: %{status: :failed, assertion_count: 1, failed_assertion_count: 1}
+        turns: [turn()]
       )
     end
 
     @impl true
     def cancel(_request, _opts), do: {:error, :request_already_finished}
+
+    defp turn do
+      %{
+        turn_id: "turn",
+        input: "input",
+        status: :ok,
+        duration_ms: 1,
+        response: nil,
+        evaluation: %{status: :failed, assertions: [%{name: :contains, status: :failed}]},
+        observations: %{},
+        usage: %{}
+      }
+    end
   end
 
   defmodule UnscoredEngine do
@@ -68,10 +90,8 @@ defmodule Jido.Console.AutomationTest do
         execution: %{
           status: :ok,
           started_at: "2026-08-12T12:00:00Z",
-          duration_ms: 1,
-          turn_count: 0
-        },
-        evaluation: %{status: :unscored, assertion_count: 0, failed_assertion_count: 0}
+          duration_ms: 1
+        }
       )
     end
 
@@ -214,12 +234,9 @@ defmodule Jido.Console.AutomationTest do
         execution: %{
           status: :cancelled,
           started_at: "2026-08-12T12:00:00Z",
-          duration_ms: 1,
-          turn_count: 0
+          duration_ms: 1
         },
-        evaluation: Result.evaluation([], :cancelled),
         turns: [],
-        usage: %{},
         error: Result.error(cancellation)
       )
     end

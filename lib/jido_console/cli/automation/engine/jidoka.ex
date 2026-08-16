@@ -268,10 +268,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
 
   defp apply_extension_close(result, {:ok, evidence}) do
     if Enum.any?(evidence, &(Map.get(&1, "status") == "close_failed")) do
-      result
-      |> put_in([:execution, :status], :error)
-      |> Map.put(:evaluation, Result.evaluation([], :error))
-      |> Map.put(:error, Result.error({:extension_close_failed, evidence}))
+      Result.fail(result, {:extension_close_failed, evidence})
     else
       result
     end
@@ -439,19 +436,14 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   defp terminal_reason(%Sequence.Terminal{reason: reason}), do: reason
 
   defp completed_result(cell, turns, environment, started_at, duration_ms, extension_results, limits) do
-    evaluation = Result.evaluation(turns, :ok)
-
     Result.new(cell,
       execution: %{
         status: :ok,
         started_at: DateTime.to_iso8601(started_at),
-        duration_ms: duration_ms,
-        turn_count: length(turns)
+        duration_ms: duration_ms
       },
       environment: environment,
-      evaluation: evaluation,
       turns: turns,
-      usage: Result.usage(turns),
       error: nil,
       extensions: extension_results,
       runtime_limit_evidence: limits
@@ -485,14 +477,11 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
       execution: %{
         status: status,
         started_at: DateTime.to_iso8601(started_at),
-        duration_ms: duration_ms,
-        turn_count: length(turns)
+        duration_ms: duration_ms
       },
       environment: environment,
       environment_error: reason,
-      evaluation: Result.evaluation(turns, status),
       turns: turns,
-      usage: Result.usage(turns),
       error: Result.error(reason),
       extensions: extension_results,
       runtime_limit_evidence: limits,

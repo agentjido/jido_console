@@ -96,6 +96,9 @@ defmodule Jido.Console.Automation.ReplayTest do
 
     changed_result = run(changed, [])
     assert changed_result.execution.status == :error
+    assert changed_result.execution.turn_count == length(changed_result.turns)
+    assert changed_result.evaluation.status == :not_run
+    assert changed_result.usage == Result.usage(changed_result.turns)
     assert changed_result.capability_replay.status == :mismatch
     assert changed_result.capability_replay.mismatch.kind == :changed_or_out_of_order
     refute inspect(changed_result.capability_replay.mismatch) =~ "fingerprint"
@@ -132,12 +135,9 @@ defmodule Jido.Console.Automation.ReplayTest do
         execution: %{
           status: :cancelled,
           started_at: "2026-01-01T00:00:00Z",
-          duration_ms: 1,
-          turn_count: 0
+          duration_ms: 1
         },
-        evaluation: Result.evaluation([], :cancelled),
         turns: [],
-        usage: Result.usage([]),
         error: Result.error(:cancelled),
         extensions: %{}
       )

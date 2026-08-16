@@ -1,7 +1,7 @@
 defmodule Jido.Console.Automation.Replay do
   @moduledoc "Trusted host-profile loading and runtime evidence for offline capability replay."
 
-  alias Jido.Console.Automation.{Contract, ReplayProjection, ResultValue}
+  alias Jido.Console.Automation.{Contract, ReplayProjection, Result}
   alias Jidoka.ExecutionEnvironment.Contract, as: EnvironmentContract
   alias Jidoka.Replay.Capabilities, as: ReplayCapabilities
   alias Jidoka.Replay.Fixture
@@ -226,10 +226,7 @@ defmodule Jido.Console.Automation.Replay do
   defp call_summary(_value), do: %{}
 
   defp fail_result(result, mismatch) do
-    result
-    |> put_in([:execution, :status], :error)
-    |> Map.put(:evaluation, ResultValue.evaluation([], :error))
-    |> Map.put(:error, ResultValue.error({:capability_replay_failed, mismatch}))
+    Result.fail(result, {:capability_replay_failed, mismatch})
   end
 
   defp replay_status(_mismatch, true), do: :cancelled

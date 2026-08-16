@@ -266,12 +266,9 @@ defmodule Jido.Console.Automation.Coordinator do
       execution: %{
         status: :error,
         started_at: utc_now(opts) |> DateTime.to_iso8601(),
-        duration_ms: 0,
-        turn_count: 0
+        duration_ms: 0
       },
-      evaluation: Result.evaluation([], :error),
       turns: [],
-      usage: %{},
       error: Result.error(reason)
     )
   end

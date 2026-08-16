@@ -3,6 +3,14 @@ defmodule Jido.Console.Automation.ResultValue do
 
   alias Jido.Console.Error
 
+  @execution_statuses [:ok, :error, :hibernated, :cancelled]
+
+  @doc "Adds the turn-derived count to execution evidence."
+  @spec execution(map(), [map()]) :: map()
+  def execution(execution, turns) when is_map(execution) and is_list(turns) do
+    Map.put(execution, :turn_count, length(turns))
+  end
+
   @doc "Returns a portable error map."
   @spec error(term()) :: map()
   def error(reason) do
@@ -28,7 +36,8 @@ defmodule Jido.Console.Automation.ResultValue do
 
   @doc "Computes the cell evaluation state from turn records."
   @spec evaluation([map()], atom()) :: map()
-  def evaluation(_turns, execution_status) when execution_status != :ok do
+  def evaluation(_turns, execution_status)
+      when execution_status in [:error, :hibernated, :cancelled] do
     %{status: :not_run, assertion_count: 0, failed_assertion_count: 0}
   end
 
@@ -48,6 +57,11 @@ defmodule Jido.Console.Automation.ResultValue do
       assertion_count: length(assertions),
       failed_assertion_count: failed
     }
+  end
+
+  def evaluation(_turns, execution_status) do
+    raise ArgumentError,
+          "invalid automation execution status: #{inspect(execution_status)}; expected one of #{inspect(@execution_statuses)}"
   end
 
   defp portable_term(value)

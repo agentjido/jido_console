@@ -11,12 +11,25 @@ defmodule Jido.Console.Automation.Result do
 
   @schema "jido.case-result"
   @schema_version 1
+  @new_keys [
+    :execution,
+    :environment,
+    :environment_error,
+    :capability_replay,
+    :turns,
+    :error,
+    :extensions,
+    :runtime_limit_evidence,
+    :runtime_limit_error
+  ]
 
   @doc "Builds one result record."
   @spec new(map(), keyword()) :: map()
   def new(cell, attrs) do
-    execution = Keyword.fetch!(attrs, :execution)
-    usage = Keyword.get(attrs, :usage, %{})
+    attrs = Keyword.validate!(attrs, @new_keys)
+    turns = Keyword.get(attrs, :turns, [])
+    execution = ResultValue.execution(Keyword.fetch!(attrs, :execution), turns)
+    usage = ResultValue.usage(turns)
 
     values = %{
       schema: @schema,
@@ -35,8 +48,8 @@ defmodule Jido.Console.Automation.Result do
           Keyword.get(attrs, :environment_error)
         ),
       capability_replay: Keyword.get(attrs, :capability_replay, replay_projection(cell)),
-      evaluation: Keyword.fetch!(attrs, :evaluation),
-      turns: Keyword.get(attrs, :turns, []),
+      evaluation: ResultValue.evaluation(turns, execution.status),
+      turns: turns,
       usage: usage,
       error: Keyword.get(attrs, :error),
       extensions: result_extensions(cell, Keyword.get(attrs, :extensions, %{}))
@@ -44,6 +57,20 @@ defmodule Jido.Console.Automation.Result do
 
     values = maybe_put_runtime_limits(values, cell, attrs, execution, usage)
     Contract.case_result!(values)
+  end
+
+  @doc "Changes a built result to an execution failure and recomputes derived facts."
+  @spec fail(map(), term()) :: map()
+  def fail(result, reason) do
+    turns = Map.fetch!(result, :turns)
+    execution = result.execution |> Map.put(:status, :error) |> ResultValue.execution(turns)
+
+    result
+    |> Map.put(:execution, execution)
+    |> Map.put(:evaluation, ResultValue.evaluation(turns, :error))
+    |> Map.put(:usage, ResultValue.usage(turns))
+    |> Map.put(:error, ResultValue.error(reason))
+    |> Contract.case_result!()
   end
 
   @doc "Projects requested, resolved, and confirmed environment facts."

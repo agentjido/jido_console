@@ -19,7 +19,6 @@ defmodule Jido.Console.Automation.ResultTest do
     result =
       Result.new(cell(),
         execution: execution(:error),
-        evaluation: Result.evaluation([], :error),
         error: Result.error(:failed)
       )
 
@@ -48,8 +47,7 @@ defmodule Jido.Console.Automation.ResultTest do
     result =
       Result.new(cell,
         execution: execution(:ok),
-        environment: environment,
-        evaluation: Result.evaluation([], :ok)
+        environment: environment
       )
 
     assert result.execution_environment.status == :closed
@@ -89,7 +87,6 @@ defmodule Jido.Console.Automation.ResultTest do
       Result.new(cell,
         execution: execution(:error),
         environment_error: :missing_execution_environment_policy,
-        evaluation: Result.evaluation([], :error),
         error: Result.error(:missing_execution_environment_policy)
       )
 
@@ -171,12 +168,68 @@ defmodule Jido.Console.Automation.ResultTest do
     assert evaluation.failed_assertion_count == 1
   end
 
+  test "derives result facts from turns and execution status" do
+    turns = [result_turn(:passed, %{input_tokens: 2, total_tokens: 3})]
+
+    result =
+      Result.new(cell(),
+        execution: Map.put(execution(:ok), :turn_count, 99),
+        turns: turns
+      )
+
+    assert result.execution.turn_count == 1
+    assert result.usage == %{"input_tokens" => 2, "total_tokens" => 3}
+
+    assert result.evaluation == %{
+             status: :passed,
+             assertion_count: 1,
+             failed_assertion_count: 0
+           }
+
+    failed = Result.fail(result, :failed_after_execution)
+    assert failed.execution.turn_count == 1
+    assert failed.usage == result.usage
+
+    assert failed.evaluation == %{
+             status: :not_run,
+             assertion_count: 0,
+             failed_assertion_count: 0
+           }
+  end
+
+  test "rejects caller-owned derived values and invalid execution status" do
+    for derived <- [
+          [evaluation: %{status: :failed}],
+          [usage: %{total_tokens: 99}]
+        ] do
+      assert_raise ArgumentError, ~r/unknown keys/, fn ->
+        Result.new(cell(), [execution: execution(:ok)] ++ derived)
+      end
+    end
+
+    assert_raise ArgumentError, ~r/invalid automation execution status/, fn ->
+      Result.new(cell(), execution: execution(:unknown))
+    end
+  end
+
   defp turn(assertions), do: %{evaluation: %{assertions: assertions}}
+
+  defp result_turn(status, usage) do
+    %{
+      turn_id: "turn",
+      input: "input",
+      status: :ok,
+      duration_ms: 1,
+      response: nil,
+      evaluation: %{status: status, assertions: [%{name: :contains, status: status}]},
+      observations: %{},
+      usage: usage
+    }
+  end
 
   defp valid_result do
     Result.new(cell(),
       execution: execution(:error),
-      evaluation: Result.evaluation([], :error),
       error: Result.error(:failed)
     )
   end
@@ -185,8 +238,7 @@ defmodule Jido.Console.Automation.ResultTest do
     %{
       status: status,
       started_at: "2026-08-12T12:00:00Z",
-      duration_ms: 0,
-      turn_count: 0
+      duration_ms: 0
     }
   end
 
