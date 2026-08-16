@@ -2,6 +2,31 @@ defmodule Jido.Console.Release.AuditTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Release.Audit
+  alias Jido.Console.Release.Readiness
+
+  test "runs default checks in readiness order" do
+    parent = self()
+    output = temporary_path()
+
+    Audit.run!(
+      source_reader: fn _root -> source() end,
+      check_runner: fn name, _opts ->
+        send(parent, {:check, name})
+        %{"status" => "passed"}
+      end,
+      temporary_directory: fn -> output end
+    )
+
+    observed =
+      Enum.map(Readiness.checks(), fn _name ->
+        assert_receive {:check, name}
+        name
+      end)
+
+    assert observed == Readiness.checks()
+
+    refute_received {:check, _name}
+  end
 
   test "removes the default local result" do
     parent = self()
@@ -45,9 +70,18 @@ defmodule Jido.Console.Release.AuditTest do
   end
 
   test "rejects an unknown check" do
+    parent = self()
+
     assert_raise ArgumentError, ~r/unknown release-readiness checks/, fn ->
-      Audit.run!(checks: ["not-a-check"])
+      Audit.run!(
+        checks: ["not-a-check"],
+        source_reader: fn _root -> send(parent, :source_read) end,
+        check_runner: fn _name, _opts -> send(parent, :check_started) end
+      )
     end
+
+    refute_received :source_read
+    refute_received :check_started
   end
 
   defp source do

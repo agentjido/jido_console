@@ -10,44 +10,37 @@ defmodule Jido.Console.Release.Readiness do
     OPENAI_API_KEY
   )
 
-  @checks [
-    "baseline",
-    "replay",
-    "golden-task",
-    "tui-layout",
-    "tui-terminal",
-    "file-boundary",
-    "runtime-boundary",
-    "measurement",
-    "support-policy",
-    "dependency-policy",
-    "source-policy",
-    "workflow-policy",
-    "delivery-plan",
-    "delivery-trace"
-  ]
-
   @doc "Returns the available check names in their required order."
   @spec checks() :: [String.t()]
-  def checks, do: @checks
+  def checks, do: Enum.map(registry(), &elem(&1, 0))
 
   @doc "Runs one named readiness check."
   @spec run!(String.t(), keyword()) :: map()
-  def run!("baseline", opts), do: baseline!(opts)
-  def run!("replay", opts), do: replay!(opts)
-  def run!("golden-task", opts), do: golden_task!(opts)
-  def run!("tui-layout", opts), do: tui_layout!(opts)
-  def run!("tui-terminal", opts), do: tui_terminal!(opts)
-  def run!("file-boundary", opts), do: Jido.Console.Release.Boundaries.file_boundary!(opts)
-  def run!("runtime-boundary", opts), do: Jido.Console.Release.Boundaries.runtime_boundary!(opts)
-  def run!("measurement", opts), do: measurement!(opts)
-  def run!("support-policy", opts), do: support_policy!(opts)
-  def run!("dependency-policy", opts), do: dependency_policy!(opts)
-  def run!("source-policy", opts), do: source_policy!(opts)
-  def run!("workflow-policy", opts), do: workflow_policy!(opts)
-  def run!("delivery-plan", opts), do: delivery_plan!(opts)
-  def run!("delivery-trace", opts), do: Jido.Console.Release.Traceability.run!(opts)
-  def run!(name, _opts), do: raise(ArgumentError, "unknown release-readiness check: #{inspect(name)}")
+  def run!(name, opts) do
+    case List.keyfind(registry(), name, 0) do
+      {_name, runner} -> runner.(opts)
+      nil -> raise ArgumentError, "unknown release-readiness check: #{inspect(name)}"
+    end
+  end
+
+  defp registry do
+    [
+      {"baseline", &baseline!/1},
+      {"replay", &replay!/1},
+      {"golden-task", &golden_task!/1},
+      {"tui-layout", &tui_layout!/1},
+      {"tui-terminal", &tui_terminal!/1},
+      {"file-boundary", &Jido.Console.Release.Boundaries.file_boundary!/1},
+      {"runtime-boundary", &Jido.Console.Release.Boundaries.runtime_boundary!/1},
+      {"measurement", &measurement!/1},
+      {"support-policy", &support_policy!/1},
+      {"dependency-policy", &dependency_policy!/1},
+      {"source-policy", &source_policy!/1},
+      {"workflow-policy", &workflow_policy!/1},
+      {"delivery-plan", &delivery_plan!/1},
+      {"delivery-trace", &Jido.Console.Release.Traceability.run!/1}
+    ]
+  end
 
   @doc false
   @spec baseline!(keyword()) :: map()

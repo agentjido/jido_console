@@ -3,6 +3,31 @@ defmodule Jido.Console.Release.ReadinessTest do
 
   alias Jido.Console.Release.Readiness
 
+  test "advertises checks in their required order" do
+    assert Readiness.checks() == [
+             "baseline",
+             "replay",
+             "golden-task",
+             "tui-layout",
+             "tui-terminal",
+             "file-boundary",
+             "runtime-boundary",
+             "measurement",
+             "support-policy",
+             "dependency-policy",
+             "source-policy",
+             "workflow-policy",
+             "delivery-plan",
+             "delivery-trace"
+           ]
+  end
+
+  test "rejects an unknown check" do
+    assert_raise ArgumentError, ~s(unknown release-readiness check: "not-a-check"), fn ->
+      Readiness.run!("not-a-check", check_started: fn -> flunk("a check started") end)
+    end
+  end
+
   test "accepts two equal semantic baselines" do
     source = source()
 
@@ -57,6 +82,29 @@ defmodule Jido.Console.Release.ReadinessTest do
     assert "test/jido_console/cli/automation/replay_test.exs" in tests
     assert "test/jido_console/cli/automation/jsonl_test.exs" in tests
     assert opts[:cd] == File.cwd!()
+  end
+
+  test "forwards options to the selected runner" do
+    parent = self()
+
+    collector = fn opts ->
+      send(parent, {:measurement_options, opts})
+
+      %{
+        "status" => "passed",
+        "package_size_bytes" => 1,
+        "help" => %{},
+        "version" => %{},
+        "first_frame" => %{},
+        "runtime_ready" => %{},
+        "idle_memory_kib" => %{}
+      }
+    end
+
+    opts = [measurement_collector: collector, marker: make_ref()]
+
+    assert %{"status" => "passed"} = Readiness.run!("measurement", opts)
+    assert_received {:measurement_options, ^opts}
   end
 
   test "runs the versioned coding scenario oracle" do
