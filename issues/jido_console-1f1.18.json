@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-1f1.17"
+  ],
   "blocks": [],
   "created": "2026-08-16T13:00:14Z",
   "description": "Audit rank: 18 of 30.\n\nOwner: JC-06 Interactive TUI.\nEvidence: lib/jido_console/cli/tui/state.ex:27-44,200-325,548-611.\nWork: Represent semantic activity as idle, preparing, starting, active, review, cancelling, or failed. Keep display and configuration fields separate. Remove finishing? and parallel request/status ownership.\nAcceptance: Each tag owns exact data. Restore, runtime-ready, review, cancel-before-start, failure, and completion transitions cannot retain stale fields.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "F-10: Replace TUI lifecycle fields with one activity state",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:14Z"
+  "updated_at": "2026-08-16T13:00:41Z"
 }
