@@ -15,7 +15,8 @@ defmodule Jido.Console.Session.Worker do
     owner = self()
 
     {:ok, pid} =
-      start_link(
+      GenServer.start(
+        __MODULE__,
         owner: owner,
         identity: Keyword.fetch!(opts, :identity),
         fun: Keyword.fetch!(opts, :fun),
