@@ -11,7 +11,8 @@ This is an evidence-only record for the source candidate on
 | Jidoka ordered events | https://github.com/agentjido/jidoka/pull/56 |
 | Jidoka controller cleanup | https://github.com/agentjido/jidoka/pull/57 |
 | Jidoka portable projection | https://github.com/agentjido/jidoka/pull/58 |
-| Jidoka pin | `ea849f74cbdee699c1b5a62541311536a78b5ce6` |
+| Jidoka session-chat terminal | https://github.com/agentjido/jidoka/pull/59 |
+| Jidoka pin | `701cf25a5c922755f4c53f25eb9721f1c85adf0a` |
 | Known limit | Accepted input can be lost on an application crash before Milestone 3 |
 | Unresolved | Native payload checksums, Homebrew/npm publication, and signed archive acceptance wait for the protected release workflow |
 
