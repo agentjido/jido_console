@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T13:00:16Z",
+  "description": "Audit rank: 24 of 30.\n\nOwner: JC-03 Automation input and planning.\nEvidence: lib/jido_console/cli/automation/command.ex:14-33,68-129.\nWork: Replace the nullable mixed command shape with a small tagged value or exact Run and Eval forms. Run owns input or scenario. Eval requires suite.\nAcceptance: Mixed and missing command fields fail at construction. parse/1 reason terms and stable digest projection remain correct.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
+  "id": "jido_console-1f1.24",
+  "labels": [],
+  "parent": "jido_console-1f1",
+  "priority": 0,
+  "status": "open",
+  "title": "F-04: Represent Run and Eval as exact command variants",
+  "type": "task",
+  "updated_at": "2026-08-16T13:00:16Z"
+}
