@@ -6,6 +6,7 @@
   ],
   "blocks": [
     "jido_console-m2e11",
+    "jido_console-m2e17",
     "jido_console-m2e34",
     "jido_console-x5b"
   ],
@@ -25,5 +26,5 @@
   "status": "open",
   "title": "M2-E09: Project Jidoka Events at One Boundary",
   "type": "epic",
-  "updated_at": "2026-08-16T23:47:42Z"
+  "updated_at": "2026-08-16T23:47:52Z"
 }

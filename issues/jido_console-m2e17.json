@@ -2,6 +2,7 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m2e07",
+    "jido_console-m2e09",
     "jido_console-m2e13"
   ],
   "blocks": [
@@ -24,5 +25,5 @@
   "status": "open",
   "title": "M2-E17: Bound Client Delivery",
   "type": "epic",
-  "updated_at": "2026-08-16T23:47:43Z"
+  "updated_at": "2026-08-16T23:47:52Z"
 }
