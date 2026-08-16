@@ -157,12 +157,7 @@ defmodule Jido.Console.Session.Protocol.Generator do
           |> Enum.map(fn {type, contract} ->
             name = "#{ts_name(family)}#{ts_name(type)}Envelope"
 
-            payload_fields =
-              contract["known_fields"]
-              |> Enum.map_join("\n", fn field ->
-                optional = if field in contract["required_fields"], do: "", else: "?"
-                "    #{inspect(field)}#{optional}: unknown;"
-              end)
+            payload_fields = render_payload_fields(contract)
 
             declaration = """
             export interface #{name} extends ProtocolEnvelopeBase {
@@ -177,7 +172,7 @@ defmodule Jido.Console.Session.Protocol.Generator do
             {name, declaration}
           end)
 
-        union = envelope_names |> Enum.map(&elem(&1, 0)) |> Enum.join(" | ")
+        union = Enum.map_join(envelope_names, " | ", &elem(&1, 0))
         declarations = envelope_names |> Enum.map_join("\n", &elem(&1, 1))
 
         "#{declarations}\nexport type #{ts_name(family)}Envelope = #{union};"
@@ -222,6 +217,14 @@ defmodule Jido.Console.Session.Protocol.Generator do
       return Boolean(entry && entry.types && type in entry.types);
     }
     """
+  end
+
+  defp render_payload_fields(contract) do
+    contract["known_fields"]
+    |> Enum.map_join("\n", fn field ->
+      optional = if field in contract["required_fields"], do: "", else: "?"
+      "    #{inspect(field)}#{optional}: unknown;"
+    end)
   end
 
   defp ts_name(family) do
