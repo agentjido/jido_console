@@ -1,10 +1,9 @@
 {
-  "assignee": "Mike Hostetler",
+  "assignee": "",
   "blocked_by": [
     "jido_console-1f1.19"
   ],
   "blocks": [],
-  "closed_at": "2026-08-16T13:31:09Z",
   "created": "2026-08-16T13:00:15Z",
   "description": "Audit rank: 20 of 30.\n\nOwner: JC-12 Home and process ownership.\nEvidence: lib/jido_console/application.ex:10-15; process/supervisor.ex:23-37,134-199.\nWork: Start the process manager as a normal application child. Remove the detached keeper and start retry lifecycle. Keep explicit custom instances only for tests.\nAcceptance: Concurrent calls have one supervised owner. Restart and shutdown follow OTP rules. No keeper process or startup race remains.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.20",
@@ -19,8 +18,8 @@
     }
   ],
   "priority": 0,
-  "status": "closed",
+  "status": "open",
   "title": "F-20: Put the process manager in the OTP supervision tree",
   "type": "task",
-  "updated_at": "2026-08-16T13:31:09Z"
+  "updated_at": "2026-08-16T14:04:17Z"
 }
