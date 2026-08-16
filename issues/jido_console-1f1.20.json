@@ -11,9 +11,15 @@
     "audit-finding"
   ],
   "parent": "jido_console-1f1",
+  "comments": [
+    {
+      "text": "Implemented on jido_console-1f1.20/process-supervision at 5b327b1. Process/bootstrap/session tests: 22 passed serially. Coding and TUI tests: 141 passed. mix format --check-formatted and mix compile --warnings-as-errors passed. Application owns the default manager; custom supervised instance test proves restart and shutdown; concurrent registration test proves one owner; detached keeper and retry paths removed.",
+      "timestamp": "2026-08-16T13:31:08Z"
+    }
+  ],
   "priority": 0,
   "status": "in_progress",
   "title": "F-20: Put the process manager in the OTP supervision tree",
   "type": "task",
-  "updated_at": "2026-08-16T13:19:00Z"
+  "updated_at": "2026-08-16T13:31:08Z"
 }
