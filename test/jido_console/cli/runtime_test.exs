@@ -2,6 +2,8 @@ defmodule Jido.Console.Runtime.JidokaTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Runtime.Jidoka, as: Runtime
+  alias Jido.Console.Runtime.Result
+  alias Jido.Console.Runtime.Result.{Cancelled, Error, Hibernated, Ok, PendingReview}
   alias Jido.Console.Coding.Setup
   alias Jidoka.Agent.Spec
   alias Jidoka.Agent.Spec.Operation
@@ -29,21 +31,21 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert_receive {:jidoka_turn_event, %Event{event: :turn_finished, request_id: request_id}}, 30_000
     assert request_id == request.request_id
 
-    assert %Runtime.Result{
+    assert %Result{
              request_id: ^request_id,
-             status: :ok,
              session: %Runtime.Session{},
-             content: "deterministic answer",
-             error: nil,
-             cancellation: nil,
-             snapshot: nil,
-             pending_reviews: []
+             outcome: %Ok{
+               content: "deterministic answer",
+               coding_reviews: [],
+               approval: nil
+             }
            } = result = Runtime.await(request, timeout: 30_000, cancel_on_timeout: false)
 
-    assert result.runtime_opts == request.runtime_opts
-    assert result.extension_host == session.extension_host
-    assert result.local_resources == session.local_resources
-    assert result.handle == request
+    assert result.handle.request == request.request
+    assert result.handle.runtime_opts == request.runtime_opts
+    assert result.handle.session == result.session
+    assert result.session.extension_host == session.extension_host
+    assert result.session.local_resources == session.local_resources
   end
 
   test "normalizes a failed turn without dropping its CLI session" do
@@ -52,17 +54,15 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert {:ok, %Runtime.Session{} = session} = Runtime.start_session(Jido.Console.DefaultAgent, [])
     assert {:ok, %Runtime.Request{} = request} = Runtime.start_turn(session, "fail", self(), llm: llm)
 
-    assert %Runtime.Result{
+    assert %Result{
              request_id: request_id,
-             status: :error,
              session: ^session,
-             error: error,
+             outcome: %Error{reason: error, approval: nil},
              raw: {:error, raw_error}
            } = result = Runtime.await(request, timeout: 30_000, cancel_on_timeout: false)
 
     assert request_id == request.request_id
     assert raw_error == error
-    assert result.runtime_opts == request.runtime_opts
     assert result.handle == request
   end
 
@@ -76,18 +76,19 @@ defmodule Jido.Console.Runtime.JidokaTest do
 
     assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: request_id}}, 5_000
 
-    assert %Runtime.Result{
+    assert %Result{
              request_id: ^request_id,
-             status: :hibernated,
              session: %Runtime.Session{},
-             snapshot: %Jidoka.Snapshot{},
-             pending_reviews: [],
-             approval: nil
+             outcome: %Hibernated{
+               snapshot: %Jidoka.Snapshot{},
+               reason: nil,
+               approval: nil
+             }
            } = result = Runtime.await(request, timeout: 30_000, cancel_on_timeout: false)
 
-    assert result.runtime_opts == request.runtime_opts
-    assert result.extension_host == session.extension_host
-    assert result.local_resources == session.local_resources
+    assert result.handle.runtime_opts == request.runtime_opts
+    assert result.session.extension_host == session.extension_host
+    assert result.session.local_resources == session.local_resources
   end
 
   test "returns typed evidence after a public cancellation" do
@@ -111,15 +112,14 @@ defmodule Jido.Console.Runtime.JidokaTest do
 
     assert is_boolean(cancellation.forced?)
 
-    assert %Runtime.Result{
+    assert %Result{
              request_id: ^request_id,
-             status: :cancelled,
              session: ^session,
-             cancellation: ^cancellation,
+             outcome: %Cancelled{cancellation: ^cancellation, approval: nil},
              raw: {:cancelled, ^cancellation}
            } = result = Runtime.await(request, timeout: 100)
 
-    assert result.runtime_opts == request.runtime_opts
+    assert result.handle.runtime_opts == request.runtime_opts
 
     assert_receive {:jidoka_turn_event, %Event{event: :turn_failed, data: %{reason: :cancelled}}},
                    1_000
@@ -143,7 +143,10 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert {:ok, %Cancellation{forced?: false} = cancellation} =
              Runtime.cancel(request, grace_ms: 500)
 
-    assert %Runtime.Result{status: :cancelled, session: ^session, cancellation: ^cancellation} =
+    assert %Result{
+             session: ^session,
+             outcome: %Cancelled{cancellation: ^cancellation, approval: nil}
+           } =
              Runtime.await(request, timeout: 100)
   end
 
@@ -168,20 +171,14 @@ defmodule Jido.Console.Runtime.JidokaTest do
     end
 
     assert {:ok, %Runtime.Request{} = request} = Runtime.start_turn(session, "hello", self(), llm: llm)
-    assert request.extension_host == session.extension_host
-    assert request.local_resources == setup.local_resources
+    assert request.session.extension_host == session.extension_host
+    assert request.session.local_resources == setup.local_resources
 
-    assert %Runtime.Result{
-             status: :ok,
+    assert %Result{
              session: %Runtime.Session{} = next_session,
-             content: "extension answer",
-             coding_reviews: [],
-             extension_host: extension_host,
-             local_resources: local_resources
+             outcome: %Ok{content: "extension answer", coding_reviews: [], approval: nil}
            } = Runtime.await(request, timeout: 30_000, cancel_on_timeout: false)
 
-    assert extension_host == session.extension_host
-    assert local_resources == setup.local_resources
     assert next_session.runtime_opts == session.runtime_opts
     assert next_session.extension_host == session.extension_host
     assert next_session.local_resources == session.local_resources
@@ -224,28 +221,27 @@ defmodule Jido.Console.Runtime.JidokaTest do
 
     assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: request_id}}, 5_000
 
-    assert %Runtime.Result{
+    assert %Result{
              request_id: ^request_id,
-             status: :pending_review,
              session: %Runtime.Session{},
-             snapshot: %Jidoka.Snapshot{},
-             pending_reviews: [review],
-             approval: nil
+             outcome: %PendingReview{
+               snapshot: %Jidoka.Snapshot{},
+               reviews: [review],
+               approval: nil
+             }
            } = paused = Runtime.await(request, timeout: 30_000, cancel_on_timeout: false)
 
-    assert paused.runtime_opts == request.runtime_opts
-    assert paused.extension_host == session.extension_host
-    assert paused.local_resources == session.local_resources
+    assert paused.handle.runtime_opts == request.runtime_opts
+    assert paused.session.extension_host == session.extension_host
+    assert paused.session.local_resources == session.local_resources
 
     test_pid = self()
     stream_probe = spawn(fn -> stream_probe(test_pid) end)
 
-    assert %Runtime.Result{
+    assert %Result{
              request_id: ^request_id,
-             status: :ok,
              session: %Runtime.Session{},
-             content: "approved change complete",
-             approval: :approved
+             outcome: %Ok{content: "approved change complete", approval: :approved}
            } = approved = Runtime.approve(paused, review, stream_to: stream_probe)
 
     assert_receive {:review_stream, {:jidoka_turn_event, %Event{event: :turn_finished, request_id: ^request_id}}},
@@ -253,27 +249,44 @@ defmodule Jido.Console.Runtime.JidokaTest do
 
     send(stream_probe, :stop)
 
-    assert approved.runtime_opts == request.runtime_opts
+    assert approved.handle.runtime_opts == request.runtime_opts
+    assert approved.handle.session == approved.session
 
     assert {:ok, %Runtime.Request{} = denied_request} =
              Runtime.start_turn(approved.session, "change again", self(), llm: llm, operations: operations)
 
     assert_receive {:jidoka_turn_event, %Event{event: :turn_hibernated, request_id: denied_id}}, 5_000
 
-    assert %Runtime.Result{status: :pending_review, pending_reviews: [denied_review]} =
+    assert %Result{outcome: %PendingReview{reviews: [denied_review]}} =
              denied_paused =
              Runtime.await(denied_request, timeout: 30_000, cancel_on_timeout: false)
 
-    assert %Runtime.Result{
+    assert %Result{
              request_id: ^denied_id,
-             status: :error,
              session: %Runtime.Session{},
-             approval: :denied,
-             error: denied_error
+             outcome: %Error{approval: :denied, reason: denied_error}
            } = denied = Runtime.deny(denied_paused, denied_review, [])
 
     assert denied_error != nil
-    assert denied.runtime_opts == denied_request.runtime_opts
+    assert denied.handle.runtime_opts == denied_request.runtime_opts
+    assert denied.handle.session == denied.session
+  end
+
+  test "outcome structs cannot carry fields from another result case" do
+    assert Map.keys(%Ok{content: "done", coding_reviews: [], approval: nil}) |> Enum.sort() ==
+             [:__struct__, :approval, :coding_reviews, :content]
+
+    assert Map.keys(%PendingReview{reviews: [:review], snapshot: :snapshot, approval: nil})
+           |> Enum.sort() == [:__struct__, :approval, :reviews, :snapshot]
+
+    assert Map.keys(%Hibernated{snapshot: :snapshot, reason: nil, approval: nil}) |> Enum.sort() ==
+             [:__struct__, :approval, :reason, :snapshot]
+
+    assert Map.keys(%Cancelled{cancellation: :cancelled, approval: nil}) |> Enum.sort() ==
+             [:__struct__, :approval, :cancellation]
+
+    assert Map.keys(%Error{reason: :failed, approval: nil}) |> Enum.sort() ==
+             [:__struct__, :approval, :reason]
   end
 
   defp wait_for_cancellation(_context, 0), do: :ok

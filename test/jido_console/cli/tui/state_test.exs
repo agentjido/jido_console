@@ -3,6 +3,7 @@ defmodule Jido.Console.Tui.StateTest do
 
   alias Jido.Console.Tui.State
   alias Jido.Console.Runtime.Jidoka, as: Runtime
+  alias Jido.Console.Runtime.Result
   alias Jido.Console.Session.Request, as: SessionRequest
   alias Jidoka.Cancellation
   alias Jidoka.Event
@@ -30,7 +31,10 @@ defmodule Jido.Console.Tui.StateTest do
     assert state.finishing?
 
     {state, []} =
-      State.update(state, {:turn_result, request, {:ok, :next_session, "Hi there"}})
+      State.update(
+        state,
+        {:turn_result, request, runtime_result(:ok, request, :next_session, content: "Hi there")}
+      )
 
     assert state.session == :next_session
     assert state.status == :idle
@@ -52,22 +56,10 @@ defmodule Jido.Console.Tui.StateTest do
         request_id: "request-1",
         request: :opaque_request,
         session: session,
-        runtime_opts: [request_id: "request-1"],
-        extension_host: session.extension_host,
-        local_resources: session.local_resources
+        runtime_opts: [request_id: "request-1"]
       )
 
-    result =
-      struct!(Runtime.Result,
-        request_id: request.request_id,
-        status: :ok,
-        session: session,
-        runtime_opts: request.runtime_opts,
-        extension_host: request.extension_host,
-        local_resources: request.local_resources,
-        handle: request,
-        content: "normalized answer"
-      )
+    result = Result.ok(request.request_id, session, request, "normalized answer")
 
     state = %{State.new(:old_session, {80, 24}) | request: request, status: :running}
     {state, []} = State.update(state, {:turn_result, request, result})
@@ -110,7 +102,10 @@ defmodule Jido.Console.Tui.StateTest do
     {state, []} = State.update(state, {:jidoka, delta})
 
     {state, []} =
-      State.update(state, {:turn_result, request, {:ok, :next_session, "final answer"}})
+      State.update(
+        state,
+        {:turn_result, request, runtime_result(:ok, request, :next_session, content: "final answer")}
+      )
 
     assert state.active_turn == nil
     assert [turn] = state.turns
@@ -238,7 +233,10 @@ defmodule Jido.Console.Tui.StateTest do
     state = %{State.new(:session, {80, 24}) | request: current, status: :running}
 
     assert {^state, []} =
-             State.update(state, {:turn_result, old, {:ok, :old_session, "old answer"}})
+             State.update(
+               state,
+               {:turn_result, old, runtime_result(:ok, old, :old_session, content: "old answer")}
+             )
   end
 
   test "commits one completed result after a cancellation race" do
@@ -252,7 +250,10 @@ defmodule Jido.Console.Tui.StateTest do
     }
 
     {state, []} =
-      State.update(state, {:turn_result, request, {:ok, :next_session, "completed"}})
+      State.update(
+        state,
+        {:turn_result, request, runtime_result(:ok, request, :next_session, content: "completed")}
+      )
 
     assert state.status == :idle
     assert state.request == nil
@@ -260,7 +261,10 @@ defmodule Jido.Console.Tui.StateTest do
     assert List.last(state.messages).content == "completed"
 
     assert {^state, []} =
-             State.update(state, {:turn_result, request, {:ok, :next_session, "duplicate"}})
+             State.update(
+               state,
+               {:turn_result, request, runtime_result(:ok, request, :next_session, content: "duplicate")}
+             )
   end
 
   test "Ctrl-C exits while idle and cancels while running" do
@@ -299,13 +303,18 @@ defmodule Jido.Console.Tui.StateTest do
     assert state.editor.text == "one\nline"
 
     {state, [{:start_turn, "one\nline"}]} = State.update(state, {:terminal, {:key, :enter}})
-    {state, []} = State.update(state, {:turn_result, {:ok, "done"}})
+
+    {state, []} =
+      State.update(state, {:turn_result, runtime_result(:ok, :request, state.session, content: "done")})
 
     state =
       Enum.reduce(["two", "three"], state, fn prompt, state ->
         {state, []} = State.update(state, {:terminal, {:text, prompt}})
         {state, [{:start_turn, ^prompt}]} = State.update(state, {:terminal, {:key, :enter}})
-        {state, []} = State.update(state, {:turn_result, {:ok, "done"}})
+
+        {state, []} =
+          State.update(state, {:turn_result, runtime_result(:ok, :request, state.session, content: "done")})
+
         state
       end)
 
@@ -336,7 +345,9 @@ defmodule Jido.Console.Tui.StateTest do
     {state, []} = State.update(state, {:terminal, {:text, "first"}})
     {state, [{:start_turn, "first"}]} = State.update(state, {:terminal, {:key, :enter}})
     {state, []} = State.update(state, {:terminal, {:text, "next\e[2J draft"}})
-    {state, []} = State.update(state, {:turn_result, {:ok, "answer"}})
+
+    {state, []} =
+      State.update(state, {:turn_result, runtime_result(:ok, :request, state.session, content: "answer")})
 
     assert state.editor.text == "next draft"
   end
@@ -355,7 +366,13 @@ defmodule Jido.Console.Tui.StateTest do
         {state, []} = State.update(state, {:terminal, {:text, prompt}})
         {state, [{:start_turn, ^prompt}]} = State.update(state, {:terminal, {:key, :enter}})
         assert state.scroll_offset == 0
-        {state, []} = State.update(state, {:turn_result, {:ok, "answer #{prompt}"}})
+
+        {state, []} =
+          State.update(
+            state,
+            {:turn_result, runtime_result(:ok, :request, state.session, content: "answer #{prompt}")}
+          )
+
         state
       end)
 
@@ -406,23 +423,39 @@ defmodule Jido.Console.Tui.StateTest do
   test "normalizes all supported turn results" do
     base = %{State.new(:session, {80, 24}) | request: :request, streaming: "partial"}
 
-    {state, []} = State.update(base, {:turn_result, {:ok, "answer"}})
+    {state, []} =
+      State.update(base, {:turn_result, runtime_result(:ok, :request, :session, content: "answer")})
+
     assert state.status == :idle
     assert List.last(state.messages).content == "answer"
 
     {state, []} =
-      State.update(base, {:turn_result, {:hibernate, :new_session, :snapshot}})
+      State.update(
+        base,
+        {:turn_result, runtime_result(:hibernated, :request, :new_session, snapshot: :snapshot)}
+      )
 
     assert state.session == :new_session
     assert state.status == :interrupted
-    assert state.error == "Agent paused for review."
+    assert state.error == "Agent paused."
 
-    {state, []} = State.update(base, {:turn_result, {:hibernate, :snapshot}})
+    {state, []} =
+      State.update(
+        base,
+        {:turn_result, runtime_result(:hibernated, :request, :session, snapshot: :snapshot)}
+      )
+
     assert state.session == :session
     assert state.status == :interrupted
 
     cancellation = Cancellation.new!(request_id: "request-1", cancelled_at_ms: 0)
-    {state, []} = State.update(base, {:turn_result, {:cancelled, cancellation}})
+
+    {state, []} =
+      State.update(
+        base,
+        {:turn_result, runtime_result(:cancelled, :request, :session, cancellation: cancellation)}
+      )
+
     assert state.status == :idle
     assert state.request == nil
 
@@ -445,7 +478,10 @@ defmodule Jido.Console.Tui.StateTest do
 
   test "keeps an empty transcript and ignores unknown events" do
     state = %{State.new(:session, {80, 24}) | request: :request, dirty?: false}
-    {state, []} = State.update(state, {:turn_result, {:ok, ""}})
+
+    {state, []} =
+      State.update(state, {:turn_result, runtime_result(:ok, :request, :session, content: "")})
+
     assert state.messages == []
 
     {state, []} = State.update(state, :render_scheduled)
@@ -504,7 +540,14 @@ defmodule Jido.Console.Tui.StateTest do
     state = %{State.new(:session, {80, 24}) | request: :request}
 
     {state, []} =
-      State.update(state, {:turn_result, {:ok, :next_session, "done", [review, %{"bad" => true}]}})
+      State.update(
+        state,
+        {:turn_result,
+         runtime_result(:ok, :request, :next_session,
+           content: "done",
+           coding_reviews: [review, %{"bad" => true}]
+         )}
+      )
 
     assert state.session == :next_session
     assert state.status == :idle
@@ -517,21 +560,42 @@ defmodule Jido.Console.Tui.StateTest do
   end
 
   defp runtime_result(status, request, session, attrs) do
-    struct!(
-      Runtime.Result,
-      Keyword.merge(
-        [
-          request_id: request.request_id,
-          status: status,
-          session: session,
-          runtime_opts: [],
-          extension_host: :extension_host,
-          local_resources: :local_resources,
-          handle: request
-        ],
-        attrs
-      )
-    )
+    request_id = if is_map(request), do: Map.get(request, :request_id, "request"), else: "request"
+
+    case status do
+      :ok ->
+        Result.ok(request_id, session, request, Keyword.fetch!(attrs, :content),
+          coding_reviews: Keyword.get(attrs, :coding_reviews, []),
+          approval: Keyword.get(attrs, :approval)
+        )
+
+      :pending_review ->
+        Result.pending_review(
+          request_id,
+          session,
+          request,
+          Keyword.fetch!(attrs, :pending_reviews),
+          snapshot: Keyword.get(attrs, :snapshot),
+          approval: Keyword.get(attrs, :approval)
+        )
+
+      :hibernated ->
+        Result.hibernated(request_id, session, request,
+          snapshot: Keyword.get(attrs, :snapshot),
+          reason: Keyword.get(attrs, :reason),
+          approval: Keyword.get(attrs, :approval)
+        )
+
+      :cancelled ->
+        Result.cancelled(request_id, session, request, Keyword.fetch!(attrs, :cancellation),
+          approval: Keyword.get(attrs, :approval)
+        )
+
+      :error ->
+        Result.error(request_id, session, request, Keyword.fetch!(attrs, :error),
+          approval: Keyword.get(attrs, :approval)
+        )
+    end
   end
 
   defp review(id, operation, arguments) do

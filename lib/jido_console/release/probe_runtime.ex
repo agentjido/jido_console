@@ -2,7 +2,8 @@ defmodule Jido.Console.Release.ProbeRuntime do
   @moduledoc false
   @behaviour Jido.Console.Runtime
 
-  alias Jido.Console.Runtime.Jidoka.Result
+  alias Jido.Console.Runtime.Result
+  alias Jido.Console.Runtime.Result.PendingReview
   alias Jidoka.Cancellation
   alias Jidoka.Event
 
@@ -72,7 +73,7 @@ defmodule Jido.Console.Release.ProbeRuntime do
 
   @impl true
   def await(%Request{session: %Session{mode: :success}} = request, _opts) do
-    {:ok, request.session, "Release probe completed."}
+    result(request, :ok, content: "Release probe completed.")
   end
 
   def await(%Request{turn: 1} = request, _opts) do
@@ -149,7 +150,11 @@ defmodule Jido.Console.Release.ProbeRuntime do
   end
 
   @impl true
-  def approve(%Result{handle: %Request{turn: 2} = request} = pending, review, opts) do
+  def approve(
+        %Result{handle: %Request{turn: 2} = request, outcome: %PendingReview{}} = pending,
+        review,
+        opts
+      ) do
     with :ok <- require_review(review),
          {:ok, edit_review} <- apply_expected_edit(request.session) do
       record_operation(request.session, %{
@@ -161,27 +166,31 @@ defmodule Jido.Console.Release.ProbeRuntime do
       record(request.session, %{"event" => "review", "decision" => "approved"})
       emit_edit_finished(request, Keyword.fetch!(opts, :stream_to))
 
-      %Result{
-        pending
-        | status: :ok,
-          content: "Implemented café λ rate limiter.",
-          approval: :approved,
-          pending_reviews: [],
-          coding_reviews: [edit_review]
-      }
+      Result.ok(pending.request_id, pending.session, pending.handle, "Implemented café λ rate limiter.",
+        coding_reviews: [edit_review],
+        approval: :approved
+      )
     else
-      {:error, reason} -> %Result{pending | status: :error, error: reason, approval: :approved}
+      {:error, reason} ->
+        Result.error(pending.request_id, pending.session, pending.handle, reason, approval: :approved)
     end
   end
 
   def approve(%Result{} = pending, _review, _opts) do
-    %Result{pending | status: :error, error: :unexpected_release_probe_approval, approval: :approved}
+    Result.error(
+      pending.request_id,
+      pending.session,
+      pending.handle,
+      :unexpected_release_probe_approval,
+      approval: :approved
+    )
   end
 
   @impl true
   def deny(%Result{} = pending, _review, _opts) do
     record(pending.session, %{"event" => "review", "decision" => "denied"})
-    %Result{pending | status: :error, error: :review_denied, approval: :denied}
+
+    Result.error(pending.request_id, pending.session, pending.handle, :review_denied, approval: :denied)
   end
 
   @impl true
@@ -511,21 +520,27 @@ defmodule Jido.Console.Release.ProbeRuntime do
   defp require_review(_review), do: {:error, :unexpected_release_probe_review}
 
   defp result(%Request{} = request, status, attrs) do
-    struct!(
-      Result,
-      Keyword.merge(
-        [
-          request_id: request.request_id,
-          status: status,
-          session: request.session,
-          runtime_opts: [],
-          extension_host: nil,
-          local_resources: nil,
-          handle: request
-        ],
-        attrs
-      )
-    )
+    raw = Keyword.get(attrs, :raw)
+
+    case status do
+      :ok ->
+        Result.ok(request.request_id, request.session, request, Keyword.fetch!(attrs, :content),
+          coding_reviews: Keyword.get(attrs, :coding_reviews, []),
+          raw: raw
+        )
+
+      :pending_review ->
+        Result.pending_review(
+          request.request_id,
+          request.session,
+          request,
+          Keyword.fetch!(attrs, :pending_reviews),
+          raw: raw
+        )
+
+      :error ->
+        Result.error(request.request_id, request.session, request, Keyword.fetch!(attrs, :error), raw: raw)
+    end
   end
 
   defp record_operation(session, operation) do

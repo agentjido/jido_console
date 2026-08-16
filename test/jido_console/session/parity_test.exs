@@ -3,6 +3,7 @@ defmodule Jido.Console.Session.ParityTest do
 
   alias Jido.Console.Session.{Client, Parity, Server}
   alias Jido.Console.Session.Client.{Automation, TUI}
+  alias Jido.Console.Runtime.Result
   alias Jidoka.Event
 
   defmodule Runtime do
@@ -33,7 +34,8 @@ defmodule Jido.Console.Session.ParityTest do
     end
 
     @impl true
-    def await(_request, _opts), do: {:ok, :parity_session, "same"}
+    def await(request, _opts),
+      do: Result.ok(request.request_id, :parity_session, request, "same")
 
     @impl true
     def cancel(_request, _opts), do: {:error, :not_supported}
@@ -56,7 +58,7 @@ defmodule Jido.Console.Session.ParityTest do
 
     assert :ok = Client.configure_runtime(tui, Runtime, :agent)
     assert {:ok, request} = Client.start_turn(tui, "show parity")
-    assert {:ok, :parity_session, "same"} = Client.await(tui, request)
+    assert %Result{outcome: %Result.Ok{content: "same"}} = Client.await(tui, request)
 
     assert Parity.same_outcomes?(handles)
     observed = Parity.observe(handles)

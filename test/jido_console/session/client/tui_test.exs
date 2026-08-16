@@ -4,6 +4,7 @@ defmodule Jido.Console.Session.Client.TUITest do
   alias Jido.Console.Session.{Client, Identity, Server, Supervisor}
   alias Jido.Console.Session.Client.TUI
   alias Jido.Console.Tui.State
+  alias Jido.Console.Runtime.Result
   alias Jidoka.Event
 
   defmodule Runtime do
@@ -40,7 +41,8 @@ defmodule Jido.Console.Session.Client.TUITest do
             {:jidoka_turn_event, Event.build(:turn_finished, [], request_id: request.request_id, seq: 1)}
           )
 
-          {:ok, %{test_pid: request.test_pid}, "still running"}
+          session = %{test_pid: request.test_pid}
+          Result.ok(request.request_id, session, request, "still running")
       end
     end
 
@@ -97,7 +99,10 @@ defmodule Jido.Console.Session.Client.TUITest do
     assert restored.streaming == "still running"
 
     send(worker, :finish)
-    assert {:ok, _session, "still running"} = Client.await(second, request)
+
+    assert %Result{outcome: %Result.Ok{content: "still running"}} =
+             Client.await(second, request)
+
     assert TUI.observe(second) == ["run_started", "model_delta", "run_completed"]
 
     snapshot = Client.snapshot(second)

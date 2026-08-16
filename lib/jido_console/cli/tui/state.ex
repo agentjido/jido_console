@@ -2,7 +2,8 @@ defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
   alias Jido.Console.Tui.{Editor, EventProjection, SafeText, Selection, Turn}
-  alias Jido.Console.Runtime.Jidoka.Result, as: RuntimeResult
+  alias Jido.Console.Runtime.Result, as: RuntimeResult
+  alias Jido.Console.Runtime.Result.{Cancelled, Error, Hibernated, Ok, PendingReview}
   alias Jido.Console.Session.Request, as: SessionRequest
 
   @default_history_limit 100
@@ -334,60 +335,49 @@ defmodule Jido.Console.Tui.State do
 
   def update(%__MODULE__{} = state, {:jidoka, _event}), do: {state, []}
 
-  def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content}}) do
-    finish(state, session, content, :idle, nil, outcome: :completed)
-  end
-
-  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :ok} = result}) do
-    changes = result.coding_reviews |> Jido.Console.Coding.Review.normalize() |> retain(@review_limit)
+  def update(
+        %__MODULE__{} = state,
+        {:turn_result, %RuntimeResult{outcome: %Ok{} = outcome} = result}
+      ) do
+    changes = outcome.coding_reviews |> Jido.Console.Coding.Review.normalize() |> retain(@review_limit)
     state = %{state | coding_reviews: changes}
-    finish(state, result.session, result.content, :idle, nil, outcome: :completed, changes: changes)
+    finish(state, result.session, outcome.content, :idle, nil, outcome: :completed, changes: changes)
   end
 
-  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :pending_review} = result}) do
+  def update(
+        %__MODULE__{} = state,
+        {:turn_result, %RuntimeResult{outcome: %PendingReview{}} = result}
+      ) do
     pause_for_review(state, result)
   end
 
-  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :hibernated} = result}) do
+  def update(
+        %__MODULE__{} = state,
+        {:turn_result, %RuntimeResult{outcome: %Hibernated{}} = result}
+      ) do
     finish(state, result.session, state.streaming, :interrupted, "Agent paused.", outcome: :hibernated)
   end
 
-  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :cancelled} = result}) do
+  def update(
+        %__MODULE__{} = state,
+        {:turn_result, %RuntimeResult{outcome: %Cancelled{}} = result}
+      ) do
     finish(state, result.session, state.streaming, :idle, nil, outcome: :cancelled)
   end
 
-  def update(%__MODULE__{} = state, {:turn_result, %RuntimeResult{status: :error} = result}) do
-    error = format_error(result.error)
-    state = if result.approval == :denied, do: state, else: put_review_failure(state, result.error)
+  def update(
+        %__MODULE__{} = state,
+        {:turn_result, %RuntimeResult{outcome: %Error{} = outcome} = result}
+      ) do
+    error = format_error(outcome.reason)
+    state = if outcome.approval == :denied, do: state, else: put_review_failure(state, outcome.reason)
     finish(state, result.session, state.streaming, :error, error, outcome: :failed)
-  end
-
-  def update(%__MODULE__{} = state, {:turn_result, {:ok, session, content, reviews}}) do
-    changes = Jido.Console.Coding.Review.normalize(reviews)
-    state = %{state | coding_reviews: changes}
-    finish(state, session, content, :idle, nil, outcome: :completed, changes: changes)
   end
 
   def update(%__MODULE__{} = state, {:coding_review, reviews}) do
     changes = reviews |> Jido.Console.Coding.Review.normalize() |> retain(@review_limit)
     state = put_active_changes(state, changes)
     changed(state, coding_reviews: changes)
-  end
-
-  def update(%__MODULE__{} = state, {:turn_result, {:ok, content}}) do
-    finish(state, state.session, content, :idle, nil, outcome: :completed)
-  end
-
-  def update(%__MODULE__{} = state, {:turn_result, {:hibernate, session, _snapshot}}) do
-    finish(state, session, state.streaming, :interrupted, "Agent paused for review.", outcome: :hibernated)
-  end
-
-  def update(%__MODULE__{} = state, {:turn_result, {:hibernate, _snapshot}}) do
-    finish(state, state.session, state.streaming, :interrupted, "Agent paused for review.", outcome: :hibernated)
-  end
-
-  def update(%__MODULE__{} = state, {:turn_result, {:cancelled, _cancellation}}) do
-    finish(state, state.session, state.streaming, :idle, nil, outcome: :cancelled)
   end
 
   def update(%__MODULE__{} = state, {:turn_result, {:error, reason}}) do
@@ -576,9 +566,12 @@ defmodule Jido.Console.Tui.State do
 
   defp put_review_failure(state, _error), do: state
 
-  defp pause_for_review(state, %RuntimeResult{} = result) do
+  defp pause_for_review(
+         state,
+         %RuntimeResult{outcome: %PendingReview{reviews: reviews}} = result
+       ) do
     {turn, next_turn_id} = ensure_turn(state)
-    turn = Turn.put_reviews(turn, result.pending_reviews)
+    turn = Turn.put_reviews(turn, reviews)
 
     {%{
        state
@@ -597,7 +590,7 @@ defmodule Jido.Console.Tui.State do
 
   defp respond_to_review(
          %__MODULE__{
-           pending_review: %RuntimeResult{pending_reviews: [review | _]} = result,
+           pending_review: %RuntimeResult{outcome: %PendingReview{reviews: [review | _]}} = result,
            active_turn: %Turn{} = turn
          } = state,
          decision

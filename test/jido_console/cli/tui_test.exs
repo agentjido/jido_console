@@ -1,7 +1,7 @@
 defmodule Jido.Console.TuiTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Console.Runtime.Jidoka, as: Runtime
+  alias Jido.Console.Runtime.Result
   alias Jido.Console.Session.Server
   alias Jido.Console.Tui
   alias Jidoka.Cancellation
@@ -69,11 +69,11 @@ defmodule Jido.Console.TuiTest do
     end
 
     @impl true
-    def start_turn(_session, prompt, owner, opts) do
+    def start_turn(session, prompt, owner, opts) do
       test_pid = Keyword.fetch!(opts, :test_pid)
       send(test_pid, :turn_started)
       send(test_pid, {:turn_prompt, prompt, Keyword.get(opts, :context)})
-      request = %{request_id: "request-1", test_pid: test_pid, prompt: prompt}
+      request = %{request_id: "request-1", test_pid: test_pid, prompt: prompt, session: session}
 
       delta =
         Event.build(:llm_delta, [],
@@ -100,31 +100,32 @@ defmodule Jido.Console.TuiTest do
           send(request.test_pid, {:await_blocked, self()})
 
           receive do
-            :release_await -> {:ok, :next_session, "Hello back"}
+            :release_await -> Result.ok(request.request_id, :next_session, request, "Hello back")
           end
 
         "review edit" ->
-          {:ok, :next_session, "Edit complete.",
-           [
-             %{
-               "kind" => "edit",
-               "path" => "lib/value.ex",
-               "action" => "edit",
-               "status" => "changed",
-               "before_sha256" => "sha256:" <> String.duplicate("1", 64),
-               "after_sha256" => "sha256:" <> String.duplicate("2", 64),
-               "checkpoint" => %{"checkpoint_ref" => "check-1"},
-               "diff" => %{
-                 "before_lines" => 4,
-                 "after_lines" => 5,
-                 "changed_before_lines" => 1,
-                 "changed_after_lines" => 2
-               }
-             }
-           ]}
+          Result.ok(request.request_id, :next_session, request, "Edit complete.",
+            coding_reviews: [
+              %{
+                "kind" => "edit",
+                "path" => "lib/value.ex",
+                "action" => "edit",
+                "status" => "changed",
+                "before_sha256" => "sha256:" <> String.duplicate("1", 64),
+                "after_sha256" => "sha256:" <> String.duplicate("2", 64),
+                "checkpoint" => %{"checkpoint_ref" => "check-1"},
+                "diff" => %{
+                  "before_lines" => 4,
+                  "after_lines" => 5,
+                  "changed_before_lines" => 1,
+                  "changed_after_lines" => 2
+                }
+              }
+            ]
+          )
 
         _other ->
-          {:ok, :next_session, "Hello back"}
+          Result.ok(request.request_id, :next_session, request, "Hello back")
       end
     end
 
@@ -172,7 +173,8 @@ defmodule Jido.Console.TuiTest do
           mode: mode,
           owner: owner,
           test_pid: test_pid,
-          controller: controller
+          controller: controller,
+          session: :session
         }
 
         if mode in [:await_raise, :await_throw] do
@@ -199,16 +201,24 @@ defmodule Jido.Console.TuiTest do
 
     def await(%{mode: :blocking_cancel} = request, _opts), do: await_controller(request.controller)
 
-    def await(%{mode: :no_terminal}, _opts),
-      do: {:ok, :next_session, "completed without terminal event"}
+    def await(%{mode: :no_terminal} = request, _opts),
+      do: Result.ok(request.request_id, :next_session, request, "completed without terminal event")
 
-    def await(request, _opts), do: {:cancelled, cancellation(request.request_id)}
+    def await(request, _opts) do
+      cancellation = cancellation(request.request_id)
+      Result.cancelled(request.request_id, request.session, request, cancellation)
+    end
 
     @impl true
     def cancel(%{mode: :cancel_ok} = request, _opts) do
       send(request.test_pid, {:cancel_called, :cancel_ok})
       cancellation = cancellation(request.request_id)
-      send(request.controller, {:complete, {:cancelled, cancellation}})
+
+      send(
+        request.controller,
+        {:complete, Result.cancelled(request.request_id, request.session, request, cancellation)}
+      )
+
       {:ok, cancellation}
     end
 
@@ -225,7 +235,12 @@ defmodule Jido.Console.TuiTest do
       end
 
       cancellation = cancellation(request.request_id)
-      send(request.controller, {:complete, {:cancelled, cancellation}})
+
+      send(
+        request.controller,
+        {:complete, Result.cancelled(request.request_id, request.session, request, cancellation)}
+      )
+
       {:ok, cancellation}
     end
 
@@ -233,7 +248,12 @@ defmodule Jido.Console.TuiTest do
       terminal = Event.build(:turn_finished, [], request_id: request.request_id)
       send(request.owner, {:jidoka_turn_event, terminal})
       send(request.test_pid, {:cancel_called, :already_finished})
-      send(request.controller, {:complete, {:ok, :next_session, "completed"}})
+
+      send(
+        request.controller,
+        {:complete, Result.ok(request.request_id, :next_session, request, "completed")}
+      )
+
       {:error, :request_already_finished}
     end
 
@@ -310,7 +330,7 @@ defmodule Jido.Console.TuiTest do
       request_owner = self()
       controller = spawn(fn -> controller_loop(Process.monitor(request_owner)) end)
       send(test_pid, {:owner_bound_request, request_owner, controller})
-      {:ok, %{request_id: "owner-bound-request", controller: controller}}
+      {:ok, %{request_id: "owner-bound-request", controller: controller, session: :owner_bound_session}}
     end
 
     @impl true
@@ -331,7 +351,17 @@ defmodule Jido.Console.TuiTest do
     defp controller_loop(owner_ref) do
       receive do
         {:await, caller} ->
-          send(caller, {:owner_bound_result, {:ok, :next_session, "owner kept result"}})
+          request = %{
+            request_id: "owner-bound-request",
+            controller: self(),
+            session: :owner_bound_session
+          }
+
+          send(
+            caller,
+            {:owner_bound_result, Result.ok(request.request_id, :next_session, request, "owner kept result")}
+          )
+
           controller_loop(owner_ref)
 
         {:DOWN, ^owner_ref, :process, _owner, _reason} ->
@@ -353,7 +383,15 @@ defmodule Jido.Console.TuiTest do
     @impl true
     def start_turn({:shutdown_session, test_pid, mode}, prompt, relay, _opts) do
       controller = spawn(fn -> shutdown_controller(test_pid, Process.monitor(relay), nil, false) end)
-      request = %{request_id: "shutdown-request", test_pid: test_pid, controller: controller, mode: mode}
+
+      request = %{
+        request_id: "shutdown-request",
+        test_pid: test_pid,
+        controller: controller,
+        mode: mode,
+        session: {:shutdown_session, test_pid, mode}
+      }
+
       send(test_pid, {:shutdown_turn_started, self(), relay, controller, prompt})
       {:ok, request}
     end
@@ -366,7 +404,9 @@ defmodule Jido.Console.TuiTest do
       receive do
         :shutdown_cancelled ->
           send(request.test_pid, {:shutdown_terminal_result, self()})
-          {:cancelled, Cancellation.new!(request_id: request.request_id, cancelled_at_ms: 0)}
+
+          cancellation = Cancellation.new!(request_id: request.request_id, cancelled_at_ms: 0)
+          Result.cancelled(request.request_id, request.session, request, cancellation)
       end
     end
 
@@ -425,7 +465,14 @@ defmodule Jido.Console.TuiTest do
     def start_turn(:approval_session, prompt, _owner, opts) do
       test_pid = Keyword.fetch!(opts, :test_pid)
       send(test_pid, :approval_turn_started)
-      {:ok, %{request_id: "approval-request", prompt: prompt, test_pid: test_pid}}
+
+      {:ok,
+       %{
+         request_id: "approval-request",
+         prompt: prompt,
+         test_pid: test_pid,
+         session: :approval_session
+       }}
     end
 
     @impl true
@@ -438,52 +485,29 @@ defmodule Jido.Console.TuiTest do
         expires_at_ms: 30_000
       }
 
-      result(request, :pending_review,
-        session: :approval_session,
-        pending_reviews: [review]
-      )
+      Result.pending_review(request.request_id, request.session, request, [review])
     end
 
     @impl true
-    def approve(%Runtime.Result{} = result, review, opts) do
+    def approve(%Result{outcome: %Result.PendingReview{}} = result, review, opts) do
       send(Keyword.fetch!(opts, :test_pid), {:approval_called, review.interrupt_id})
       emit_tool_timeline(Keyword.fetch!(opts, :stream_to), result.request_id)
 
-      %Runtime.Result{
-        result
-        | status: :ok,
-          session: :approved_session,
-          content: "Approved change complete.",
-          approval: :approved,
-          pending_reviews: []
-      }
+      Result.ok(
+        result.request_id,
+        :approved_session,
+        result.handle,
+        "Approved change complete.",
+        approval: :approved
+      )
     end
 
     @impl true
-    def deny(%Runtime.Result{} = result, _review, _opts) do
-      %Runtime.Result{result | status: :error, error: :review_denied, approval: :denied}
-    end
+    def deny(%Result{} = result, _review, _opts),
+      do: Result.error(result.request_id, result.session, result.handle, :review_denied, approval: :denied)
 
     @impl true
     def cancel(request, _opts), do: {:ok, Cancellation.new!(request_id: request.request_id, cancelled_at_ms: 0)}
-
-    defp result(request, status, attrs) do
-      struct!(
-        Runtime.Result,
-        Keyword.merge(
-          [
-            request_id: request.request_id,
-            status: status,
-            session: :approval_session,
-            runtime_opts: [],
-            extension_host: nil,
-            local_resources: nil,
-            handle: request
-          ],
-          attrs
-        )
-      )
-    end
 
     defp emit_tool_timeline(stream_to, request_id) do
       planned =

@@ -4,6 +4,7 @@ defmodule Jido.Console.Release.ToolingTest do
   alias CodingScenario.Oracle
   alias Jido.Console.Automation.Replay
   alias Jido.Console.Release.{Acceptance, Artifact, LicenseAudit, Local, OfflineProfile, ProbeRuntime}
+  alias Jido.Console.Runtime.Result
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-release-tooling-#{System.unique_integer([:positive])}")
@@ -91,7 +92,10 @@ defmodule Jido.Console.Release.ToolingTest do
     assert {:ok, request} = ProbeRuntime.start_turn(session, "hello", self(), [])
     assert_receive {:jidoka_turn_event, _event}
     assert_receive {:jidoka_turn_event, _event}
-    assert {:ok, ^session, "Release probe completed."} = ProbeRuntime.await(request, [])
+
+    assert %Result{session: ^session, outcome: %Result.Ok{content: "Release probe completed."}} =
+             ProbeRuntime.await(request, [])
+
     assert :ok = ProbeRuntime.close_session(session)
     assert [_one_turn] = log |> File.read!() |> String.split("\n", trim: true)
   end
@@ -112,13 +116,19 @@ defmodule Jido.Console.Release.ToolingTest do
              )
 
     assert {:ok, first} = ProbeRuntime.start_turn(session, "inspect", self(), [])
-    assert %{status: :ok} = ProbeRuntime.await(first, [])
+    assert %Result{outcome: %Result.Ok{}} = ProbeRuntime.await(first, [])
     assert {:ok, second} = ProbeRuntime.start_turn(session, "implement", self(), [])
     pending = ProbeRuntime.await(second, [])
-    assert %{status: :pending_review, pending_reviews: [review]} = pending
-    assert %{status: :ok, approval: :approved} = ProbeRuntime.approve(pending, review, stream_to: self())
+    assert %Result{outcome: %Result.PendingReview{reviews: [review]}} = pending
+
+    assert %Result{outcome: %Result.Ok{approval: :approved}} =
+             ProbeRuntime.approve(pending, review, stream_to: self())
+
     assert {:ok, third} = ProbeRuntime.start_turn(session, "verify", self(), [])
-    assert %{status: :ok, raw: "private runtime behavior checks passed"} = ProbeRuntime.await(third, [])
+
+    assert %Result{outcome: %Result.Ok{}, raw: "private runtime behavior checks passed"} =
+             ProbeRuntime.await(third, [])
+
     assert :ok = ProbeRuntime.close_session(session)
 
     records = log |> File.read!() |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)

@@ -9,6 +9,9 @@ defmodule Jido.Console.Session.Server do
 
   use GenServer, restart: :temporary
 
+  alias Jido.Console.Runtime.Result, as: RuntimeResult
+  alias Jido.Console.Runtime.Result.{Error, Ok, PendingReview}
+
   alias Jido.Console.Session.{
     Delivery,
     DynamicSupervisor,
@@ -691,16 +694,27 @@ defmodule Jido.Console.Session.Server do
     Enum.each(waiters, &GenServer.reply(&1, result))
 
     if active_request?(state, request_id) do
+      active = state.active
+
       state =
         state
-        |> admit_control("control_completed", state.active.request, "cancel")
+        |> admit_control("control_completed", active.request, "cancel")
         |> broadcast_control_result(result)
 
       case {state.active.runtime?, result} do
         {true, {:ok, %Jidoka.Cancellation{} = cancellation}} ->
+          cancelled =
+            RuntimeResult.cancelled(
+              active.request.request_id,
+              state.runtime.session,
+              active.raw_request,
+              cancellation,
+              raw: {:cancelled, cancellation}
+            )
+
           state
           |> stop_await_task(request_id)
-          |> complete_runtime_result({:cancelled, cancellation})
+          |> complete_runtime_result(cancelled)
 
         _other ->
           state
@@ -743,35 +757,33 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp result_session(%{__struct__: Jido.Console.Runtime.Jidoka.Result, session: session}), do: session
-  defp result_session({:ok, session, content}) when is_binary(content), do: session
-  defp result_session({:ok, session, content, _reviews}) when is_binary(content), do: session
-  defp result_session({:hibernate, session, _snapshot}), do: session
+  defp result_session(%RuntimeResult{session: session}), do: session
   defp result_session(_result), do: nil
 
-  defp pending_result?(%{__struct__: Jido.Console.Runtime.Jidoka.Result, status: :pending_review}), do: true
+  defp pending_result?(%RuntimeResult{outcome: %PendingReview{}}), do: true
   defp pending_result?(_result), do: false
 
-  defp terminal_type(%{__struct__: Jido.Console.Runtime.Jidoka.Result, status: :error}), do: "run_failed"
+  defp terminal_type(%RuntimeResult{outcome: %Error{}}), do: "run_failed"
   defp terminal_type({:error, _reason}), do: "run_failed"
   defp terminal_type(_result), do: "run_completed"
 
-  defp result_payload(%{__struct__: Jido.Console.Runtime.Jidoka.Result} = result) do
+  defp result_payload(%RuntimeResult{outcome: %Ok{content: content}} = result) do
     %{
-      "status" => Atom.to_string(result.status),
-      "content" => bounded_text(result.content),
-      "error" => portable_reason(result.error)
+      "status" => Atom.to_string(RuntimeResult.status(result)),
+      "content" => bounded_text(content),
+      "error" => nil
     }
   end
 
-  defp result_payload({:ok, _session, content}) when is_binary(content),
-    do: %{"status" => "ok", "content" => bounded_text(content)}
+  defp result_payload(%RuntimeResult{outcome: %Error{reason: reason}}) do
+    %{"status" => "error", "content" => nil, "error" => portable_reason(reason)}
+  end
 
-  defp result_payload({:ok, _session, content, _reviews}) when is_binary(content),
-    do: %{"status" => "ok", "content" => bounded_text(content)}
+  defp result_payload(%RuntimeResult{} = result) do
+    %{"status" => Atom.to_string(RuntimeResult.status(result)), "content" => nil, "error" => nil}
+  end
 
   defp result_payload({:error, reason}), do: %{"status" => "error", "error" => portable_reason(reason)}
-  defp result_payload({:cancelled, _cancellation}), do: %{"status" => "cancelled"}
   defp result_payload(_result), do: %{"status" => "completed"}
 
   defp stop_await_task(state, request_id) do
