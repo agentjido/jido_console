@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T13:00:13Z",
+  "description": "Audit rank: 13 of 30.\n\nOwner: JC-04 Automation execution.\nEvidence: lib/jido_console/cli/automation/coordinator.ex:27-35,200-231.\nWork: Replace cancelled?, cancellation_reason, and limit_stop with nil, :cancelled, or {:limit, reason}. Preserve cancellation precedence and record one diagnostic cause.\nAcceptance: Both cancel-limit event orders produce one deterministic final cause and consistent summary evidence.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
+  "id": "jido_console-1f1.13",
+  "labels": [],
+  "parent": "jido_console-1f1",
+  "priority": 0,
+  "status": "open",
+  "title": "F-07: Replace coordinator stop flags with one tagged cause",
+  "type": "task",
+  "updated_at": "2026-08-16T13:00:13Z"
+}
