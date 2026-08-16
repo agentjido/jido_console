@@ -1,7 +1,7 @@
 defmodule Jido.Console.Tui.View do
   @moduledoc "Pure frame renderer for the Jido TUI."
 
-  alias Jido.Console.Tui.{Editor, SafeText, Selection, State}
+  alias Jido.Console.Tui.{Activity, Editor, SafeText, Selection, State}
   alias Jido.Console.Tui.Turn.Tool
   alias Jido.Console.Terminal.Frame
 
@@ -45,11 +45,12 @@ defmodule Jido.Console.Tui.View do
 
   defp transcript_rows(state, width) do
     instructions = instruction_rows(state.project_instructions, width)
+    active_turn = State.active_turn(state)
 
-    if state.turns == [] and is_nil(state.active_turn) do
+    if state.turns == [] and is_nil(active_turn) do
       instructions ++ legacy_transcript_rows(state, width)
     else
-      turns = state.turns ++ if(state.active_turn, do: [state.active_turn], else: [])
+      turns = state.turns ++ if(active_turn, do: [active_turn], else: [])
       instructions ++ Enum.flat_map(turns, &turn_rows(&1, width))
     end
   end
@@ -64,16 +65,7 @@ defmodule Jido.Console.Tui.View do
     |> message_rows(width)
   end
 
-  defp legacy_transcript_rows(state, width) do
-    messages =
-      if state.streaming == "" do
-        state.messages
-      else
-        state.messages ++ [%{role: :assistant, content: state.streaming}]
-      end
-
-    message_rows(messages, width)
-  end
+  defp legacy_transcript_rows(state, width), do: message_rows(state.messages, width)
 
   defp message_rows(messages, width) do
     Enum.flat_map(messages, fn message ->
@@ -247,27 +239,38 @@ defmodule Jido.Console.Tui.View do
   defp marker("interrupted"), do: "[interrupted]"
   defp marker(_status), do: "[failed]"
 
-  defp status_row(%State{runtime_status: :starting, submit_when_ready?: true}),
+  defp status_row(%State{activity: {:starting, {:runtime, :submit_when_ready}}}),
     do: "starting runtime · prompt queued"
 
-  defp status_row(%State{runtime_status: :starting}),
+  defp status_row(%State{activity: {:starting, {:runtime, :empty}}}),
     do: "starting runtime · Enter queues"
 
-  defp status_row(%State{runtime_status: :failed, error: error}),
+  defp status_row(%State{activity: {:failed, :startup, _reason, error}}),
     do: "startup failed · Esc exits · #{SafeText.summary(error)}"
 
   defp status_row(%State{scroll_offset: offset}) when offset > 0,
     do: "scroll #{offset} · PgDn follows output"
 
-  defp status_row(%State{status: :idle, error: nil}),
+  defp status_row(%State{activity: :idle}),
     do: "idle · Enter sends · Ctrl-J newline · Esc exits"
 
-  defp status_row(%State{status: :running}), do: "running · Ctrl-C cancels"
-  defp status_row(%State{status: :resolving}), do: "resolving file mentions"
-  defp status_row(%State{status: :cancelling}), do: "cancelling"
-  defp status_row(%State{status: :review}), do: "review required · A approves · D denies"
-  defp status_row(%State{status: :responding_review}), do: "sending review decision"
-  defp status_row(%State{status: :interrupted, error: error}), do: SafeText.summary(error || "paused")
-  defp status_row(%State{status: :error, error: error}), do: "error · #{SafeText.summary(error)}"
-  defp status_row(%State{status: status}), do: Atom.to_string(status)
+  defp status_row(%State{activity: {:preparing, {:prompt, _prompt}}}), do: "resolving file mentions"
+  defp status_row(%State{activity: {:preparing, {:selection, _previous}}}), do: "applying selection"
+  defp status_row(%State{activity: {:starting, {:turn, _turn}}}), do: "starting turn · Ctrl-C cancels"
+  defp status_row(%State{activity: {:active, _request, _turn, _phase}}), do: "running · Ctrl-C cancels"
+  defp status_row(%State{activity: {:cancelling, _turn, _target}}), do: "cancelling"
+
+  defp status_row(%State{activity: {:review, _request, _turn, _result, :awaiting}}),
+    do: "review required · A approves · D denies"
+
+  defp status_row(%State{activity: {:review, _request, _turn, _result, {:responding, _decision}}}),
+    do: "sending review decision"
+
+  defp status_row(%State{activity: {:failed, :hibernated, _reason, error}}),
+    do: SafeText.summary(error)
+
+  defp status_row(%State{activity: {:failed, _kind, _reason, error}}),
+    do: "error · #{SafeText.summary(error)}"
+
+  defp status_row(%State{activity: activity}), do: Activity.tag(activity) |> Atom.to_string()
 end

@@ -46,7 +46,7 @@ defmodule Jido.Console.Tui.SelectionTest do
     {state, [{:apply_selection, selection}]} = State.update(state, {:terminal, {:key, :enter}})
     assert selection.model == "ollama:llama3.2"
     assert state.selection.model == "ollama:llama3.2"
-    assert state.status == :resolving
+    assert {:preparing, {:selection, _previous}} = state.activity
     assert List.last(state.messages).content =~ "Selected ollama:llama3.2"
     assert Enum.join(View.render(state).rows, "\n") =~ "ollama:llama3.2"
 
@@ -63,7 +63,7 @@ defmodule Jido.Console.Tui.SelectionTest do
     {state, []} = State.update(state, {:terminal, {:text, "do work"}})
     {state, effects} = State.update(state, {:terminal, {:key, :enter}})
     assert effects == []
-    assert state.status == :error
-    assert state.error =~ "unavailable model"
+    assert {:failed, :selection, _reason, error} = state.activity
+    assert error =~ "unavailable model"
   end
 end

@@ -94,9 +94,9 @@ defmodule Jido.Console.Session.Client.TUITest do
         session_request: request
       )
 
-    assert restored.request == request
-    assert restored.status == :running
-    assert restored.streaming == "still running"
+    assert State.active_request(restored) == request
+    assert {:active, ^request, _turn, :streaming} = restored.activity
+    assert State.active_turn(restored).assistant == "still running"
 
     send(worker, :finish)
 

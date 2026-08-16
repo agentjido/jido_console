@@ -43,8 +43,7 @@ defmodule Jido.Console.Tui.ViewTest do
     state = %{
       State.new(:session, {50, 10}, project_instructions: [%{"path" => "\e[2JAGENTS.md", "scope" => "root"}])
       | messages: [%{role: :assistant, content: "safe\e]0;title\a\e[31mtext\e[0m"}],
-        error: "bad\e[2J",
-        status: :error
+        activity: {:failed, :turn, :bad_output, "bad\e[2J"}
     }
 
     frame = View.render(state)
@@ -59,11 +58,12 @@ defmodule Jido.Console.Tui.ViewTest do
   end
 
   test "renders streaming content as a temporary assistant message" do
+    turn = Turn.new(0, "hello") |> Turn.put_request(%{request_id: "request-1"}) |> Map.put(:assistant, "working")
+
     state = %{
       State.new(:session, {40, 10})
       | messages: [%{role: :user, content: "hello"}],
-        streaming: "working",
-        status: :running
+        activity: {:active, :request, turn, :streaming}
     }
 
     text = state |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
@@ -74,31 +74,32 @@ defmodule Jido.Console.Tui.ViewTest do
   end
 
   test "renders runtime startup, queued prompt, and startup failure states" do
-    starting = State.new(nil, {60, 8}, runtime_status: :starting)
+    starting = State.new(nil, {60, 8}, activity: {:starting, {:runtime, :empty}})
     text = starting |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
     assert text =~ "starting runtime · Enter queues"
 
-    queued = %{starting | submit_when_ready?: true}
+    queued = %{starting | activity: {:starting, {:runtime, :submit_when_ready}}}
     text = queued |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
     assert text =~ "starting runtime · prompt queued"
 
-    failed = %{starting | runtime_status: :failed, error: "provider failed"}
+    failed = %{starting | activity: {:failed, :startup, :provider_failed, "provider failed"}}
     text = failed |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
     assert text =~ "startup failed · Esc exits"
     assert text =~ "provider failed"
   end
 
   test "renders each terminal status" do
+    turn = Turn.new(0, "")
+
     cases = [
-      {:cancelling, nil, "cancelling"},
-      {:interrupted, nil, "paused"},
-      {:interrupted, "review needed", "review needed"},
-      {:error, "failed", "error · failed"},
-      {:custom, nil, "custom"}
+      {{:cancelling, turn, :before_start}, "cancelling"},
+      {{:failed, :hibernated, nil, "paused"}, "paused"},
+      {{:failed, :hibernated, :review_needed, "review needed"}, "review needed"},
+      {{:failed, :turn, :failed, "failed"}, "error · failed"}
     ]
 
-    for {status, error, expected} <- cases do
-      state = %{State.new(:session, {40, 8}) | status: status, error: error}
+    for {activity, expected} <- cases do
+      state = %{State.new(:session, {40, 8}) | activity: activity}
       text = state |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
       assert text =~ expected
     end
@@ -109,7 +110,7 @@ defmodule Jido.Console.Tui.ViewTest do
       Turn.new(0, "hello")
       |> Turn.finish(:failed, "partial answer", error: "The provider rejected the request.")
 
-    state = %{State.new(:session, {60, 10}) | turns: [turn], status: :error, error: "provider error"}
+    state = %{State.new(:session, {60, 10}) | turns: [turn], activity: {:failed, :turn, :provider, "provider error"}}
     text = state |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
 
     assert text =~ "Assistant (partial)"
@@ -144,7 +145,7 @@ defmodule Jido.Console.Tui.ViewTest do
     }
 
     turn = Turn.put_reviews(turn, [review])
-    state = %{State.new(:session, {80, 30}) | active_turn: turn, status: :review}
+    state = %{State.new(:session, {80, 30}) | activity: {:review, :request, turn, :result, :awaiting}}
     text = state |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
 
     for marker <- ["[planned]", "[running]", "[done]", "[failed]", "[retried]"] do

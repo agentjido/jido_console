@@ -1124,7 +1124,7 @@ defmodule Jido.Console.TuiTest do
     send_prompt(owner, ref)
     assert_receive {:failure_turn_started, :blocking_start}
     assert_receive {:start_turn_blocked, worker}
-    assert_frame_contains("running · Ctrl-C cancels")
+    assert_frame_contains("starting turn · Ctrl-C cancels")
 
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task, 500)

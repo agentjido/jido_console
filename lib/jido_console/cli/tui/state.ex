@@ -1,7 +1,7 @@
 defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
-  alias Jido.Console.Tui.{Editor, EventProjection, SafeText, Selection, Turn}
+  alias Jido.Console.Tui.{Activity, Editor, EventProjection, SafeText, Selection, Turn}
   alias Jido.Console.Runtime.Result, as: RuntimeResult
   alias Jido.Console.Runtime.Result.{Cancelled, Error, Hibernated, Ok, PendingReview}
   alias Jido.Console.Session.Request, as: SessionRequest
@@ -20,27 +20,16 @@ defmodule Jido.Console.Tui.State do
             history_index: nil,
             history_draft: nil,
             history_limit: @default_history_limit,
-            pending_prompt: nil,
             scroll_offset: 0,
             turn_limit: @default_turn_limit,
             messages: [],
-            streaming: "",
-            runtime_status: :ready,
-            startup_error: nil,
-            submit_when_ready?: false,
-            status: :idle,
-            error: nil,
-            request: nil,
-            finishing?: false,
+            activity: :idle,
             prepare_prompt?: false,
             project_instructions: [],
             coding_reviews: [],
             turns: [],
-            active_turn: nil,
             next_turn_id: 0,
-            pending_review: nil,
             selection: nil,
-            previous_selection: nil,
             dirty?: true,
             render_scheduled?: false
 
@@ -63,7 +52,7 @@ defmodule Jido.Console.Tui.State do
       session: session,
       session_client: Keyword.get(opts, :session_client),
       size: size,
-      runtime_status: Keyword.get(opts, :runtime_status, :ready),
+      activity: Keyword.get(opts, :activity, :idle),
       prepare_prompt?: Keyword.get(opts, :prepare_prompt, false),
       project_instructions: Keyword.get(opts, :project_instructions, []),
       history_limit: positive_limit(opts, :history_limit, @default_history_limit),
@@ -91,50 +80,60 @@ defmodule Jido.Console.Tui.State do
         restore_event(acc, event)
       end)
 
-    request = if restored.active, do: active_request, else: nil
-    active_turn = if restored.active, do: put_snapshot_request(restored.active, request), else: nil
+    active_turn = if restored.active, do: put_snapshot_request(restored.active, active_request), else: nil
+
+    activity =
+      case {active_turn, active_request} do
+        {%Turn{} = turn, %SessionRequest{} = request} -> {:active, request, turn, :streaming}
+        {%Turn{} = turn, _request} -> {:starting, {:turn, turn}}
+        {nil, _request} -> state.activity
+      end
 
     %{
       state
       | messages: retain(restored.messages, state.turn_limit * 2),
         turns: retain(restored.turns, state.turn_limit),
-        active_turn: active_turn,
         next_turn_id: restored.next_id,
-        request: request,
-        streaming: if(active_turn, do: active_turn.assistant, else: ""),
-        status: if(active_turn, do: :running, else: state.status),
+        activity: activity,
         dirty?: true
     }
   end
 
   def restore_snapshot(%__MODULE__{} = state, _snapshot, _active_request), do: state
 
+  @spec active_request(t()) :: SessionRequest.t() | nil
+  def active_request(%__MODULE__{activity: activity}), do: Activity.request(activity)
+
+  @spec active_turn(t()) :: Turn.t() | nil
+  def active_turn(%__MODULE__{activity: activity}), do: Activity.turn(activity)
+
+  @spec startup_failure(t()) :: {:ok, term()} | :none
+  def startup_failure(%__MODULE__{activity: {:failed, :startup, reason, _message}}), do: {:ok, reason}
+  def startup_failure(%__MODULE__{}), do: :none
+
   @spec update(t(), term()) :: {t(), [effect()]}
-  def update(%__MODULE__{status: :review} = state, {:terminal, {:text, text}})
+  def update(%__MODULE__{activity: {:review, _, _, _, :awaiting}} = state, {:terminal, {:text, text}})
       when text in ["a", "A", "y", "Y"],
       do: respond_to_review(state, :approve)
 
-  def update(%__MODULE__{status: :review} = state, {:terminal, {:text, text}})
+  def update(%__MODULE__{activity: {:review, _, _, _, :awaiting}} = state, {:terminal, {:text, text}})
       when text in ["d", "D", "n", "N"],
       do: respond_to_review(state, :deny)
 
-  def update(%__MODULE__{status: status} = state, {:terminal, {:text, _text}})
-      when status in [:review, :responding_review],
-      do: {state, []}
+  def update(%__MODULE__{activity: {:review, _, _, _, _}} = state, {:terminal, {:text, _text}}),
+    do: {state, []}
 
-  def update(%__MODULE__{status: status} = state, {:terminal, {:paste, _text}})
-      when status in [:review, :responding_review],
-      do: {state, []}
+  def update(%__MODULE__{activity: {:review, _, _, _, _}} = state, {:terminal, {:paste, _text}}),
+    do: {state, []}
 
-  def update(%__MODULE__{status: status} = state, {:terminal, {:key, :newline}})
-      when status in [:review, :responding_review],
-      do: {state, []}
+  def update(%__MODULE__{activity: {:review, _, _, _, _}} = state, {:terminal, {:key, :newline}}),
+    do: {state, []}
 
-  def update(%__MODULE__{status: :resolving} = state, {:terminal, {kind, _value}})
+  def update(%__MODULE__{activity: {:preparing, _}} = state, {:terminal, {kind, _value}})
       when kind in [:text, :paste],
       do: {state, []}
 
-  def update(%__MODULE__{status: :resolving} = state, {:terminal, {:key, key}})
+  def update(%__MODULE__{activity: {:preparing, _}} = state, {:terminal, {:key, key}})
       when key in [:newline, :backspace, :left, :right, :up, :down],
       do: {state, []}
 
@@ -170,25 +169,22 @@ defmodule Jido.Console.Tui.State do
     changed(state, scroll_offset: max(state.scroll_offset - scroll_page(state), 0))
   end
 
-  def update(
-        %__MODULE__{runtime_status: :starting, request: nil} = state,
-        {:terminal, {:key, :enter}}
-      ) do
+  def update(%__MODULE__{activity: {:starting, {:runtime, _}}} = state, {:terminal, {:key, :enter}}) do
     if String.trim(state.editor.text) == "" do
       {state, []}
     else
-      changed(state, submit_when_ready?: true)
+      changed(state, activity: {:starting, {:runtime, :submit_when_ready}})
     end
   end
 
-  def update(%__MODULE__{runtime_status: :failed} = state, {:terminal, {:key, :enter}}),
+  def update(%__MODULE__{activity: {:failed, :startup, _, _}} = state, {:terminal, {:key, :enter}}),
     do: {state, []}
 
-  def update(%__MODULE__{status: status} = state, {:terminal, {:key, :enter}})
-      when status in [:running, :resolving, :cancelling, :review, :responding_review],
+  def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, :enter}})
+      when elem(activity, 0) in [:preparing, :starting, :active, :review, :cancelling],
       do: {state, []}
 
-  def update(%__MODULE__{request: nil} = state, {:terminal, {:key, :enter}}) do
+  def update(%__MODULE__{} = state, {:terminal, {:key, :enter}}) do
     prompt = String.trim(state.editor.text)
 
     if prompt == "" do
@@ -198,21 +194,17 @@ defmodule Jido.Console.Tui.State do
     end
   end
 
-  def update(%__MODULE__{} = state, {:prompt_ready, prompt, context}) do
+  def update(%__MODULE__{activity: {:preparing, {:prompt, original}}} = state, {:prompt_ready, prompt, context}) do
     turn = Turn.new(state.next_turn_id, prompt, context)
 
-    state = remember_prompt(state, state.pending_prompt || prompt)
+    state = remember_prompt(state, original)
 
     state = %{
       state
       | editor: Editor.clear(state.editor),
-        pending_prompt: nil,
         scroll_offset: 0,
         messages: state.messages ++ [%{role: :user, content: turn.prompt}],
-        streaming: "",
-        status: :running,
-        error: nil,
-        active_turn: turn,
+        activity: {:starting, {:turn, turn}},
         next_turn_id: state.next_turn_id + 1,
         dirty?: true
     }
@@ -220,30 +212,35 @@ defmodule Jido.Console.Tui.State do
     {state, [{:start_turn, turn.prompt, context}]}
   end
 
-  def update(%__MODULE__{} = state, {:prompt_error, reason}) do
+  def update(%__MODULE__{activity: {:preparing, preparation}} = state, {:prompt_error, reason}) do
+    selection =
+      case preparation do
+        {:selection, previous} -> previous
+        {:prompt, _prompt} -> state.selection
+      end
+
     {%{
        state
-       | pending_prompt: nil,
-         selection: state.previous_selection || state.selection,
-         previous_selection: nil,
-         status: :error,
-         error: format_error(reason),
+       | selection: selection,
+         activity: {:failed, failure_kind(preparation), reason, format_error(reason)},
          dirty?: true
      }, []}
   end
 
   def update(%__MODULE__{} = state, {:runtime_ready, session, instructions}) do
-    submit? = state.submit_when_ready?
+    submit? = state.activity == {:starting, {:runtime, :submit_when_ready}}
+
+    activity =
+      case state.activity do
+        {:starting, {:runtime, _queued}} -> :idle
+        {:preparing, {:selection, _previous}} -> :idle
+        other -> other
+      end
 
     state = %{
       state
       | session: session,
-        runtime_status: :ready,
-        startup_error: nil,
-        submit_when_ready?: false,
-        previous_selection: nil,
-        status: if(state.request, do: :running, else: :idle),
-        error: nil,
+        activity: activity,
         project_instructions: instructions,
         dirty?: true
     }
@@ -260,33 +257,34 @@ defmodule Jido.Console.Tui.State do
   def update(%__MODULE__{} = state, {:runtime_failed, reason}) do
     {%{
        state
-       | runtime_status: :failed,
-         startup_error: reason,
-         submit_when_ready?: false,
-         status: :error,
-         error: format_error(reason),
+       | activity: {:failed, :startup, reason, format_error(reason)},
          dirty?: true
      }, []}
   end
 
-  def update(%__MODULE__{} = state, {:terminal, {:key, :enter}}), do: {state, []}
-
-  def update(
-        %__MODULE__{request: nil, active_turn: %Turn{}} = state,
-        {:terminal, {:key, :ctrl_c}}
-      ) do
-    {%{state | status: :cancelling, dirty?: true}, []}
+  def update(%__MODULE__{activity: {:starting, {:turn, turn}}} = state, {:terminal, {:key, :ctrl_c}}) do
+    {%{state | activity: {:cancelling, turn, :before_start}, dirty?: true}, []}
   end
 
-  def update(%__MODULE__{request: nil} = state, {:terminal, {:key, key}})
-      when key in [:escape, :ctrl_c],
+  def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, :escape}})
+      when activity == :idle or elem(activity, 0) in [:preparing, :starting, :failed],
       do: {state, [:exit]}
 
-  def update(%__MODULE__{status: :cancelling} = state, {:terminal, {:key, :ctrl_c}}),
+  def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, key}})
+      when key in [:escape, :ctrl_c] and (activity == :idle or elem(activity, 0) == :failed),
+      do: {state, [:exit]}
+
+  def update(%__MODULE__{activity: {:cancelling, _, _}} = state, {:terminal, {:key, :ctrl_c}}),
     do: {state, []}
 
-  def update(%__MODULE__{request: request} = state, {:terminal, {:key, :ctrl_c}}) do
-    {%{state | status: :cancelling, dirty?: true}, [{:cancel_turn, request}]}
+  def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, :ctrl_c}}) do
+    case {Activity.turn(activity), Activity.request(activity)} do
+      {%Turn{} = turn, %SessionRequest{} = request} ->
+        {%{state | activity: {:cancelling, turn, {:request, request}}, dirty?: true}, [{:cancel_turn, request}]}
+
+      _other ->
+        {state, [:exit]}
+    end
   end
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :escape}}), do: {state, []}
@@ -296,82 +294,65 @@ defmodule Jido.Console.Tui.State do
     changed(state, size: {columns, rows})
   end
 
-  def update(%__MODULE__{} = state, {:turn_started, %SessionRequest{} = request}) do
-    {turn, next_turn_id} = ensure_turn(state)
+  def update(
+        %__MODULE__{activity: {:starting, {:turn, starting_turn}}} = state,
+        {:turn_started, %SessionRequest{} = request}
+      ) do
+    {turn, next_turn_id} = ensure_turn(state, starting_turn)
     turn = Turn.put_request(turn, request)
-
-    cancel? = state.status == :cancelling
 
     state = %{
       state
-      | request: request,
-        active_turn: turn,
+      | activity: {:active, request, turn, :streaming},
         next_turn_id: next_turn_id,
-        finishing?: false,
-        status: if(cancel?, do: :cancelling, else: :running),
         dirty?: true
     }
 
-    if cancel?, do: {state, [{:cancel_turn, request}]}, else: {state, []}
+    {state, []}
   end
 
-  def update(%__MODULE__{active_turn: %Turn{} = turn} = state, {:jidoka, event}) do
+  def update(
+        %__MODULE__{activity: {:cancelling, turn, :before_start}} = state,
+        {:turn_started, %SessionRequest{} = request}
+      ) do
+    turn = Turn.put_request(turn, request)
+    state = %{state | activity: {:cancelling, turn, {:request, request}}, dirty?: true}
+    {state, [{:cancel_turn, request}]}
+  end
+
+  def update(%__MODULE__{} = state, {:turn_started, _request}), do: {state, []}
+
+  def update(%__MODULE__{activity: activity} = state, {:jidoka, event}) do
+    turn = Activity.turn(activity)
+
     with {:ok, projection} <- EventProjection.project(event),
+         %Turn{} <- turn,
          {:ok, turn} <- Turn.apply_event(turn, projection) do
-      state = %{
-        state
-        | active_turn: turn,
-          streaming: turn.assistant,
-          finishing?: turn.status == :terminal,
-          dirty?: true
-      }
+      activity = Activity.replace_turn(activity, turn)
+      activity = mark_finishing(activity, turn)
+      state = %{state | activity: activity, dirty?: true}
 
       {state, []}
     else
+      nil -> {state, []}
       {:ignore, _reason} -> {state, []}
       {:error, _reason} -> {state, []}
     end
   end
 
-  def update(%__MODULE__{} = state, {:jidoka, _event}), do: {state, []}
-
-  def update(
-        %__MODULE__{} = state,
-        {:turn_result, %RuntimeResult{outcome: %Ok{} = outcome} = result}
-      ) do
-    changes = retain(outcome.coding_reviews, @review_limit)
-    state = %{state | coding_reviews: changes}
-    finish(state, result.session, outcome.content, :idle, nil, outcome: :completed, changes: changes)
+  def update(%__MODULE__{activity: activity} = state, {:turn_result, result}) do
+    case Activity.turn(activity) do
+      %Turn{} -> apply_turn_result(state, result)
+      nil -> {state, []}
+    end
   end
 
-  def update(
-        %__MODULE__{} = state,
-        {:turn_result, %RuntimeResult{outcome: %PendingReview{}} = result}
-      ) do
-    pause_for_review(state, result)
-  end
-
-  def update(
-        %__MODULE__{} = state,
-        {:turn_result, %RuntimeResult{outcome: %Hibernated{}} = result}
-      ) do
-    finish(state, result.session, state.streaming, :interrupted, "Agent paused.", outcome: :hibernated)
-  end
-
-  def update(
-        %__MODULE__{} = state,
-        {:turn_result, %RuntimeResult{outcome: %Cancelled{}} = result}
-      ) do
-    finish(state, result.session, state.streaming, :idle, nil, outcome: :cancelled)
-  end
-
-  def update(
-        %__MODULE__{} = state,
-        {:turn_result, %RuntimeResult{outcome: %Error{} = outcome} = result}
-      ) do
-    error = format_error(outcome.reason)
-    state = if outcome.approval == :denied, do: state, else: put_review_failure(state, outcome.reason)
-    finish(state, result.session, state.streaming, :error, error, outcome: :failed)
+  def update(%__MODULE__{} = state, {:turn_result, request, result}) do
+    if Activity.request(state.activity) == request do
+      update(state, {:turn_result, result})
+    else
+      {state, []}
+    end
   end
 
   def update(%__MODULE__{} = state, {:coding_review, reviews}) do
@@ -380,17 +361,6 @@ defmodule Jido.Console.Tui.State do
     changed(state, coding_reviews: changes)
   end
 
-  def update(%__MODULE__{} = state, {:turn_result, {:error, reason}}) do
-    error = format_error(reason)
-    finish(state, state.session, state.streaming, :error, error, outcome: :failed)
-  end
-
-  def update(%__MODULE__{request: request} = state, {:turn_result, request, result}) do
-    update(state, {:turn_result, result})
-  end
-
-  def update(%__MODULE__{} = state, {:turn_result, _old_request, _result}), do: {state, []}
-
   def update(%__MODULE__{} = state, :render_scheduled),
     do: {%{state | render_scheduled?: true}, []}
 
@@ -398,6 +368,61 @@ defmodule Jido.Console.Tui.State do
     do: {%{state | dirty?: false, render_scheduled?: false}, []}
 
   def update(%__MODULE__{} = state, _event), do: {state, []}
+
+  defp apply_turn_result(
+         state,
+         %RuntimeResult{outcome: %Ok{} = outcome} = result
+       ) do
+    changes = retain(outcome.coding_reviews, @review_limit)
+    state = %{state | coding_reviews: changes}
+    finish(state, result.session, outcome.content, :idle, outcome: :completed, changes: changes)
+  end
+
+  defp apply_turn_result(
+         state,
+         %RuntimeResult{outcome: %PendingReview{}} = result
+       ) do
+    pause_for_review(state, result)
+  end
+
+  defp apply_turn_result(
+         state,
+         %RuntimeResult{outcome: %Hibernated{} = outcome} = result
+       ) do
+    finish(
+      state,
+      result.session,
+      Activity.streaming(state.activity),
+      {:failed, :hibernated, outcome.reason, "Agent paused."},
+      outcome: :hibernated
+    )
+  end
+
+  defp apply_turn_result(
+         state,
+         %RuntimeResult{outcome: %Cancelled{}} = result
+       ) do
+    finish(state, result.session, Activity.streaming(state.activity), :idle, outcome: :cancelled)
+  end
+
+  defp apply_turn_result(
+         state,
+         %RuntimeResult{outcome: %Error{} = outcome} = result
+       ) do
+    error = format_error(outcome.reason)
+    state = if outcome.approval == :denied, do: state, else: put_review_failure(state, outcome.reason)
+
+    finish(state, result.session, Activity.streaming(state.activity), {:failed, :turn, outcome.reason, error},
+      outcome: :failed
+    )
+  end
+
+  defp apply_turn_result(state, {:error, reason}) do
+    error = format_error(reason)
+    finish(state, state.session, Activity.streaming(state.activity), {:failed, :turn, reason, error}, outcome: :failed)
+  end
+
+  defp apply_turn_result(state, _result), do: {state, []}
 
   defp submit_prompt(state, prompt) do
     case Selection.handle(prompt, state.selection) do
@@ -415,12 +440,12 @@ defmodule Jido.Console.Tui.State do
         enqueue_turn(state, prompt)
 
       {:error, reason} ->
-        {%{state | status: :error, error: reason, dirty?: true}, []}
+        {%{state | activity: {:failed, :selection, reason, reason}, dirty?: true}, []}
     end
   end
 
   defp enqueue_turn(%__MODULE__{prepare_prompt?: true} = state, prompt) do
-    {%{state | pending_prompt: prompt, status: :resolving, error: nil, dirty?: true}, [{:prepare_prompt, prompt}]}
+    {%{state | activity: {:preparing, {:prompt, prompt}}, dirty?: true}, [{:prepare_prompt, prompt}]}
   end
 
   defp enqueue_turn(state, prompt) do
@@ -431,13 +456,9 @@ defmodule Jido.Console.Tui.State do
     state = %{
       state
       | editor: Editor.clear(state.editor),
-        pending_prompt: nil,
         scroll_offset: 0,
         messages: state.messages ++ [%{role: :user, content: turn.prompt}],
-        streaming: "",
-        status: :running,
-        error: nil,
-        active_turn: turn,
+        activity: {:starting, {:turn, turn}},
         next_turn_id: state.next_turn_id + 1,
         dirty?: true
     }
@@ -508,8 +529,9 @@ defmodule Jido.Console.Tui.State do
 
   defp scroll_page(%__MODULE__{size: {_columns, rows}}), do: max(rows - 4, 1)
 
-  defp finish(state, session, content, status, error, opts) do
-    content = if is_binary(content) and content != "", do: content, else: state.streaming
+  defp finish(state, session, content, next_activity, opts) do
+    error = Activity.error(next_activity)
+    content = if is_binary(content) and content != "", do: content, else: Activity.streaming(state.activity)
     {turn, next_turn_id} = ensure_turn(state)
 
     turn =
@@ -534,35 +556,34 @@ defmodule Jido.Console.Tui.State do
        state
        | session: session,
          messages: messages,
-         streaming: "",
-         status: status,
-         error: error,
-         request: nil,
+         activity: next_activity,
          turns: turns,
-         active_turn: nil,
          next_turn_id: next_turn_id,
-         pending_review: nil,
-         finishing?: false,
          dirty?: true
      }, []}
   end
 
-  defp ensure_turn(%__MODULE__{active_turn: %Turn{} = turn} = state),
-    do: {turn, state.next_turn_id}
+  defp ensure_turn(%__MODULE__{} = state) do
+    case Activity.turn(state.activity) do
+      %Turn{} = turn -> {turn, state.next_turn_id}
+      nil -> {Turn.new(state.next_turn_id, ""), state.next_turn_id + 1}
+    end
+  end
 
-  defp ensure_turn(%__MODULE__{} = state),
-    do: {Turn.new(state.next_turn_id, ""), state.next_turn_id + 1}
+  defp ensure_turn(%__MODULE__{} = state, %Turn{} = turn), do: {turn, state.next_turn_id}
 
-  defp put_active_changes(%__MODULE__{active_turn: %Turn{} = turn} = state, changes),
-    do: %{state | active_turn: Turn.put_changes(turn, changes)}
-
-  defp put_active_changes(state, _changes), do: state
+  defp put_active_changes(%__MODULE__{} = state, changes) do
+    case Activity.turn(state.activity) do
+      %Turn{} = turn -> %{state | activity: Activity.replace_turn(state.activity, Turn.put_changes(turn, changes))}
+      nil -> state
+    end
+  end
 
   defp put_review_failure(
-         %__MODULE__{status: :responding_review, active_turn: %Turn{} = turn} = state,
+         %__MODULE__{activity: {:review, request, turn, result, {:responding, decision}}} = state,
          error
        ),
-       do: %{state | active_turn: Turn.fail_review(turn, error)}
+       do: %{state | activity: {:review, request, Turn.fail_review(turn, error), result, {:responding, decision}}}
 
   defp put_review_failure(state, _error), do: state
 
@@ -570,28 +591,29 @@ defmodule Jido.Console.Tui.State do
          state,
          %RuntimeResult{outcome: %PendingReview{reviews: reviews}} = result
        ) do
-    {turn, next_turn_id} = ensure_turn(state)
-    turn = Turn.put_reviews(turn, reviews)
+    case Activity.request(state.activity) do
+      %SessionRequest{} = request ->
+        {turn, next_turn_id} = ensure_turn(state)
+        turn = Turn.put_reviews(turn, reviews)
 
-    {%{
-       state
-       | session: result.session,
-         request: state.request,
-         active_turn: turn,
-         next_turn_id: next_turn_id,
-         pending_review: result,
-         streaming: turn.assistant,
-         status: :review,
-         error: nil,
-         finishing?: false,
-         dirty?: true
-     }, []}
+        {%{
+           state
+           | session: result.session,
+             activity: {:review, request, turn, result, :awaiting},
+             next_turn_id: next_turn_id,
+             dirty?: true
+         }, []}
+
+      nil ->
+        {state, []}
+    end
   end
 
   defp respond_to_review(
          %__MODULE__{
-           pending_review: %RuntimeResult{outcome: %PendingReview{reviews: [review | _]}} = result,
-           active_turn: %Turn{} = turn
+           activity:
+             {:review, request, turn, %RuntimeResult{outcome: %PendingReview{reviews: [review | _]}} = result,
+              :awaiting}
          } = state,
          decision
        ) do
@@ -599,15 +621,20 @@ defmodule Jido.Console.Tui.State do
 
     {%{
        state
-       | active_turn: turn,
-         pending_review: nil,
-         status: :responding_review,
-         error: nil,
+       | activity: {:review, request, turn, result, {:responding, decision}},
          dirty?: true
-     }, [{:respond_review, decision, state.request, result, review}]}
+     }, [{:respond_review, decision, request, result, review}]}
   end
 
   defp respond_to_review(state, _decision), do: {state, []}
+
+  defp mark_finishing({:active, request, _old_turn, _phase}, %Turn{status: :terminal} = turn),
+    do: {:active, request, turn, :finishing}
+
+  defp mark_finishing(activity, _turn), do: activity
+
+  defp failure_kind({:prompt, _prompt}), do: :preparation
+  defp failure_kind({:selection, _previous}), do: :selection
 
   defp format_error(reason) do
     reason
@@ -634,11 +661,9 @@ defmodule Jido.Console.Tui.State do
     state = %{
       state
       | selection: selection,
-        previous_selection: if(changed?, do: previous),
         editor: Editor.clear(state.editor),
         messages: state.messages ++ [%{role: :system, content: notice}],
-        status: if(changed?, do: :resolving, else: :idle),
-        error: nil,
+        activity: if(changed?, do: {:preparing, {:selection, previous}}, else: :idle),
         dirty?: true
     }
 

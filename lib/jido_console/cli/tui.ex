@@ -59,7 +59,7 @@ defmodule Jido.Console.Tui do
           terminal.size,
           [
             prepare_prompt: true,
-            runtime_status: :starting,
+            activity: {:starting, {:runtime, :empty}},
             model: Keyword.get(opts, :model),
             coding_profile: Keyword.get(opts, :coding_profile),
             session_client: session_client,
@@ -275,8 +275,17 @@ defmodule Jido.Console.Tui do
       {:jido_terminal, ref, event} when ref == terminal.ref ->
         continue(state, {:terminal, event}, terminal, runtime, opts, startup, workers)
 
-      {:session_runtime_event, _session_id, request, event} when request == state.request ->
-        continue(state, {:jidoka, event}, terminal, runtime, opts, startup, workers)
+      {:session_runtime_event, _session_id, request, event} ->
+        continue_if_active_request(
+          state,
+          request,
+          {:jidoka, event},
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
 
       {:session_runtime_started, _session_id, request} ->
         continue(state, {:turn_started, request}, terminal, runtime, opts, startup, workers)
@@ -292,15 +301,32 @@ defmodule Jido.Console.Tui do
           workers
         )
 
-      {:session_runtime_error, _session_id, request, reason} when request == state.request ->
-        continue(state, {:turn_result, request, {:error, reason}}, terminal, runtime, opts, startup, workers)
+      {:session_runtime_error, _session_id, request, reason} ->
+        continue_if_active_request(
+          state,
+          request,
+          {:turn_result, request, {:error, reason}},
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
 
       {:session_control_result, _session_id, _request, {:error, :request_already_finished}} ->
         loop(state, terminal, runtime, opts, startup, workers)
 
-      {:session_control_result, _session_id, request, {:error, reason}}
-      when request == state.request ->
-        continue(state, {:turn_result, request, {:error, reason}}, terminal, runtime, opts, startup, workers)
+      {:session_control_result, _session_id, request, {:error, reason}} ->
+        continue_if_active_request(
+          state,
+          request,
+          {:turn_result, request, {:error, reason}},
+          terminal,
+          runtime,
+          opts,
+          startup,
+          workers
+        )
 
       {:session_control_result, _session_id, _request, _result} ->
         loop(state, terminal, runtime, opts, startup, workers)
@@ -409,8 +435,20 @@ defmodule Jido.Console.Tui do
     end
   end
 
-  defp exit_result(%State{runtime_status: :failed, startup_error: reason}), do: {:error, reason}
-  defp exit_result(_state), do: :ok
+  defp exit_result(state) do
+    case State.startup_failure(state) do
+      {:ok, reason} -> {:error, reason}
+      :none -> :ok
+    end
+  end
+
+  defp continue_if_active_request(state, request, event, terminal, runtime, opts, startup, workers) do
+    if State.active_request(state) == request do
+      continue(state, event, terminal, runtime, opts, startup, workers)
+    else
+      loop(state, terminal, runtime, opts, startup, workers)
+    end
+  end
 
   defp paint_before_effects(state, [], _terminal), do: {:ok, state}
   defp paint_before_effects(state, [:exit | _effects], _terminal), do: {:ok, state}
