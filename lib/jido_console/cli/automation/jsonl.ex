@@ -90,7 +90,7 @@ defmodule Jido.Console.Automation.JSONL do
   end
 
   defp start_sink(manifest, root, sink_opts) do
-    with {:ok, tracker} <- Tracker.start(manifest, root != nil, sink_opts.utc_now) do
+    with {:ok, tracker} <- Tracker.start(manifest, sink_opts.utc_now) do
       sink = struct!(__MODULE__, Map.put(sink_opts, :root, root) |> Map.put(:tracker, tracker))
 
       case write_initial_files(sink, manifest) do

@@ -4,9 +4,9 @@ defmodule Jido.Console.Automation.JSONL.Tracker do
   alias Jido.Console.Automation.ResultValue
 
   @doc "Starts one lifecycle tracker."
-  @spec start(map(), boolean(), (-> DateTime.t() | String.t())) :: Agent.on_start()
-  def start(manifest, strict?, utc_now) do
-    Agent.start_link(fn -> initial_state(manifest, strict?, utc_now) end)
+  @spec start(map(), (-> DateTime.t() | String.t())) :: Agent.on_start()
+  def start(manifest, utc_now) do
+    Agent.start_link(fn -> initial_state(manifest, utc_now) end)
   end
 
   @doc "Records that one planned cell started."
@@ -28,7 +28,7 @@ defmodule Jido.Console.Automation.JSONL.Tracker do
         summary.run_id != state.run_id ->
           {:error, {:invalid_lifecycle_run_id, summary.run_id}}
 
-        state.strict? and summary.planned != map_size(state.planned) ->
+        summary.planned != map_size(state.planned) ->
           {:error, {:invalid_lifecycle_planned_count, summary.planned, map_size(state.planned)}}
 
         summary.completed != map_size(state.completed) ->
@@ -129,10 +129,6 @@ defmodule Jido.Console.Automation.JSONL.Tracker do
     end
   end
 
-  defp ensure_planned(%{strict?: false} = state, cell_ref) do
-    {:ok, put_in(state, [:planned, cell_ref.cell_id], cell_ref)}
-  end
-
   defp ensure_planned(state, cell_ref) do
     case Map.fetch(state.planned, cell_ref.cell_id) do
       {:ok, ^cell_ref} -> {:ok, state}
@@ -182,13 +178,12 @@ defmodule Jido.Console.Automation.JSONL.Tracker do
     end
   end
 
-  defp initial_state(manifest, strict?, utc_now) do
+  defp initial_state(manifest, utc_now) do
     planned = Map.new(manifest.cells, fn cell -> {cell.cell_id, cell_ref(cell)} end)
 
     %{
       run_id: manifest.run_id,
       suite_id: manifest.suite_id,
-      strict?: strict?,
       status: :running,
       started_at: utc_iso(utc_now),
       finished_at: nil,

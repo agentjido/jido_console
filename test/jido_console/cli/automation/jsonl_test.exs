@@ -97,19 +97,44 @@ defmodule Jido.Console.Automation.JSONLTest do
     refute File.exists?(Path.join(root, "Outside Agent.jsonl"))
   end
 
-  test "rejects an unplanned lifecycle transition", %{root: root} do
-    output = Path.join(root, "transition")
-    {:ok, device} = StringIO.open("")
-    assert {:ok, sink} = JSONL.open(manifest(), output, output_device: device)
+  test "rejects unknown cells in every output mode", %{root: root} do
+    for mode <- [:stdout, :artifacts] do
+      {:ok, sink} = open_sink(root, mode, "unknown")
 
-    assert {:error, {:unplanned_lifecycle_cell, %{cell_id: "other", sequence: 2}}} =
-             JSONL.started(sink, %{cell_id: "other", sequence: 2})
+      assert {:error, {:unplanned_lifecycle_cell, %{cell_id: "other", sequence: 2}}} =
+               JSONL.started(sink, %{cell_id: "other", sequence: 2})
 
-    assert :ok = JSONL.abort(sink, :invalid_transition)
-    lifecycle = output |> Path.join("lifecycle.json") |> File.read!() |> Jason.decode!()
-    assert lifecycle["status"] == "incomplete"
-    assert lifecycle["started"] == []
-    assert lifecycle["missing"] == [%{"cell_id" => "cell", "sequence" => 1}]
+      assert :ok = JSONL.abort(sink, :invalid_transition)
+      assert_incomplete_lifecycle(root, mode, "unknown")
+    end
+  end
+
+  test "rejects duplicate cells in every output mode", %{root: root} do
+    for mode <- [:stdout, :artifacts] do
+      {:ok, sink} = open_sink(root, mode, "duplicate")
+      cell = %{cell_id: "cell", sequence: 1}
+
+      assert :ok = JSONL.started(sink, cell)
+
+      assert {:error, {:invalid_lifecycle_transition, "cell", :already_started}} =
+               JSONL.started(sink, cell)
+
+      assert :ok = JSONL.abort(sink, :invalid_transition)
+      assert_incomplete_lifecycle(root, mode, "duplicate")
+    end
+  end
+
+  test "rejects missing manifest cells in every output mode", %{root: root} do
+    incomplete_summary = %{summary() | planned: 0, completed: 0}
+
+    for mode <- [:stdout, :artifacts] do
+      {:ok, sink} = open_sink(root, mode, "missing")
+
+      assert {:error, {:invalid_lifecycle_planned_count, 0, 1}} =
+               JSONL.finish(sink, incomplete_summary)
+
+      assert_incomplete_lifecycle(root, mode, "missing")
+    end
   end
 
   defp result(agent_key) do
@@ -213,6 +238,25 @@ defmodule Jido.Console.Automation.JSONLTest do
       effective_agent_sha256: "effective-sha",
       scenario_sha256: "scenario-sha"
     }
+  end
+
+  defp open_sink(_root, :stdout, _name) do
+    {:ok, device} = StringIO.open("")
+    JSONL.open(manifest(), nil, output_device: device)
+  end
+
+  defp open_sink(root, :artifacts, name) do
+    {:ok, device} = StringIO.open("")
+    JSONL.open(manifest(), Path.join(root, name), output_device: device)
+  end
+
+  defp assert_incomplete_lifecycle(_root, :stdout, _name), do: :ok
+
+  defp assert_incomplete_lifecycle(root, :artifacts, name) do
+    lifecycle = root |> Path.join(name) |> Path.join("lifecycle.json") |> File.read!() |> Jason.decode!()
+    assert lifecycle["status"] == "incomplete"
+    assert lifecycle["started"] in [[], [%{"cell_id" => "cell", "sequence" => 1}]]
+    assert lifecycle["missing"] == [%{"cell_id" => "cell", "sequence" => 1}]
   end
 
   defp json_round_trip(value), do: value |> Jason.encode!() |> Jason.decode!()

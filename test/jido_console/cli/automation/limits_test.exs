@@ -94,7 +94,7 @@ defmodule Jido.Console.Automation.LimitsTest do
     ]
 
     {:ok, output} = StringIO.open("")
-    {:ok, sink} = JSONL.open(manifest(), nil, output_device: output)
+    {:ok, sink} = JSONL.open(manifest(cells), nil, output_device: output)
     owner = self()
 
     task =
@@ -143,7 +143,7 @@ defmodule Jido.Console.Automation.LimitsTest do
     limits = limits(%{"*" => 1}, max_total_tokens: 15)
     cells = Enum.map(1..3, &cell(&1, "openai:model", limits))
     {:ok, output} = StringIO.open("")
-    {:ok, sink} = JSONL.open(manifest(), nil, output_device: output)
+    {:ok, sink} = JSONL.open(manifest(cells), nil, output_device: output)
     {:ok, errors} = StringIO.open("")
     owner = self()
 
@@ -199,7 +199,7 @@ defmodule Jido.Console.Automation.LimitsTest do
     cells = Enum.map(1..2, &cell(&1, "openai:model", limits))
     {:ok, output} = StringIO.open("")
     {:ok, errors} = StringIO.open("")
-    {:ok, sink} = JSONL.open(manifest(), nil, output_device: output)
+    {:ok, sink} = JSONL.open(manifest(cells), nil, output_device: output)
     {:ok, clock} = Agent.start_link(fn -> 0 end)
     owner = self()
 
@@ -329,7 +329,7 @@ defmodule Jido.Console.Automation.LimitsTest do
     }
   end
 
-  defp manifest do
+  defp manifest(cells) do
     %{
       schema: "jido.run-manifest",
       schema_version: 1,
@@ -338,8 +338,17 @@ defmodule Jido.Console.Automation.LimitsTest do
       suite_file: "suite.yml",
       suite_sha256: "suite-sha",
       versions: %{jido_console: "1", jidoka: "1", elixir: "1", otp: "1"},
-      matrix: %{agents: [], models: [], scenarios: [], repeats: 1, cells: 0},
-      cells: []
+      matrix: %{agents: [], models: [], scenarios: [], repeats: 1, cells: length(cells)},
+      cells:
+        Enum.map(cells, fn cell ->
+          %{
+            sequence: cell.sequence,
+            cell_id: cell.cell_id,
+            dimensions: cell.dimensions,
+            sources: cell.sources,
+            execution_environment: %{status: :not_requested}
+          }
+        end)
     }
   end
 
