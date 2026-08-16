@@ -7,11 +7,13 @@
   "created": "2026-08-16T13:00:11Z",
   "description": "Audit rank: 6 of 30.\n\nOwner: JC-13 Session public and generated protocol.\nEvidence: lib/jido_console/session/protocol/generator.ex:40-53,134-143; validator.ex:40-67,93-118,172-184.\nWork: Generate one normalized specification per family and type with inherited required fields, known fields, and locality. Use it in Validator and the TypeScript discriminated union.\nAcceptance: Missing required fields and cross-type fields fail. Generated Elixir and TypeScript match the source schema. Digest and compile checks pass.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.6",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-21: Generate and validate type-specific session protocol contracts",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:44Z"
+  "updated_at": "2026-08-16T13:00:47Z"
 }
