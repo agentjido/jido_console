@@ -59,21 +59,11 @@ defmodule Jido.Console.Session.Reducer do
   end
 
   defp put_semantic(state, %{"type" => "run_started"} = event) do
-    %{state | active_run: event["payload"], transcript: state.transcript ++ [event]}
+    %{state | active_run: event["payload"]}
   end
 
-  defp put_semantic(state, %{"type" => type} = event) when type in ["run_completed", "run_failed"] do
-    %{
-      state
-      | active_run: nil,
-        outcomes: state.outcomes ++ [event],
-        transcript: state.transcript ++ [event]
-    }
-  end
-
-  defp put_semantic(state, %{"type" => type} = event) when type in ["control_requested", "control_completed"] do
-    %{state | controls: state.controls ++ [event]}
-  end
+  defp put_semantic(state, %{"type" => type}) when type in ["run_completed", "run_failed"],
+    do: %{state | active_run: nil}
 
   defp put_semantic(state, %{"type" => "queue_changed"} = event) do
     queue = if event["payload"]["queue"] == "steering", do: :steering, else: :follow_up
@@ -81,7 +71,5 @@ defmodule Jido.Console.Session.Reducer do
     %{state | queues: Map.put(state.queues, queue, items)}
   end
 
-  defp put_semantic(state, event) do
-    %{state | transcript: state.transcript ++ [event]}
-  end
+  defp put_semantic(state, _event), do: state
 end

@@ -17,12 +17,13 @@ defmodule Jido.Console.Session.State do
           session_id: String.t(),
           sequence: non_neg_integer(),
           history: [map()],
-          transcript: [map()],
-          outcomes: [map()],
-          controls: [map()],
           queues: %{steering: [map()], follow_up: [map()]},
           active_run: map() | nil
         }
+
+  @outcome_types ~w(run_completed run_failed)
+  @control_types ~w(control_requested control_completed)
+  @non_transcript_types @control_types ++ ~w(queue_changed)
 
   @doc "Returns the initial semantic state for one session."
   @spec new(String.t() | Identity.t()) :: t()
@@ -33,9 +34,6 @@ defmodule Jido.Console.Session.State do
       session_id: session_id,
       sequence: 0,
       history: [],
-      transcript: [],
-      outcomes: [],
-      controls: [],
       queues: %{steering: [], follow_up: []},
       active_run: nil
     }
@@ -48,13 +46,15 @@ defmodule Jido.Console.Session.State do
   @doc "Returns a protocol-safe snapshot of semantic state."
   @spec to_protocol(t()) :: map()
   def to_protocol(state) do
+    history = state.history
+
     %{
       "session_id" => state.session_id,
       "sequence" => state.sequence,
-      "history" => state.history,
-      "transcript" => state.transcript,
-      "outcomes" => state.outcomes,
-      "controls" => state.controls,
+      "history" => history,
+      "transcript" => Enum.reject(history, &(&1["type"] in @non_transcript_types)),
+      "outcomes" => Enum.filter(history, &(&1["type"] in @outcome_types)),
+      "controls" => Enum.filter(history, &(&1["type"] in @control_types)),
       "queues" => %{
         "steering" => state.queues.steering,
         "follow_up" => state.queues.follow_up

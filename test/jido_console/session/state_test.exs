@@ -10,13 +10,18 @@ defmodule Jido.Console.Session.StateTest do
     assert state.session_id == session.id
     assert state.sequence == 0
     assert state.history == []
-    assert state.transcript == []
-    assert state.outcomes == []
-    assert state.controls == []
     assert state.queues == %{steering: [], follow_up: []}
     assert state.active_run == nil
+    refute Map.has_key?(state, :transcript)
+    refute Map.has_key?(state, :outcomes)
+    refute Map.has_key?(state, :controls)
     assert :ok = State.validate(state)
-    assert {:ok, _} = Jason.encode(State.to_protocol(state))
+
+    protocol = State.to_protocol(state)
+    assert protocol["transcript"] == []
+    assert protocol["outcomes"] == []
+    assert protocol["controls"] == []
+    assert {:ok, _} = Jason.encode(protocol)
   end
 
   test "recursive validation rejects renderer and live runtime values" do
@@ -26,6 +31,6 @@ defmodule Jido.Console.Session.StateTest do
              State.validate(put_in(state.history, [%{"draft" => "unsent"}]))
 
     assert {:error, :live_runtime_forbidden} =
-             State.validate(%{State.new("ses_state") | outcomes: [%{"owner" => self()}]})
+             State.validate(put_in(State.new("ses_state").history, [%{"owner" => self()}]))
   end
 end
