@@ -1,7 +1,8 @@
 defmodule Jido.Console.Automation.Engine.JidokaTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Automation.Engine.Jidoka, as: Engine
+  alias Jido.Console.Automation.Engine
+  alias Jido.Console.Automation.Engine.Jidoka, as: JidokaEngine
   alias Jidoka.Agent.Spec
   alias Jidoka.Agent.Spec.Operation
   alias Jidoka.Cancellation
@@ -179,7 +180,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       }
     }
 
-    result = Engine.run(cell, [])
+    result = Engine.run(JidokaEngine, cell, [])
 
     assert result.execution.status == :ok, inspect(result.error)
     assert result.evaluation.status == :passed
@@ -216,8 +217,8 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> Map.put(:cell_id, String.duplicate("d", 64))
       |> Map.put(:runtime_opts, llm: llm)
 
-    assert Engine.run(first, []).execution.status == :ok
-    assert Engine.run(second, []).execution.status == :ok
+    assert Engine.run(JidokaEngine, first, []).execution.status == :ok
+    assert Engine.run(JidokaEngine, second, []).execution.status == :ok
   end
 
   test "reports an assertion failure without changing execution status" do
@@ -255,7 +256,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       }
     }
 
-    result = Engine.run(cell, [])
+    result = Engine.run(JidokaEngine, cell, [])
     assert result.execution.status == :ok, inspect(result.error)
     assert result.evaluation.status == :failed
     assert result.evaluation.failed_assertion_count == 1
@@ -295,6 +296,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
 
     result =
       Engine.run(
+        JidokaEngine,
         cell(spec, [
           %{
             id: "first",
@@ -336,7 +338,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> cell(%{id: "failure", input: "Answer", context: %{}, assertions: %{}})
       |> Map.put(:runtime_opts, llm: llm)
 
-    result = Engine.run(cell, [])
+    result = Engine.run(JidokaEngine, cell, [])
 
     assert result.execution.status == :error
     assert result.evaluation.status == :not_run
@@ -364,6 +366,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
 
     result =
       Engine.run(
+        JidokaEngine,
         cell(spec, [
           %{id: "one", input: "First", context: %{}, assertions: %{}},
           %{id: "two", input: "Fail", context: %{}, assertions: %{}},
@@ -418,6 +421,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
 
     result =
       Engine.run(
+        JidokaEngine,
         cell(spec, [
           %{id: "one", input: "First", context: %{}, assertions: %{}},
           %{id: "two", input: "Change data", context: %{}, assertions: %{}},
@@ -466,12 +470,12 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       ])
       |> Map.put(:runtime_opts, llm: llm)
 
-    assert {:ok, request} = Engine.start(cell, [])
+    assert {:ok, request} = JidokaEngine.start(cell, [])
     refute Map.has_key?(request, :sequence)
     assert_receive {:engine_sequence_started, capability_pid}, 5_000
 
-    assert {:ok, %Cancellation{} = cancellation} = Engine.cancel(request, grace_ms: 500)
-    result = Engine.await(request, automation_await_timeout: 100)
+    assert {:ok, %Cancellation{} = cancellation} = JidokaEngine.cancel(request, grace_ms: 500)
+    result = JidokaEngine.await(request, automation_await_timeout: 100)
 
     assert result.execution.status == :cancelled
     assert Enum.map(result.turns, & &1.status) == [:ok, :cancelled]
@@ -507,7 +511,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> Map.put(:execution_environment, resolved_environment())
 
     result =
-      Engine.run(profiled_cell,
+      Engine.run(JidokaEngine, profiled_cell,
         execution_environment_policy: allow_environment_policy(),
         execution_environment_adapter_opts: [probe: probe]
       )
@@ -560,7 +564,8 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       )
       |> Map.put(:execution_environment, resolved_environment())
 
-    result = Engine.run(profiled_cell, execution_environment_adapter_opts: [probe: probe])
+    result =
+      Engine.run(JidokaEngine, profiled_cell, execution_environment_adapter_opts: [probe: probe])
 
     assert result.execution.status == :error
     assert result.execution_environment.status == :rejected
@@ -586,7 +591,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> Map.put(:execution_environment, resolved_environment())
 
     result =
-      Engine.run(profiled_cell,
+      Engine.run(JidokaEngine, profiled_cell,
         execution_environment_policy: allow_environment_policy(),
         execution_environment_adapter_opts: [probe: probe]
       )
@@ -617,7 +622,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> Map.put(:execution_environment, resolved_environment())
 
     result =
-      Engine.run(profiled_cell,
+      Engine.run(JidokaEngine, profiled_cell,
         execution_environment_policy: allow_environment_policy(),
         execution_environment_adapter_opts: [probe: probe, fail_cleanup: true]
       )
@@ -646,7 +651,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> Map.put(:execution_environment, resolved_environment())
 
     result =
-      Engine.run(profiled_cell,
+      Engine.run(JidokaEngine, profiled_cell,
         execution_environment_policy: allow_environment_policy(),
         execution_environment_adapter_opts: [probe: probe, fail_open: true]
       )
@@ -678,7 +683,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
       |> cell(%{id: "plain", input: "Answer", context: %{}, assertions: %{}})
       |> Map.put(:runtime_opts, llm: llm)
 
-    result = Engine.run(cell, monotonic_ms: monotonic_ms, utc_now: utc_now)
+    result = Engine.run(JidokaEngine, cell, monotonic_ms: monotonic_ms, utc_now: utc_now)
 
     assert result.execution.status == :ok
     assert result.execution.started_at == "2026-08-12T12:00:00Z"
@@ -696,6 +701,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
 
     result =
       Engine.run(
+        JidokaEngine,
         cell(spec, %{id: "bad", input: "Answer", context: [:not, :a, :map], assertions: %{}}),
         []
       )

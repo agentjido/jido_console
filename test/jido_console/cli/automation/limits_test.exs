@@ -10,7 +10,10 @@ defmodule Jido.Console.Automation.LimitsTest do
     @behaviour Jido.Console.Automation.Engine
 
     @impl true
-    def run(cell, opts) do
+    def start(cell, opts), do: {:ok, {cell, opts}}
+
+    @impl true
+    def await({cell, opts}, _await_opts) do
       owner = Keyword.fetch!(opts, :test_pid)
       provider = Limits.provider_key(cell)
       send(owner, {:limit_cell_started, provider, cell.cell_id, self()})
@@ -34,13 +37,19 @@ defmodule Jido.Console.Automation.LimitsTest do
         error: nil
       )
     end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
   end
 
   defmodule UsageEngine do
     @behaviour Jido.Console.Automation.Engine
 
     @impl true
-    def run(cell, _opts) do
+    def start(cell, opts), do: {:ok, {cell, opts}}
+
+    @impl true
+    def await({cell, _opts}, _await_opts) do
       Result.new(cell,
         execution: %{
           status: :ok,
@@ -54,6 +63,9 @@ defmodule Jido.Console.Automation.LimitsTest do
         error: nil
       )
     end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
   end
 
   setup do
@@ -259,7 +271,7 @@ defmodule Jido.Console.Automation.LimitsTest do
           %{id: "never", input: "never", context: %{}, assertions: %{}}
         ]
       })
-      |> JidokaEngine.run([])
+      |> run_jidoka([])
 
     assert result.execution.status == :error
     assert result.execution.turn_count == 1
@@ -279,6 +291,9 @@ defmodule Jido.Console.Automation.LimitsTest do
       end
     end)
   end
+
+  defp run_jidoka(cell, opts),
+    do: Jido.Console.Automation.Engine.run(JidokaEngine, cell, opts)
 
   defp limits(providers, overrides) do
     applied =

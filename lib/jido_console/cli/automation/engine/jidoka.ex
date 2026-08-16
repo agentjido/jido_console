@@ -42,14 +42,6 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   end
 
   @impl true
-  def run(cell, opts) do
-    case start(cell, opts) do
-      {:ok, %Request{} = request} -> await(request, opts)
-      {:error, reason} -> failed_result(cell, :error, [], reason, utc_now(opts), 0)
-    end
-  end
-
-  @impl true
   def start(cell, opts) do
     started_at = utc_now(opts)
     started_ms = monotonic_ms(opts)
@@ -473,9 +465,21 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
          reason,
          started_at,
          duration_ms,
-         environment \\ nil,
-         extension_results \\ %{},
-         limits \\ nil
+         environment
+       ) do
+    failed_result(cell, status, turns, reason, started_at, duration_ms, environment, %{}, nil)
+  end
+
+  defp failed_result(
+         cell,
+         status,
+         turns,
+         reason,
+         started_at,
+         duration_ms,
+         environment,
+         extension_results,
+         limits
        ) do
     Result.new(cell,
       execution: %{

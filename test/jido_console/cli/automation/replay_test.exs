@@ -1,7 +1,7 @@
 defmodule Jido.Console.Automation.ReplayTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Automation.Engine.Jidoka, as: Engine
+  alias Jido.Console.Automation.Engine.Jidoka, as: JidokaEngine
   alias Jido.Console.Automation.{Loader, Plan, Result}
   alias Jido.Console.Automation.Replay
   alias Jidoka.Agent.Spec
@@ -76,7 +76,7 @@ defmodule Jido.Console.Automation.ReplayTest do
         )
       end
 
-    results = cells |> Task.async_stream(&Engine.run(&1, []), ordered: false) |> Enum.map(&elem(&1, 1))
+    results = cells |> Task.async_stream(&run(&1, []), ordered: false) |> Enum.map(&elem(&1, 1))
 
     assert Enum.all?(results, &(&1.execution.status == :ok))
     assert Enum.all?(results, &(&1.capability_replay.status == :matched))
@@ -94,7 +94,7 @@ defmodule Jido.Console.Automation.ReplayTest do
       |> put_in([:scenario, :turns, Access.at(0), :input], "Changed semantic input")
       |> Map.put(:capability_replay, replay_config(fixture))
 
-    changed_result = Engine.run(changed, [])
+    changed_result = run(changed, [])
     assert changed_result.execution.status == :error
     assert changed_result.capability_replay.status == :mismatch
     assert changed_result.capability_replay.mismatch.kind == :changed_or_out_of_order
@@ -107,7 +107,7 @@ defmodule Jido.Console.Automation.ReplayTest do
     extra_entry = %{extra_entry | index: length(fixture.entries) + 1}
     {:ok, fixture_with_extra} = Fixture.new(%{entries: fixture.entries ++ [extra_entry]})
 
-    extra_result = Engine.run(Map.put(cell(), :capability_replay, replay_config(fixture_with_extra)), [])
+    extra_result = run(Map.put(cell(), :capability_replay, replay_config(fixture_with_extra)), [])
     assert extra_result.execution.status == :error
     assert extra_result.capability_replay.status == :mismatch
     assert extra_result.capability_replay.mismatch.kind == :extra_calls
@@ -115,7 +115,7 @@ defmodule Jido.Console.Automation.ReplayTest do
 
   test "a recorded provider error stays a matched replay outcome" do
     fixture = fixture_for(one_turn_cell(), Capabilities.new!(llm: fn _, _, _ -> {:error, :provider_offline} end))
-    result = Engine.run(Map.put(one_turn_cell(), :capability_replay, replay_config(fixture)), [])
+    result = run(Map.put(one_turn_cell(), :capability_replay, replay_config(fixture)), [])
 
     assert result.execution.status == :error
     assert result.capability_replay.status == :matched
@@ -264,7 +264,7 @@ defmodule Jido.Console.Automation.ReplayTest do
     result =
       cell
       |> Map.put(:runtime_opts, capabilities: recorded)
-      |> Engine.run([])
+      |> run([])
 
     assert result.capability_replay.mode == :live
     {:ok, fixture} = Recorder.fixture(recorder)
@@ -426,7 +426,7 @@ defmodule Jido.Console.Automation.ReplayTest do
              )
 
     first = plan.cells |> hd() |> Map.put(:execution_environment, nil) |> Map.put(:capability_replay, %{mode: :live})
-    assert Engine.run(first, []).execution.status == :ok
+    assert run(first, []).execution.status == :ok
     assert {:ok, fixture} = Recorder.fixture(recorder)
     fixture
   end
@@ -479,4 +479,6 @@ defmodule Jido.Console.Automation.ReplayTest do
       metadata: metadata
     )
   end
+
+  defp run(cell, opts), do: Jido.Console.Automation.Engine.run(JidokaEngine, cell, opts)
 end

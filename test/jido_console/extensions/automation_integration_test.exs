@@ -9,12 +9,18 @@ defmodule Jido.Console.ExtensionsAutomationIntegrationTest do
     @behaviour Jido.Console.Automation.Engine
 
     @impl true
-    def run(cell, _opts) do
+    def start(cell, opts), do: {:ok, {cell, opts}}
+
+    @impl true
+    def await({cell, _opts}, _await_opts) do
       Jido.Console.Automation.Result.new(cell,
         execution: %{status: :ok, started_at: "2026-08-12T12:00:00Z", duration_ms: 1, turn_count: 0},
         evaluation: %{status: :unscored, assertion_count: 0, failed_assertion_count: 0}
       )
     end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
   end
 
   @hash "sha256:" <> String.duplicate("c", 64)

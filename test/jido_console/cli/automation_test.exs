@@ -11,7 +11,10 @@ defmodule Jido.Console.AutomationTest do
     @behaviour Jido.Console.Automation.Engine
 
     @impl true
-    def run(cell, _opts) do
+    def start(cell, opts), do: {:ok, {cell, opts}}
+
+    @impl true
+    def await({cell, _opts}, _await_opts) do
       Result.new(cell,
         execution: %{
           status: :ok,
@@ -25,13 +28,19 @@ defmodule Jido.Console.AutomationTest do
         error: nil
       )
     end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
   end
 
   defmodule FailedEngine do
     @behaviour Jido.Console.Automation.Engine
 
     @impl true
-    def run(cell, _opts) do
+    def start(cell, opts), do: {:ok, {cell, opts}}
+
+    @impl true
+    def await({cell, _opts}, _await_opts) do
       Result.new(cell,
         execution: %{
           status: :ok,
@@ -42,13 +51,19 @@ defmodule Jido.Console.AutomationTest do
         evaluation: %{status: :failed, assertion_count: 1, failed_assertion_count: 1}
       )
     end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
   end
 
   defmodule UnscoredEngine do
     @behaviour Jido.Console.Automation.Engine
 
     @impl true
-    def run(cell, _opts) do
+    def start(cell, opts), do: {:ok, {cell, opts}}
+
+    @impl true
+    def await({cell, _opts}, _await_opts) do
       Result.new(cell,
         execution: %{
           status: :ok,
@@ -59,30 +74,52 @@ defmodule Jido.Console.AutomationTest do
         evaluation: %{status: :unscored, assertion_count: 0, failed_assertion_count: 0}
       )
     end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
   end
 
   defmodule InvalidEngine do
     @behaviour Jido.Console.Automation.Engine
 
     @impl true
-    def run(_cell, opts) do
+    def start(cell, opts) do
+      case Keyword.get(opts, :engine_failure) do
+        :start_return -> :invalid
+        :start_raise -> raise "engine start failed"
+        _failure -> {:ok, {cell, opts}}
+      end
+    end
+
+    @impl true
+    def await({_cell, opts}, _await_opts) do
       case Keyword.fetch!(opts, :engine_failure) do
         :return -> :invalid
         :raise -> raise "engine failed"
         :throw -> throw(:engine_failed)
         :exit -> exit(:engine_failed)
+        :timeout -> {:error, :fake_engine_await_timeout}
       end
     end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
   end
 
   defmodule MalformedEngine do
     @behaviour Jido.Console.Automation.Engine
 
     @impl true
-    def run(cell, _opts) do
-      FakeEngine.run(cell, [])
+    def start(cell, opts), do: {:ok, {cell, opts}}
+
+    @impl true
+    def await({cell, _opts}, _await_opts) do
+      FakeEngine.await({cell, []}, [])
       |> put_in([:execution, :duration_ms], "not-an-integer")
     end
+
+    @impl true
+    def cancel(_request, _opts), do: {:error, :request_already_finished}
   end
 
   defmodule ControlledCancellationSource do
@@ -107,9 +144,6 @@ defmodule Jido.Console.AutomationTest do
 
     alias Jido.Console.Automation.Result
     alias Jidoka.Cancellation
-
-    @impl true
-    def run(_cell, _opts), do: raise("cancellable engine must use its public handle")
 
     @impl true
     def start(cell, opts) do
@@ -374,6 +408,55 @@ defmodule Jido.Console.AutomationTest do
 
       assert is_binary(error["message"])
     end
+  end
+
+  test "converts engine start failures into error records without awaiting", %{root: root} do
+    agent = Path.join(root, "agent.yml")
+    input = Path.join(root, "prompt.md")
+    write_agent(agent, "agent")
+    File.write!(input, "Hello")
+
+    for failure <- [:start_return, :start_raise] do
+      output =
+        capture_io(fn ->
+          assert {:ok, summary} =
+                   Automation.execute(
+                     ["run", "--agent", agent, "--input", input],
+                     engine: InvalidEngine,
+                     engine_failure: failure,
+                     run_id: "run-#{failure}"
+                   )
+
+          assert summary.status == :failed
+          assert summary.counts.errors == 1
+        end)
+
+      assert [%{"execution" => %{"status" => "error"}}] = decode_jsonl(output)
+    end
+  end
+
+  test "converts an engine await timeout into one error record", %{root: root} do
+    agent = Path.join(root, "agent.yml")
+    input = Path.join(root, "prompt.md")
+    write_agent(agent, "agent")
+    File.write!(input, "Hello")
+
+    output =
+      capture_io(fn ->
+        assert {:ok, summary} =
+                 Automation.execute(
+                   ["run", "--agent", agent, "--input", input],
+                   engine: InvalidEngine,
+                   engine_failure: :timeout,
+                   run_id: "run-timeout"
+                 )
+
+        assert summary.status == :failed
+        assert summary.counts.errors == 1
+      end)
+
+    assert [%{"execution" => %{"status" => "error"}, "error" => error}] = decode_jsonl(output)
+    assert is_binary(error["message"])
   end
 
   test "converts a malformed engine map into one valid execution error", %{root: root} do

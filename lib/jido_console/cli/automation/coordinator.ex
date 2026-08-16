@@ -2,9 +2,9 @@ defmodule Jido.Console.Automation.Coordinator do
   @moduledoc """
   Runs automation cells with bounded, unordered completion and cancellation.
 
-  Engines that implement the optional start, await, and cancel callbacks expose
-  only their public request handles to this coordinator. A cancellation stops
-  new admission before it asks each active engine request to stop.
+  Engines expose only their public request handles to this coordinator. A
+  cancellation stops new admission before it asks each active engine request
+  to stop.
   """
 
   alias Jido.Console.Automation.{Contract, Interrupt, JSONL, Limits, Result}
@@ -133,21 +133,16 @@ defmodule Jido.Console.Automation.Coordinator do
   end
 
   defp start_cell(engine, cell, opts) do
-    if cancellable_engine?(engine) do
-      case safe_apply(engine, :start, [cell, opts]) do
-        {:ok, request} ->
-          task = Task.async(fn -> safe_engine_await(engine, request, cell, opts) end)
-          {:ok, %{task: task, cell: cell, request: request}}
+    case safe_apply(engine, :start, [cell, opts]) do
+      {:ok, request} ->
+        task = Task.async(fn -> safe_engine_await(engine, request, cell, opts) end)
+        {:ok, %{task: task, cell: cell, request: request}}
 
-        {:error, reason} ->
-          {:error, reason}
+      {:error, reason} ->
+        {:error, reason}
 
-        result ->
-          {:error, {:invalid_engine_start_result, result}}
-      end
-    else
-      task = Task.async(fn -> safe_engine_run(engine, cell, opts) end)
-      {:ok, %{task: task, cell: cell, request: nil}}
+      result ->
+        {:error, {:invalid_engine_start_result, result}}
     end
   end
 
@@ -240,8 +235,6 @@ defmodule Jido.Console.Automation.Coordinator do
     Enum.each(state.active, fn {_ref, entry} -> cancel_entry(engine, entry, opts) end)
   end
 
-  defp cancel_entry(_engine, %{request: nil}, _opts), do: :ok
-
   defp cancel_entry(engine, %{cell: cell, request: request}, opts) do
     grace_ms = positive_integer(Keyword.get(opts, :cancellation_grace_ms), 100)
 
@@ -251,12 +244,6 @@ defmodule Jido.Console.Automation.Coordinator do
       {:error, reason} -> write_cancel_error(cell, reason, opts)
       result -> write_cancel_error(cell, {:invalid_engine_cancel_result, result}, opts)
     end
-  end
-
-  defp safe_engine_run(engine, cell, opts) do
-    engine
-    |> safe_apply(:run, [cell, opts])
-    |> normalize_engine_result(cell, opts)
   end
 
   defp safe_engine_await(engine, request, cell, opts) do
@@ -324,12 +311,6 @@ defmodule Jido.Console.Automation.Coordinator do
 
   defp provider_active(active, provider) do
     Enum.count(active, fn {_ref, entry} -> Map.get(entry, :provider) == provider end)
-  end
-
-  defp cancellable_engine?(engine) do
-    function_exported?(engine, :start, 2) and
-      function_exported?(engine, :await, 2) and
-      function_exported?(engine, :cancel, 2)
   end
 
   defp write_diagnostic(reason, opts) do
