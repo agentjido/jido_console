@@ -9,9 +9,15 @@
     "audit-finding"
   ],
   "parent": "jido_console-1f1",
+  "comments": [
+    {
+      "text": "Implemented as 654c997 on jido_console-1f1.28/splode-errors. Project leaf errors now use Splode, normalize and serialize through Jido.Console.Error, and redact messages and structured fields. Validation: 71 focused tests passed after final rebase; broad unit suite passed 538 tests with 11 platform-tagged exclusions; isolated Darwin process test passed; production escript build, --version, and --help passed. mix precommit reached Dialyzer and failed on six pre-existing release warnings in release/homebrew.ex, release/matrix.ex, and release/npm.ex; no error was in this task's files. The compiled PTY expect test built but one flow exited early.",
+      "timestamp": "2026-08-16T14:08:34Z"
+    }
+  ],
   "priority": 0,
   "status": "in_progress",
   "title": "F-02: Convert project errors to Splode",
   "type": "task",
-  "updated_at": "2026-08-16T13:20:43Z"
+  "updated_at": "2026-08-16T14:08:34Z"
 }
