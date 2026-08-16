@@ -14,9 +14,11 @@
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e31-prove-current-client-parity.md`\nRoadmap version: `1.1.0`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E31: Prove Current-Client Parity\n\n## Goal\n\nProve that every current client observes the same session behavior.\n\n## Scope\n\n- Run one contract suite through the production TUI, automation, text, and JSON paths, not only adapter observation helpers.\n- Compare ordered outcomes, capability behavior, errors, cancellation, and gap recovery.\n- Prove automation backward compatibility for schemas, artifacts, output, and exit statuses.\n- Record parity evidence from deterministic provider-free fixtures.\n- Fail the proof if a production client receives a raw Jidoka or runtime event outside `Session.Client`.\n\n## Out of Scope\n\n- New client surfaces.\n- Feature work for a client that does not affect parity.\n- Removal of the old TUI-owned session path.\n- A production release candidate.\n\n## Dependencies\n\nThis epic depends on M2-E27, M2-E28, M2-E29, and M2-E30 because every current client must use `Session.Client` before parity can be proved.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one proof-only pull request. The pull request adds the shared parity suite and evidence. A behavior defect must return to its owning client epic, or receive a new roadmap epic, before this proof can pass.\n\n## Acceptance Checks\n\n- One contract suite runs each current client against the same deterministic fixtures.\n- Each client observes the same ordered outcomes and capability results.\n- Each production client consumes only canonical Console protocol data through `Session.Client`.\n- Client-specific rendering does not change session state or semantic outcomes.\n- Automation schemas, artifacts, standard output, and exit statuses remain backward-compatible.\n- Duplicate, stale, cross-session, and gap cases fail or recover as the shared contract specifies.\n\n## Proof Artifacts\n\n- Current-client parity report.\n- Shared contract fixture corpus.\n- Automation compatibility result.\n- Ordered-outcome comparison.\n\n## Milestone Traceability\n\nThis epic covers the Milestone 2 proof that all current clients have parity through `Session.Client`.",
   "id": "jido_console-m2e31",
   "labels": [
+    "m2-closeout",
     "milestone-2",
-    "roadmap",
     "one-pr",
+    "readiness:required",
+    "roadmap",
     "v0.2"
   ],
   "priority": 1,
