@@ -4,6 +4,7 @@ defmodule Jido.Console.Release.PreservedInterfacesTest do
   import ExUnit.CaptureIO
 
   alias Jido.Console.Automation.{Command, JSONL}
+  alias Jido.Console.Automation.Command.{Eval, Run}
 
   test "user-facing command grammar remains jido, run, and eval" do
     help = capture_io(fn -> assert :ok = Jido.Console.run(["--help"]) end)
@@ -21,10 +22,10 @@ defmodule Jido.Console.Release.PreservedInterfacesTest do
   end
 
   test "command parser still accepts the current run and eval grammar" do
-    assert {:ok, %{name: :run, agent: "agent.yml", input: "prompt.md"}} =
+    assert {:ok, %Run{agent: "agent.yml", source: {:input, "prompt.md"}}} =
              Command.parse(["run", "--agent", "agent.yml", "--input", "prompt.md"])
 
-    assert {:ok, %{name: :eval, suite: "suite.yml"}} =
+    assert {:ok, %Eval{suite: "suite.yml"}} =
              Command.parse(["eval", "suite.yml"])
   end
 

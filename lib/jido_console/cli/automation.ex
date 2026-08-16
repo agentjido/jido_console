@@ -11,26 +11,26 @@ defmodule Jido.Console.Automation do
     with {:ok, command} <- tagged(Command.parse(args), :usage),
          {:ok, suite} <- tagged(suite(command, opts), :configuration),
          {:ok, plan} <- tagged(Plan.build(suite, opts), :configuration),
-         output_dir = Map.get(command, :output) || suite.output,
+         output_dir = command.output || suite.output,
          {:ok, sink} <- tagged(JSONL.open(plan.manifest, output_dir, opts), :configuration) do
       run(plan, sink, command, opts)
     end
   end
 
-  defp suite(%{name: :eval} = command, opts) do
+  defp suite(%Command.Eval{} = command, opts) do
     with {:ok, suite} <- Loader.load_suite(command.suite, opts) do
       jobs = command.jobs || suite.jobs
-      {:ok, %{suite | jobs: jobs, command_execution_profile: Map.get(command, :runtime_profile)}}
+      {:ok, %{suite | jobs: jobs, command_execution_profile: command.runtime_profile}}
     end
   end
 
-  defp suite(%{name: :run} = command, opts) do
+  defp suite(%Command.Run{} = command, opts) do
     with {:ok, scenario} <- command_scenario(command, opts) do
       agent_path = Path.expand(command.agent)
       agent_key = agent_path |> Path.basename() |> Path.rootname() |> path_key()
 
       models =
-        case Map.get(command, :model) do
+        case command.model do
           nil -> [%{key: "declared", source: :agent, ref: nil, generation: nil}]
           model -> [%{key: "override", source: :override, ref: model, generation: nil}]
         end
@@ -38,7 +38,11 @@ defmodule Jido.Console.Automation do
       suite = %{
         id: "run-#{scenario.id}",
         path: "command:jido-run",
-        digest: Loader.digest(:erlang.term_to_binary(command, [:deterministic])),
+        digest:
+          command
+          |> Command.digest_projection()
+          |> :erlang.term_to_binary([:deterministic])
+          |> Loader.digest(),
         agents: [
           %{
             key: agent_key,
@@ -51,23 +55,23 @@ defmodule Jido.Console.Automation do
         jobs: 1,
         limits: %{},
         execution_profile: nil,
-        command_execution_profile: Map.get(command, :runtime_profile),
-        output: Map.get(command, :output)
+        command_execution_profile: command.runtime_profile,
+        output: command.output
       }
 
       {:ok, suite}
     end
   end
 
-  defp command_scenario(%{scenario: scenario, input: nil}, opts) when is_binary(scenario),
+  defp command_scenario(%Command.Run{source: {:scenario, scenario}}, opts),
     do: Loader.load_scenario(scenario, opts)
 
-  defp command_scenario(%{input: input, scenario: nil}, opts) when is_binary(input),
+  defp command_scenario(%Command.Run{source: {:input, input}}, opts),
     do: Loader.scenario_from_input(input, opts)
 
   defp run(plan, sink, command, opts) do
     started_ms = monotonic_ms(opts)
-    jobs = if command.name == :eval, do: plan.suite.jobs, else: 1
+    jobs = if match?(%Command.Eval{}, command), do: plan.suite.jobs, else: 1
     engine = Keyword.get(opts, :engine, Jido.Console.Automation.Engine.Jidoka)
 
     case Interrupt.start(self(), opts) do
