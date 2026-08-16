@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T13:00:11Z",
+  "description": "Audit rank: 8 of 30.\n\nOwner: JC-15 Session semantic state.\nEvidence: lib/jido_console/session/state.ex:16-63; reducer.ex:27-31,61-85.\nWork: Keep history as the only ordered event log. Derive transcript, outcomes, and controls during protocol projection. Keep active current values materialized.\nAcceptance: Mixed-event replay produces the current ordered views. Every derived item comes from history. State has no duplicate append-only event collections.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
+  "id": "jido_console-1f1.8",
+  "labels": [],
+  "parent": "jido_console-1f1",
+  "priority": 0,
+  "status": "open",
+  "title": "F-25: Keep one event log and derive session views",
+  "type": "task",
+  "updated_at": "2026-08-16T13:00:11Z"
+}
