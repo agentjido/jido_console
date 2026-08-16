@@ -4,6 +4,7 @@
     "jido_console-1f1.15"
   ],
   "blocks": [],
+  "closed_at": "2026-08-16T13:51:19Z",
   "created": "2026-08-16T13:00:10Z",
   "description": "Audit rank: 4 of 30.\n\nOwner: JC-11 Models and providers.\nEvidence: lib/jido_console/providers/harness.ex:181-234; qualification.ex:78-137.\nWork: Use one versioned result record with identity, dimension, contract version, status, reason, evidence ID, and test ID. Stop treating catalog claims or unconditional rows as recorded test evidence.\nAcceptance: Missing, duplicate, corrupt, failed, and claim-mismatch evidence fails qualification. Provider tests cover every required dimension.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.4",
@@ -12,8 +13,8 @@
   ],
   "parent": "jido_console-1f1",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "F-18: Use one recorded provider-contract result source",
   "type": "task",
-  "updated_at": "2026-08-16T13:30:06Z"
+  "updated_at": "2026-08-16T13:51:19Z"
 }
