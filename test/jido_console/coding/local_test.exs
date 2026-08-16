@@ -222,7 +222,7 @@ defmodule Jido.Console.Coding.LocalTest do
              Jido.Console.Coding.Local.Adapter.execute(nil, request,
                workspace: workspace,
                environment_contract: environment_contract(root),
-               network_allowlist: [%{host: "192.0.2.1"}],
+               network_allowlist: [%{host: "192.0.2.1", port: :any}],
                executables: %{
                  "git" => "/usr/bin/nc",
                  "sandbox-exec" => "/usr/bin/sandbox-exec"

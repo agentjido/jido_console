@@ -16,11 +16,16 @@ defmodule Jido.Console.Coding.Network do
   @type class :: :none | :loopback | :external
   @type outcome :: :allow | :deny
   @type destination :: %{host: String.t(), port: integer() | nil, class: class()}
+  @type allowlist_entry :: %{
+          host: String.t() | nil,
+          class: :loopback | :external | nil,
+          port: :any | 1..65_535
+        }
   @type policy :: %{
           id: String.t(),
           version: String.t(),
           mode: :restricted | :offline,
-          allowlist: [map()]
+          allowlist: [allowlist_entry()]
         }
   @type decision :: %{
           outcome: outcome(),
@@ -30,16 +35,19 @@ defmodule Jido.Console.Coding.Network do
         }
 
   @doc "Returns the versioned restricted network policy."
-  @spec policy(keyword()) :: policy()
+  @spec policy(keyword()) :: {:ok, policy()} | {:error, term()}
   def policy(opts \\ []) do
     mode = if Keyword.get(opts, :offline, false), do: :offline, else: :restricted
 
-    %{
-      id: @policy_id,
-      version: @policy_version,
-      mode: mode,
-      allowlist: normalize_allowlist(Keyword.get(opts, :network_allowlist, []))
-    }
+    with {:ok, allowlist} <- normalize_allowlist(Keyword.get(opts, :network_allowlist, [])) do
+      {:ok,
+       %{
+         id: @policy_id,
+         version: @policy_version,
+         mode: mode,
+         allowlist: allowlist
+       }}
+    end
   end
 
   @doc "Returns an allow or deny decision for one destination string."
@@ -49,9 +57,11 @@ defmodule Jido.Console.Coding.Network do
   end
 
   @doc "Admits a command request only when every destination is declared."
-  @spec admit(map(), keyword()) :: {:ok, decision()} | {:error, {:network_denied, decision()}}
+  @spec admit(map(), keyword()) :: {:ok, decision()} | {:error, term()}
   def admit(request, opts \\ []) when is_map(request) do
-    decide(destinations(List.wrap(Map.get(request, "args"))), policy(opts))
+    with {:ok, policy} <- policy(opts) do
+      decide(destinations(List.wrap(Map.get(request, "args"))), policy)
+    end
   end
 
   @doc "Projects a redacted evidence record for one decision."
@@ -258,29 +268,86 @@ defmodule Jido.Console.Coding.Network do
   defp matches_allowlist?(destination, allowed) do
     class_ok? = allowed.class in [nil, destination.class]
     host_ok? = allowed.host in [nil, destination.host]
-    port_ok? = allowed.port == nil or destination.port == allowed.port
-    class_ok? and host_ok? and port_ok? and (allowed.host != nil or allowed.class != nil)
+    port_ok? = allowed.port == :any or destination.port == allowed.port
+    class_ok? and host_ok? and port_ok?
   end
 
   defp normalize_allowlist(entries) when is_list(entries) do
-    Enum.map(entries, &normalize_allowlist_entry/1)
+    entries
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, []}, fn {entry, index}, {:ok, normalized} ->
+      case normalize_allowlist_entry(entry) do
+        {:ok, entry} -> {:cont, {:ok, [entry | normalized]}}
+        {:error, reason} -> {:halt, {:error, {:invalid_network_allowlist, index, reason}}}
+      end
+    end)
+    |> then(fn
+      {:ok, normalized} -> {:ok, Enum.reverse(normalized)}
+      {:error, _reason} = error -> error
+    end)
   end
 
-  defp normalize_allowlist(_entries), do: []
+  defp normalize_allowlist(_entries), do: {:error, {:invalid_network_allowlist, :not_a_list}}
 
   defp normalize_allowlist_entry(entry) when is_map(entry) do
-    host = entry[:host] || entry["host"]
-    class = entry[:class] || entry["class"]
-    port = entry[:port] || entry["port"]
-
-    %{
-      host: if(is_binary(host), do: normalize_host(host), else: nil),
-      class: normalize_class(class),
-      port: if(is_integer(port), do: port, else: nil)
-    }
+    with {:ok, selector} <- normalize_selector(entry),
+         {:ok, port} <- normalize_allowlist_port(entry) do
+      {:ok, Map.put(selector, :port, port)}
+    end
   end
 
-  defp normalize_allowlist_entry(_entry), do: %{host: nil, class: nil, port: nil}
+  defp normalize_allowlist_entry(_entry), do: {:error, :entry_must_be_a_map}
+
+  defp normalize_selector(entry) do
+    case {fetch_entry(entry, :host), fetch_entry(entry, :class)} do
+      {{:ok, host}, :missing} -> normalize_host_selector(host)
+      {:missing, {:ok, class}} -> normalize_class_selector(class)
+      {:missing, :missing} -> {:error, :selector_required}
+      _invalid -> {:error, :one_selector_required}
+    end
+  end
+
+  defp normalize_host_selector(host) when is_binary(host) do
+    case host_token(host) do
+      %{host: normalized} -> {:ok, %{host: normalized, class: nil}}
+      nil -> {:error, :invalid_host}
+    end
+  end
+
+  defp normalize_host_selector(_host), do: {:error, :invalid_host}
+
+  defp normalize_class_selector(class) do
+    case normalize_class(class) do
+      class when class in [:loopback, :external] -> {:ok, %{host: nil, class: class}}
+      _invalid -> {:error, :invalid_class}
+    end
+  end
+
+  defp normalize_allowlist_port(entry) do
+    case fetch_entry(entry, :port) do
+      {:ok, :any} -> {:ok, :any}
+      {:ok, port} when is_integer(port) and port in 1..65_535 -> {:ok, port}
+      {:ok, port} when is_binary(port) -> parse_allowlist_port(port)
+      :missing -> {:error, :port_required}
+      _invalid -> {:error, :invalid_port}
+    end
+  end
+
+  defp parse_allowlist_port(value) do
+    case Integer.parse(value) do
+      {port, ""} when port in 1..65_535 -> {:ok, port}
+      _invalid -> {:error, :invalid_port}
+    end
+  end
+
+  defp fetch_entry(entry, key) do
+    case {Map.fetch(entry, key), Map.fetch(entry, Atom.to_string(key))} do
+      {:error, :error} -> :missing
+      {{:ok, value}, :error} -> {:ok, value}
+      {:error, {:ok, value}} -> {:ok, value}
+      {{:ok, _atom_value}, {:ok, _string_value}} -> :duplicate
+    end
+  end
 
   defp normalize_class(class) when class in [:loopback, :external, "loopback", "external"] do
     if is_atom(class), do: class, else: String.to_existing_atom(class)

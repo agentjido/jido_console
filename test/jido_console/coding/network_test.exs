@@ -70,6 +70,93 @@ defmodule Jido.Console.Coding.NetworkTest do
     assert loopback.class == :loopback
   end
 
+  test "parses valid host, class, wildcard, and decimal port rules into explicit forms" do
+    cases = [
+      {%{host: "EXAMPLE.INVALID", port: "443"}, "example.invalid:443",
+       %{host: "example.invalid", class: nil, port: 443}},
+      {%{"host" => "127.0.0.1", "port" => :any}, "127.0.0.1:65", %{host: "127.0.0.1", class: nil, port: :any}},
+      {%{class: "loopback", port: :any}, "[::1]:9", %{host: nil, class: :loopback, port: :any}},
+      {%{class: :external, port: "65"}, "192.0.2.1:65", %{host: nil, class: :external, port: 65}}
+    ]
+
+    for {entry, destination, normalized} <- cases do
+      assert {:ok, %{allowlist: [^normalized]}} = Network.policy(network_allowlist: [entry])
+      assert {:ok, decision} = Network.check(destination, [entry])
+      assert decision.outcome == :allow
+    end
+  end
+
+  test "rejects every malformed allowlist entry without returning partial rules" do
+    cases = [
+      {%{host: "example.invalid", port: 0}, :invalid_port},
+      {%{host: "example.invalid", port: 65_536}, :invalid_port},
+      {%{host: "example.invalid", port: "4x3"}, :invalid_port},
+      {%{host: "example.invalid", port: nil}, :invalid_port},
+      {%{host: "example.invalid"}, :port_required},
+      {%{host: "bad_host.example", port: :any}, :invalid_host},
+      {%{host: nil, port: :any}, :invalid_host},
+      {%{host: "example.invalid", class: :external, port: 443}, :one_selector_required},
+      {%{class: :unknown, port: :any}, :invalid_class},
+      {%{class: nil, port: :any}, :invalid_class},
+      {%{port: 443}, :selector_required},
+      {"example.invalid:443", :entry_must_be_a_map}
+    ]
+
+    for {entry, reason} <- cases do
+      assert {:error, {:invalid_network_allowlist, 0, ^reason}} = Network.policy(network_allowlist: [entry])
+    end
+
+    assert {:error, {:invalid_network_allowlist, 1, :invalid_port}} =
+             Network.policy(
+               network_allowlist: [
+                 %{host: "example.invalid", port: 443},
+                 %{class: :external, port: "invalid"},
+                 %{host: "other.invalid", port: :any}
+               ]
+             )
+
+    assert {:ok, %{allowlist: []}} = Network.policy(network_allowlist: [])
+
+    assert {:error, {:invalid_network_allowlist, :not_a_list}} =
+             Network.policy(network_allowlist: %{})
+  end
+
+  test "keeps normalized allowlist selectors out of evidence" do
+    allowlist = [%{host: "private.example", port: :any}]
+    assert {:ok, decision} = Network.check("private.example:443", allowlist)
+    evidence = Network.evidence(decision)
+    assert evidence["allowlist_entries"] == 1
+    refute inspect(evidence) =~ "private.example"
+  end
+
+  test "adapter rejects an invalid allowlist before it starts execution" do
+    request = %{
+      "command" => "git",
+      "args" => ["status"],
+      "stdin" => "",
+      "cwd" => ".",
+      "timeout_ms" => 1_000,
+      "max_output_bytes" => 1_024,
+      "network" => false,
+      "command_class" => "git",
+      "mutation" => "read"
+    }
+
+    invalid = [
+      %{host: "example.invalid", port: 0},
+      %{host: "example.invalid", port: 65_536},
+      %{host: "example.invalid", port: "invalid"},
+      %{host: "example.invalid"},
+      %{port: :any},
+      "example.invalid"
+    ]
+
+    for entry <- invalid do
+      assert {:error, {:invalid_network_allowlist, 0, _reason}} =
+               Adapter.execute(nil, request, network_allowlist: [entry])
+    end
+  end
+
   test "adapter denies undeclared destinations without reaching the endpoint" do
     {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}, reuseaddr: true])
     {:ok, {_address, port}} = :inet.sockname(listener)
