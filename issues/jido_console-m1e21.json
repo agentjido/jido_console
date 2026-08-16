@@ -20,7 +20,6 @@
     "effort:large",
     "milestone-1",
     "one-pr",
-    "readiness:planned",
     "roadmap",
     "v0.1"
   ],
@@ -28,5 +27,5 @@
   "status": "closed",
   "title": "M1-E21: Bind Approval to Exact Effects",
   "type": "epic",
-  "updated_at": "2026-08-15T14:52:11Z"
+  "updated_at": "2026-08-16T19:27:15Z"
 }
