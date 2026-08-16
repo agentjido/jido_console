@@ -6,6 +6,7 @@
   "blocks": [
     "jido_console-m2e33",
     "jido_console-m2e34",
+    "jido_console-m2e36",
     "jido_console-x5b"
   ],
   "created": "",
@@ -24,5 +25,5 @@
   "status": "open",
   "title": "M2-E32: Remove the Old TUI-Owned Session Path",
   "type": "epic",
-  "updated_at": "2026-08-16T23:47:46Z"
+  "updated_at": "2026-08-16T23:48:31Z"
 }
