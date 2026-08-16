@@ -4,6 +4,7 @@
     "jido_console-1f1.5"
   ],
   "blocks": [],
+  "closed_at": "2026-08-16T13:53:53Z",
   "created": "2026-08-16T13:00:10Z",
   "description": "Audit rank: 3 of 30.\n\nOwner: JC-17 Release contract and publication.\nEvidence: lib/jido_console/release/decision.ex:35-75; publish.ex:14-29,53-59.\nWork: Derive pass, fail, or blocked only from explicit reviews, channel evidence, and critical defects. Publish accepts only a validated passing Decision. Remove publication-owned decision synthesis.\nAcceptance: Forged maps, missing proof, failed proof, and open critical defects cannot authorize publication. Decision and Publish tests cover every status.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.3",
@@ -12,8 +13,8 @@
   ],
   "parent": "jido_console-1f1",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "F-28: Make one validated release decision the publication authority",
   "type": "task",
-  "updated_at": "2026-08-16T13:38:49Z"
+  "updated_at": "2026-08-16T13:53:53Z"
 }
