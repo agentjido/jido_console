@@ -7,11 +7,13 @@
   "created": "2026-08-16T13:00:17Z",
   "description": "Audit rank: 26 of 30.\n\nOwner: JC-06 Interactive TUI.\nEvidence: lib/jido_console/cli/tui/workers.ex:37-67,90-125,159-195,229-302; effects.ex:21-60,133-139.\nWork: Keep only generic monitored effect workers with pid, reference, and kind. Remove request-owner promotion, subject grouping, stream relay, and unreachable TUI dispatch.\nAcceptance: Product behavior uses one worker model. Completion, crash, stop, and both result/DOWN orders remain safe.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.26",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-11: Remove unused TUI request-owner and stream-relay modes",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:41Z"
+  "updated_at": "2026-08-16T13:00:54Z"
 }
