@@ -8,6 +8,12 @@ defmodule Jido.Console.Release.DecisionTest do
     assert Decision.status(decision) == :pass
     assert :ok = Decision.validate(decision)
 
+    assert {:ok, %{version: version, decision: "pass", channels: channels}} =
+             Decision.authorize_publication(decision)
+
+    assert version == Jido.Console.Release.Identity.version()
+    assert channels == ~w(archive homebrew npm)
+
     record = Decision.to_map(decision)
     assert record["version"] == Jido.Console.Release.Identity.version()
     assert record["decision"] == "pass"
@@ -45,6 +51,9 @@ defmodule Jido.Console.Release.DecisionTest do
     assert {:ok, failed_review} = complete_decision(reviews: reviews)
     assert Decision.status(failed_review) == :fail
 
+    assert {:error, {:release_decision_not_passed, :fail}} =
+             Decision.authorize_publication(failed_review)
+
     [_archive, homebrew, npm] = channels()
     archive = channel("archive", "fail")
     assert {:ok, failed_channel} = complete_decision(channels: [archive, homebrew, npm])
@@ -78,6 +87,11 @@ defmodule Jido.Console.Release.DecisionTest do
     assert {:ok, decision} = complete_decision()
     tampered = %{decision | status: :fail}
     assert {:error, :invalid_release_decision} = Decision.validate(tampered)
+  end
+
+  test "rejects a forged publication decision directly" do
+    forged = %{"decision" => "pass", "version" => Jido.Console.Release.Identity.version()}
+    assert {:error, :invalid_release_decision} = Decision.authorize_publication(forged)
   end
 
   defp complete_decision(overrides \\ []) do

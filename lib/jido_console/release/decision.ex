@@ -43,6 +43,12 @@ defmodule Jido.Console.Release.Decision do
             reviewer: String.t()
           }
 
+  @type publication_authority :: %{
+          required(:version) => String.t(),
+          required(:decision) => String.t(),
+          required(:channels) => [String.t()]
+        }
+
   @doc "Returns the Milestone 1 epic identifiers that require proof."
   @spec epics() :: [String.t()]
   def epics, do: @epics
@@ -91,6 +97,29 @@ defmodule Jido.Console.Release.Decision do
   end
 
   def validate(_decision), do: {:error, :invalid_release_decision}
+
+  @doc "Projects publication data only from a validated passing decision."
+  @spec authorize_publication(term()) ::
+          {:ok, publication_authority()}
+          | {:error, :invalid_release_decision | {:release_decision_not_passed, :fail | :blocked}}
+  def authorize_publication(%__MODULE__{} = decision) do
+    with :ok <- validate(decision) do
+      case decision.status do
+        :pass ->
+          {:ok,
+           %{
+             version: decision.version,
+             decision: "pass",
+             channels: Enum.map(@channels, &Atom.to_string/1)
+           }}
+
+        status ->
+          {:error, {:release_decision_not_passed, status}}
+      end
+    end
+  end
+
+  def authorize_publication(_decision), do: {:error, :invalid_release_decision}
 
   @doc "Returns the derived decision status."
   @spec status(t()) :: :pass | :fail | :blocked

@@ -6,7 +6,7 @@ defmodule Jido.Console.Release.PublishTest do
   test "uses a validated passing decision as the publication authority" do
     assert {:ok, decision} = decision()
     assert {:ok, plan} = Publish.plan(decision)
-    assert plan["version"] == Decision.version(decision)
+    assert plan["version"] == Jido.Console.Release.Identity.version()
     assert plan["published"] == false
 
     assert {:ok, held} = Publish.execute(decision)
