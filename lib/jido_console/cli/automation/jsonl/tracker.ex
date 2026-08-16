@@ -3,6 +3,12 @@ defmodule Jido.Console.Automation.JSONL.Tracker do
 
   alias Jido.Console.Automation.ResultValue
 
+  @opaque reservation :: %{
+            cell_ref: map(),
+            result_status: :completed | :failed | :cancelled,
+            token: reference()
+          }
+
   @doc "Starts one lifecycle tracker."
   @spec start(map(), (-> DateTime.t() | String.t())) :: Agent.on_start()
   def start(manifest, utc_now) do
@@ -13,9 +19,24 @@ defmodule Jido.Console.Automation.JSONL.Tracker do
   @spec started(pid(), map()) :: :ok | {:error, term()}
   def started(tracker, cell), do: transition(tracker, &start_cell(&1, cell_ref(cell)))
 
-  @doc "Records one complete cell result."
-  @spec complete(pid(), map()) :: :ok | {:error, term()}
-  def complete(tracker, result), do: transition(tracker, &complete_cell(&1, cell_ref(result), result))
+  @doc "Reserves one planned cell result before output writes start."
+  @spec reserve_result(pid(), map()) :: {:ok, reservation()} | {:error, term()}
+  def reserve_result(tracker, result) do
+    Agent.get_and_update(tracker, fn state ->
+      case reserve_cell(state, cell_ref(result), result) do
+        {:ok, reservation, next} -> {{:ok, reservation}, next}
+        {:error, reason} -> {{:error, reason}, state}
+      end
+    end)
+  end
+
+  @doc "Commits one reserved result after all result outputs succeed."
+  @spec commit_result(pid(), reservation()) :: :ok | {:error, term()}
+  def commit_result(tracker, reservation), do: transition(tracker, &commit_cell(&1, reservation))
+
+  @doc "Releases one reserved result after a result output fails."
+  @spec release_result(pid(), reservation()) :: :ok | {:error, term()}
+  def release_result(tracker, reservation), do: transition(tracker, &release_cell(&1, reservation))
 
   @doc "Checks that a summary agrees with the tracked run."
   @spec validate_finish(pid(), map()) :: :ok | {:error, term()}
@@ -98,28 +119,87 @@ defmodule Jido.Console.Automation.JSONL.Tracker do
   defp start_cell(state, _cell_ref),
     do: {:error, {:invalid_lifecycle_transition, state.status, :start}}
 
-  defp complete_cell(%{status: :running} = state, cell_ref, result) do
+  defp reserve_cell(%{status: :running} = state, cell_ref, result) do
     with {:ok, state} <- ensure_planned(state, cell_ref),
-         false <- Map.has_key?(state.completed, cell_ref.cell_id),
+         :ok <- ensure_not_completed(state, cell_ref),
+         :ok <- ensure_not_reserved(state, cell_ref),
          {:ok, state} <- ensure_started(state, cell_ref) do
-      state = put_in(state, [:completed, cell_ref.cell_id], cell_ref)
+      reservation = %{
+        cell_ref: cell_ref,
+        result_status: cell_status(result),
+        token: make_ref()
+      }
 
-      state =
-        case cell_status(result) do
-          :failed -> put_in(state, [:failed, cell_ref.cell_id], cell_ref)
-          :cancelled -> put_in(state, [:cancelled, cell_ref.cell_id], cell_ref)
-          :completed -> state
-        end
-
-      {:ok, state}
+      {:ok, reservation, put_in(state, [:reserved, cell_ref.cell_id], reservation)}
     else
-      true -> {:error, {:invalid_lifecycle_transition, cell_ref.cell_id, :already_completed}}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp complete_cell(state, _cell_ref, _result),
-    do: {:error, {:invalid_lifecycle_transition, state.status, :complete}}
+  defp reserve_cell(state, _cell_ref, _result),
+    do: {:error, {:invalid_lifecycle_transition, state.status, :reserve_result}}
+
+  defp commit_cell(%{status: :running} = state, reservation) do
+    cell_ref = reservation.cell_ref
+
+    case Map.fetch(state.reserved, cell_ref.cell_id) do
+      {:ok, ^reservation} ->
+        state =
+          state
+          |> update_in([:reserved], &Map.delete(&1, cell_ref.cell_id))
+          |> put_in([:completed, cell_ref.cell_id], cell_ref)
+          |> put_result_status(reservation.result_status, cell_ref)
+
+        {:ok, state}
+
+      {:ok, _other} ->
+        {:error, {:invalid_lifecycle_result_reservation, cell_ref.cell_id}}
+
+      :error ->
+        {:error, {:missing_lifecycle_result_reservation, cell_ref.cell_id}}
+    end
+  end
+
+  defp commit_cell(state, _reservation),
+    do: {:error, {:invalid_lifecycle_transition, state.status, :commit_result}}
+
+  defp release_cell(%{status: :running} = state, reservation) do
+    cell_ref = reservation.cell_ref
+
+    case Map.fetch(state.reserved, cell_ref.cell_id) do
+      {:ok, ^reservation} ->
+        {:ok, update_in(state, [:reserved], &Map.delete(&1, cell_ref.cell_id))}
+
+      {:ok, _other} ->
+        {:error, {:invalid_lifecycle_result_reservation, cell_ref.cell_id}}
+
+      :error ->
+        {:error, {:missing_lifecycle_result_reservation, cell_ref.cell_id}}
+    end
+  end
+
+  defp release_cell(state, _reservation),
+    do: {:error, {:invalid_lifecycle_transition, state.status, :release_result}}
+
+  defp ensure_not_completed(state, cell_ref) do
+    if Map.has_key?(state.completed, cell_ref.cell_id),
+      do: {:error, {:invalid_lifecycle_transition, cell_ref.cell_id, :already_completed}},
+      else: :ok
+  end
+
+  defp ensure_not_reserved(state, cell_ref) do
+    if Map.has_key?(state.reserved, cell_ref.cell_id),
+      do: {:error, {:invalid_lifecycle_transition, cell_ref.cell_id, :already_reserved}},
+      else: :ok
+  end
+
+  defp put_result_status(state, :failed, cell_ref),
+    do: put_in(state, [:failed, cell_ref.cell_id], cell_ref)
+
+  defp put_result_status(state, :cancelled, cell_ref),
+    do: put_in(state, [:cancelled, cell_ref.cell_id], cell_ref)
+
+  defp put_result_status(state, :completed, _cell_ref), do: state
 
   defp ensure_started(state, cell_ref) do
     case Map.fetch(state.started, cell_ref.cell_id) do
@@ -189,6 +269,7 @@ defmodule Jido.Console.Automation.JSONL.Tracker do
       finished_at: nil,
       planned: planned,
       started: %{},
+      reserved: %{},
       completed: %{},
       failed: %{},
       cancelled: %{},

@@ -57,11 +57,8 @@ defmodule Jido.Console.Automation.JSONL do
     with {:ok, result} <- Contract.validate_case_result(result),
          {:ok, json} <- Jason.encode(result),
          line = json <> "\n",
-         :ok <- maybe_append(sink, "results.jsonl", line, :results),
-         :ok <- maybe_append_agent(sink, result, line),
-         :ok <- record_result(sink, result),
-         :ok <- write_output(sink, line) do
-      :ok
+         {:ok, reservation} <- Tracker.reserve_result(sink.tracker, result) do
+      emit_reserved(sink, result, line, reservation)
     else
       {:error, reason} = error ->
         if Artifact.error?(reason), do: record_finalization_error(sink, Artifact.phase(reason), reason)
@@ -164,11 +161,38 @@ defmodule Jido.Console.Automation.JSONL do
     end
   end
 
-  defp record_result(sink, result) do
-    with :ok <- Tracker.complete(sink.tracker, result) do
+  defp commit_result(sink, reservation) do
+    with :ok <- Tracker.commit_result(sink.tracker, reservation) do
       write_lifecycle(sink)
     end
   end
+
+  defp emit_reserved(sink, result, line, reservation) do
+    case write_result_outputs(sink, result, line) do
+      :ok ->
+        sink
+        |> commit_result(reservation)
+        |> record_artifact_error(sink)
+
+      {:error, _reason} = error ->
+        _release_result = Tracker.release_result(sink.tracker, reservation)
+        record_artifact_error(error, sink)
+    end
+  end
+
+  defp write_result_outputs(sink, result, line) do
+    with :ok <- maybe_append(sink, "results.jsonl", line, :results),
+         :ok <- maybe_append_agent(sink, result, line) do
+      write_output(sink, line)
+    end
+  end
+
+  defp record_artifact_error({:error, reason} = error, sink) do
+    if Artifact.error?(reason), do: record_finalization_error(sink, Artifact.phase(reason), reason)
+    error
+  end
+
+  defp record_artifact_error(:ok, _sink), do: :ok
 
   defp record_finalization_error(sink, phase, reason),
     do: Tracker.finalization_error(sink.tracker, phase, reason)

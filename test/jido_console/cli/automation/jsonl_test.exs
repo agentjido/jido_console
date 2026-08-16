@@ -124,6 +124,34 @@ defmodule Jido.Console.Automation.JSONLTest do
     end
   end
 
+  test "rejects unknown results before any result output write", %{root: root} do
+    unknown = result("agent") |> Map.put(:cell_id, "other") |> Map.put(:sequence, 2)
+
+    for mode <- [:stdout, :artifacts] do
+      {sink, device, output} = observed_sink(root, mode, "unknown-result")
+
+      assert {:error, {:unplanned_lifecycle_cell, %{cell_id: "other", sequence: 2}}} =
+               JSONL.emit(sink, unknown)
+
+      assert {_input, ""} = StringIO.contents(device)
+      assert_no_result_artifacts(output)
+    end
+  end
+
+  test "rejects duplicate results before any additional output write", %{root: root} do
+    for mode <- [:stdout, :artifacts] do
+      {sink, device, output} = observed_sink(root, mode, "duplicate-result")
+
+      assert :ok = JSONL.emit(sink, result("agent"))
+      before = result_output(device, output)
+
+      assert {:error, {:invalid_lifecycle_transition, "cell", :already_completed}} =
+               JSONL.emit(sink, result("agent"))
+
+      assert result_output(device, output) == before
+    end
+  end
+
   test "rejects missing manifest cells in every output mode", %{root: root} do
     incomplete_summary = %{summary() | planned: 0, completed: 0}
 
@@ -248,6 +276,30 @@ defmodule Jido.Console.Automation.JSONLTest do
   defp open_sink(root, :artifacts, name) do
     {:ok, device} = StringIO.open("")
     JSONL.open(manifest(), Path.join(root, name), output_device: device)
+  end
+
+  defp observed_sink(root, mode, name) do
+    {:ok, device} = StringIO.open("")
+    output = if mode == :artifacts, do: Path.join(root, "#{name}-artifacts"), else: nil
+    assert {:ok, sink} = JSONL.open(manifest(), output, output_device: device)
+    {sink, device, output}
+  end
+
+  defp assert_no_result_artifacts(nil), do: :ok
+
+  defp assert_no_result_artifacts(output) do
+    refute File.exists?(Path.join(output, "results.jsonl"))
+    assert Path.wildcard(Path.join(output, "by-agent/*.jsonl")) == []
+  end
+
+  defp result_output(device, nil), do: StringIO.contents(device)
+
+  defp result_output(device, output) do
+    {
+      StringIO.contents(device),
+      File.read!(Path.join(output, "results.jsonl")),
+      File.read!(Path.join(output, "by-agent/agent.jsonl"))
+    }
   end
 
   defp assert_incomplete_lifecycle(_root, :stdout, _name), do: :ok

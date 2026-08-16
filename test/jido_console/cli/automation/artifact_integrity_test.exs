@@ -4,6 +4,7 @@ defmodule Jido.Console.Automation.ArtifactIntegrityTest do
   import Bitwise
 
   alias Jido.Console.Automation.JSONL
+  alias Jido.Console.Automation.JSONL.Tracker
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-cli-artifacts-#{System.unique_integer([:positive])}")
@@ -67,7 +68,7 @@ defmodule Jido.Console.Automation.ArtifactIntegrityTest do
     assert terminal["missing"] == [json_cell_ref(1)]
   end
 
-  test "a stdout failure keeps complete file records and marks the run incomplete", %{root: root} do
+  test "a stdout failure keeps file records but does not commit completion", %{root: root} do
     output = Path.join(root, "stdout-failure")
     {:ok, stdout} = StringIO.open("")
     {:ok, writes} = Agent.start_link(fn -> 0 end)
@@ -93,8 +94,8 @@ defmodule Jido.Console.Automation.ArtifactIntegrityTest do
 
     terminal = lifecycle(output)
     assert terminal["status"] == "incomplete"
-    assert terminal["completed"] == [json_cell_ref(1)]
-    assert terminal["missing"] == [json_cell_ref(2)]
+    assert terminal["completed"] == []
+    assert terminal["missing"] == [json_cell_ref(1), json_cell_ref(2)]
     assert is_map(terminal["primary_error"])
     assert [%{"phase" => "stdout"}] = terminal["finalization_errors"]
     refute File.read!(Path.join(output, "lifecycle.json")) =~ "private-token-value"
@@ -115,6 +116,10 @@ defmodule Jido.Console.Automation.ArtifactIntegrityTest do
 
     assert {:error, {:automation_artifact_write_failed, :results, :injected_failure}} =
              JSONL.emit(sink, result(1, :ok))
+
+    assert Tracker.projection(sink.tracker).completed == []
+    assert {:ok, reservation} = Tracker.reserve_result(sink.tracker, result(1, :ok))
+    assert :ok = Tracker.release_result(sink.tracker, reservation)
 
     assert :ok = JSONL.abort(sink, :result_artifact_failed)
     refute File.exists?(Path.join(output, "results.jsonl"))
