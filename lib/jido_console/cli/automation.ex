@@ -126,8 +126,8 @@ defmodule Jido.Console.Automation do
 
     status =
       cond do
-        outcome.cancelled? -> :cancelled
-        not is_nil(outcome.limit_stop) -> :failed
+        outcome.stop_cause == :cancelled -> :cancelled
+        match?({:limit, _reason}, outcome.stop_cause) -> :failed
         counts.failed == 0 and counts.errors == 0 -> :passed
         true -> :failed
       end

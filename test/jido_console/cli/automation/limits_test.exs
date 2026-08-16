@@ -39,7 +39,10 @@ defmodule Jido.Console.Automation.LimitsTest do
     end
 
     @impl true
-    def cancel(_request, _opts), do: {:error, :request_already_finished}
+    def cancel({_cell, opts}, _cancel_opts) do
+      send(Keyword.fetch!(opts, :test_pid), :stop_cancelled)
+      {:error, :request_already_finished}
+    end
   end
 
   defmodule UsageEngine do
@@ -128,7 +131,9 @@ defmodule Jido.Console.Automation.LimitsTest do
     Enum.each(started, fn {_provider, _id, pid} -> send(pid, :finish_limit_cell) end)
     send(fourth_pid, :finish_limit_cell)
 
-    assert {:ok, %{results: results, limit_stop: nil, not_started: []}} = Task.await(task, 2_000)
+    assert {:ok, outcome} = Task.await(task, 2_000)
+    assert %{results: results, stop_cause: nil, not_started: []} = outcome
+    assert Enum.sort(Map.keys(outcome)) == [:not_started, :results, :stop_cause]
     assert length(results) == 4
   end
 
@@ -176,9 +181,13 @@ defmodule Jido.Console.Automation.LimitsTest do
     assert {:ok,
             %{
               results: [_, _],
-              limit_stop: %{kind: :total_tokens, limit: 15, observed: 20},
+              stop_cause: {:limit, %{kind: :total_tokens, limit: 15, observed: 20}},
               not_started: [%{sequence: 3}]
             }} = Task.await(task, 2_000)
+
+    {_input, diagnostic} = StringIO.contents(errors)
+    assert diagnostic =~ "automated run limit reached"
+    assert diagnostic =~ "total_tokens"
   end
 
   test "a limit stop finalizes completed and missing cells", %{root: root} do
@@ -240,11 +249,64 @@ defmodule Jido.Console.Automation.LimitsTest do
     assert {:ok,
             %{
               results: [_],
-              limit_stop: %{kind: :suite_timeout, limit: 10, observed: 11},
+              stop_cause: {:limit, %{kind: :suite_timeout, limit: 10, observed: 11}},
               not_started: [%{sequence: 2}]
             }} = Task.await(task, 2_000)
 
     refute_receive {:limit_cell_started, _, _, _}
+  end
+
+  test "cancellation is the only final cause in both cancel-limit event orders" do
+    Enum.each([:cancel_then_limit, :limit_then_cancel], fn order ->
+      limits = limits(%{"*" => 1}, max_total_tokens: 1_000, suite_timeout_ms: 10)
+      cells = [cell(1, "openai:model", limits)]
+      {:ok, output} = StringIO.open("")
+      {:ok, errors} = StringIO.open("")
+      {:ok, sink} = JSONL.open(manifest(cells), nil, output_device: output)
+      {:ok, clock} = Agent.start_link(fn -> 0 end)
+      owner = self()
+
+      now = fn ->
+        value = Agent.get(clock, & &1)
+        if value > 0, do: send(owner, {:stop_clock_read, order})
+        value
+      end
+
+      task =
+        Task.async(fn ->
+          Coordinator.run(cells, sink, ProbeEngine, 1,
+            automation_limits: limits,
+            test_pid: owner,
+            error_device: errors,
+            monotonic_ms: now
+          )
+        end)
+
+      assert_receive {:limit_cell_started, "openai", _, await_pid}, 1_000
+
+      case order do
+        :cancel_then_limit ->
+          :ok = Jido.Console.Automation.Interrupt.request(task.pid, :test_interrupt)
+          assert_receive :stop_cancelled, 1_000
+          Agent.update(clock, fn _value -> 11 end)
+
+        :limit_then_cancel ->
+          Agent.update(clock, fn _value -> 11 end)
+          assert_receive {:stop_clock_read, :limit_then_cancel}, 1_000
+          :ok = Jido.Console.Automation.Interrupt.request(task.pid, :test_interrupt)
+          assert_receive :stop_cancelled, 1_000
+      end
+
+      send(await_pid, :finish_limit_cell)
+      assert {:ok, outcome} = Task.await(task, 2_000)
+      assert %{stop_cause: :cancelled, not_started: []} = outcome
+      assert Enum.sort(Map.keys(outcome)) == [:not_started, :results, :stop_cause]
+
+      assert %{status: :within, exceeded: nil} = Limits.summary(limits, outcome, 11)
+      {_input, diagnostic} = StringIO.contents(errors)
+      assert diagnostic =~ "automated run cancelled"
+      refute diagnostic =~ "automated run limit reached"
+    end)
   end
 
   test "the Jidoka engine projects exact sequence usage-limit evidence" do

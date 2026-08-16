@@ -9,11 +9,10 @@ defmodule Jido.Console.Automation.Coordinator do
 
   alias Jido.Console.Automation.{Contract, Interrupt, JSONL, Limits, Result}
 
+  @type stop_cause :: nil | :cancelled | {:limit, map()}
   @type outcome :: %{
           results: [map()],
-          cancelled?: boolean(),
-          cancellation_reason: term() | nil,
-          limit_stop: map() | nil,
+          stop_cause: stop_cause(),
           not_started: [map()]
         }
 
@@ -28,9 +27,7 @@ defmodule Jido.Console.Automation.Coordinator do
       pending: cells,
       active: %{},
       results: [],
-      cancelled?: false,
-      cancellation_reason: nil,
-      limit_stop: nil,
+      stop_cause: nil,
       limits: limits,
       started_ms: monotonic_ms(opts)
     }
@@ -40,15 +37,15 @@ defmodule Jido.Console.Automation.Coordinator do
     end
   end
 
-  defp loop(%{active: active, pending: pending} = state, _sink, _engine, _jobs, _opts)
+  defp loop(%{active: active, pending: pending} = state, _sink, _engine, _jobs, opts)
        when map_size(active) == 0 and
-              (pending == [] or state.cancelled? or not is_nil(state.limit_stop)) do
+              (pending == [] or not is_nil(state.stop_cause)) do
+    write_stop_diagnostic(state.stop_cause, opts)
+
     {:ok,
      %{
        results: Enum.reverse(state.results),
-       cancelled?: state.cancelled?,
-       cancellation_reason: state.cancellation_reason,
-       limit_stop: state.limit_stop,
+       stop_cause: state.stop_cause,
        not_started: state.pending
      }}
   end
@@ -79,7 +76,7 @@ defmodule Jido.Console.Automation.Coordinator do
     state = apply_limit_stop(state, engine, opts)
 
     cond do
-      state.cancelled? or not is_nil(state.limit_stop) ->
+      not is_nil(state.stop_cause) ->
         {:ok, state}
 
       map_size(state.active) >= jobs or state.pending == [] ->
@@ -192,11 +189,11 @@ defmodule Jido.Console.Automation.Coordinator do
     end
   end
 
-  defp accept_cancellation(%{cancelled?: true} = state, _reason, _engine, _opts),
+  defp accept_cancellation(%{stop_cause: :cancelled} = state, _reason, _engine, _opts),
     do: state
 
   defp accept_cancellation(state, reason, engine, opts) do
-    state = %{state | cancelled?: true, cancellation_reason: reason}
+    state = %{state | stop_cause: :cancelled}
     write_diagnostic(reason, opts)
 
     Enum.each(state.active, fn {_ref, entry} ->
@@ -206,7 +203,7 @@ defmodule Jido.Console.Automation.Coordinator do
     state
   end
 
-  defp apply_limit_stop(%{limit_stop: stop} = state, _engine, _opts) when not is_nil(stop),
+  defp apply_limit_stop(%{stop_cause: cause} = state, _engine, _opts) when not is_nil(cause),
     do: state
 
   defp apply_limit_stop(state, engine, opts) do
@@ -215,8 +212,7 @@ defmodule Jido.Console.Automation.Coordinator do
         state
 
       reason ->
-        write_limit_diagnostic(reason, opts)
-        state = %{state | limit_stop: reason}
+        state = %{state | stop_cause: {:limit, reason}}
 
         if state.limits.cancel_active_on_stop do
           abort_active(state, engine, opts)
@@ -327,6 +323,9 @@ defmodule Jido.Console.Automation.Coordinator do
     device = Keyword.get(opts, :error_device, :stderr)
     IO.puts(device, "jido: automated run limit reached: #{inspect(reason)}")
   end
+
+  defp write_stop_diagnostic({:limit, reason}, opts), do: write_limit_diagnostic(reason, opts)
+  defp write_stop_diagnostic(_cause, _opts), do: :ok
 
   defp utc_now(opts) do
     case Keyword.get(opts, :utc_now) do

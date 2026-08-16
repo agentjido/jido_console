@@ -145,7 +145,12 @@ defmodule Jido.Console.Automation.Limits do
   @doc "Builds final suite limit evidence."
   @spec summary(t(), map(), non_neg_integer()) :: map()
   def summary(limits, outcome, duration_ms) do
-    exceeded = outcome.limit_stop || stop_reason(limits, outcome.results, duration_ms)
+    exceeded =
+      case outcome.stop_cause do
+        {:limit, reason} -> reason
+        :cancelled -> nil
+        nil -> stop_reason(limits, outcome.results, duration_ms)
+      end
 
     %{
       status: if(exceeded, do: :exceeded, else: :within),
