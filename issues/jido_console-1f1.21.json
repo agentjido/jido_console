@@ -5,11 +5,13 @@
   "created": "2026-08-16T13:00:15Z",
   "description": "Audit rank: 21 of 30.\n\nOwner: JC-10 Extensions and policy.\nEvidence: lib/jido_console/extensions/setup.ex:1-11; extensions/resolver.ex:30-40; coding/setup.ex:194-221.\nWork: Make Setup an owned value with resolved entries and private runtime entries. Derive the public registry and trust projection through accessors.\nAcceptance: Registry and projection cannot be supplied or changed independently. Not-requested, disabled, and coding-pack cases remain exact.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.21",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-16: Make extension setup one owned registry and trust projection",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:15Z"
+  "updated_at": "2026-08-16T13:00:53Z"
 }
