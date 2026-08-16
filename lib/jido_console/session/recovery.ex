@@ -5,7 +5,7 @@ defmodule Jido.Console.Session.Recovery do
   This is not application-restart recovery or durable resume.
   """
 
-  alias Jido.Console.Session.{Delivery, Reducer, State}
+  alias Jido.Console.Session.{Delivery, State}
 
   @doc "Builds an explicit gap message."
   @spec gap(String.t(), non_neg_integer(), non_neg_integer()) :: map()
@@ -25,9 +25,9 @@ defmodule Jido.Console.Session.Recovery do
     if delivery.session_id != state.session_id do
       {:error, :cross_session_result}
     else
-      case Reducer.replay(suffix, state) do
-        {:ok, recovered} ->
-          {:ok, %{delivery | pending: [], last_acked: recovered.sequence, gap?: false}, recovered}
+      case owned_suffix?(state, suffix) do
+        :ok ->
+          {:ok, %{delivery | pending: [], last_acked: state.sequence, gap?: false}, state}
 
         {:error, _reason} = error ->
           error
@@ -38,4 +38,16 @@ defmodule Jido.Console.Session.Recovery do
   @doc "Limitation recorded for Milestone 3."
   @spec limitation() :: String.t()
   def limitation, do: "Delivery-gap recovery is not application-restart recovery or durable resume."
+
+  defp owned_suffix?(_state, []), do: :ok
+
+  defp owned_suffix?(state, suffix) do
+    ids = MapSet.new(state.history, & &1["id"])
+
+    if Enum.all?(suffix, fn event -> MapSet.member?(ids, event["id"]) end) do
+      :ok
+    else
+      {:error, :unknown_recovery_suffix}
+    end
+  end
 end

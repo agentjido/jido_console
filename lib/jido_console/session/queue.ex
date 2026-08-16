@@ -26,7 +26,7 @@ defmodule Jido.Console.Session.Queue do
   @doc "Removes one item by input identity."
   @spec remove(t(), atom(), String.t()) :: {:ok, t()} | {:error, term()}
   def remove(queues, kind, input_id) when kind in @kinds do
-    {:ok, Map.update!(queues, kind, &Enum.reject(&1, fn item -> item.input_id == input_id end))}
+    {:ok, Map.update!(queues, kind, &Enum.reject(&1, fn item -> item_id(item) == input_id end))}
   end
 
   def remove(_queues, kind, _input_id), do: {:error, {:unknown_queue, kind}}
@@ -48,7 +48,12 @@ defmodule Jido.Console.Session.Queue do
   def show(_queues, kind), do: {:error, {:unknown_queue, kind}}
 
   defp valid_item?(item) do
-    is_map(item) and is_binary(item[:session_id]) and is_binary(item[:input_id]) and
-      is_binary(item[:client_id])
+    is_map(item) and present?(item, :session_id) and present?(item, :input_id) and present?(item, :client_id)
   end
+
+  defp item_id(item), do: field(item, :input_id)
+
+  defp present?(item, key), do: is_binary(field(item, key))
+
+  defp field(item, key), do: item[key] || item[Atom.to_string(key)]
 end

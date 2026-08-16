@@ -13,7 +13,6 @@ defmodule Jido.Console.Session.Client do
     Input,
     Permission,
     Queue,
-    Recovery,
     Result,
     Server
   }
@@ -90,11 +89,7 @@ defmodule Jido.Console.Session.Client do
   @doc "Recovers from an explicit gap."
   @spec recover(t(), [map()]) :: {:ok, Delivery.t(), term()} | {:error, term()}
   def recover(handle, suffix) do
-    with {:ok, delivery, recovered} <-
-           Recovery.recover(Server.state(handle.server), handle.delivery, suffix),
-         {:ok, delivery} <- Server.put_delivery(handle.server, handle.client.id, delivery) do
-      {:ok, delivery, recovered}
-    end
+    Server.recover(handle.server, handle.client.id, suffix)
   end
 
   @doc "Returns capability names advertised by this contract."

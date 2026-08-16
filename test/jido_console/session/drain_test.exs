@@ -11,5 +11,12 @@ defmodule Jido.Console.Session.DrainTest do
     {:ok, drain} = Drain.collect(drain, identity, "child")
     {:ok, drain} = Drain.collect(drain, identity, identity.id)
     assert Drain.complete?(drain)
+
+    parent_first = identity |> then(&Drain.queue(Drain.new(), &1)) |> then(&Drain.activate(&1, identity, ["child"]))
+    parent_first = Drain.start(parent_first, identity)
+    {:ok, parent_first} = Drain.collect(parent_first, identity, identity.id)
+    refute Drain.complete?(parent_first)
+    {:ok, parent_first} = Drain.collect(parent_first, identity, "child")
+    assert Drain.complete?(parent_first)
   end
 end

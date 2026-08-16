@@ -28,7 +28,9 @@ defmodule Jido.Console.Session.Delivery do
   end
 
   @doc "Offers one update. Unsafe updates are never dropped silently."
-  @spec offer(t(), map()) :: {:ok, t(), map() | nil} | {:gap, t(), map()}
+  @spec offer(t(), map()) :: {:ok, t(), map() | nil} | {:gap, t(), map() | nil}
+  def offer(%{gap?: true} = state, _update), do: {:gap, state, nil}
+
   def offer(state, update) do
     sequence = seq(update)
 

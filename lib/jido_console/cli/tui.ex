@@ -3,6 +3,7 @@ defmodule Jido.Console.Tui do
 
   alias Jido.Console.Tui.{Effects, Selection, Shutdown, State, View, Workers}
   alias Jido.Console.Coding.Setup
+  alias Jido.Console.Session.Client
   alias Jido.Console.Session.Client.TUI, as: SessionTUI
   alias Jido.Console.Session.Identity
   alias Jido.Console.Terminal
@@ -387,6 +388,12 @@ defmodule Jido.Console.Tui do
             {{:error, reason}, state, workers}
         end
 
+      {:session_updated, _session_id, snapshot} ->
+        loop(acknowledge_session_update(state, snapshot), terminal, runtime, opts, startup, workers)
+
+      {:session_gap, _session_id, _gap} ->
+        loop(recover_session_client(state), terminal, runtime, opts, startup, workers)
+
       _message ->
         loop(state, terminal, runtime, opts, startup, workers)
     end
@@ -586,6 +593,26 @@ defmodule Jido.Console.Tui do
     case Keyword.get(opts, key, default) do
       value when is_integer(value) and value >= 0 -> value
       _other -> default
+    end
+  end
+
+  defp acknowledge_session_update(%State{session_client: nil} = state, _snapshot), do: state
+
+  defp acknowledge_session_update(%State{session_client: handle} = state, snapshot) do
+    sequence = snapshot["payload"]["sequence"] || snapshot["sequence"] || 0
+
+    case Client.ack(handle, sequence) do
+      {:ok, delivery} -> %{state | session_client: %{handle | delivery: delivery}}
+      {:error, _reason} -> state
+    end
+  end
+
+  defp recover_session_client(%State{session_client: nil} = state), do: state
+
+  defp recover_session_client(%State{session_client: handle} = state) do
+    case Client.recover(handle, []) do
+      {:ok, delivery, _recovered} -> %{state | session_client: %{handle | delivery: delivery}}
+      {:error, _reason} -> state
     end
   end
 
