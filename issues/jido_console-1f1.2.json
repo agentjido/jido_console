@@ -2,6 +2,7 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [
+    "jido_console-1f1.6",
     "jido_console-1f1.8",
     "jido_console-1f1.9"
   ],
@@ -14,5 +15,5 @@
   "status": "open",
   "title": "F-24: Require one canonical session identity on every event",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:43Z"
+  "updated_at": "2026-08-16T13:00:44Z"
 }
