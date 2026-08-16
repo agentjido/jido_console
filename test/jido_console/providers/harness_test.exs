@@ -113,9 +113,6 @@ defmodule Jido.Console.Providers.HarnessTest do
     assert Harness.report(results)["results"] != []
   end
 
-  defp claimed_supported?(entry, :cancellation), do: entry.cancellation.state == :supported
-  defp claimed_supported?(entry, :prompt_cache), do: entry.prompt_cache.state == :supported
-
   defp claimed_supported?(entry, capability) do
     case Map.fetch(entry.capabilities, capability) do
       {:ok, %{state: :supported}} -> true

@@ -215,8 +215,6 @@ defmodule Jido.Console.Providers.Harness do
     end
   end
 
-  defp feature_for(entry, :cancellation), do: entry.cancellation
-  defp feature_for(entry, :prompt_cache), do: entry.prompt_cache
   defp feature_for(entry, key), do: Map.get(entry.capabilities, key)
 
   defp result(entry, capability, mode, status, reason) do

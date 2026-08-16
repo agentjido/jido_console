@@ -17,9 +17,11 @@ defmodule Jido.Console.Models.Catalog do
     :multi_turn_tools,
     :structured_results,
     :cancellation,
-    :timeout
+    :timeout,
+    :prompt_cache
   ]
   @feature_states [:supported, :unsupported, :unknown, :not_applicable]
+  @legacy_feature_fields [:cancellation, :prompt_cache, :contract_note, :prompt_cache_note]
 
   @type feature :: %{
           required(:state) => atom(),
@@ -34,8 +36,6 @@ defmodule Jido.Console.Models.Catalog do
           required(:capabilities) => %{atom() => feature()},
           required(:limits) => map(),
           required(:cost) => map(),
-          required(:cancellation) => feature(),
-          required(:prompt_cache) => feature(),
           required(:known_gaps) => [String.t()],
           required(:evidence_id) => String.t(),
           required(:metadata) => map()
@@ -91,8 +91,8 @@ defmodule Jido.Console.Models.Catalog do
          {:ok, provider, model} <- parse_identity(identity),
          {:ok, tier} <- policy_tier(policy, identity),
          {:ok, evidence_id} <- policy_string(policy, :evidence_id),
-         {:ok, contract_note} <- policy_string(policy, :contract_note),
-         {:ok, prompt_cache_note} <- policy_string(policy, :prompt_cache_note),
+         :ok <- reject_legacy_feature_fields(policy),
+         {:ok, capabilities} <- policy_capabilities(policy),
          {:ok, known_gaps} <- policy_string_list(policy, :known_gaps),
          {:ok, llm_model} <- resolve_model(resolver, identity),
          :ok <- match_model_identity(llm_model, provider, model, identity),
@@ -103,8 +103,7 @@ defmodule Jido.Console.Models.Catalog do
          model,
          tier,
          evidence_id,
-         contract_note,
-         prompt_cache_note,
+         capabilities,
          known_gaps,
          llm_model
        )}
@@ -174,12 +173,10 @@ defmodule Jido.Console.Models.Catalog do
     end
   end
 
-  @doc "Returns supported capabilities, including cancellation and prompt cache."
+  @doc "Returns supported capabilities."
   @spec claimed_features(entry()) :: [{atom(), feature()}]
   def claimed_features(entry) do
     entry.capabilities
-    |> Map.put(:cancellation, entry.cancellation)
-    |> Map.put(:prompt_cache, entry.prompt_cache)
     |> Enum.filter(fn {_key, feature} -> feature.state == :supported end)
   end
 
@@ -215,9 +212,7 @@ defmodule Jido.Console.Models.Catalog do
   end
 
   defp unsupported_presented_as_supported?(entry) do
-    features = [entry.cancellation, entry.prompt_cache | Map.values(entry.capabilities)]
-
-    Enum.any?(features, fn feature ->
+    Enum.any?(entry.capabilities, fn {_key, feature} ->
       feature.state == :supported and not evidence?(feature.evidence)
     end)
   end
@@ -241,11 +236,10 @@ defmodule Jido.Console.Models.Catalog do
          {:ok, model} <- required_string(entry, :model),
          {:ok, tier} <- required_atom(entry, :tier),
          {:ok, evidence_id} <- required_string(entry, :evidence_id),
+         :ok <- reject_legacy_feature_fields(entry),
          {:ok, capabilities} <- normalize_capabilities(entry),
          {:ok, limits} <- required_map(entry, :limits),
          {:ok, cost} <- required_map(entry, :cost),
-         {:ok, cancellation} <- required_feature(entry, :cancellation),
-         {:ok, prompt_cache} <- required_feature(entry, :prompt_cache),
          {:ok, known_gaps} <- required_string_list(entry, :known_gaps),
          {:ok, metadata} <- optional_metadata(entry) do
       {:ok,
@@ -254,11 +248,9 @@ defmodule Jido.Console.Models.Catalog do
          model: model,
          identity: identity(provider, model),
          tier: tier,
-         capabilities: Map.put(capabilities, :cancellation, cancellation),
+         capabilities: capabilities,
          limits: limits,
          cost: cost,
-         cancellation: cancellation,
-         prompt_cache: prompt_cache,
          known_gaps: known_gaps,
          evidence_id: evidence_id,
          metadata: metadata
@@ -269,13 +261,22 @@ defmodule Jido.Console.Models.Catalog do
   defp normalize_entry(_entry), do: {:error, :invalid_catalog_entry}
 
   defp normalize_capabilities(entry) do
-    capabilities = field(entry, :capabilities)
+    case field(entry, :capabilities) do
+      capabilities when is_map(capabilities) ->
+        normalize_capability_map(capabilities, identity_of(entry))
 
-    if is_map(capabilities) do
+      _other ->
+        {:error, {:missing_field, :capabilities, identity_of(entry)}}
+    end
+  end
+
+  defp normalize_capability_map(capabilities, identity) do
+    with {:ok, canonical} <- canonical_capability_map(capabilities, identity) do
       @capability_keys
       |> Enum.reduce_while(%{}, fn key, acc ->
-        case feature(capabilities, key) do
+        case feature(canonical, key) do
           {:ok, value} -> {:cont, Map.put(acc, key, value)}
+          {:error, :missing_feature} -> {:halt, {:error, {:missing_field, {:capabilities, key}, identity}}}
           {:error, _reason} = error -> {:halt, error}
         end
       end)
@@ -283,16 +284,39 @@ defmodule Jido.Console.Models.Catalog do
         {:error, _reason} = error -> error
         normalized -> {:ok, normalized}
       end
-    else
-      {:error, {:missing_field, :capabilities, identity_of(entry)}}
     end
   end
 
-  defp required_feature(entry, key) do
-    case feature(entry, key) do
-      {:ok, value} -> {:ok, value}
-      {:error, :missing_feature} -> {:error, {:missing_field, key, identity_of(entry)}}
-      {:error, _reason} = error -> error
+  defp canonical_capability_map(capabilities, identity) do
+    Enum.reduce_while(capabilities, {:ok, %{}}, fn {source_key, value}, {:ok, acc} ->
+      case normalize_capability_key(source_key) do
+        {:ok, key} when is_map_key(acc, key) ->
+          {:halt, {:error, {:duplicate_capability, key, identity}}}
+
+        {:ok, key} ->
+          {:cont, {:ok, Map.put(acc, key, value)}}
+
+        :error ->
+          {:halt, {:error, {:unknown_capability, source_key, identity}}}
+      end
+    end)
+  end
+
+  defp normalize_capability_key(key) when key in @capability_keys, do: {:ok, key}
+
+  defp normalize_capability_key(key) when is_binary(key) do
+    case Enum.find(@capability_keys, &(Atom.to_string(&1) == key)) do
+      nil -> :error
+      normalized -> {:ok, normalized}
+    end
+  end
+
+  defp normalize_capability_key(_key), do: :error
+
+  defp reject_legacy_feature_fields(entry) do
+    case Enum.find(@legacy_feature_fields, &has_field?(entry, &1)) do
+      nil -> :ok
+      key -> {:error, {:feature_outside_capabilities, key, identity_of(entry)}}
     end
   end
 
@@ -366,7 +390,7 @@ defmodule Jido.Console.Models.Catalog do
   defp identity_of(entry) do
     case {field(entry, :provider), field(entry, :model)} do
       {provider, model} when is_binary(provider) and is_binary(model) -> identity(provider, model)
-      _other -> "unknown"
+      _other -> field(entry, :identity) || "unknown"
     end
   end
 
@@ -383,6 +407,9 @@ defmodule Jido.Console.Models.Catalog do
   defp field(map, key) when is_map(map) do
     Map.get(map, key, Map.get(map, Atom.to_string(key)))
   end
+
+  defp has_field?(map, key) when is_map(map),
+    do: Map.has_key?(map, key) or Map.has_key?(map, Atom.to_string(key))
 
   defp evidence?(value) when is_binary(value), do: String.starts_with?(value, ["contract:", "harness:"])
   defp evidence?(_value), do: false
@@ -413,6 +440,16 @@ defmodule Jido.Console.Models.Catalog do
     end
   end
 
+  defp policy_capabilities(policy) do
+    case field(policy, :capabilities) do
+      capabilities when is_map(capabilities) ->
+        normalize_capability_map(capabilities, identity_of(policy))
+
+      _other ->
+        {:error, {:invalid_model_policy_field, :capabilities}}
+    end
+  end
+
   defp policy_tier(policy, identity) do
     case field(policy, :tier) do
       tier when tier in @tiers -> {:ok, tier}
@@ -425,33 +462,22 @@ defmodule Jido.Console.Models.Catalog do
          model,
          tier,
          evidence_id,
-         contract_note,
-         prompt_cache_note,
+         capabilities,
          known_gaps,
          llm_model
        ) do
-    feature = policy_feature(tier, evidence_id, contract_note)
-
     %{
       provider: provider,
       model: model,
       tier: tier,
       evidence_id: evidence_id,
-      capabilities: Map.new(@capability_keys, &{&1, feature}),
+      capabilities: capabilities,
       limits: model_limits(llm_model),
       cost: model_cost(llm_model, tier),
-      cancellation: feature,
-      prompt_cache: policy_feature(tier, evidence_id, prompt_cache_note),
       known_gaps: known_gaps ++ lifecycle_gaps(llm_model),
       metadata: model_metadata(llm_model)
     }
   end
-
-  defp policy_feature(:supported, evidence_id, note),
-    do: %{state: :supported, evidence: evidence_id, note: note}
-
-  defp policy_feature(_tier, _evidence_id, note),
-    do: %{state: :unknown, evidence: nil, note: note}
 
   defp model_limits(%LLMDB.Model{limits: limits}) when is_map(limits) do
     %{

@@ -157,9 +157,6 @@ defmodule Jido.Console.Policy.Preflight do
     end)
   end
 
-  defp feature_state(entry, :cancellation), do: {:ok, entry.cancellation}
-  defp feature_state(entry, :prompt_cache), do: {:ok, entry.prompt_cache}
-
   defp feature_state(entry, feature) do
     case Map.fetch(entry.capabilities, feature) do
       {:ok, value} -> {:ok, value}

@@ -163,8 +163,6 @@ defmodule Jido.Console.Models.Commands do
     model: #{entry.model}
     tier: #{entry.tier}
     evidence: #{entry.evidence_id}
-    cancellation: #{entry.cancellation.state} #{entry.cancellation.evidence || "none"}
-    prompt_cache: #{entry.prompt_cache.state} #{entry.prompt_cache.evidence || "none"}
     cost.class: #{entry.cost[:class] || entry.cost["class"]}
     cost.input_per_million: #{value(entry.cost, :input, "unknown")}
     cost.output_per_million: #{value(entry.cost, :output, "unknown")}

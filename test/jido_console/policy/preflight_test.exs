@@ -12,12 +12,12 @@ defmodule Jido.Console.Policy.PreflightTest do
       evidence_id: "harness:openai:gpt-test",
       capabilities: %{
         streaming: %{state: :supported, evidence: "harness:streaming", note: "recorded"},
-        tools: %{state: :unsupported, evidence: nil, note: "not offered"}
+        tools: %{state: :unsupported, evidence: nil, note: "not offered"},
+        cancellation: %{state: :supported, evidence: "harness:cancel", note: "recorded"},
+        prompt_cache: %{state: :unknown, evidence: nil, note: "pending"}
       },
       limits: %{context_tokens: 1},
       cost: %{class: :standard},
-      cancellation: %{state: :supported, evidence: "harness:cancel", note: "recorded"},
-      prompt_cache: %{state: :unknown, evidence: nil, note: "pending"},
       known_gaps: []
     }
 

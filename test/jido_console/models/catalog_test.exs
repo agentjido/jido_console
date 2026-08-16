@@ -13,11 +13,24 @@ defmodule Jido.Console.Models.CatalogTest do
       assert entry.identity == entry.provider <> ":" <> entry.model
       assert entry.tier in Catalog.tiers()
       assert is_binary(entry.evidence_id) and entry.evidence_id != ""
-      assert map_size(entry.capabilities) == 6
+
+      assert Map.keys(entry.capabilities) |> Enum.sort() ==
+               Enum.sort([
+                 :streaming,
+                 :tools,
+                 :multi_turn_tools,
+                 :structured_results,
+                 :cancellation,
+                 :timeout,
+                 :prompt_cache
+               ])
+
       assert is_map(entry.limits) and map_size(entry.limits) > 0
       assert is_map(entry.cost) and map_size(entry.cost) > 0
-      assert is_map(entry.cancellation)
-      assert is_map(entry.prompt_cache)
+      assert is_map(entry.capabilities.cancellation)
+      assert is_map(entry.capabilities.prompt_cache)
+      refute Map.has_key?(entry, :cancellation)
+      refute Map.has_key?(entry, :prompt_cache)
       assert is_list(entry.known_gaps)
       assert entry.metadata.source == :llm_db
 
@@ -82,10 +95,36 @@ defmodule Jido.Console.Models.CatalogTest do
     assert {:error, {:supported_without_evidence, "openai:gpt-test"}} = Catalog.validate([claimed])
 
     feature = %{state: :supported, evidence: nil, note: "claimed"}
-    bad_feature = claimed |> Map.put(:evidence_id, "contract:openai") |> Map.put(:cancellation, feature)
+
+    bad_feature =
+      claimed
+      |> Map.put(:evidence_id, "contract:openai")
+      |> put_in([:capabilities, :cancellation], feature)
 
     assert {:error, {:unsupported_feature_claimed, "openai:gpt-test"}} =
              Catalog.validate([bad_feature])
+  end
+
+  test "rejects features outside the capability map and mixed capability keys" do
+    entry = valid_entry()
+    feature = %{state: :unknown, evidence: nil, note: "duplicate"}
+
+    assert {:error, {:feature_outside_capabilities, :cancellation, "openai:gpt-test"}} =
+             Catalog.validate([Map.put(entry, :cancellation, feature)])
+
+    assert {:error, {:feature_outside_capabilities, :prompt_cache, "openai:gpt-test"}} =
+             Catalog.validate([Map.put(entry, "prompt_cache", feature)])
+
+    mixed = put_in(entry, [:capabilities, "streaming"], feature)
+
+    assert {:error, {:duplicate_capability, :streaming, "openai:gpt-test"}} =
+             Catalog.validate([mixed])
+
+    policy = Map.put(valid_policy("openai:gpt-test"), :contract_note, "old form")
+    model = executable_model("gpt-test")
+
+    assert {:error, {:feature_outside_capabilities, :contract_note, "openai:gpt-test"}} =
+             Catalog.load(model_policy: [policy], model_resolver: fn _identity -> {:ok, model} end)
   end
 
   test "list and show consume the same validated catalog" do
@@ -105,25 +144,53 @@ defmodule Jido.Console.Models.CatalogTest do
       evidence_id: "pending:test",
       capabilities:
         Map.new(
-          [:streaming, :tools, :multi_turn_tools, :structured_results, :cancellation, :timeout],
+          [
+            :streaming,
+            :tools,
+            :multi_turn_tools,
+            :structured_results,
+            :cancellation,
+            :timeout,
+            :prompt_cache
+          ],
           &{&1, feature}
         ),
       limits: %{context_tokens: :unknown},
       cost: %{class: :unknown},
-      cancellation: feature,
-      prompt_cache: feature,
       known_gaps: ["none claimed"]
     }
   end
 
   defp valid_policy(identity) do
+    feature = %{state: :supported, evidence: "contract:test", note: "Test contract"}
+
     %{
       identity: identity,
       tier: :supported,
       evidence_id: "contract:test",
-      contract_note: "Test contract",
-      prompt_cache_note: "Test prompt cache contract",
+      capabilities:
+        Map.new(
+          [
+            :streaming,
+            :tools,
+            :multi_turn_tools,
+            :structured_results,
+            :cancellation,
+            :timeout,
+            :prompt_cache
+          ],
+          &{&1, feature}
+        ),
       known_gaps: []
     }
+  end
+
+  defp executable_model(model) do
+    LLMDB.Model.new!(%{
+      id: model,
+      provider: :openai,
+      provider_model_id: model,
+      execution: %{text: %{supported: true}}
+    })
   end
 end
