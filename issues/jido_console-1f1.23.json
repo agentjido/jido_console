@@ -5,11 +5,13 @@
   "created": "2026-08-16T13:00:16Z",
   "description": "Audit rank: 23 of 30.\n\nOwner: JC-03 Automation input and planning.\nEvidence: lib/jido_console/cli/automation/input_schema.ex:42-162; loader.ex:14-64,115-152.\nWork: Define exact alternatives for turns versus request, direct input versus nested request, text versus file, and agent reference versus override. Validate decoded shape before referenced file reads.\nAcceptance: Dual and empty source forms fail before IO. Valid inputs retain current normalized plan and documented errors.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.23",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-05: Validate one exact automation input grammar before file reads",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:16Z"
+  "updated_at": "2026-08-16T13:00:53Z"
 }
