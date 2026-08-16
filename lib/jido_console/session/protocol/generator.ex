@@ -110,11 +110,10 @@ defmodule Jido.Console.Session.Protocol.Generator do
     family_unions =
       catalog["families"]
       |> Enum.sort_by(&elem(&1, 0))
-      |> Enum.map(fn {family, entry} ->
-        types = entry["types"] |> Map.keys() |> Enum.sort() |> Enum.map(&inspect/1) |> Enum.join(" | ")
+      |> Enum.map_join("\n", fn {family, entry} ->
+        types = entry["types"] |> Map.keys() |> Enum.sort() |> Enum.map_join(" | ", &inspect/1)
         "export type #{ts_name(family)}Type = #{types};"
       end)
-      |> Enum.join("\n")
 
     """
     /* Generated protocol types for jido.session v#{catalog["version"]}. */
@@ -130,7 +129,7 @@ defmodule Jido.Console.Session.Protocol.Generator do
 
     #{family_unions}
 
-    export type ProtocolFamily = #{catalog["families"] |> Map.keys() |> Enum.sort() |> Enum.map(&inspect/1) |> Enum.join(" | ")};
+    export type ProtocolFamily = #{catalog["families"] |> Map.keys() |> Enum.sort() |> Enum.map_join(" | ", &inspect/1)};
 
     export interface ProtocolEnvelope {
       protocol: #{inspect(catalog["protocol"])};
@@ -153,7 +152,6 @@ defmodule Jido.Console.Session.Protocol.Generator do
   defp ts_name(family) do
     family
     |> String.split("_")
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join()
+    |> Enum.map_join("", &String.capitalize/1)
   end
 end

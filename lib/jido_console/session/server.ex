@@ -98,14 +98,12 @@ defmodule Jido.Console.Session.Server do
 
   @impl true
   def handle_call({:attach, client, pid}, _from, state) do
-    cond do
-      client.session_id != state.session.id ->
-        {:reply, {:error, :cross_session_result}, state}
-
-      true ->
-        ref = Process.monitor(pid)
-        clients = Map.put(state.clients, client.id, %{identity: client, pid: pid, ref: ref})
-        {:reply, {:ok, Reducer.snapshot(state.state)}, %{state | clients: clients}}
+    if client.session_id != state.session.id do
+      {:reply, {:error, :cross_session_result}, state}
+    else
+      ref = Process.monitor(pid)
+      clients = Map.put(state.clients, client.id, %{identity: client, pid: pid, ref: ref})
+      {:reply, {:ok, Reducer.snapshot(state.state)}, %{state | clients: clients}}
     end
   end
 
@@ -138,25 +136,23 @@ defmodule Jido.Console.Session.Server do
   end
 
   def handle_call({:admit_result, identity, result}, _from, state) do
-    cond do
-      identity.session_id != state.session.id ->
-        {:reply, {:error, :cross_session_result}, state}
+    if identity.session_id != state.session.id do
+      {:reply, {:error, :cross_session_result}, state}
+    else
+      admission = Map.get_lazy(state.admissions, identity.id, fn -> Admission.new(identity) end)
 
-      true ->
-        admission = Map.get_lazy(state.admissions, identity.id, fn -> Admission.new(identity) end)
+      case Admission.admit(admission, identity) do
+        {:ok, admission} ->
+          {:reply, {:ok, result},
+           %{
+             state
+             | admissions: Map.put(state.admissions, identity.id, admission),
+               results: state.results ++ [result]
+           }}
 
-        case Admission.admit(admission, identity) do
-          {:ok, admission} ->
-            {:reply, {:ok, result},
-             %{
-               state
-               | admissions: Map.put(state.admissions, identity.id, admission),
-                 results: state.results ++ [result]
-             }}
-
-          {:error, _reason} = error ->
-            {:reply, error, state}
-        end
+        {:error, _reason} = error ->
+          {:reply, error, state}
+      end
     end
   end
 

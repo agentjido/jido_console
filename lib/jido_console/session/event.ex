@@ -35,9 +35,8 @@ defmodule Jido.Console.Session.Event do
              "event",
              attrs["type"],
              Map.put(attrs, "id", attrs["id"] || "plt_event_classified")
-           ),
-         {:ok, validated} <- Validator.validate(envelope) do
-      {:ok, validated}
+           ) do
+      Validator.validate(envelope)
     end
   end
 

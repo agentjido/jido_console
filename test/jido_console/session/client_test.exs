@@ -13,6 +13,7 @@ defmodule Jido.Console.Session.ClientTest do
     assert {:ok, handle} = Client.attach(session.id, registry: opts[:registry], supervisor: opts[:sessions])
     assert :ok = Client.detach(handle)
     assert Process.alive?(handle.server)
+
     assert Enum.sort(Client.capabilities()) ==
              Enum.sort(~w(attach detach input output snapshot control capability ack recover))
   end

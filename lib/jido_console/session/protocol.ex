@@ -229,12 +229,10 @@ defmodule Jido.Console.Session.Protocol do
   defp reject_authority_from_descriptor(schema, attrs) do
     forbidden = never_grant_from(schema)
 
-    cond do
-      Map.has_key?(attrs, "authority_from") and attrs["authority_from"] in forbidden ->
-        {:error, {:authority_from_forbidden, attrs["authority_from"]}}
-
-      true ->
-        :ok
+    if Map.has_key?(attrs, "authority_from") and attrs["authority_from"] in forbidden do
+      {:error, {:authority_from_forbidden, attrs["authority_from"]}}
+    else
+      :ok
     end
   end
 

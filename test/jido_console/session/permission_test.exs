@@ -23,6 +23,11 @@ defmodule Jido.Console.Session.PermissionTest do
              Permission.respond(table, %{id: request.id, session_id: session.id, principal: "user", decision: :approved})
 
     assert {:error, :stale_result} =
-             Permission.respond(table, %{id: "apr_missing", session_id: session.id, principal: "user", decision: :denied})
+             Permission.respond(table, %{
+               id: "apr_missing",
+               session_id: session.id,
+               principal: "user",
+               decision: :denied
+             })
   end
 end

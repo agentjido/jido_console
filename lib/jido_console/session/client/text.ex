@@ -16,7 +16,7 @@ defmodule Jido.Console.Session.Client.Text do
   @doc "Renders an ordered transcript."
   @spec transcript([map()]) :: String.t()
   def transcript(events) when is_list(events) do
-    events |> Enum.map(&render/1) |> Enum.join("\n")
+    Enum.map_join(events, "\n", &render/1)
   end
 
   defp reason(event) do

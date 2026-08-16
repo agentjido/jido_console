@@ -51,19 +51,7 @@ defmodule Jido.Console.Session.Drain do
       true ->
         descendants = List.delete(item.descendants, worker_id)
         status = if descendants == [] and worker_id == identity.id, do: :drained, else: item.status
-
-        status =
-          if descendants == [] and worker_id != identity.id and identity.id not in descendants,
-            do: item.status,
-            else: status
-
-        items =
-          Map.put(drain.items, identity.id, %{
-            item
-            | descendants: descendants,
-              status: if(descendants == [] and stopped?(item, worker_id, identity.id), do: :drained, else: status)
-          })
-
+        items = Map.put(drain.items, identity.id, %{item | descendants: descendants, status: status})
         {:ok, %{drain | items: items}}
     end
   end
@@ -95,9 +83,5 @@ defmodule Jido.Console.Session.Drain do
       nil -> []
       item -> item.descendants
     end
-  end
-
-  defp stopped?(item, worker_id, identity_id) do
-    worker_id == identity_id and item.descendants == []
   end
 end

@@ -8,7 +8,13 @@ defmodule Jido.Console.Session.WorkerTest do
     parent = self()
 
     assert {:ok, result} =
-             Worker.run(identity: identity, fun: fn -> send(parent, {:ran_on, self()}); :done end)
+             Worker.run(
+               identity: identity,
+               fun: fn ->
+                 send(parent, {:ran_on, self()})
+                 :done
+               end
+             )
 
     assert_receive {:ran_on, worker}
     refute worker == parent

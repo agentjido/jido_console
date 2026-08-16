@@ -7,7 +7,7 @@ defmodule Jido.Console.JidokaCompatibilityTest do
   alias Jidoka.ExecutionEnvironment.RestrictedContract
   alias Jidoka.Policy.Decision
 
-  @jidoka_ref "6d97015acaac3ce5216d1811fa1465f6152c9c6b"
+  @jidoka_ref "ea849f74cbdee699c1b5a62541311536a78b5ce6"
 
   test "the pinned Jidoka source is one immutable Git commit" do
     assert Identity.jidoka_ref() == @jidoka_ref

@@ -22,18 +22,16 @@ defmodule Jido.Console.Session.Recovery do
   @doc "Recovers a client from a snapshot and optional event suffix."
   @spec recover(State.t(), Delivery.t(), [map()]) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
   def recover(state, delivery, suffix) when is_list(suffix) do
-    cond do
-      delivery.session_id != state.session_id ->
-        {:error, :cross_session_result}
+    if delivery.session_id != state.session_id do
+      {:error, :cross_session_result}
+    else
+      case Reducer.replay(suffix, state) do
+        {:ok, recovered} ->
+          {:ok, %{delivery | pending: [], last_acked: recovered.sequence, gap?: false}, recovered}
 
-      true ->
-        case Reducer.replay(suffix, state) do
-          {:ok, recovered} ->
-            {:ok, %{delivery | pending: [], last_acked: recovered.sequence, gap?: false}, recovered}
-
-          {:error, _reason} = error ->
-            error
-        end
+        {:error, _reason} = error ->
+          error
+      end
     end
   end
 

@@ -76,15 +76,13 @@ defmodule Jido.Console.Session.State do
     Enum.reduce_while(value, :ok, fn {key, item}, :ok ->
       name = key_name(key)
 
-      cond do
-        MapSet.member?(@forbidden_keys, name) ->
-          {:halt, {:error, {:renderer_value_forbidden, Enum.reverse([name | path])}}}
-
-        true ->
-          case reject_forbidden(item, [name | path]) do
-            :ok -> {:cont, :ok}
-            error -> {:halt, error}
-          end
+      if MapSet.member?(@forbidden_keys, name) do
+        {:halt, {:error, {:renderer_value_forbidden, Enum.reverse([name | path])}}}
+      else
+        case reject_forbidden(item, [name | path]) do
+          :ok -> {:cont, :ok}
+          error -> {:halt, error}
+        end
       end
     end)
   end
