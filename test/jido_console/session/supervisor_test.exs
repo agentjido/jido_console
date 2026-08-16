@@ -58,6 +58,19 @@ defmodule Jido.Console.Session.SupervisorTest do
     :ok = Elixir.DynamicSupervisor.terminate_child(sessions, pid)
     assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 1_000
     refute Process.alive?(pid)
+
+    assert :ok =
+             Enum.reduce_while(1..20, :registry_cleanup_timeout, fn _, _ ->
+               case Registry.lookup(session_id, registry) do
+                 {:error, :not_found} ->
+                   {:halt, :ok}
+
+                 {:ok, _pid} ->
+                   Process.sleep(5)
+                   {:cont, :registry_cleanup_timeout}
+               end
+             end)
+
     assert {:error, :not_found} = Registry.lookup(session_id, registry)
   end
 

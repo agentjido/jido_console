@@ -108,6 +108,59 @@ defmodule Jido.Console.Automation.CommandTest do
            }
   end
 
+  test "exposes schemas, raising construction, and eval digest data" do
+    assert %Zoi.Types.Union{} = Command.schema()
+    assert %Zoi.Types.Struct{} = Run.schema()
+    assert %Zoi.Types.Struct{} = Eval.schema()
+
+    assert %Run{source: {:input, "prompt.md"}} =
+             Command.new!(%{
+               "name" => :run,
+               "agent" => "agent.yml",
+               "input" => "prompt.md"
+             })
+
+    assert_raise ArgumentError, ~r/invalid Jido.Console command/, fn ->
+      Command.new!(%{name: :run, agent: "agent.yml"})
+    end
+
+    command =
+      Command.new!(%{
+        name: :eval,
+        suite: "suite.yml",
+        jobs: 2,
+        output: "results",
+        runtime_profile: "restricted"
+      })
+
+    assert Command.digest_projection(command) == %{
+             name: :eval,
+             suite: "suite.yml",
+             jobs: 2,
+             output: "results",
+             runtime_profile: "restricted"
+           }
+  end
+
+  test "rejects unknown variants and blank runtime profiles" do
+    assert {:error, errors} = Command.new(%{name: :unknown})
+    assert Enum.all?(errors, &match?(%Zoi.Error{}, &1))
+
+    assert {:error, {:invalid_execution_profile, ""}} =
+             Command.new(%{
+               name: :run,
+               agent: "agent.yml",
+               input: "prompt.md",
+               runtime_profile: ""
+             })
+
+    assert {:error, {:invalid_execution_profile, ""}} =
+             Command.new(%{name: :eval, suite: "suite.yml", runtime_profile: ""})
+
+    assert {:error, :choose_one_input_or_scenario} =
+             Command.new(%{name: :run, agent: "agent.yml", input: ""})
+  end
+
   test "rejects missing values, extra values, and unknown options" do
     assert {:error, :missing_agent} =
              Command.parse(["run", "--input", "prompt.md"])

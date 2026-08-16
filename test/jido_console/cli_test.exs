@@ -182,6 +182,7 @@ defmodule Jido.ConsoleTest do
   end
 
   test "defines the built-in agent" do
+    assert Jido.Console.version() == Jido.Console.Release.Identity.version()
     assert Jido.Console.DefaultAgent.spec().id == "jido"
   end
 

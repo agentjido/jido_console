@@ -84,6 +84,87 @@ defmodule Jido.Console.Coding.Local.AdapterTest do
              Adapter.execute(nil, request("git"), Keyword.put(opts, :workspace, :invalid))
   end
 
+  test "runs commands through an injected sandbox boundary", context do
+    sandbox = fake_sandbox(context.root)
+
+    opts = [
+      environment_contract: context.contract,
+      workspace: context.workspace,
+      network_allowlist: []
+    ]
+
+    success_request = %{request("git") | "args" => ["hello"], "timeout_ms" => 5_000}
+
+    assert {:ok, %{"status" => "ok", "stdout" => "hello\n", "exit_status" => 0}, evidence} =
+             Adapter.execute(
+               nil,
+               success_request,
+               Keyword.put(opts, :executables, %{
+                 "git" => System.find_executable("echo"),
+                 "sandbox-exec" => sandbox
+               })
+             )
+
+    assert evidence.facts["shell_execute"]
+    assert evidence.applied_limits["output_bytes"] == 100
+
+    assert {:ok, %{"status" => "nonzero", "exit_status" => 1}, _evidence} =
+             Adapter.execute(
+               nil,
+               %{request("git") | "timeout_ms" => 5_000},
+               Keyword.put(opts, :executables, %{
+                 "git" => System.find_executable("false"),
+                 "sandbox-exec" => sandbox
+               })
+             )
+  end
+
+  test "bounds captured command output and wall time", context do
+    sandbox = fake_sandbox(context.root)
+
+    opts = [
+      environment_contract: context.contract,
+      workspace: context.workspace,
+      network_allowlist: []
+    ]
+
+    output_request = %{
+      request("git")
+      | "args" => [String.duplicate("x", 256)],
+        "max_output_bytes" => 32,
+        "timeout_ms" => 5_000
+    }
+
+    assert {:ok,
+            %{
+              "status" => "error",
+              "stdout" => output,
+              "stdout_truncated" => true
+            }, _evidence} =
+             Adapter.execute(
+               nil,
+               output_request,
+               Keyword.put(opts, :executables, %{
+                 "git" => System.find_executable("echo"),
+                 "sandbox-exec" => sandbox
+               })
+             )
+
+    assert byte_size(output) == 32
+
+    timeout_request = %{request("git") | "args" => ["1"], "timeout_ms" => 1}
+
+    assert {:ok, %{"status" => "timeout", "exit_status" => nil}, _evidence} =
+             Adapter.execute(
+               nil,
+               timeout_request,
+               Keyword.put(opts, :executables, %{
+                 "git" => System.find_executable("sleep"),
+                 "sandbox-exec" => sandbox
+               })
+             )
+  end
+
   defp request(command) do
     %{
       "command" => command,
@@ -96,5 +177,12 @@ defmodule Jido.Console.Coding.Local.AdapterTest do
       "command_class" => "test",
       "mutation" => "read"
     }
+  end
+
+  defp fake_sandbox(root) do
+    path = Path.join(root, "test-sandbox")
+    File.write!(path, "#!/bin/sh\nshift 2\nexec \"$@\"\n")
+    File.chmod!(path, 0o700)
+    path
   end
 end

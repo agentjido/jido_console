@@ -5,7 +5,10 @@ defmodule Jido.Console.Models.CatalogTest do
   alias Jido.Console.Models.Catalog
 
   test "loads a validated v0.1 catalog with complete identities" do
+    assert Models.revision() == "jido.models.v0.1"
     assert {:ok, catalog} = Models.load()
+    assert {:ok, entries} = Models.list()
+    assert entries == catalog.entries
     assert catalog.revision == "jido.models.v0.1"
     assert catalog.entries != []
 

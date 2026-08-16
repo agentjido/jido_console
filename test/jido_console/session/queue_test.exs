@@ -9,6 +9,7 @@ defmodule Jido.Console.Session.QueueTest do
     {:ok, _queues} = Queue.add(queues, :follow_up, %{item | input_id: "inp_2"})
     {:ok, [steering]} = Queue.show(queues, :steering)
     assert steering.input_id == "inp_1"
+    assert {:ok, ^steering, %{steering: []}} = Queue.consume(queues, :steering)
     assert {:error, {:unknown_queue, :other}} = Queue.consume(queues, :other)
 
     string_item = %{"session_id" => item.session_id, "input_id" => "inp_3", "client_id" => "cli_1"}
