@@ -10,6 +10,7 @@ defmodule Jido.Console.Session.EventTest do
     assert {:ok, event} =
              Event.classify(%{
                type: "input_admitted",
+               session_id: session.id,
                sequence: 1,
                durability: "process",
                sensitivity: "public",
@@ -23,6 +24,11 @@ defmodule Jido.Console.Session.EventTest do
     assert event["payload"]["sequence"] == 1
     assert event["payload"]["durability"] == "process"
     assert event["payload"]["sensitivity"] == "public"
+    assert event["session_id"] == session.id
+
+    assert [session_identity, request_identity] = event["payload"]["identities"]
+    assert session_identity == %{"kind" => "session", "id" => session.id, "session_id" => session.id}
+    assert request_identity["id"] == request.id
     refute Event.origin_authority?(event["payload"])
   end
 
@@ -33,6 +39,7 @@ defmodule Jido.Console.Session.EventTest do
       sensitivity: "public",
       origin: %{kind: "client", actor_id: "cli_tui"},
       trust: %{evidence: "admitted", policy: "session-owner"},
+      session_id: "ses_1",
       identities: [%{"kind" => "request", "id" => "req_1", "session_id" => "ses_1"}]
     }
 
@@ -44,6 +51,52 @@ defmodule Jido.Console.Session.EventTest do
              )
 
     assert {:error, :raw_runtime_forbidden} = Event.classify(Map.put(base, :sequence, self()))
+  end
+
+  test "missing, nil, and empty session identities fail" do
+    base = event_attrs("ses_1")
+
+    assert {:error, :invalid_event_session_id} = Event.classify(Map.delete(base, :session_id))
+    assert {:error, :invalid_event_session_id} = Event.classify(Map.put(base, :session_id, nil))
+    assert {:error, :invalid_event_session_id} = Event.classify(Map.put(base, :session_id, ""))
+  end
+
+  test "mixed and foreign embedded identities fail" do
+    base = event_attrs("ses_1")
+
+    mixed = [
+      %{"kind" => "session", "id" => "ses_1", "session_id" => "ses_1"},
+      %{"kind" => "request", "id" => "req_1", "session_id" => "ses_2"}
+    ]
+
+    foreign = [%{"kind" => "session", "id" => "ses_2", "session_id" => "ses_1"}]
+
+    assert {:error, :event_identity_mismatch} = Event.classify(%{base | identities: mixed})
+    assert {:error, :event_identity_mismatch} = Event.classify(%{base | identities: foreign})
+  end
+
+  test "embedded identities require a nonempty session ID" do
+    base = event_attrs("ses_1")
+    missing = [%{"kind" => "request", "id" => "req_1"}]
+    nil_id = [%{"kind" => "request", "id" => "req_1", "session_id" => nil}]
+    empty = [%{"kind" => "request", "id" => "req_1", "session_id" => ""}]
+
+    assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: missing})
+    assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: nil_id})
+    assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: empty})
+  end
+
+  defp event_attrs(session_id) do
+    %{
+      type: "input_admitted",
+      session_id: session_id,
+      sequence: 1,
+      durability: "process",
+      sensitivity: "public",
+      origin: %{kind: "client", actor_id: "cli_tui"},
+      trust: %{evidence: "admitted", policy: "session-owner"},
+      identities: []
+    }
   end
 
   test "classification does not keep live sequence state" do

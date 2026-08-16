@@ -27,7 +27,7 @@ defmodule Jido.Console.Session.Event do
          :ok <- require_class(attrs, "sensitivity", @sensitivities),
          :ok <- require_origin(attrs),
          :ok <- require_trust(attrs),
-         :ok <- preserve_identities(attrs),
+         {:ok, attrs} <- canonicalize_identities(attrs),
          :ok <- reject_origin_authority(attrs),
          {:ok, schema} <- Protocol.schema(),
          {:ok, envelope} <-
@@ -72,18 +72,53 @@ defmodule Jido.Console.Session.Event do
 
   defp require_trust(_attrs), do: {:error, :invalid_event_trust}
 
-  defp preserve_identities(attrs) do
-    identities = List.wrap(attrs["identities"])
+  defp canonicalize_identities(%{"session_id" => session_id} = attrs)
+       when is_binary(session_id) and session_id != "" do
+    with {:ok, identities} <- identities(attrs),
+         :ok <- identities_belong_to_session(identities, session_id),
+         {:ok, identities} <- ensure_session_identity(identities, session_id) do
+      {:ok, Map.put(attrs, "identities", identities)}
+    end
+  end
 
+  defp canonicalize_identities(_attrs), do: {:error, :invalid_event_session_id}
+
+  defp identities(%{"identities" => identities}) when is_list(identities) do
     if Enum.all?(identities, &valid_identity?/1) do
-      :ok
+      {:ok, identities}
     else
       {:error, :invalid_event_identity}
     end
   end
 
+  defp identities(attrs) when not is_map_key(attrs, "identities"), do: {:ok, []}
+  defp identities(_attrs), do: {:error, :invalid_event_identity}
+
+  defp identities_belong_to_session(identities, session_id) do
+    if Enum.all?(identities, &(&1["session_id"] == session_id)) do
+      :ok
+    else
+      {:error, :event_identity_mismatch}
+    end
+  end
+
+  defp ensure_session_identity(identities, session_id) do
+    case Enum.filter(identities, &(&1["kind"] == "session")) do
+      [] ->
+        identity = %{"kind" => "session", "id" => session_id, "session_id" => session_id}
+        {:ok, [identity | identities]}
+
+      [%{"id" => ^session_id}] ->
+        {:ok, identities}
+
+      _other ->
+        {:error, :event_identity_mismatch}
+    end
+  end
+
   defp valid_identity?(%{"kind" => kind, "id" => id, "session_id" => session_id})
-       when is_binary(kind) and is_binary(id) and is_binary(session_id) do
+       when is_binary(kind) and kind != "" and is_binary(id) and id != "" and is_binary(session_id) and
+              session_id != "" do
     true
   end
 

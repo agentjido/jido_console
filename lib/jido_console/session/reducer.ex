@@ -15,7 +15,7 @@ defmodule Jido.Console.Session.Reducer do
     sequence = payload["sequence"]
 
     cond do
-      event["session_id"] && event["session_id"] != state.session_id ->
+      event["session_id"] != state.session_id ->
         {:error, :cross_session_event}
 
       Enum.any?(state.history, &(&1["id"] == event["id"])) ->

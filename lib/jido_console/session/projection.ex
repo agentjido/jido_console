@@ -14,16 +14,18 @@ defmodule Jido.Console.Session.Projection do
   def project(source, opts) when is_list(opts) do
     with {:ok, projected} <- portable(source),
          :ok <- reject_duplicate(projected, Keyword.get(opts, :seen, MapSet.new())),
-         :ok <- reject_invalid_order(projected, Keyword.get(opts, :last_jidoka_seq)) do
+         :ok <- reject_invalid_order(projected, Keyword.get(opts, :last_jidoka_seq)),
+         {:ok, session} <- session_identity(opts) do
       Event.classify(%{
         type: console_type(projected),
         id: event_id(projected, opts),
+        session_id: session.id,
         sequence: Keyword.fetch!(opts, :sequence),
         durability: "process",
         sensitivity: sensitivity(projected),
         origin: %{kind: "jidoka", actor_id: projected[:request_id] || "jidoka"},
         trust: %{evidence: "jidoka-projection", policy: "session-owner"},
-        identities: identities(projected, opts),
+        identities: identities(projected, session),
         request_id: projected[:request_id],
         run_id: projected[:turn_id],
         jidoka_sequence: projected[:seq],
@@ -77,9 +79,7 @@ defmodule Jido.Console.Session.Projection do
   defp sensitivity(%{data: %{"token" => _}}), do: "redacted"
   defp sensitivity(_projected), do: "public"
 
-  defp identities(projected, opts) do
-    session = Keyword.get_lazy(opts, :session, fn -> Identity.new!(:session) end)
-
+  defp identities(projected, session) do
     [
       Identity.to_protocol(session),
       %{
@@ -88,5 +88,21 @@ defmodule Jido.Console.Session.Projection do
         "session_id" => session.id
       }
     ]
+  end
+
+  defp session_identity(opts) do
+    case Keyword.fetch(opts, :session) do
+      {:ok, %{kind: :session, id: id, session_id: id} = session} when is_binary(id) and id != "" ->
+        {:ok, session}
+
+      {:ok, _invalid} ->
+        {:error, :invalid_session_identity}
+
+      :error ->
+        case Keyword.fetch(opts, :session_id) do
+          {:ok, session_id} -> Identity.new(:session, id: session_id)
+          :error -> {:error, :session_identity_missing}
+        end
+    end
   end
 end

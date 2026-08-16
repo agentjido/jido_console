@@ -25,6 +25,9 @@ defmodule Jido.Console.Session.ReducerTest do
 
     other = classified(Identity.new!(:session), "run_completed", 2)
     assert {:error, :cross_session_event} = Reducer.apply_event(state, other)
+
+    assert {:error, :cross_session_event} =
+             Reducer.apply_event(state, Map.delete(classified(session, "run_completed", 2), "session_id"))
   end
 
   defp reduce(state, events), do: Reducer.replay(events, state)

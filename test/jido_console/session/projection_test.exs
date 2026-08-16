@@ -13,6 +13,8 @@ defmodule Jido.Console.Session.ProjectionTest do
     assert console_event["payload"]["request_id"] == "req_proj"
     assert console_event["type"] == "run_completed"
     assert console_event["id"] == "plt_req_proj_0"
+    assert console_event["session_id"] == session.id
+    assert Enum.all?(console_event["payload"]["identities"], &(&1["session_id"] == session.id))
 
     hibernated = Event.build(:turn_hibernated, [], request_id: "req_pause", seq: 1)
     assert {:ok, paused} = Projection.project(hibernated, sequence: 4, session: session)
@@ -23,6 +25,18 @@ defmodule Jido.Console.Session.ProjectionTest do
     assert {:ok, failed_event} = Projection.project(failed, sequence: 5, session: session)
     assert failed_event["type"] == "run_failed"
     assert failed_event["id"] != console_event["id"]
+  end
+
+  test "requires or constructs one explicit session identity" do
+    event = Event.build(:turn_finished, [], request_id: "req_session", seq: 0)
+
+    assert {:error, :session_identity_missing} = Projection.project(event, sequence: 1)
+
+    assert {:ok, projected} = Projection.project(event, sequence: 1, session_id: "ses_explicit")
+    assert projected["session_id"] == "ses_explicit"
+
+    assert [%{"kind" => "session", "id" => "ses_explicit"} | _rest] =
+             projected["payload"]["identities"]
   end
 
   test "duplicate Jidoka events are ignored and invalid order fails" do
