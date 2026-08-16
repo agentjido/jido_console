@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-1f1.16"
+  ],
   "blocks": [],
   "created": "2026-08-16T13:00:13Z",
   "description": "Audit rank: 14 of 30.\n\nOwner: JC-08 Coding configuration and environment.\nEvidence: lib/jido_console/coding/profile.ex:95-162; setup.ex:122-126,228-235; local/adapter.ex:174-181.\nWork: Resolve one Environment.Contract with profile ID, allowlist, credential references, home, and temp directory. Pass it through Setup to Local execution. Materialize credential values only at the final execution boundary.\nAcceptance: Setup evidence and execution use the same home, temp path, allowlist, and credential references. No secret value enters the contract.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "F-13: Use one restricted-environment contract from setup through execution",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:13Z"
+  "updated_at": "2026-08-16T13:00:40Z"
 }
