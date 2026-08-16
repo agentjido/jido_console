@@ -11,9 +11,15 @@
     "audit-finding"
   ],
   "parent": "jido_console-1f1",
+  "comments": [
+    {
+      "text": "Implemented in 2fd2011. Removed the orphan Release.Golden, Coding.Approval, and Coding.Run modules and their three direct tests. Validation: exact module caller scan and orphan-file scan passed; 39 focused archive, scenario-oracle, Jidoka approval, and readiness tests passed; 93 active release, local mutation, scenario-oracle, and in-process coding TUI tests passed with the opt-in expect case excluded. The opt-in compiled real-PTY case was also attempted and timed out after 300000 ms in its existing cold mix escript.build step before the PTY flow.",
+      "timestamp": "2026-08-16T13:19:04Z"
+    }
+  ],
   "priority": 0,
   "status": "in_progress",
   "title": "F-29: Remove the orphan Golden, Approval, and Run proof path",
   "type": "task",
-  "updated_at": "2026-08-16T13:04:56Z"
+  "updated_at": "2026-08-16T13:19:04Z"
 }
