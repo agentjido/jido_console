@@ -19,7 +19,6 @@
     "effort:large",
     "milestone-1",
     "one-pr",
-    "readiness:planned",
     "roadmap",
     "v0.1"
   ],
@@ -27,5 +26,5 @@
   "status": "closed",
   "title": "M1-E15: Enforce File and Symbolic-Link Boundaries",
   "type": "epic",
-  "updated_at": "2026-08-15T14:21:13Z"
+  "updated_at": "2026-08-16T19:27:14Z"
 }
