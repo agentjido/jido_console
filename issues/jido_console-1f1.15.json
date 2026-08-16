@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T13:00:13Z",
+  "description": "Audit rank: 15 of 30.\n\nOwner: JC-11 Models and providers.\nEvidence: lib/jido_console/models/catalog.ex:177-184,239-265; policy/preflight.ex:150-164; models/commands.ex:198-210.\nWork: Put every supported feature, including cancellation and prompt cache, in the capability map. Remove separate top-level feature fields. Update the catalog schema.\nAcceptance: One source owns every feature. Duplicate or mixed legacy forms are rejected. Catalog, command, harness, and preflight tests pass.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
+  "id": "jido_console-1f1.15",
+  "labels": [],
+  "parent": "jido_console-1f1",
+  "priority": 0,
+  "status": "open",
+  "title": "F-17: Store all model features in one capability map",
+  "type": "task",
+  "updated_at": "2026-08-16T13:00:13Z"
+}
