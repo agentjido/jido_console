@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [
     "jido_console-1f1.18"
@@ -12,8 +12,8 @@
   ],
   "parent": "jido_console-1f1",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "F-11: Remove unused TUI request-owner and stream-relay modes",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:54Z"
+  "updated_at": "2026-08-16T13:20:45Z"
 }
