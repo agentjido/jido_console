@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m2e34"
   ],
@@ -13,7 +13,7 @@
     "one-pr",
     "v0.2"
   ],
-  "priority": 2,
+  "priority": 1,
   "status": "open",
   "title": "M2-E35: Publish and Record Jido Console v0.2",
   "type": "epic",
