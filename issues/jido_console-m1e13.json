@@ -22,7 +22,6 @@
     "effort:large",
     "milestone-1",
     "one-pr",
-    "readiness:planned",
     "roadmap",
     "v0.1"
   ],
@@ -30,5 +29,5 @@
   "status": "closed",
   "title": "M1-E13: Make Restricted Execution the Default",
   "type": "epic",
-  "updated_at": "2026-08-15T14:08:40Z"
+  "updated_at": "2026-08-16T19:27:13Z"
 }
