@@ -11,9 +11,15 @@
     "audit-finding"
   ],
   "parent": "jido_console-1f1",
+  "comments": [
+    {
+      "text": "Implemented on jido_console-1f1.26/tui-workers at 1a2ac1783b4582e0392b81bc8dd17caa70478a01. Removed request-owner, stream-relay, subject grouping, and the dead TUI DOWN branch. Worker state is now pid/ref/kind only. Validation: focused workers/effects/state 29 passed; full TUI boundary 89 passed; format and diff checks passed; xref reports only intended TUI/effects/shutdown callers; static search found no removed modes.",
+      "timestamp": "2026-08-16T13:35:38Z"
+    }
+  ],
   "priority": 0,
   "status": "in_progress",
   "title": "F-11: Remove unused TUI request-owner and stream-relay modes",
   "type": "task",
-  "updated_at": "2026-08-16T13:20:45Z"
+  "updated_at": "2026-08-16T13:35:38Z"
 }
