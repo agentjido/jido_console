@@ -225,7 +225,7 @@ defmodule Jido.Console.Automation.Plan do
             sources: cell.sources,
             execution_environment: manifest_environment(cell.execution_environment),
             capability_replay: Replay.projection(cell.capability_replay),
-            extensions: %{"jido.cli.trust" => cell.extensions.projection}
+            extensions: %{"jido.cli.trust" => Jido.Console.Extensions.Setup.projection(cell.extensions)}
           }
         end)
     })

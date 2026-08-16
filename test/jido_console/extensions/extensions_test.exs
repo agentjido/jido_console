@@ -2,6 +2,7 @@ defmodule Jido.Console.ExtensionsTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Extensions
+  alias Jido.Console.Extensions.Setup
   alias Jido.Console.Extensions.Trust
   alias Jidoka.Agent
   alias Jidoka.Extension.Request
@@ -30,19 +31,42 @@ defmodule Jido.Console.ExtensionsTest do
                  built_in_extension_resolver: resolver
                )
 
-      assert Map.has_key?(setup.registry, "acme.fixture")
-      projection = setup.projection
+      assert Map.has_key?(Setup.registry(setup), "acme.fixture")
+      projection = Setup.projection(setup)
       refute inspect(projection) =~ "command"
       refute inspect(projection) =~ root
       assert {:ok, _json} = Jason.encode(projection)
+      refute Map.has_key?(setup, :registry)
+      refute Map.has_key?(setup, :projection)
     end
   end
 
   test "does not resolve a disabled inert request", %{root: root} do
     request = Request.new!(id: "acme.disabled", enabled: false)
 
-    assert {:ok, %{registry: %{}, projection: %{"status" => "not_requested"}}} =
-             Extensions.resolve([request], :interactive, project_root: root)
+    assert {:ok, setup} = Extensions.resolve([request], :interactive, project_root: root)
+    assert Setup.registry(setup) == %{}
+    assert Setup.projection(setup) == %{"status" => "not_requested"}
+  end
+
+  test "rejects a trust record that does not own its runtime entry" do
+    registration =
+      Jidoka.Extension.Registration.new!(%{
+        identity: %{
+          id: "acme.runtime",
+          source_type: :built_in,
+          source_ref: "builtin:acme-runtime",
+          release: "1",
+          content_hash: @hash,
+          trust: :trusted
+        }
+      })
+
+    assert_raise ArgumentError, fn ->
+      Setup.trusted([
+        {%{registration: registration, factory: fn _, _, _ -> :ok end}, %{"id" => "acme.other"}}
+      ])
+    end
   end
 
   test "detects duplicates, disabled records, and interactive-only automation", %{root: root} do
@@ -126,8 +150,10 @@ defmodule Jido.Console.ExtensionsTest do
     ]
 
     assert {:ok, setup} = Extensions.resolve([Request.new!(id: "acme.process")], :automation, opts)
-    refute inspect(setup.projection) =~ executable
-    refute inspect(setup.projection) =~ "api_key"
+    refute inspect(Setup.projection(setup)) =~ executable
+    refute inspect(Setup.projection(setup)) =~ "api_key"
+    refute inspect(setup) =~ executable
+    refute inspect(setup) =~ "api_key"
 
     File.write!(executable, "changed process")
 

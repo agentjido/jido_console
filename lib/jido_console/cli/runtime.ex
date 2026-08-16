@@ -217,7 +217,7 @@ defmodule Jido.Console.Runtime.Jidoka do
 
   @impl Jido.Console.Runtime
   def start_session(agent, opts) do
-    setup = Keyword.get(opts, :extension_setup, %{registry: %{}})
+    setup = Keyword.get(opts, :extension_setup, Jido.Console.Extensions.Setup.not_requested())
     local_resources = Keyword.get(opts, :local_resources)
     agent = Keyword.get(opts, :agent_spec_override, agent)
     opts = Keyword.drop(opts, [:extension_setup, :agent_spec_override, :local_resources])

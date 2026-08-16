@@ -2,6 +2,7 @@ defmodule Jido.Console.Coding.LocalTest do
   use ExUnit.Case, async: false
 
   alias Jido.Console.Coding.{Local, Setup}
+  alias Jido.Console.Extensions.Setup, as: ExtensionSetup
   alias Jidoka.CodingPack.{Edit, Verify, Workspace}
 
   setup do
@@ -42,7 +43,7 @@ defmodule Jido.Console.Coding.LocalTest do
 
     if System.find_executable("git") && System.find_executable("mix") do
       assert setup.local_resources
-      assert setup.extension_setup.recover_coding_errors
+      assert ExtensionSetup.recover_coding_errors?(setup.extension_setup)
     end
   end
 
@@ -87,7 +88,8 @@ defmodule Jido.Console.Coding.LocalTest do
     on_exit(fn -> Setup.close(setup) end)
     {:ok, session} = Jidoka.Session.Data.start(setup.spec, session_id: "local-tool-list")
     request = Enum.find(setup.spec.extensions, &(&1.id == "jido.coding_pack"))
-    {:ok, host} = Jidoka.Extension.Host.open(session, [request], setup.extension_setup.registry, :interactive)
+    registry = ExtensionSetup.registry(setup.extension_setup)
+    {:ok, host} = Jidoka.Extension.Host.open(session, [request], registry, :interactive)
     {:ok, compiled} = Jidoka.Operation.Source.compile(Jidoka.Extension.Host.operation_sources(host))
     names = Enum.map(compiled.operations, & &1.name)
 
@@ -304,7 +306,7 @@ defmodule Jido.Console.Coding.LocalTest do
     assert opts[:max_tokens] == 4_000
     assert setup.spec.instructions =~ "coding.verify"
     assert setup.spec.instructions =~ ~s({"helper_id":"mix-test"})
-    assert setup.extension_setup.recover_coding_errors
+    assert ExtensionSetup.recover_coding_errors?(setup.extension_setup)
     assert setup.turn_opts[:max_parallel_operations] == 1
     refute Keyword.has_key?(opts, :provider_options)
 

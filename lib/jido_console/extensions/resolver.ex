@@ -19,7 +19,7 @@ defmodule Jido.Console.Extensions.Resolver do
   @spec resolve([Request.t()], :interactive | :automation, keyword()) ::
           {:ok, setup()} | {:error, term()}
   def resolve([], _mode, _opts),
-    do: {:ok, %Setup{registry: %{}, projection: %{"status" => "not_requested"}}}
+    do: {:ok, Setup.not_requested()}
 
   def resolve(requests, mode, opts) when is_list(requests) and mode in [:interactive, :automation] do
     case Enum.filter(requests, & &1.enabled) do
@@ -30,14 +30,9 @@ defmodule Jido.Console.Extensions.Resolver do
         with {:ok, records} <- load_records(opts),
              {:ok, identity} <- project_identity(opts),
              {:ok, selected} <- select_records(active_requests, records, identity, mode, opts),
-             {:ok, registry} <- build_registry(selected, identity, mode, opts) do
-          projection = %{
-            "status" => "trusted",
-            "project" => %{"root_digest" => digest(identity.root), "repository_id" => identity.repository_id},
-            "records" => Enum.map(selected, &Record.project/1)
-          }
-
-          {:ok, %Setup{registry: registry, projection: projection}}
+             {:ok, entries} <- build_entries(selected, identity, mode, opts) do
+          project = %{"root_digest" => digest(identity.root), "repository_id" => identity.repository_id}
+          {:ok, Setup.trusted(entries, project)}
         end
     end
   end
@@ -142,13 +137,17 @@ defmodule Jido.Console.Extensions.Resolver do
   defp project_trust([], _identity, _opts), do: {:ok, %{}}
   defp project_trust(_ids, identity, opts), do: Trust.trusted_extensions(identity, opts)
 
-  defp build_registry(records, identity, mode, opts) do
-    Enum.reduce_while(records, {:ok, %{}}, fn record, {:ok, registry} ->
+  defp build_entries(records, identity, mode, opts) do
+    Enum.reduce_while(records, {:ok, []}, fn record, {:ok, entries} ->
       case registry_entry(record, identity, mode, opts) do
-        {:ok, entry} -> {:cont, {:ok, Map.put(registry, record.id, entry)}}
+        {:ok, runtime} -> {:cont, {:ok, [{runtime, Record.project(record)} | entries]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+    |> case do
+      {:ok, entries} -> {:ok, Enum.reverse(entries)}
+      error -> error
+    end
   end
 
   defp registry_entry(%Record{source: :built_in} = record, identity, _mode, opts) do

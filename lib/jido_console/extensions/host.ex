@@ -7,12 +7,14 @@ defmodule Jido.Console.Extensions.Host do
   @doc "Opens one public Jidoka host and compiles its operation sources."
   @spec open(Jidoka.Session.Data.t(), [Request.t()], Setup.t(), :interactive | :automation, keyword()) ::
           {:ok, map()} | {:error, term()}
-  def open(session, requests, %{registry: registry} = setup, mode, opts \\ []) do
+  def open(session, requests, setup, mode, opts \\ []) do
+    registry = Setup.registry(setup)
+
     if map_size(registry) == 0 do
       {:ok, %{session: session, host: nil, runtime_opts: []}}
     else
       with {:ok, host} <- Jidoka.Extension.Host.open(session, requests, registry, mode) do
-        opts = Keyword.put_new(opts, :recover_coding_errors, Map.get(setup, :recover_coding_errors, false))
+        opts = Keyword.put_new(opts, :recover_coding_errors, Setup.recover_coding_errors?(setup))
 
         case configure_host(session, host, opts) do
           {:ok, runtime} ->

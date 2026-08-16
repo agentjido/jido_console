@@ -81,10 +81,9 @@ defmodule Jido.Console.Automation.Result do
 
   defp result_extensions(cell, values) do
     trust =
-      case Map.get(cell, :extensions) do
-        %{projection: projection} -> projection
-        _extensions -> %{"status" => "not_requested"}
-      end
+      cell
+      |> Map.get(:extensions, Jido.Console.Extensions.Setup.not_requested())
+      |> Jido.Console.Extensions.Setup.projection()
 
     Map.put(values, "jido.cli.trust", trust)
   end

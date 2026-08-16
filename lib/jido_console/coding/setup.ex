@@ -3,6 +3,7 @@ defmodule Jido.Console.Coding.Setup do
 
   alias Jido.Console.Coding.{ClientSetup, FileMentions, Local, Profile, ProviderOptions, Selection, WorkspaceConfig}
   alias Jido.Console.Extensions
+  alias Jido.Console.Extensions.Setup, as: ExtensionSetup
   alias Jidoka.CodingPack
   alias Jidoka.CodingPack.{Instructions, Workspace}
   alias Jidoka.Extension.Request
@@ -100,13 +101,7 @@ defmodule Jido.Console.Coding.Setup do
       {:ok,
        %__MODULE__{
          spec: spec,
-         extension_setup: %{
-           extension_setup
-           | projection: %{
-               "status" => "disabled",
-               "other_extensions" => extension_setup.projection
-             }
-         },
+         extension_setup: ExtensionSetup.disabled(extension_setup),
          workspace: nil,
          instructions: [],
          context: %{"coding" => %{"status" => "disabled"}},
@@ -208,17 +203,12 @@ defmodule Jido.Console.Coding.Setup do
     with {:ok, entry} <- CodingPack.entry(workspace, entry_opts),
          {:ok, other_setup} <- Extensions.resolve(other_requests, :interactive, opts) do
       {:ok,
-       %{
-         other_setup
-         | registry: Map.put(other_setup.registry, @default_pack, entry),
-           recover_coding_errors: Map.has_key?(local, :resources),
-           projection: %{
-             "status" => "trusted",
-             "records" =>
-               [%{"id" => @default_pack, "source" => "built_in"}] ++
-                 Map.get(other_setup.projection, "records", [])
-           }
-       }}
+       ExtensionSetup.prepend(
+         other_setup,
+         entry,
+         %{"id" => @default_pack, "source" => "built_in"},
+         recover_coding_errors: Map.has_key?(local, :resources)
+       )}
     end
   end
 

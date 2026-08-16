@@ -325,7 +325,7 @@ defmodule Jido.Console.Automation.LimitsTest do
       runtime_limits: limits,
       execution_environment: nil,
       capability_replay: %{mode: :live},
-      extensions: %{projection: %{"status" => "not_requested"}, registry: %{}}
+      extensions: Jido.Console.Extensions.Setup.not_requested()
     }
   end
 

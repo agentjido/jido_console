@@ -89,7 +89,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
            Extensions.open(
              session,
              cell.spec.extensions,
-             Map.get(cell, :extensions, %{registry: %{}}),
+             Map.get(cell, :extensions, Jido.Console.Extensions.Setup.not_requested()),
              :automation,
              operations: Keyword.get(cell.runtime_opts, :operations)
            ) do

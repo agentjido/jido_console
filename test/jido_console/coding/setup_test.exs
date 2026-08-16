@@ -2,6 +2,7 @@ defmodule Jido.Console.Coding.SetupTest do
   use ExUnit.Case, async: false
 
   alias Jido.Console.Coding.Setup
+  alias Jido.Console.Extensions.Setup, as: ExtensionSetup
   alias Jidoka.Agent.Spec.Operation
 
   setup do
@@ -26,7 +27,13 @@ defmodule Jido.Console.Coding.SetupTest do
     assert setup.context["coding"]["profile"]["enforcement"] == "pending"
     assert setup.spec.id == "jido"
     assert Enum.any?(setup.spec.extensions, &(&1.id == "jido.coding_pack"))
-    assert Map.has_key?(setup.extension_setup.registry, "jido.coding_pack")
+    assert Map.has_key?(ExtensionSetup.registry(setup.extension_setup), "jido.coding_pack")
+
+    assert ExtensionSetup.projection(setup.extension_setup) == %{
+             "status" => "trusted",
+             "records" => [%{"id" => "jido.coding_pack", "source" => "built_in"}]
+           }
+
     assert Enum.map(setup.instructions, & &1["path"]) == ["AGENTS.md"]
     refute inspect(setup.context) =~ root
   end
@@ -48,7 +55,11 @@ defmodule Jido.Console.Coding.SetupTest do
     disabled = prepared(project_root: root, coding_pack: :disabled)
 
     assert disabled.pack_id == nil
-    assert disabled.extension_setup.projection["status"] == "disabled"
+
+    assert ExtensionSetup.projection(disabled.extension_setup) == %{
+             "status" => "disabled",
+             "other_extensions" => %{"status" => "not_requested"}
+           }
 
     record = record(root, "acme.coding_pack")
     resolver = fn "acme.coding_pack", _context -> {:ok, fn _, _, _ -> {:error, :fixture} end} end
@@ -62,7 +73,7 @@ defmodule Jido.Console.Coding.SetupTest do
       )
 
     assert replacement.pack_id == "acme.coding_pack"
-    assert Map.has_key?(replacement.extension_setup.registry, "acme.coding_pack")
+    assert Map.has_key?(ExtensionSetup.registry(replacement.extension_setup), "acme.coding_pack")
   end
 
   test "can disable or replace each default tool through trusted host options", %{root: root} do
@@ -89,7 +100,7 @@ defmodule Jido.Console.Coding.SetupTest do
         coding_replace_tools: %{"coding.read" => changed}
       )
 
-    entry = setup.extension_setup.registry["jido.coding_pack"]
+    entry = ExtensionSetup.registry(setup.extension_setup)["jido.coding_pack"]
     {:ok, session} = Jidoka.Session.Data.start(setup.spec, session_id: "coding-setup")
     request = Enum.find(setup.spec.extensions, &(&1.id == "jido.coding_pack"))
     assert {:ok, host} = Jidoka.Extension.Host.open(session, [request], %{"jido.coding_pack" => entry}, :interactive)
