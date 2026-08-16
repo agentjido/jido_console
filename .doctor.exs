@@ -1,9 +1,9 @@
 %Doctor.Config{
-  # Internal implementation modules — the interactive terminal UI and the
-  # OTP terminal adapter are not part of the public API surface. The public
-  # modules under Jido.Console and Jido.Console.Automation remain fully documented.
+  # Internal implementation modules, macros, and terminal adapters are not part
+  # of the public API surface. Public Jido.Console modules remain documented.
   ignore_modules: [
     ~r/^Jido\.Console\.MixProject$/,
+    ~r/^Jido\.Console\.Error\.Type$/,
     ~r/^Jido\.Console\.Release\.ForbiddenEnvironmentAdapter$/,
     ~r/^Jido\.Console\.Tui(?:\.|$)/,
     ~r/^Jido\.Console\.Terminal\.OTP(?:\.|$)/

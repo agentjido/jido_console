@@ -187,6 +187,7 @@ defmodule Jido.Console.Automation.InputSchema do
   end
 
   @doc false
+  @spec validate_scenario_form(map(), term()) :: :ok | {:error, String.t()}
   def validate_scenario_form(scenario, _opts) do
     turns? = Map.has_key?(scenario, "turns")
     request? = Map.has_key?(scenario, "request")
@@ -207,6 +208,7 @@ defmodule Jido.Console.Automation.InputSchema do
   end
 
   @doc false
+  @spec normalize_scenario_form(map(), term()) :: {:ok, map()}
   def normalize_scenario_form(%{"request" => request} = scenario, _opts) do
     turn = maybe_put(request, "assertions", Map.get(scenario, "assertions"))
 
@@ -219,6 +221,7 @@ defmodule Jido.Console.Automation.InputSchema do
   def normalize_scenario_form(scenario, _opts), do: {:ok, scenario}
 
   @doc false
+  @spec validate_turn_form(map(), term()) :: :ok | {:error, String.t()}
   def validate_turn_form(turn, _opts) do
     input? = Map.has_key?(turn, "input")
     request? = Map.has_key?(turn, "request")
@@ -239,6 +242,7 @@ defmodule Jido.Console.Automation.InputSchema do
   end
 
   @doc false
+  @spec normalize_turn_form(map(), term()) :: {:ok, map()}
   def normalize_turn_form(%{"request" => request} = turn, _opts) do
     {:ok,
      turn
@@ -250,34 +254,44 @@ defmodule Jido.Console.Automation.InputSchema do
   def normalize_turn_form(turn, _opts), do: {:ok, turn}
 
   @doc false
+  @spec tag_text(String.t(), term()) :: {:ok, text_source()}
   def tag_text(text, _opts), do: {:ok, {:text, text}}
 
   @doc false
+  @spec tag_text_map(%{required(String.t()) => String.t()}, term()) :: {:ok, text_source()}
   def tag_text_map(%{"text" => text}, _opts), do: {:ok, {:text, text}}
 
   @doc false
+  @spec tag_file_map(%{required(String.t()) => String.t()}, term()) :: {:ok, text_source()}
   def tag_file_map(%{"file" => file}, _opts), do: {:ok, {:file, file}}
 
   @doc false
+  @spec tag_agent_path(Path.t(), term()) :: {:ok, agent_ref()}
   def tag_agent_path(file, _opts), do: {:ok, {:file, file, nil}}
 
   @doc false
+  @spec tag_agent_map(map(), term()) :: {:ok, agent_ref()}
   def tag_agent_map(%{"file" => file} = agent, _opts),
     do: {:ok, {:file, file, Map.get(agent, "key")}}
 
   @doc false
+  @spec tag_scenario_path(Path.t(), term()) :: {:ok, scenario_ref()}
   def tag_scenario_path(file, _opts), do: {:ok, {:file, file}}
 
   @doc false
+  @spec tag_scenario_map(%{required(String.t()) => String.t()}, term()) :: {:ok, scenario_ref()}
   def tag_scenario_map(%{"file" => file}, _opts), do: {:ok, {:file, file}}
 
   @doc false
+  @spec tag_model_override_path(String.t(), term()) :: {:ok, model_ref()}
   def tag_model_override_path(ref, _opts), do: {:ok, {:override, ref, nil, nil}}
 
   @doc false
+  @spec tag_agent_model(map(), term()) :: {:ok, model_ref()}
   def tag_agent_model(model, _opts), do: {:ok, {:agent, Map.get(model, "key")}}
 
   @doc false
+  @spec tag_override_model(map(), term()) :: {:ok, model_ref()}
   def tag_override_model(%{"ref" => ref} = model, _opts),
     do: {:ok, {:override, ref, Map.get(model, "key"), Map.get(model, "generation")}}
 

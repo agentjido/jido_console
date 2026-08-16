@@ -76,6 +76,7 @@ defmodule Jido.Console.Runtime do
             raw: term()
           }
 
+    @doc "Builds a successful turn result."
     @spec ok(String.t(), term(), term(), String.t(), keyword()) :: t()
     def ok(request_id, session, handle, content, opts \\ []) when is_binary(content) do
       coding_reviews =
@@ -96,6 +97,7 @@ defmodule Jido.Console.Runtime do
       )
     end
 
+    @doc "Builds a result that waits for a coding review decision."
     @spec pending_review(String.t(), term(), term(), [term()], keyword()) :: t()
     def pending_review(request_id, session, handle, reviews, opts \\ [])
         when is_list(reviews) and reviews != [] do
@@ -112,6 +114,7 @@ defmodule Jido.Console.Runtime do
       )
     end
 
+    @doc "Builds a result for a hibernated turn."
     @spec hibernated(String.t(), term(), term(), keyword()) :: t()
     def hibernated(request_id, session, handle, opts \\ []) do
       build(
@@ -127,6 +130,7 @@ defmodule Jido.Console.Runtime do
       )
     end
 
+    @doc "Builds a result for a cancelled turn."
     @spec cancelled(String.t(), term(), term(), term(), keyword()) :: t()
     def cancelled(request_id, session, handle, cancellation, opts \\ []) do
       build(
@@ -138,6 +142,7 @@ defmodule Jido.Console.Runtime do
       )
     end
 
+    @doc "Builds a result for a failed turn."
     @spec error(String.t(), term(), term(), term(), keyword()) :: t()
     def error(request_id, session, handle, reason, opts \\ []) do
       build(
@@ -149,6 +154,7 @@ defmodule Jido.Console.Runtime do
       )
     end
 
+    @doc "Returns the tag for the result outcome."
     @spec status(t()) :: :ok | :pending_review | :hibernated | :cancelled | :error
     def status(%__MODULE__{outcome: %Ok{}}), do: :ok
     def status(%__MODULE__{outcome: %PendingReview{}}), do: :pending_review

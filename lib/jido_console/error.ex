@@ -1,6 +1,8 @@
 defmodule Jido.Console.Error.Type do
-  @moduledoc false
+  @moduledoc "Defines a project-owned Splode leaf error type."
 
+  @doc "Adds the configured Splode error fields and redaction boundary."
+  @spec __using__(keyword()) :: Macro.t()
   defmacro __using__(opts) do
     class = Keyword.fetch!(opts, :class)
     fields = Keyword.fetch!(opts, :fields)
