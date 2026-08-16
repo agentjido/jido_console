@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-1f1.2"
   ],
@@ -14,8 +14,8 @@
   ],
   "parent": "jido_console-1f1",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "F-25: Keep one event log and derive session views",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:48Z"
+  "updated_at": "2026-08-16T13:21:28Z"
 }
