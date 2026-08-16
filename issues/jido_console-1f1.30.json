@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T13:00:18Z",
+  "description": "Audit rank: 30 of 30.\n\nOwner: JC-13 Session public and generated protocol.\nEvidence: lib/jido_console/session/client.ex:111-164.\nWork: Remove handle-ignoring queue, cancellation, permission, and outcome forwards. Call their owning modules directly. Keep only client operations that use the client/session handle.\nAcceptance: Client has one clear session-client role. Repository callers use Queue, Cancellation, Permission, and Result owners directly. Client interface tests cover retained calls.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
+  "id": "jido_console-1f1.30",
+  "labels": [],
+  "parent": "jido_console-1f1",
+  "priority": 0,
+  "status": "open",
+  "title": "F-22: Remove Client facade functions that ignore the handle",
+  "type": "task",
+  "updated_at": "2026-08-16T13:00:18Z"
+}
