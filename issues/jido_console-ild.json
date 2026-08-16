@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T01:46:32Z",
+  "description": "Direct main remediation authorized by the maintainer. Make Jido.Console.Session.Server own real Jidoka execution; route TUI and automation through Session.Client; preserve active work across TUI detach and reattach; project real runtime events and results into ordered semantic session state; replace synthetic parity with a shared real-client contract suite; remove remaining direct client-owned runtime paths; pass deterministic focused and full quality gates.",
+  "id": "jido_console-ild",
+  "labels": [],
+  "priority": 0,
+  "status": "open",
+  "title": "Complete the Milestone 2 runtime migration",
+  "type": "bug",
+  "updated_at": "2026-08-16T01:46:32Z"
+}
