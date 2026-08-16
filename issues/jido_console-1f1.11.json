@@ -11,9 +11,15 @@
     "audit-finding"
   ],
   "parent": "jido_console-1f1",
+  "comments": [
+    {
+      "text": "Implemented required start/2, await/2, and cancel/2 engine protocol and removed the coordinator run/2 fallback. Focused automation, coordinator, cancellation, Jidoka engine, replay, and extension tests pass 51/51. Compile with warnings as errors passes. Full suite passes 537/538 with one reproducible unrelated failure in the real PTY executable test: early executable exit.",
+      "timestamp": "2026-08-16T14:06:00Z"
+    }
+  ],
   "priority": 0,
   "status": "in_progress",
   "title": "F-06: Use one asynchronous automation engine protocol",
   "type": "task",
-  "updated_at": "2026-08-16T13:44:09Z"
+  "updated_at": "2026-08-16T14:06:00Z"
 }
