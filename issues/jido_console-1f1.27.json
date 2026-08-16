@@ -5,11 +5,13 @@
   "created": "2026-08-16T13:00:17Z",
   "description": "Audit rank: 27 of 30.\n\nOwner: JC-16 Session OTP runtime.\nEvidence: lib/jido_console/session/worker.ex:14-40,57-71. Only worker_test.exs calls it.\nWork: Delete Session.Worker and its direct test. Keep Session.Server and its task supervisor as the only model and tool work owner.\nAcceptance: Repository caller scan is empty. Session and TUI work paths use supervised owners only.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.27",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-26: Remove the unused Session.Worker process model",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:17Z"
+  "updated_at": "2026-08-16T13:00:55Z"
 }
