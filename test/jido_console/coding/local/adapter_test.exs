@@ -181,7 +181,7 @@ defmodule Jido.Console.Coding.Local.AdapterTest do
 
   defp fake_sandbox(root) do
     path = Path.join(root, "test-sandbox")
-    File.write!(path, "#!/bin/sh\nshift 2\nexec \"$@\"\n")
+    File.write!(path, "#!/bin/sh\nshift 2\nsleep 0.05\nexec \"$@\"\n")
     File.chmod!(path, 0o700)
     path
   end

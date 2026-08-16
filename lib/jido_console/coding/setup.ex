@@ -59,13 +59,7 @@ defmodule Jido.Console.Coding.Setup do
 
   @doc "Closes trusted local resources held by one resolved setup."
   @spec close(t()) :: :ok
-  def close(%__MODULE__{local_resources: resources} = setup) do
-    if setup.local_resources do
-      _ = Jido.Console.Process.stop(Jido.Console.Process.spec(:coding_runtime).name)
-    end
-
-    Local.close(resources)
-  end
+  def close(%__MODULE__{local_resources: resources}), do: Local.close(resources)
 
   @doc "Returns the bounded coding context that attached clients can use."
   @spec client_setup(t()) :: ClientSetup.t()

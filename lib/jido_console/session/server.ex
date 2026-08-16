@@ -171,6 +171,9 @@ defmodule Jido.Console.Session.Server do
     GenServer.stop(server, :normal, 5_000)
   catch
     :exit, {:noproc, _info} -> :ok
+    :exit, :shutdown -> :ok
+    :exit, {:shutdown, _info} -> :ok
+    :exit, {{:shutdown, _info}, {GenServer, :stop, _args}} -> :ok
   end
 
   @impl true
