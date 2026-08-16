@@ -53,11 +53,16 @@ defmodule Jido.Console.Session.IdentityTest do
              )
 
     record = Invocation.to_protocol(invocation)
+    assert invocation.identity.generation == 1
+    assert record["generation"]["temperature"] == 0
     assert record["provider"] == "openai"
     assert record["model"] == "gpt-4.1"
     assert record["fallback_attempt"] == 1
     refute Map.has_key?(record, "credential")
     assert {:ok, _} = Jason.encode(record)
+
+    assert {:error, :invalid_generation} =
+             Identity.new(:invocation, session_id: session.id, generation: [temperature: 0])
 
     assert {:error, :credential_in_identity} =
              Invocation.new(session_id: session.id, provider: "openai", model: "gpt-4.1", token: "sk")

@@ -17,6 +17,7 @@ defmodule Jido.Console.Session.Projection do
          :ok <- reject_invalid_order(projected, Keyword.get(opts, :last_jidoka_seq)) do
       Event.classify(%{
         type: console_type(projected),
+        id: event_id(projected, opts),
         sequence: Keyword.fetch!(opts, :sequence),
         durability: "process",
         sensitivity: sensitivity(projected),
@@ -49,10 +50,20 @@ defmodule Jido.Console.Session.Projection do
 
   defp reject_invalid_order(_projected, _last), do: :ok
 
-  defp console_type(%{terminal?: true, event: "turn_failed"}), do: "run_failed"
+  defp console_type(%{event: event}) when event in ["turn_failed", :turn_failed], do: "run_failed"
+
+  defp console_type(%{event: event}) when event in ["turn_hibernated", :turn_hibernated],
+    do: "run_progress"
+
+  defp console_type(%{event: event}) when event in ["llm_delta", :llm_delta], do: "model_delta"
   defp console_type(%{terminal?: true}), do: "run_completed"
-  defp console_type(%{event: "llm_delta"}), do: "model_delta"
   defp console_type(_projected), do: "run_progress"
+
+  defp event_id(projected, opts) do
+    request_id = projected[:request_id] || "jidoka"
+    seq = projected[:seq] || Keyword.fetch!(opts, :sequence)
+    "plt_#{request_id}_#{seq}"
+  end
 
   defp sensitivity(%{data: %{"token" => _}}), do: "redacted"
   defp sensitivity(_projected), do: "public"

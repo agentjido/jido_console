@@ -30,22 +30,35 @@ defmodule Jido.Console.Session.Delivery do
   @doc "Offers one update. Unsafe updates are never dropped silently."
   @spec offer(t(), map()) :: {:ok, t(), map() | nil} | {:gap, t(), map()}
   def offer(state, update) do
-    sequence = update["sequence"] || get_in(update, ["payload", "sequence"]) || 0
-    coalesce? = update["coalesce"] == true
+    sequence = seq(update)
 
-    cond do
-      length(state.pending) >= state.bound ->
-        gap = %{"type" => "delivery_gap", "last_acknowledged" => state.last_acked, "current_sequence" => sequence}
-        {:gap, %{state | pending: [], gap?: true}, gap}
-
-      coalesce? and match?([%{coalesce: true} | _], Enum.reverse(state.pending)) ->
-        pending = List.replace_at(state.pending, -1, update)
-        {:ok, %{state | pending: pending}, update}
-
-      true ->
-        {:ok, %{state | pending: state.pending ++ [update]}, update}
+    if coalescible?(update) and coalescible_tail?(state.pending) do
+      {:ok, %{state | pending: List.replace_at(state.pending, -1, update)}, update}
+    else
+      offer_or_gap(state, update, sequence)
     end
   end
+
+  defp offer_or_gap(state, update, sequence) do
+    if length(state.pending) >= state.bound do
+      gap = %{
+        "type" => "delivery_gap",
+        "last_acknowledged" => state.last_acked,
+        "current_sequence" => sequence
+      }
+
+      {:gap, %{state | pending: [], gap?: true}, gap}
+    else
+      {:ok, %{state | pending: state.pending ++ [update]}, update}
+    end
+  end
+
+  defp coalescible?(update) do
+    update["coalesce"] == true or Map.get(update, :coalesce) == true
+  end
+
+  defp coalescible_tail?([]), do: false
+  defp coalescible_tail?(pending), do: coalescible?(List.last(pending))
 
   @doc "Acknowledges one delivered sequence for this client and session."
   @spec ack(t(), String.t(), String.t(), non_neg_integer()) :: {:ok, t()} | {:error, term()}

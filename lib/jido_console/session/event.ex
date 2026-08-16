@@ -34,7 +34,7 @@ defmodule Jido.Console.Session.Event do
              schema(),
              "event",
              attrs["type"],
-             Map.put(attrs, "id", attrs["id"] || "plt_event_classified")
+             Map.put(attrs, "id", attrs["id"] || default_event_id(attrs))
            ) do
       Validator.validate(envelope)
     end
@@ -92,6 +92,12 @@ defmodule Jido.Console.Session.Event do
   end
 
   defp valid_identity?(_identity), do: false
+
+  defp default_event_id(attrs) do
+    type = attrs["type"] || "event"
+    sequence = attrs["sequence"] || 0
+    "plt_event_#{type}_#{sequence}"
+  end
 
   defp reject_origin_authority(attrs) do
     if origin_authority?(attrs), do: {:error, :origin_cannot_grant_authority}, else: :ok

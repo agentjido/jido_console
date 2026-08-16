@@ -63,6 +63,7 @@ defmodule Jido.Console.Session.Identity do
     with {:ok, prefix} <- fetch_prefix(kind),
          :ok <- reject_credentials(opts),
          {:ok, session_id} <- session_id(kind, opts),
+         {:ok, generation} <- generation(opts),
          id = Keyword.get_lazy(opts, :id, fn -> generate(kind, prefix) end),
          :ok <- validate_id(id, kind) do
       {:ok,
@@ -70,7 +71,7 @@ defmodule Jido.Console.Session.Identity do
          kind: kind,
          id: id,
          session_id: if(kind == :session, do: id, else: session_id),
-         generation: Keyword.get(opts, :generation, 1),
+         generation: generation,
          owner: Keyword.get(opts, :owner, owner_for(kind))
        }}
     end
@@ -148,6 +149,13 @@ defmodule Jido.Console.Session.Identity do
       "generation" => identity.generation,
       "owner" => identity.owner
     }
+  end
+
+  defp generation(opts) do
+    case Keyword.get(opts, :generation, 1) do
+      value when is_integer(value) and value > 0 -> {:ok, value}
+      _other -> {:error, :invalid_generation}
+    end
   end
 
   defp session_id(:session, opts) do

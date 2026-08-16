@@ -1,7 +1,7 @@
 defmodule Jido.Console.Session.ServerTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Session.{Event, Identity, Server, Supervisor}
+  alias Jido.Console.Session.{Event, Identity, Input, Server, Supervisor}
 
   setup do
     suffix = System.unique_integer([:positive])
@@ -19,8 +19,11 @@ defmodule Jido.Console.Session.ServerTest do
     assert snapshot["payload"]["sequence"] == 0
     assert {:ok, ^server} = Server.ensure_started(session.id, registry: opts[:registry], supervisor: opts[:sessions])
 
-    sequence = Server.next_sequence(server)
-    {:ok, event} = classify(session, "run_started", sequence)
+    first = Server.next_sequence(server)
+    second = Server.next_sequence(server)
+    assert first == 1
+    assert second == 2
+    {:ok, event} = classify(session, "run_started", first)
     assert {:ok, state} = Server.admit_event(server, event)
     assert state.sequence == 1
     assert_receive {:session_updated, session_id, _snapshot}
@@ -33,6 +36,29 @@ defmodule Jido.Console.Session.ServerTest do
     assert :ok = Server.detach(server, client)
     assert Process.alive?(server)
     assert {:ok, _} = Server.attach(server, client)
+  end
+
+  test "the server records admitted input and bounds client delivery", %{server: server, session: session} do
+    client = Identity.new!(:client, session_id: session.id)
+    assert {:ok, _} = Server.attach(server, client)
+    {:ok, input} = Input.admit("steer this", session_id: session.id)
+    assert {:ok, ^input} = Server.admit_input(server, input)
+
+    other = Identity.new!(:session)
+    {:ok, foreign} = Input.admit("nope", session_id: other.id)
+    assert {:error, :cross_session_result} = Server.admit_input(server, foreign)
+
+    sequence = Server.next_sequence(server)
+    {:ok, event} = classify(session, "run_started", sequence)
+    assert {:ok, _} = Server.admit_event(server, event)
+    assert_receive {:session_updated, session_id, snapshot}
+    assert session_id == session.id
+    assert snapshot["coalesce"] == true
+
+    sequence = snapshot["payload"]["sequence"]
+    assert {:ok, delivery} = Server.ack(server, client.id, session.id, sequence)
+    assert delivery.last_acked == sequence
+    assert delivery.pending == []
   end
 
   test "stale, repeated, and cross-session results cannot resolve current work", %{server: server, session: session} do

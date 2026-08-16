@@ -47,7 +47,11 @@ defmodule Jido.Console.Session.Client do
 
   @doc "Admits process-lifetime input."
   @spec send_input(t(), String.t()) :: {:ok, Input.t()} | {:error, term()}
-  def send_input(handle, text), do: Input.admit(text, session_id: handle.session.id)
+  def send_input(handle, text) do
+    with {:ok, input} <- Input.admit(text, session_id: handle.session.id) do
+      Server.admit_input(handle.server, input)
+    end
+  end
 
   @doc "Steers the active run."
   @spec steer(t(), Queue.t(), map()) :: {:ok, Queue.t()} | {:error, term()}
@@ -79,12 +83,18 @@ defmodule Jido.Console.Session.Client do
 
   @doc "Acknowledges a delivered sequence."
   @spec ack(t(), non_neg_integer()) :: {:ok, Delivery.t()} | {:error, term()}
-  def ack(handle, sequence), do: Delivery.ack(handle.delivery, handle.client.id, handle.session.id, sequence)
+  def ack(handle, sequence) do
+    Server.ack(handle.server, handle.client.id, handle.session.id, sequence)
+  end
 
   @doc "Recovers from an explicit gap."
   @spec recover(t(), [map()]) :: {:ok, Delivery.t(), term()} | {:error, term()}
   def recover(handle, suffix) do
-    Recovery.recover(Server.state(handle.server), handle.delivery, suffix)
+    with {:ok, delivery, recovered} <-
+           Recovery.recover(Server.state(handle.server), handle.delivery, suffix),
+         {:ok, delivery} <- Server.put_delivery(handle.server, handle.client.id, delivery) do
+      {:ok, delivery, recovered}
+    end
   end
 
   @doc "Returns capability names advertised by this contract."

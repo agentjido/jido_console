@@ -21,4 +21,24 @@ defmodule Jido.Console.Session.WorkerTest do
     assert result.identity.id == identity.id
     assert result.session_id == identity.session_id
   end
+
+  test "a timed-out worker cannot become the next run's result" do
+    identity = Identity.new!(:request, session_id: Identity.new!(:session).id)
+
+    assert {:error, :worker_timeout} =
+             Worker.run(
+               identity: identity,
+               timeout: 20,
+               fun: fn ->
+                 receive do
+                   :never -> :late
+                 after
+                   5_000 -> :late
+                 end
+               end
+             )
+
+    assert {:ok, result} = Worker.run(identity: identity, timeout: 200, fun: fn -> :on_time end)
+    assert result.result == :on_time
+  end
 end

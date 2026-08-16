@@ -12,6 +12,17 @@ defmodule Jido.Console.Session.ProjectionTest do
     assert console_event["payload"]["sequence"] == 3
     assert console_event["payload"]["request_id"] == "req_proj"
     assert console_event["type"] == "run_completed"
+    assert console_event["id"] == "plt_req_proj_0"
+
+    hibernated = Event.build(:turn_hibernated, [], request_id: "req_pause", seq: 1)
+    assert {:ok, paused} = Projection.project(hibernated, sequence: 4, session: session)
+    assert paused["type"] == "run_progress"
+    assert paused["id"] == "plt_req_pause_1"
+
+    failed = Event.build(:turn_failed, [], request_id: "req_fail", seq: 2)
+    assert {:ok, failed_event} = Projection.project(failed, sequence: 5, session: session)
+    assert failed_event["type"] == "run_failed"
+    assert failed_event["id"] != console_event["id"]
   end
 
   test "duplicate Jidoka events are ignored and invalid order fails" do

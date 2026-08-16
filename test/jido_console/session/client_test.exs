@@ -11,6 +11,9 @@ defmodule Jido.Console.Session.ClientTest do
     session = Identity.new!(:session)
 
     assert {:ok, handle} = Client.attach(session.id, registry: opts[:registry], supervisor: opts[:sessions])
+    assert {:ok, input} = Client.send_input(handle, "hello")
+    assert input.status == :accepted
+    assert input.identity.session_id == session.id
     assert :ok = Client.detach(handle)
     assert Process.alive?(handle.server)
 

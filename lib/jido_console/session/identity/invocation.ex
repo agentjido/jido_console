@@ -26,7 +26,7 @@ defmodule Jido.Console.Session.Identity.Invocation do
   @spec new(keyword()) :: {:ok, t()} | {:error, term()}
   def new(opts) when is_list(opts) do
     with :ok <- reject_credentials(opts),
-         {:ok, identity} <- Identity.new(:invocation, Keyword.take(opts, [:session_id, :generation, :id])),
+         {:ok, identity} <- Identity.new(:invocation, identity_opts(opts)),
          {:ok, provider} <- required_string(opts, :provider),
          {:ok, model} <- required_string(opts, :model) do
       {:ok,
@@ -61,6 +61,12 @@ defmodule Jido.Console.Session.Identity.Invocation do
       "skill_schema_digest" => invocation.skill_schema_digest,
       "fallback_attempt" => invocation.fallback_attempt
     })
+  end
+
+  defp identity_opts(opts) do
+    opts
+    |> Keyword.take([:session_id, :id])
+    |> Keyword.put(:generation, Keyword.get(opts, :identity_generation, 1))
   end
 
   defp required_string(opts, key) do

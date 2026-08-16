@@ -10,9 +10,11 @@ defmodule Jido.Console.Session.Server do
   use GenServer, restart: :temporary
 
   alias Jido.Console.Session.{
+    Delivery,
     DynamicSupervisor,
     Identity,
     Identity.Admission,
+    Input,
     Reducer,
     Registry,
     State
@@ -51,7 +53,11 @@ defmodule Jido.Console.Session.Server do
         {:ok, pid}
 
       {:error, :not_found} ->
-        DynamicSupervisor.start_session(__MODULE__, Keyword.put(opts, :session_id, session_id))
+        case DynamicSupervisor.start_session(__MODULE__, Keyword.put(opts, :session_id, session_id)) do
+          {:ok, pid} -> {:ok, pid}
+          {:error, {:already_started, pid}} -> {:ok, pid}
+          other -> other
+        end
     end
   end
 
@@ -81,6 +87,23 @@ defmodule Jido.Console.Session.Server do
     GenServer.call(server, {:admit_result, identity, result})
   end
 
+  @doc "Admits process-lifetime input for this session."
+  @spec admit_input(name(), Input.t()) :: {:ok, Input.t()} | {:error, term()}
+  def admit_input(server, input), do: GenServer.call(server, {:admit_input, input})
+
+  @doc "Acknowledges a delivered sequence for one attached client."
+  @spec ack(name(), String.t(), String.t(), non_neg_integer()) ::
+          {:ok, Delivery.t()} | {:error, term()}
+  def ack(server, client_id, session_id, sequence) do
+    GenServer.call(server, {:ack, client_id, session_id, sequence})
+  end
+
+  @doc "Replaces one attached client's delivery state after recovery."
+  @spec put_delivery(name(), String.t(), Delivery.t()) :: {:ok, Delivery.t()} | {:error, term()}
+  def put_delivery(server, client_id, delivery) do
+    GenServer.call(server, {:put_delivery, client_id, delivery})
+  end
+
   @impl true
   def init(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
@@ -92,7 +115,9 @@ defmodule Jido.Console.Session.Server do
        state: State.new(session),
        clients: %{},
        admissions: %{},
-       results: []
+       results: [],
+       inputs: [],
+       reserved: 0
      }}
   end
 
@@ -102,7 +127,15 @@ defmodule Jido.Console.Session.Server do
       {:reply, {:error, :cross_session_result}, state}
     else
       ref = Process.monitor(pid)
-      clients = Map.put(state.clients, client.id, %{identity: client, pid: pid, ref: ref})
+
+      record = %{
+        identity: client,
+        pid: pid,
+        ref: ref,
+        delivery: Delivery.new(client_id: client.id, session_id: state.session.id)
+      }
+
+      clients = Map.put(state.clients, client.id, record)
       {:reply, {:ok, Reducer.snapshot(state.state)}, %{state | clients: clients}}
     end
   end
@@ -121,17 +154,58 @@ defmodule Jido.Console.Session.Server do
   def handle_call(:state, _from, state), do: {:reply, state.state, state}
 
   def handle_call(:next_sequence, _from, state) do
-    {:reply, state.state.sequence + 1, state}
+    next = max(state.reserved, state.state.sequence) + 1
+    {:reply, next, %{state | reserved: next}}
   end
 
   def handle_call({:admit_event, event}, _from, state) do
     case Reducer.apply_event(state.state, event) do
       {:ok, next} ->
-        publish(state.clients, next)
-        {:reply, {:ok, next}, %{state | state: next}}
+        clients = publish(state.clients, next)
+        {:reply, {:ok, next}, %{state | state: next, clients: clients}}
 
       {:error, _reason} = error ->
         {:reply, error, state}
+    end
+  end
+
+  def handle_call({:admit_input, input}, _from, state) do
+    if input.identity.session_id != state.session.id do
+      {:reply, {:error, :cross_session_result}, state}
+    else
+      {:reply, {:ok, input}, %{state | inputs: state.inputs ++ [input]}}
+    end
+  end
+
+  def handle_call({:ack, client_id, session_id, sequence}, _from, state) do
+    case Map.fetch(state.clients, client_id) do
+      :error ->
+        {:reply, {:error, :not_attached}, state}
+
+      {:ok, client} ->
+        case Delivery.ack(client.delivery, client_id, session_id, sequence) do
+          {:ok, delivery} ->
+            clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
+            {:reply, {:ok, delivery}, %{state | clients: clients}}
+
+          {:error, _reason} = error ->
+            {:reply, error, state}
+        end
+    end
+  end
+
+  def handle_call({:put_delivery, client_id, delivery}, _from, state) do
+    case Map.fetch(state.clients, client_id) do
+      :error ->
+        {:reply, {:error, :not_attached}, state}
+
+      {:ok, client} ->
+        if delivery.client_id == client_id and delivery.session_id == state.session.id do
+          clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
+          {:reply, {:ok, delivery}, %{state | clients: clients}}
+        else
+          {:reply, {:error, :identity_mismatch}, state}
+        end
     end
   end
 
@@ -167,10 +241,25 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp publish(clients, session_state) do
-    snapshot = Reducer.snapshot(session_state)
+    update =
+      session_state
+      |> Reducer.snapshot()
+      |> Map.put("coalesce", true)
 
-    Enum.each(clients, fn {_id, client} ->
-      send(client.pid, {:session_updated, session_state.session_id, snapshot})
+    Map.new(clients, fn {id, client} ->
+      {id, deliver(client, session_state.session_id, update)}
     end)
+  end
+
+  defp deliver(client, session_id, update) do
+    case Delivery.offer(client.delivery, update) do
+      {:ok, delivery, payload} ->
+        send(client.pid, {:session_updated, session_id, payload})
+        %{client | delivery: delivery}
+
+      {:gap, delivery, gap} ->
+        send(client.pid, {:session_gap, session_id, gap})
+        %{client | delivery: delivery}
+    end
   end
 end

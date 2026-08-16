@@ -9,6 +9,9 @@ defmodule Jido.Console.Application do
 
   @impl true
   def start(_type, _args) do
-    Jido.Console.Session.Supervisor.start_link(name: Jido.Console.Session.Supervisor)
+    case Jido.Console.Session.Supervisor.start_link(name: Jido.Console.Session.Supervisor) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, pid}} -> {:ok, pid}
+    end
   end
 end

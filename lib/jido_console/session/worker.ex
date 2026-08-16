@@ -25,7 +25,7 @@ defmodule Jido.Console.Session.Worker do
     ref = Process.monitor(pid)
 
     receive do
-      {:worker_result, result} ->
+      {:worker_result, ^pid, result} ->
         Process.demonitor(ref, [:flush])
         {:ok, result}
 
@@ -34,6 +34,8 @@ defmodule Jido.Console.Session.Worker do
     after
       Keyword.get(opts, :timeout, 5_000) ->
         Process.exit(pid, :kill)
+        Process.demonitor(ref, [:flush])
+        drain_worker_result(pid)
         {:error, :worker_timeout}
     end
   end
@@ -47,8 +49,16 @@ defmodule Jido.Console.Session.Worker do
   @impl true
   def handle_info(:run, opts) do
     result = Keyword.fetch!(opts, :fun).()
-    send(Keyword.fetch!(opts, :owner), {:worker_result, bind(Keyword.fetch!(opts, :identity), result)})
+    send(Keyword.fetch!(opts, :owner), {:worker_result, self(), bind(Keyword.fetch!(opts, :identity), result)})
     {:stop, :normal, opts}
+  end
+
+  defp drain_worker_result(pid) do
+    receive do
+      {:worker_result, ^pid, _result} -> :ok
+    after
+      0 -> :ok
+    end
   end
 
   defp bind(%{} = identity, result) do

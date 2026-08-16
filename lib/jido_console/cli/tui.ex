@@ -327,6 +327,8 @@ defmodule Jido.Console.Tui do
         )
 
       {:jido_runtime_startup, ^startup_pid, {:ok, startup}} ->
+        state = attach_session_client_if_needed(state, opts)
+
         continue(
           state,
           {:runtime_ready, startup.session, startup.coding.instructions},
@@ -587,7 +589,15 @@ defmodule Jido.Console.Tui do
     end
   end
 
+  defp attach_session_client_if_needed(%State{session_client: nil} = state, opts) do
+    %{state | session_client: attach_session_client(opts)}
+  end
+
+  defp attach_session_client_if_needed(state, _opts), do: state
+
   defp attach_session_client(opts) do
+    supervisor_opts = Keyword.take(opts, [:name, :registry, :sessions])
+    _ = Jido.Console.Session.Supervisor.ensure_started(supervisor_opts)
     session_id = Keyword.get_lazy(opts, :session_id, fn -> Identity.new!(:session).id end)
 
     case SessionTUI.attach(session_id, Keyword.take(opts, [:registry, :supervisor])) do
