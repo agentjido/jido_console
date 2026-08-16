@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T19:22:28Z",
+  "description": "Prepare the canonical Milestone 3 delivery plan from roadmap/milestones/03-add-durable-resume/milestone.md. Split the milestone into reviewable one-pull-request epics, identify Jidoka and Jido Console ownership boundaries, add beadwork_id and depends_on data, import matching Beadwork records, add owners and effort estimates, and validate an acyclic dependency graph. This is planning work only. Do not implement durable storage or recovery. Keep v0.2 publication in jido_console-m2e35 as a separate ready task.",
+  "id": "jido_console-x5b",
+  "labels": [],
+  "priority": 1,
+  "status": "open",
+  "title": "Plan the Milestone 3 durable-resume delivery graph",
+  "type": "task",
+  "updated_at": "2026-08-16T19:22:28Z"
+}
