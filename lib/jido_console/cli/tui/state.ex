@@ -339,7 +339,7 @@ defmodule Jido.Console.Tui.State do
         %__MODULE__{} = state,
         {:turn_result, %RuntimeResult{outcome: %Ok{} = outcome} = result}
       ) do
-    changes = outcome.coding_reviews |> Jido.Console.Coding.Review.normalize() |> retain(@review_limit)
+    changes = retain(outcome.coding_reviews, @review_limit)
     state = %{state | coding_reviews: changes}
     finish(state, result.session, outcome.content, :idle, nil, outcome: :completed, changes: changes)
   end
@@ -375,7 +375,7 @@ defmodule Jido.Console.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:coding_review, reviews}) do
-    changes = reviews |> Jido.Console.Coding.Review.normalize() |> retain(@review_limit)
+    changes = reviews |> Jido.Console.Coding.Review.project_candidates() |> retain(@review_limit)
     state = put_active_changes(state, changes)
     changed(state, coding_reviews: changes)
   end

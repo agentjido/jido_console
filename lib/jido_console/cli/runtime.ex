@@ -13,7 +13,7 @@ defmodule Jido.Console.Runtime do
 
       @type t :: %__MODULE__{
               content: String.t(),
-              coding_reviews: [map()],
+              coding_reviews: [Jido.Console.Coding.Review.projection()],
               approval: Jido.Console.Runtime.Result.approval()
             }
     end
@@ -78,13 +78,18 @@ defmodule Jido.Console.Runtime do
 
     @spec ok(String.t(), term(), term(), String.t(), keyword()) :: t()
     def ok(request_id, session, handle, content, opts \\ []) when is_binary(content) do
+      coding_reviews =
+        opts
+        |> Keyword.get(:coding_review_candidates, [])
+        |> Jido.Console.Coding.Review.project_candidates()
+
       build(
         request_id,
         session,
         handle,
         %Ok{
           content: content,
-          coding_reviews: Keyword.get(opts, :coding_reviews, []),
+          coding_reviews: coding_reviews,
           approval: Keyword.get(opts, :approval)
         },
         opts
@@ -300,7 +305,7 @@ defmodule Jido.Console.Runtime.Jidoka do
     session = put_session_data(request.session, next_session)
 
     Result.ok(request.request_id, session, put_request_session(request, session), content,
-      coding_reviews: Jido.Console.Coding.Review.from_session(next_session),
+      coding_review_candidates: Jido.Console.Coding.Review.candidates_from_session(next_session),
       approval: approval,
       raw: raw
     )
@@ -314,7 +319,7 @@ defmodule Jido.Console.Runtime.Jidoka do
     session = put_session_data(request.session, next_session)
 
     Result.ok(request.request_id, session, put_request_session(request, session), turn_result.content,
-      coding_reviews: Jido.Console.Coding.Review.from_session(next_session),
+      coding_review_candidates: Jido.Console.Coding.Review.candidates_from_session(next_session),
       approval: approval,
       raw: raw
     )

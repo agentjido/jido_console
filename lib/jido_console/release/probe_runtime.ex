@@ -123,7 +123,7 @@ defmodule Jido.Console.Release.ProbeRuntime do
 
         result(request, :ok,
           content: "Verification passed. Repository review is ready.",
-          coding_reviews: [git_review(request.session)],
+          coding_review_candidates: [git_review(request.session)],
           raw: output
         )
 
@@ -167,7 +167,7 @@ defmodule Jido.Console.Release.ProbeRuntime do
       emit_edit_finished(request, Keyword.fetch!(opts, :stream_to))
 
       Result.ok(pending.request_id, pending.session, pending.handle, "Implemented café λ rate limiter.",
-        coding_reviews: [edit_review],
+        coding_review_candidates: [edit_review],
         approval: :approved
       )
     else
@@ -525,7 +525,7 @@ defmodule Jido.Console.Release.ProbeRuntime do
     case status do
       :ok ->
         Result.ok(request.request_id, request.session, request, Keyword.fetch!(attrs, :content),
-          coding_reviews: Keyword.get(attrs, :coding_reviews, []),
+          coding_review_candidates: Keyword.get(attrs, :coding_review_candidates, []),
           raw: raw
         )
 

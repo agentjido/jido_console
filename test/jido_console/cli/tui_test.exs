@@ -105,7 +105,7 @@ defmodule Jido.Console.TuiTest do
 
         "review edit" ->
           Result.ok(request.request_id, :next_session, request, "Edit complete.",
-            coding_reviews: [
+            coding_review_candidates: [
               %{
                 "kind" => "edit",
                 "path" => "lib/value.ex",

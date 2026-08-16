@@ -1,34 +1,36 @@
 defmodule Jido.Console.Coding.Review do
-  @moduledoc "Bounded read-only TUI review projections for portable coding results."
+  @moduledoc "Validation and redaction boundary for coding review projections."
 
   @max_records 50
   @max_patch_bytes 8_192
   @statuses ~w(changed no_change conflict interrupted restored restore_failed failed cancelled)
   @sensitive_names ~w(.env .env.local credentials secrets id_rsa id_ed25519)
 
-  @doc "Builds stable review records from a public Jidoka session result."
-  @spec from_session(term()) :: [map()]
-  def from_session(%Jidoka.Session.Data{result: %Jidoka.Turn.Result{} = result}) do
+  @type candidate :: map()
+  @type projection :: map()
+
+  @doc "Extracts raw review candidates from a public Jidoka session result."
+  @spec candidates_from_session(term()) :: [candidate()]
+  def candidates_from_session(%Jidoka.Session.Data{result: %Jidoka.Turn.Result{} = result}) do
     request_id = result_request_id(result)
 
     result.agent_state.operation_results
     |> Enum.filter(&(is_nil(request_id) or &1.request_id == request_id))
     |> Enum.flat_map(&operation_review/1)
-    |> normalize()
   end
 
-  def from_session(_session), do: []
+  def candidates_from_session(_session), do: []
 
-  @doc "Validates portable review input from a registered coding namespace."
-  @spec normalize(term()) :: [map()]
-  def normalize(records) when is_list(records) do
+  @doc "Validates and redacts raw review candidates into bounded projections."
+  @spec project_candidates(term()) :: [projection()]
+  def project_candidates(records) when is_list(records) do
     records
     |> Enum.take(@max_records)
     |> Enum.flat_map(&normalize_record/1)
     |> Enum.sort_by(&{&1["path"] || "", &1["operation_id"] || "", &1["kind"]})
   end
 
-  def normalize(_records), do: []
+  def project_candidates(_records), do: []
 
   defp operation_review(%Jidoka.Effect.OperationResult{operation: operation, output: output})
        when operation in ["coding.write", "coding.edit"] and is_map(output),

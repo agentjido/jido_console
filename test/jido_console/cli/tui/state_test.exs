@@ -523,7 +523,7 @@ defmodule Jido.Console.Tui.StateTest do
     assert state.messages == []
   end
 
-  test "stores only normalized coding review data from a completed turn" do
+  test "keeps runtime review projections and validates raw review events" do
     digest = "sha256:" <> String.duplicate("a", 64)
 
     review = %{
@@ -545,13 +545,20 @@ defmodule Jido.Console.Tui.StateTest do
         {:turn_result,
          runtime_result(:ok, :request, :next_session,
            content: "done",
-           coding_reviews: [review, %{"bad" => true}]
+           coding_review_candidates: [review, %{"bad" => true}]
          )}
       )
 
     assert state.session == :next_session
     assert state.status == :idle
-    assert [%{"path" => "lib/value.ex", "status" => "changed"}] = state.coding_reviews
+    assert [projected] = state.coding_reviews
+    assert projected["path"] == "lib/value.ex"
+    assert projected["status"] == "changed"
+    assert projected["before_sha256"] == "sha256:aaaaaaaaaaaa"
+    assert projected["after_sha256"] == "sha256:aaaaaaaaaaaa"
+
+    {state, []} = State.update(state, {:coding_review, [projected]})
+    assert state.coding_reviews == []
 
     {state, []} =
       State.update(state, {:coding_review, [%{"kind" => "mutation_state", "status" => "cancelled"}]})
@@ -565,7 +572,7 @@ defmodule Jido.Console.Tui.StateTest do
     case status do
       :ok ->
         Result.ok(request_id, session, request, Keyword.fetch!(attrs, :content),
-          coding_reviews: Keyword.get(attrs, :coding_reviews, []),
+          coding_review_candidates: Keyword.get(attrs, :coding_review_candidates, []),
           approval: Keyword.get(attrs, :approval)
         )
 
