@@ -25,7 +25,6 @@
     "effort:large",
     "milestone-1",
     "one-pr",
-    "readiness:planned",
     "roadmap",
     "v0.1"
   ],
@@ -33,5 +32,5 @@
   "status": "closed",
   "title": "M1-E28: Prove the Golden Workflow Through the Production Artifact",
   "type": "epic",
-  "updated_at": "2026-08-15T15:01:04Z"
+  "updated_at": "2026-08-16T19:27:17Z"
 }
