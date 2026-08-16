@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T13:00:14Z",
+  "description": "Audit rank: 16 of 30.\n\nOwner: JC-01 Application foundation.\nEvidence: lib/jido_console/auth.ex:12-20,132-195; env.ex:4-43; .env.example.\nWork: Share one pure precedence resolver and one secure private-file reader. Keep the four-provider Auth catalog and broader Env variable list separate. Keep status output redacted.\nAcceptance: Loader and status select the same source and file policy. Symbolic links and non-regular files follow one fail-closed rule. Diagnostics never contain credentials.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
+  "id": "jido_console-1f1.16",
+  "labels": [],
+  "parent": "jido_console-1f1",
+  "priority": 0,
+  "status": "open",
+  "title": "F-01: Share credential precedence and secure file loading",
+  "type": "task",
+  "updated_at": "2026-08-16T13:00:14Z"
+}
