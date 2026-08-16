@@ -5,11 +5,13 @@
   "created": "2026-08-16T13:00:09Z",
   "description": "Audit rank: 1 of 30.\n\nOwner: JC-08 Coding configuration and environment.\nEvidence: lib/jido_console/coding/network.ex:258-289.\nWork: Represent each rule with a valid host or class selector and port :any or 1..65535. Parse valid decimal port strings. Reject malformed entries. Do not widen malformed fields to wildcards.\nAcceptance: Invalid ports and selectors fail closed. Valid host, class, wildcard, and port cases stay explicit. Network and local-adapter tests cover zero, high, malformed, missing, and non-map entries.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.1",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-14: Parse network allowlists into fail-closed entries",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:09Z"
+  "updated_at": "2026-08-16T13:00:45Z"
 }
