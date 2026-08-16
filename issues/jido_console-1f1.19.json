@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-16T13:00:15Z",
+  "description": "Audit rank: 19 of 30.\n\nOwner: JC-12 Home and process ownership.\nEvidence: lib/jido_console/process/contract.ex:22-32; process/supervisor.ex:68-80,201-210,240-279; process/store.ex:112-143.\nWork: Key process identity by kind and contract name. Remove custom ID drift. Derive static identity from Contract. Keep separate live, stored, and public projections.\nAcceptance: Stop and lookup use the same canonical identity. Conflicting IDs fail. Stored and public projections contain only their allowed fields.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
+  "id": "jido_console-1f1.19",
+  "labels": [],
+  "parent": "jido_console-1f1",
+  "priority": 0,
+  "status": "open",
+  "title": "F-19: Use one canonical process identity",
+  "type": "task",
+  "updated_at": "2026-08-16T13:00:15Z"
+}
