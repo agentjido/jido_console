@@ -114,18 +114,21 @@ defmodule Jido.Console.MixProject do
 
   defp deps do
     [
-      jidoka_dep(),
+      # Runtime dependencies
       {:dotenvy, "~> 1.1"},
       {:jason, "~> 1.4"},
+      jidoka_dep(),
       {:req_llm, "~> 1.20.0"},
+      {:splode, "~> 0.3.0"},
       {:yaml_elixir, "~> 2.12"},
       {:zoi, "~> 0.18"},
-      {:splode, "~> 0.3.0"},
+
+      # Development and test dependencies
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:doctor, "~> 0.22", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: [:dev, :test]},
-      {:doctor, "~> 0.22", only: [:dev, :test], runtime: false},
       {:git_hooks, "~> 0.8", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.9", only: :dev, runtime: false}
     ]
