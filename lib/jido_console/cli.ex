@@ -1,5 +1,5 @@
-defmodule Jido.Console do
-  @moduledoc "Command-line entry point for the Jido Console coding harness."
+defmodule Jido.Console.CLI do
+  @moduledoc "Command-line implementation for the Jido Console coding harness."
 
   @usage """
   Usage:
@@ -40,10 +40,6 @@ defmodule Jido.Console do
   are read from the environment by Jidoka's model provider. Automated commands
   write JSONL records to standard output and diagnostics to standard error.
   """
-
-  @doc "Returns the CLI version."
-  @spec version() :: String.t()
-  def version, do: Jido.Console.Release.Identity.version()
 
   @doc false
   @spec main([String.t()]) :: :ok
@@ -437,7 +433,7 @@ defmodule Jido.Console do
   end
 
   defp print_help, do: IO.write(@usage)
-  defp print_version, do: IO.puts("jido #{version()}")
+  defp print_version, do: IO.puts("jido #{Jido.Console.Release.Identity.version()}")
 
   defp format_error(reason) do
     Jido.Console.Error.message(reason)
