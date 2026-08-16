@@ -1,7 +1,8 @@
 {
   "assignee": "",
   "blocked_by": [
-    "jido_console-1f1.2"
+    "jido_console-1f1.2",
+    "jido_console-1f1.8"
   ],
   "blocks": [],
   "created": "2026-08-16T13:00:12Z",
