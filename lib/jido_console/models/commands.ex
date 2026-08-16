@@ -6,7 +6,6 @@ defmodule Jido.Console.Models.Commands do
   """
 
   alias Jido.Console.Models
-  alias Jido.Console.Models.Catalog
   alias Jido.Console.Policy.Preflight
   alias Jido.Console.Providers.{Harness, Redaction}
 
@@ -119,17 +118,11 @@ defmodule Jido.Console.Models.Commands do
 
   defp recorded_test(entry, opts, prefix \\ "") do
     with {:ok, results} <- Harness.run(Keyword.put(opts, :entry, entry)) do
-      claimed = claimed_results(entry, results)
-      output = prefix <> format_test(entry, claimed)
-      failed? = Enum.any?(claimed, &(&1.status != :pass))
+      output = prefix <> format_test(entry, results)
+      failed? = Enum.any?(results, &(&1.status != :pass or &1.evidence_id != entry.evidence_id))
 
       if failed?, do: {:error, {:contract_failed, output}}, else: {:ok, output}
     end
-  end
-
-  defp claimed_results(entry, results) do
-    claimed = entry |> Catalog.claimed_features() |> Enum.map(&elem(&1, 0))
-    Enum.filter(results, &(&1.capability in claimed))
   end
 
   defp format_list(entries) do
@@ -181,9 +174,10 @@ defmodule Jido.Console.Models.Commands do
   defp format_test(entry, results) do
     rows =
       results
-      |> Enum.sort_by(& &1.capability)
+      |> Enum.sort_by(& &1.dimension)
       |> Enum.map_join("", fn result ->
-        "contract.#{result.capability}: #{result.status} #{Redaction.redact(result.reason)}\n"
+        "contract.#{result.dimension}: #{result.status} #{Redaction.redact(result.reason)} " <>
+          "evidence=#{result.evidence_id} test=#{result.test_id}\n"
       end)
 
     "identity: #{entry.identity}\nsource: recorded\n" <> rows

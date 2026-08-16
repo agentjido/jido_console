@@ -2,53 +2,64 @@ defmodule Jido.Console.Providers.HarnessTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Models
-  alias Jido.Console.Providers.Harness
-  alias Jido.Console.Providers.Redaction
+  alias Jido.Console.Providers.{ContractResult, Harness, RecordedResults, Redaction}
 
-  test "deterministic checks cover every catalog dimension without a live call" do
+  test "recorded results cover every model and dimension without a live call" do
     assert {:ok, results} = Harness.run()
     assert {:ok, entries} = Models.list()
 
-    identities = Enum.map(entries, & &1.identity)
-    capabilities = Harness.dimensions()
-
-    assert length(results) == length(entries) * length(capabilities)
+    assert length(results) == length(entries) * length(Harness.dimensions())
 
     Enum.each(entries, fn entry ->
-      covered =
-        results
-        |> Enum.filter(&(&1.identity == entry.identity))
-        |> Enum.map(& &1.capability)
-        |> Enum.sort()
+      model_results = Enum.filter(results, &(&1.identity == entry.identity))
 
-      assert covered == Enum.sort(capabilities)
-    end)
+      assert Enum.sort(Enum.map(model_results, & &1.dimension)) ==
+               Enum.sort(Harness.dimensions())
 
-    Enum.each(results, fn result ->
-      entry = Enum.find(entries, &(&1.identity == result.identity))
-      assert result.provider in Enum.map(entries, & &1.provider)
-      assert result.identity in identities
-      assert result.contract_version == Harness.contract_version()
-      assert result.source_mode == :recorded
-      assert result.status in Harness.statuses()
-      assert is_binary(result.reason)
-      assert is_binary(result.test_id)
-
-      if claimed_supported?(entry, result.capability) do
-        assert result.status == :pass
-      else
-        assert result.status != :pass
-      end
+      Enum.each(model_results, fn result ->
+        assert result.contract_version == Harness.contract_version()
+        assert result.source_mode == :recorded
+        assert result.status in Harness.statuses()
+        assert is_binary(result.reason) and result.reason != ""
+        assert is_binary(result.evidence_id) and result.evidence_id != ""
+        assert is_binary(result.test_id) and result.test_id != ""
+      end)
     end)
   end
 
-  test "a missing fixture is not_applicable instead of an implied pass" do
-    {:ok, [entry | _rest]} = Models.list()
+  test "catalog claims cannot create a missing recorded result" do
+    {:ok, entry} = Models.show("openai", "gpt-4.1-mini")
 
-    assert {:ok, results} = Harness.run(entry: entry, fixtures: %{})
-    omitted = Enum.find(results, &(&1.capability == :streaming))
-    assert omitted.status == :not_applicable
-    refute Enum.any?(results, &(&1.status == :pass))
+    results =
+      entry
+      |> recorded_results()
+      |> Enum.reject(&(&1.dimension == :streaming))
+
+    assert {:error, {:missing_provider_contract_results, "openai:gpt-4.1-mini", [:streaming]}} =
+             Harness.run(entry: entry, recorded_results: results)
+  end
+
+  test "duplicate recorded evidence is rejected" do
+    {:ok, entry} = Models.show("openai", "gpt-4.1-mini")
+    [first | _rest] = results = recorded_results(entry)
+
+    assert {:error, {:duplicate_provider_contract_result, {"openai:gpt-4.1-mini", dimension}}} =
+             Harness.run(entry: entry, recorded_results: [first | results])
+
+    assert dimension == first.dimension
+  end
+
+  test "corrupt recorded evidence is rejected" do
+    {:ok, entry} = Models.show("openai", "gpt-4.1-mini")
+    [first | rest] = recorded_results(entry)
+
+    corrupt = Map.put(first, :contract_version, "jido.provider-contract.invalid")
+
+    assert {:error, {:unsupported_provider_contract_version, "jido.provider-contract.invalid"}} =
+             Harness.run(entry: entry, recorded_results: [corrupt | rest])
+
+    assert {:error, :invalid_provider_contract_result_fields} =
+             Harness.run(entry: entry, recorded_results: [Map.delete(first, :test_id) | rest])
   end
 
   test "live checks require opt-in and honor timeout and cancellation" do
@@ -61,7 +72,7 @@ defmodule Jido.Console.Providers.HarnessTest do
 
     assert Enum.all?(blocked, &(&1.source_mode == :live and &1.status == :blocked))
 
-    runner = fn _entry, _capability, _opts ->
+    runner = fn _entry, _dimension, _opts ->
       Process.sleep(5_000)
       {:ok, :pass, "should not finish"}
     end
@@ -90,33 +101,43 @@ defmodule Jido.Console.Providers.HarnessTest do
     assert Enum.any?(cancelled, &(&1.reason =~ "cancelled"))
   end
 
-  test "reports redact credentials, private paths, and secrets" do
+  test "reports preserve result identity and redact secrets" do
     secret = "sk-secretvalue1234 and /Users/mhostetler/secret OPENAI_API_KEY=abc123"
     assert Redaction.redact(secret) =~ "[redacted]"
     refute Redaction.redact(secret) =~ "sk-secretvalue1234"
     refute Redaction.redact(secret) =~ "/Users/mhostetler"
     refute Redaction.redact(secret) =~ "abc123"
 
-    {:ok, [entry | _rest]} = Models.list()
+    {:ok, entry} = Models.show("openai", "gpt-4.1-mini")
 
-    fixtures = %{
-      {entry.provider, entry.model, :streaming} => %{
-        status: :blocked,
-        reason: "provider said OPENAI_API_KEY=abc123 at /Users/mhostetler/.env"
-      }
-    }
+    results =
+      Enum.map(recorded_results(entry), fn result ->
+        if result.dimension == :streaming do
+          %{result | reason: "provider said OPENAI_API_KEY=abc123 at /Users/mhostetler/.env"}
+        else
+          result
+        end
+      end)
 
-    assert {:ok, results} = Harness.run(entry: entry, fixtures: fixtures)
-    streaming = Enum.find(results, &(&1.capability == :streaming))
+    assert {:ok, checked} = Harness.run(entry: entry, recorded_results: results)
+    streaming = Enum.find(checked, &(&1.dimension == :streaming))
     refute streaming.reason =~ "abc123"
     refute streaming.reason =~ "/Users/mhostetler"
-    assert Harness.report(results)["results"] != []
+
+    assert %{
+             "identity" => "openai:gpt-4.1-mini",
+             "dimension" => "streaming",
+             "evidence_id" => "harness:openai:gpt-4.1-mini",
+             "test_id" => "openai-gpt-4.1-mini-streaming"
+           } = Enum.find(Harness.report(checked)["results"], &(&1["dimension"] == "streaming"))
   end
 
-  defp claimed_supported?(entry, capability) do
-    case Map.fetch(entry.capabilities, capability) do
-      {:ok, %{state: :supported}} -> true
-      _other -> false
-    end
+  defp recorded_results(entry) do
+    RecordedResults.all()
+    |> Enum.filter(&(&1.identity == entry.identity))
+    |> Enum.map(fn attrs ->
+      {:ok, result} = ContractResult.new(attrs)
+      result
+    end)
   end
 end

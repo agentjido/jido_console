@@ -3,7 +3,7 @@ defmodule Jido.Console.Providers.GeminiQualificationTest do
 
   alias Jido.Console.Models
   alias Jido.Console.Policy.Preflight
-  alias Jido.Console.Providers.{Harness, Qualification}
+  alias Jido.Console.Providers.{Harness, Qualification, RecordedResults}
 
   test "qualifies gemini-2.5-flash from recorded contracts without a live call" do
     assert {:ok, result} = Qualification.run("google", host_env: %{})
@@ -18,24 +18,38 @@ defmodule Jido.Console.Providers.GeminiQualificationTest do
     assert model["fallback"]["outcome"] == "consent_required"
     assert model["known_gaps"] != []
     assert model["limits"]["context_tokens"] == 1_048_576
-    assert Enum.all?(model["capabilities"], &(&1["status"] == "pass"))
+    evidence = model["capabilities"] ++ model["extra"]
+    assert Enum.sort(Enum.map(evidence, & &1["dimension"])) == Enum.sort(Enum.map(Harness.dimensions(), &to_string/1))
+    assert Enum.all?(evidence, &(&1["status"] == "pass" and &1["claim_matches"]))
     refute inspect(Qualification.report(result)) =~ "AIza"
   end
 
   test "a missing or failed contract keeps Gemini out of the supported tier" do
     {:ok, entry} = Models.show("google", "gemini-2.5-flash")
-    assert {:ok, blocked} = Harness.run(entry: entry, fixtures: %{})
-    refute Enum.any?(blocked, &(&1.status == :pass))
+
+    incomplete =
+      entry
+      |> recorded_results()
+      |> Enum.reject(&(&1.dimension == :timeout))
+
+    identity = entry.identity
+
+    assert {:error, {:missing_provider_contract_results, ^identity, [:timeout]}} =
+             Harness.run(entry: entry, recorded_results: incomplete)
+
+    failed =
+      Enum.map(recorded_results(entry), fn result ->
+        if result.dimension == :timeout do
+          %{result | status: :fail, reason: "GEMINI_API_KEY=AIzaSySecretValue"}
+        else
+          result
+        end
+      end)
 
     assert {:ok, result} =
              Qualification.run("google",
                host_env: %{},
-               fixtures: %{
-                 {"google", "gemini-2.5-flash", :timeout} => %{
-                   status: :fail,
-                   reason: "GEMINI_API_KEY=AIzaSySecretValue"
-                 }
-               }
+               recorded_results: failed
              )
 
     refute Qualification.supported?(result)
@@ -65,5 +79,9 @@ defmodule Jido.Console.Providers.GeminiQualificationTest do
              )
 
     assert denied.outcome == :deny
+  end
+
+  defp recorded_results(entry) do
+    Enum.filter(RecordedResults.all(), &(&1.identity == entry.identity))
   end
 end

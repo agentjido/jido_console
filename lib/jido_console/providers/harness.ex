@@ -7,59 +7,28 @@ defmodule Jido.Console.Providers.Harness do
   """
 
   alias Jido.Console.Models
-  alias Jido.Console.Providers.Redaction
+  alias Jido.Console.Providers.{ContractResult, RecordedResults, Redaction}
 
-  @contract_version "jido.provider-contract.v1"
-  @dimensions [
-    :streaming,
-    :tools,
-    :multi_turn_tools,
-    :structured_results,
-    :cancellation,
-    :timeout,
-    :usage,
-    :cost,
-    :prompt_cache,
-    :error_normalization
-  ]
-  @statuses [:pass, :fail, :blocked, :not_applicable]
-
-  @type result :: %{
-          provider: String.t(),
-          model: String.t(),
-          identity: String.t(),
-          capability: atom(),
-          contract_version: String.t(),
-          source_mode: :recorded | :live,
-          status: atom(),
-          reason: String.t(),
-          evidence_id: String.t(),
-          test_id: String.t()
-        }
+  @type result :: ContractResult.t()
 
   @doc "Returns the contract version used by harness results."
   @spec contract_version() :: String.t()
-  def contract_version, do: @contract_version
+  def contract_version, do: ContractResult.contract_version()
 
   @doc "Returns the contract dimensions the harness must cover."
   @spec dimensions() :: [atom()]
-  def dimensions, do: @dimensions
+  def dimensions, do: ContractResult.dimensions()
 
   @doc "Returns accepted result statuses."
   @spec statuses() :: [atom()]
-  def statuses, do: @statuses
+  def statuses, do: ContractResult.statuses()
 
   @doc "Runs recorded or opt-in live checks for one catalog entry or the full catalog."
   @spec run(keyword()) :: {:ok, [result()]} | {:error, term()}
   def run(opts \\ []) do
     with {:ok, entries} <- entries(opts),
          {:ok, mode} <- source_mode(opts) do
-      results =
-        Enum.flat_map(entries, fn entry ->
-          Enum.map(@dimensions, &check(entry, &1, mode, opts))
-        end)
-
-      {:ok, Redaction.redact_results(results)}
+      run_mode(entries, mode, opts)
     end
   end
 
@@ -69,9 +38,28 @@ defmodule Jido.Console.Providers.Harness do
     %{
       "schema" => "jido.provider-contract-report",
       "schema_version" => 1,
-      "contract_version" => @contract_version,
+      "contract_version" => contract_version(),
       "results" => Enum.map(results, &encode/1)
     }
+  end
+
+  defp run_mode(entries, :recorded, opts) do
+    source = Keyword.get(opts, :recorded_results, RecordedResults.all())
+
+    with {:ok, results} <- ContractResult.validate_many(source),
+         selected <- select_results(results, entries),
+         :ok <- require_complete_coverage(selected, entries) do
+      {:ok, Redaction.redact_results(selected)}
+    end
+  end
+
+  defp run_mode(entries, :live, opts) do
+    results =
+      Enum.flat_map(entries, fn entry ->
+        Enum.map(dimensions(), &check_live(entry, &1, opts))
+      end)
+
+    {:ok, Redaction.redact_results(results)}
   end
 
   defp entries(opts) do
@@ -100,33 +88,28 @@ defmodule Jido.Console.Providers.Harness do
       System.get_env("JIDO_PROVIDER_LIVE") == "1"
   end
 
-  defp check(entry, capability, :recorded, opts) do
-    fixture = fixture_for(entry, capability, opts)
-
-    status = Map.fetch!(fixture, :status)
-    reason = Map.fetch!(fixture, :reason)
-
-    result(entry, capability, :recorded, status, reason)
-  end
-
-  defp check(entry, capability, :live, opts) do
+  defp check_live(entry, dimension, opts) do
     case live_runner(opts) do
       nil ->
-        result(entry, capability, :live, :blocked, "live runner is not configured")
+        result(entry, dimension, :live, :blocked, "live runner is not configured")
 
       runner when is_function(runner, 3) ->
-        case bounded_live(runner, entry, capability, opts) do
-          {:ok, status, reason} when status in @statuses ->
-            result(entry, capability, :live, status, reason)
+        case bounded_live(runner, entry, dimension, opts) do
+          {:ok, status, reason}
+          when status in [:pass, :fail, :blocked, :not_applicable] and is_binary(reason) ->
+            result(entry, dimension, :live, status, reason)
+
+          {:ok, status, reason} ->
+            result(entry, dimension, :live, :fail, "invalid live result: #{inspect({status, reason})}")
 
           {:error, :cancelled} ->
-            result(entry, capability, :live, :blocked, "live check cancelled")
+            result(entry, dimension, :live, :blocked, "live check cancelled")
 
           {:error, :timeout} ->
-            result(entry, capability, :live, :blocked, "live check timed out")
+            result(entry, dimension, :live, :blocked, "live check timed out")
 
           {:error, reason} ->
-            result(entry, capability, :live, :fail, inspect(reason))
+            result(entry, dimension, :live, :fail, inspect(reason))
         end
     end
   end
@@ -178,66 +161,45 @@ defmodule Jido.Console.Providers.Harness do
 
   defp live_runner(opts), do: Keyword.get(opts, :live_runner)
 
-  defp fixture_for(entry, capability, opts) do
-    case Keyword.fetch(opts, :fixtures) do
-      {:ok, fixtures} ->
-        Map.get(fixtures, {entry.provider, entry.model, capability}, %{
-          status: :not_applicable,
-          reason: "no recorded fixture for #{entry.identity} #{capability}"
-        })
-
-      :error ->
-        recorded_fixture(entry, capability)
-    end
+  defp select_results(results, entries) do
+    identities = MapSet.new(entries, & &1.identity)
+    Enum.filter(results, &MapSet.member?(identities, &1.identity))
   end
 
-  defp recorded_fixture(entry, capability) do
-    feature = feature_for(entry, capability)
+  defp require_complete_coverage(results, entries) do
+    Enum.reduce_while(entries, :ok, fn entry, :ok ->
+      present =
+        results
+        |> Enum.filter(&(&1.identity == entry.identity))
+        |> Enum.map(& &1.dimension)
 
-    cond do
-      is_nil(feature) ->
-        %{status: :not_applicable, reason: "capability is not declared on the catalog entry"}
-
-      feature.state == :not_applicable ->
-        %{status: :not_applicable, reason: feature.note}
-
-      feature.state == :unsupported ->
-        %{status: :fail, reason: feature.note}
-
-      feature.state == :unknown ->
-        %{status: :blocked, reason: feature.note}
-
-      feature.state == :supported and is_binary(feature.evidence) ->
-        %{status: :pass, reason: "recorded fixture matched #{feature.evidence}"}
-
-      true ->
-        %{status: :blocked, reason: "missing recorded evidence"}
-    end
+      case dimensions() -- present do
+        [] -> {:cont, :ok}
+        missing -> {:halt, {:error, {:missing_provider_contract_results, entry.identity, missing}}}
+      end
+    end)
   end
 
-  defp feature_for(entry, key), do: Map.get(entry.capabilities, key)
+  defp result(entry, dimension, mode, status, reason) do
+    {:ok, result} =
+      ContractResult.new(%{
+        identity: entry.identity,
+        dimension: dimension,
+        contract_version: contract_version(),
+        source_mode: mode,
+        status: status,
+        reason: reason,
+        evidence_id: "#{mode}:#{entry.identity}:#{dimension}",
+        test_id: "#{mode}:#{entry.identity}:#{dimension}"
+      })
 
-  defp result(entry, capability, mode, status, reason) do
-    %{
-      provider: entry.provider,
-      model: entry.model,
-      identity: entry.identity,
-      capability: capability,
-      contract_version: @contract_version,
-      source_mode: mode,
-      status: status,
-      reason: reason,
-      evidence_id: "harness:#{entry.identity}:#{capability}",
-      test_id: "#{mode}:#{entry.identity}:#{capability}"
-    }
+    result
   end
 
   defp encode(result) do
     %{
-      "provider" => result.provider,
-      "model" => result.model,
       "identity" => result.identity,
-      "capability" => Atom.to_string(result.capability),
+      "dimension" => Atom.to_string(result.dimension),
       "contract_version" => result.contract_version,
       "source_mode" => Atom.to_string(result.source_mode),
       "status" => Atom.to_string(result.status),

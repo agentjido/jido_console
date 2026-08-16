@@ -3,7 +3,7 @@ defmodule Jido.Console.Providers.AnthropicQualificationTest do
 
   alias Jido.Console.Models
   alias Jido.Console.Policy.Preflight
-  alias Jido.Console.Providers.{Harness, Qualification}
+  alias Jido.Console.Providers.{Harness, Qualification, RecordedResults}
 
   test "qualifies claude-sonnet-4 from recorded contracts without a live call" do
     assert {:ok, result} = Qualification.run("anthropic", host_env: %{})
@@ -18,24 +18,38 @@ defmodule Jido.Console.Providers.AnthropicQualificationTest do
     assert model["fallback"]["outcome"] == "consent_required"
     assert model["known_gaps"] != []
     assert model["limits"]["context_tokens"] == "unknown"
-    assert Enum.all?(model["capabilities"], &(&1["status"] == "pass"))
+    evidence = model["capabilities"] ++ model["extra"]
+    assert Enum.sort(Enum.map(evidence, & &1["dimension"])) == Enum.sort(Enum.map(Harness.dimensions(), &to_string/1))
+    assert Enum.all?(evidence, &(&1["status"] == "pass" and &1["claim_matches"]))
     refute inspect(Qualification.report(result)) =~ "sk-"
   end
 
   test "a missing or failed contract keeps Anthropic out of the supported tier" do
     {:ok, entry} = Models.show("anthropic", "claude-sonnet-4-20250514")
-    assert {:ok, blocked} = Harness.run(entry: entry, fixtures: %{})
-    refute Enum.any?(blocked, &(&1.status == :pass))
+
+    incomplete =
+      entry
+      |> recorded_results()
+      |> Enum.reject(&(&1.dimension == :tools))
+
+    identity = entry.identity
+
+    assert {:error, {:missing_provider_contract_results, ^identity, [:tools]}} =
+             Harness.run(entry: entry, recorded_results: incomplete)
+
+    failed =
+      Enum.map(recorded_results(entry), fn result ->
+        if result.dimension == :tools do
+          %{result | status: :blocked, reason: "ANTHROPIC_API_KEY=sk-ant-secret"}
+        else
+          result
+        end
+      end)
 
     assert {:ok, result} =
              Qualification.run("anthropic",
                host_env: %{},
-               fixtures: %{
-                 {"anthropic", "claude-sonnet-4-20250514", :tools} => %{
-                   status: :blocked,
-                   reason: "ANTHROPIC_API_KEY=sk-ant-secret"
-                 }
-               }
+               recorded_results: failed
              )
 
     refute Qualification.supported?(result)
@@ -63,5 +77,9 @@ defmodule Jido.Console.Providers.AnthropicQualificationTest do
              )
 
     assert denied.outcome == :deny
+  end
+
+  defp recorded_results(entry) do
+    Enum.filter(RecordedResults.all(), &(&1.identity == entry.identity))
   end
 end

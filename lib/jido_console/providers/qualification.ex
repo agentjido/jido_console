@@ -77,8 +77,7 @@ defmodule Jido.Console.Providers.Qualification do
 
   defp qualify_model(entry, opts) do
     with {:ok, harness} <- Harness.run(Keyword.put(opts, :entry, entry)) do
-      claimed = Catalog.claimed_features(entry)
-      eligible? = eligible?(claimed, harness)
+      eligible? = eligible?(entry, harness)
       published = if entry.tier == :supported and eligible?, do: "supported", else: "available"
 
       {:ok,
@@ -91,8 +90,8 @@ defmodule Jido.Console.Providers.Qualification do
          "limits" => stringify_map(entry.limits),
          "cost" => stringify_map(entry.cost),
          "known_gaps" => entry.known_gaps,
-         "capabilities" => capability_matrix(claimed, harness),
-         "extra" => extra_results(entry),
+         "capabilities" => capability_matrix(entry, harness),
+         "extra" => extra_results(entry, harness),
          "offline" => decision_map(offline_result(entry)),
          "preflight" => decision_map(preflight_result(entry)),
          "fallback" => decision_map(fallback_result(entry))
@@ -100,41 +99,80 @@ defmodule Jido.Console.Providers.Qualification do
     end
   end
 
-  defp eligible?(claimed, harness) do
-    claimed != [] and
-      Enum.all?(claimed, fn {capability, _feature} ->
-        match?(%{status: :pass}, Enum.find(harness, &(&1.capability == capability)))
+  defp eligible?(entry, harness) do
+    Catalog.claimed_features(entry) != [] and
+      Enum.all?(harness, &result_matches_entry?(&1, entry)) and
+      Enum.all?(entry.capabilities, fn {dimension, feature} ->
+        result = Enum.find(harness, &(&1.dimension == dimension))
+        claim_matches_result?(feature, result)
       end)
   end
 
-  defp capability_matrix(claimed, harness) do
-    Enum.map(claimed, fn {capability, feature} ->
-      result = Enum.find(harness, &(&1.capability == capability))
+  defp capability_matrix(entry, harness) do
+    entry.capabilities
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.map(fn {dimension, feature} ->
+      result = Enum.find(harness, &(&1.dimension == dimension))
 
-      %{
-        "capability" => Atom.to_string(capability),
+      result_row(result)
+      |> Map.merge(%{
+        "dimension" => Atom.to_string(dimension),
         "claim" => Atom.to_string(feature.state),
-        "evidence" => feature.evidence,
-        "status" => if(result, do: Atom.to_string(result.status), else: "missing"),
-        "reason" => if(result, do: result.reason, else: "no harness result"),
-        "test_id" => if(result, do: result.test_id, else: nil)
-      }
+        "claim_evidence_id" => feature.evidence,
+        "claim_matches" => claim_matches_result?(feature, result)
+      })
     end)
   end
 
-  defp extra_results(entry) do
-    Enum.map(@extra_dimensions, fn capability ->
-      %{
-        "capability" => Atom.to_string(capability),
-        "status" => "pass",
-        "reason" => extra_reason(capability, entry)
-      }
+  defp extra_results(entry, harness) do
+    Enum.map(@extra_dimensions, fn dimension ->
+      result = Enum.find(harness, &(&1.dimension == dimension))
+
+      result_row(result)
+      |> Map.merge(%{
+        "dimension" => Atom.to_string(dimension),
+        "claim_evidence_id" => entry.evidence_id,
+        "claim_matches" => result_matches_entry?(result, entry)
+      })
     end)
   end
 
-  defp extra_reason(:usage, entry), do: "recorded usage contract for #{entry.identity}"
-  defp extra_reason(:cost, entry), do: "catalog cost class for #{entry.identity}"
-  defp extra_reason(:error_normalization, entry), do: "recorded error form for #{entry.identity}"
+  defp result_row(nil) do
+    %{
+      "contract_version" => nil,
+      "evidence_id" => nil,
+      "reason" => "no harness result",
+      "status" => "missing",
+      "test_id" => nil
+    }
+  end
+
+  defp result_row(result) do
+    %{
+      "contract_version" => result.contract_version,
+      "evidence_id" => result.evidence_id,
+      "reason" => result.reason,
+      "status" => Atom.to_string(result.status),
+      "test_id" => result.test_id
+    }
+  end
+
+  defp result_matches_entry?(nil, _entry), do: false
+
+  defp result_matches_entry?(result, entry) do
+    result.status == :pass and result.evidence_id == entry.evidence_id
+  end
+
+  defp claim_matches_result?(_feature, nil), do: false
+
+  defp claim_matches_result?(feature, result) do
+    result.status == claim_status(feature.state) and result.evidence_id == feature.evidence
+  end
+
+  defp claim_status(:supported), do: :pass
+  defp claim_status(:unsupported), do: :fail
+  defp claim_status(:unknown), do: :blocked
+  defp claim_status(:not_applicable), do: :not_applicable
 
   defp offline_result(entry) do
     Preflight.check(

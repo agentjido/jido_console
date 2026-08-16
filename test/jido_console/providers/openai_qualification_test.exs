@@ -3,7 +3,7 @@ defmodule Jido.Console.Providers.OpenAIQualificationTest do
 
   alias Jido.Console.Models
   alias Jido.Console.Policy.Preflight
-  alias Jido.Console.Providers.{Harness, Qualification}
+  alias Jido.Console.Providers.{Harness, Qualification, RecordedResults}
 
   test "qualifies gpt-4.1-mini from recorded contracts without a live call" do
     assert {:ok, result} = Qualification.run("openai", host_env: %{})
@@ -18,8 +18,11 @@ defmodule Jido.Console.Providers.OpenAIQualificationTest do
     assert model["fallback"]["outcome"] == "consent_required"
     assert model["known_gaps"] != []
     assert model["limits"]["context_tokens"] == 1_047_576
-    assert Enum.all?(model["capabilities"], &(&1["status"] == "pass"))
-    assert Enum.all?(model["extra"], &(&1["status"] == "pass"))
+    evidence = model["capabilities"] ++ model["extra"]
+    assert Enum.sort(Enum.map(evidence, & &1["dimension"])) == Enum.sort(Enum.map(Harness.dimensions(), &to_string/1))
+    assert Enum.all?(evidence, &(&1["status"] == "pass" and &1["claim_matches"]))
+    assert Enum.all?(evidence, &is_binary(&1["evidence_id"]))
+    assert Enum.all?(evidence, &is_binary(&1["test_id"]))
     refute inspect(Qualification.report(result)) =~ "sk-"
     refute inspect(result.credentials) =~ "sk-"
   end
@@ -27,18 +30,25 @@ defmodule Jido.Console.Providers.OpenAIQualificationTest do
   test "a missing or failed contract keeps OpenAI out of the supported tier" do
     {:ok, entry} = Models.show("openai", "gpt-4.1-mini")
 
-    assert {:ok, blocked} = Harness.run(entry: entry, fixtures: %{})
-    refute Enum.any?(blocked, &(&1.status == :pass))
+    incomplete =
+      entry
+      |> recorded_results()
+      |> Enum.reject(&(&1.dimension == :streaming))
+
+    identity = entry.identity
+
+    assert {:error, {:missing_provider_contract_results, ^identity, [:streaming]}} =
+             Harness.run(entry: entry, recorded_results: incomplete)
+
+    failed =
+      Enum.map(recorded_results(entry), fn result ->
+        if result.dimension == :streaming, do: %{result | status: :fail}, else: result
+      end)
 
     assert {:ok, result} =
              Qualification.run("openai",
                host_env: %{},
-               fixtures: %{
-                 {"openai", "gpt-4.1-mini", :streaming} => %{
-                   status: :fail,
-                   reason: "OPENAI_API_KEY=sk-secretvalue"
-                 }
-               }
+               recorded_results: failed
              )
 
     assert hd(result.models)["tier"] == "available"
@@ -66,5 +76,9 @@ defmodule Jido.Console.Providers.OpenAIQualificationTest do
 
     assert denied.outcome == :deny
     assert denied.rule_id == "jido.policy.offline"
+  end
+
+  defp recorded_results(entry) do
+    Enum.filter(RecordedResults.all(), &(&1.identity == entry.identity))
   end
 end
