@@ -46,6 +46,64 @@ defmodule Jido.Console.Release.ToolingTest do
     assert :ok = Local.validate_source!(%{dirty: false}, false)
   end
 
+  test "runs shared source gates through precommit in release order", %{root: root} do
+    test = self()
+
+    assert Jido.Console.MixProject.project()[:aliases][:precommit] == [
+             "format --check-formatted",
+             "compile --warnings-as-errors",
+             "xref graph --format cycles --fail-above 0",
+             "credo",
+             "dialyzer",
+             "doctor --raise"
+           ]
+
+    command_runner = fn command, args, opts ->
+      send(test, {:command, command, args, opts[:cd], opts[:env]})
+      {"", 0}
+    end
+
+    cross_repo_runner = fn project_root ->
+      send(test, {:cross_repo, project_root})
+      %{}
+    end
+
+    assert :ok =
+             Local.source_gates!(root,
+               command_runner: command_runner,
+               cross_repo_runner: cross_repo_runner
+             )
+
+    assert_receive {:command, "mix", ["deps.get", "--check-locked"], ^root, []}
+    assert_receive {:command, "mix", ["precommit"], ^root, []}
+    assert_receive {:command, "mix", ["coveralls"], ^root, [{"MIX_ENV", "test"}]}
+    assert_receive {:cross_repo, ^root}
+    refute_receive _other
+  end
+
+  test "stops release source gates on a failed precommit", %{root: root} do
+    test = self()
+
+    command_runner = fn _command, args, _opts ->
+      send(test, {:command, args})
+      if args == ["precommit"], do: {"failed", 23}, else: {"", 0}
+    end
+
+    cross_repo_runner = fn _project_root -> send(test, :cross_repo) end
+
+    assert_raise RuntimeError, "release command mix failed with status 23", fn ->
+      Local.source_gates!(root,
+        command_runner: command_runner,
+        cross_repo_runner: cross_repo_runner
+      )
+    end
+
+    assert_receive {:command, ["deps.get", "--check-locked"]}
+    assert_receive {:command, ["precommit"]}
+    refute_receive {:command, ["coveralls"]}
+    refute_receive :cross_repo
+  end
+
   test "creates deterministic reviewed notice records", %{root: root} do
     license = Path.join(root, "LICENSE")
     File.write!(license, "license text\n")

@@ -70,26 +70,24 @@ defmodule Jido.Console.Release.Local do
   def validate_source!(source, _allow_dirty), do: raise("invalid source identity: #{inspect(source)}")
 
   @doc false
-  @spec source_gates!(Path.t()) :: :ok
-  def source_gates!(project_root) do
+  @spec source_gates!(Path.t(), keyword()) :: :ok
+  def source_gates!(project_root, opts \\ []) do
+    command_runner = Keyword.get(opts, :command_runner, &System.cmd/3)
+    cross_repo_runner = Keyword.get(opts, :cross_repo_runner, &CrossRepo.run!/1)
+
     gates = [
       {"locked dependencies", "mix", ["deps.get", "--check-locked"], []},
-      {"format", "mix", ["format", "--check-formatted"], []},
-      {"compile", "mix", ["compile", "--warnings-as-errors"], []},
-      {"xref cycles", "mix", ["xref", "graph", "--format", "cycles", "--fail-above", "0"], []},
-      {"credo", "mix", ["credo"], []},
-      {"dialyzer", "mix", ["dialyzer"], []},
-      {"doctor", "mix", ["doctor", "--raise"], []},
+      {"precommit", "mix", ["precommit"], []},
       {"coverage", "mix", ["coveralls"], [{"MIX_ENV", "test"}]}
     ]
 
     Enum.each(gates, fn {name, command, args, env} ->
       IO.puts("release source gate: #{name}")
-      run!(command, args, project_root, env)
+      run!(command_runner, command, args, project_root, env)
     end)
 
     IO.puts("release source gate: cross-repository Jidoka compatibility")
-    _evidence = CrossRepo.run!(project_root)
+    _evidence = cross_repo_runner.(project_root)
     IO.puts("release source gate: cross-repository Jidoka compatibility passed")
   end
 
@@ -158,8 +156,8 @@ defmodule Jido.Console.Release.Local do
     %{commit: commit, dirty: dirty}
   end
 
-  defp run!(command, args, directory, env) do
-    case System.cmd(command, args,
+  defp run!(runner, command, args, directory, env) do
+    case runner.(command, args,
            cd: directory,
            env: env,
            stderr_to_stdout: true,
