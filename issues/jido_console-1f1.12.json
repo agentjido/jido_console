@@ -7,11 +7,13 @@
   "created": "2026-08-16T13:00:12Z",
   "description": "Audit rank: 12 of 30.\n\nOwner: JC-18 Release probes.\nEvidence: lib/jido_console/release/golden.ex:9,26-29,55-94; dev/jido_console/release/readiness.ex:93-97.\nWork: Delete release/golden.ex, coding/approval.ex, coding/run.ex, and their three direct tests. Keep active archive, scenario-oracle, Jidoka approval, local mutation, PTY, and final-acceptance owners.\nAcceptance: Repository caller scan finds no references to the three modules. Active archive and coding proof paths pass.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.12",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-29: Remove the orphan Golden, Approval, and Run proof path",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:44Z"
+  "updated_at": "2026-08-16T13:00:49Z"
 }
