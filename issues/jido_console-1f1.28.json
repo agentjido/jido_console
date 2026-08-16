@@ -2,6 +2,7 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-16T14:08:34Z",
   "created": "2026-08-16T13:00:17Z",
   "description": "Audit rank: 28 of 30.\n\nOwner: JC-01 Application foundation.\nEvidence: lib/jido_console/error.ex:19-68 defines Splode classes, while error.ex:74-353 and callers use a parallel plain-exception normalization path.\nWork: Make Splode the single project error system. Convert project-owned error types and normalization to use the Splode classes and APIs. Remove the parallel ad-hoc taxonomy and normalization branches after all callers use Splode.\nAcceptance: Every project-owned user-facing error has one Splode class, stable message, structured fields, and redaction. CLI, automation, coding, session, provider, and release error paths normalize through Jido.Console.Error and Splode. Error tests cover classification, wrapping, redaction, and fallback.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.28",
@@ -16,7 +17,7 @@
     }
   ],
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "F-02: Convert project errors to Splode",
   "type": "task",
   "updated_at": "2026-08-16T14:08:34Z"
