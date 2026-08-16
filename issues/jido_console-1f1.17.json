@@ -1,7 +1,9 @@
 {
   "assignee": "",
   "blocked_by": [],
-  "blocks": [],
+  "blocks": [
+    "jido_console-1f1.22"
+  ],
   "created": "2026-08-16T13:00:14Z",
   "description": "Audit rank: 17 of 30.\n\nOwner: JC-02 CLI runtime.\nEvidence: lib/jido_console/cli/runtime.ex:24-102,203-295; release/probe_runtime.ex:513-525; cli/tui/state.ex:341-362; session/server.ex:739-765.\nWork: Keep persistent Jidoka context on Runtime.Jidoka.Session and per-turn options on Request or handle. Define Runtime.Result with common transport fields and one outcome: ok, pending_review, hibernated, cancelled, or error. Each outcome owns exact fields and approval metadata.\nAcceptance: Outcomes cannot carry fields from another case. ProbeRuntime uses the generic type without dummy Jidoka fields. Approval resume preserves runtime context.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.17",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "F-03: Define one generic tagged runtime result",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:14Z"
+  "updated_at": "2026-08-16T13:00:41Z"
 }

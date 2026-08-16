@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-1f1.17"
+  ],
   "blocks": [],
   "created": "2026-08-16T13:00:16Z",
   "description": "Audit rank: 22 of 30.\n\nOwner: JC-09 Coding execution and review.\nEvidence: lib/jido_console/coding/review.ex:14-73; cli/runtime.ex:203-218; cli/tui/state.ex:341-374.\nWork: Separate raw review candidates from validated review projections. Normalize runtime results once. Keep a distinct validator for injected raw events.\nAcceptance: A real full-digest review survives Runtime to TUI State. Short projected digests are not sent through the raw full-digest validator.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "F-15: Use one coding-review normalization boundary",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:16Z"
+  "updated_at": "2026-08-16T13:00:41Z"
 }
