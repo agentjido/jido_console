@@ -2,7 +2,8 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [
-    "jido_console-1f1.8"
+    "jido_console-1f1.8",
+    "jido_console-1f1.9"
   ],
   "created": "2026-08-16T13:00:09Z",
   "description": "Audit rank: 2 of 30.\n\nOwner: JC-15 Session semantic state.\nEvidence: lib/jido_console/session/event.ex:75-90; projection.ex:18-38; reducer.ex:18-25.\nWork: Require one nonempty event session_id. Require all identities to match it. Require or construct the session identity. Remove the reducer nil exception.\nAcceptance: Missing, nil, mixed, and foreign session identities are rejected. Projected events contain the canonical session ID. Replay and parity tests pass.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
