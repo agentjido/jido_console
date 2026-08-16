@@ -1,8 +1,16 @@
 defmodule Jido.Console.Coding.Local.Resources do
   @moduledoc "Owned local coding processes and execution binding."
 
-  @enforce_keys [:manager, :binding, :mutation_state]
-  defstruct [:manager, :binding, :mutation_state]
+  alias Jido.Console.Coding.Environment.Contract
 
-  @type t :: %__MODULE__{manager: pid(), binding: struct(), mutation_state: pid()}
+  @enforce_keys [:manager, :binding, :mutation_state, :environment_contract, :environment_evidence]
+  defstruct @enforce_keys
+
+  @type t :: %__MODULE__{
+          manager: pid(),
+          binding: struct(),
+          mutation_state: pid(),
+          environment_contract: Contract.t(),
+          environment_evidence: Jidoka.ExecutionEnvironment.EnforcementEvidence.t()
+        }
 end

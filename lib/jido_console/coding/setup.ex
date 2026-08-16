@@ -18,6 +18,7 @@ defmodule Jido.Console.Coding.Setup do
     :context,
     :pack_id,
     :profile_id,
+    :environment_contract,
     :local_resources,
     :await_timeout_ms,
     :turn_opts
@@ -32,6 +33,7 @@ defmodule Jido.Console.Coding.Setup do
           context: map(),
           pack_id: String.t() | nil,
           profile_id: String.t() | nil,
+          environment_contract: Jido.Console.Coding.Environment.Contract.t() | nil,
           local_resources: Local.Resources.t() | nil,
           await_timeout_ms: pos_integer(),
           turn_opts: keyword()
@@ -107,6 +109,7 @@ defmodule Jido.Console.Coding.Setup do
          context: %{"coding" => %{"status" => "disabled"}},
          pack_id: nil,
          profile_id: nil,
+         environment_contract: nil,
          local_resources: nil,
          await_timeout_ms: 30_000,
          turn_opts: []
@@ -117,7 +120,7 @@ defmodule Jido.Console.Coding.Setup do
   defp configure(spec, selection, profile, opts) do
     with {:ok, workspace} <- WorkspaceConfig.build(selection.profile_id, opts),
          {:ok, instructions} <- Instructions.discover(workspace, WorkspaceConfig.working_directory(opts)),
-         {:ok, local} <- local_profile(selection.profile_id, workspace) do
+         {:ok, local} <- local_profile(selection.profile_id, workspace, profile.environment_contract) do
       finish_configuration(spec, selection, profile, workspace, instructions, local, opts)
     end
   end
@@ -150,6 +153,7 @@ defmodule Jido.Console.Coding.Setup do
             context: context,
             pack_id: selection.pack_id,
             profile_id: selection.profile_id,
+            environment_contract: profile.environment_contract,
             local_resources: Map.get(local, :resources),
             await_timeout_ms: if(Map.get(local, :resources), do: 180_000, else: 30_000),
             turn_opts: ProviderOptions.turn_opts(selection.profile_id, Jidoka.Config.model_ref(spec.model))
@@ -215,10 +219,10 @@ defmodule Jido.Console.Coding.Setup do
   defp extension_setup(_replacement, requests, _workspace, _local, opts),
     do: Extensions.resolve(requests, :interactive, opts)
 
-  defp local_profile(nil, _workspace), do: {:ok, %{}}
+  defp local_profile(nil, _workspace, nil), do: {:ok, %{}}
 
-  defp local_profile(_profile_id, workspace) do
-    case Local.prepare(workspace) do
+  defp local_profile(_profile_id, workspace, environment_contract) do
+    case Local.prepare(workspace, environment_contract) do
       {:ok, _local} = success -> success
       {:error, :local_coding_executable_missing} -> {:ok, %{}}
       {:error, :local_coding_module_unavailable} -> {:ok, %{}}

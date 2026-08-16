@@ -3,6 +3,7 @@ defmodule Jido.Console.Release.Boundaries do
 
   alias Jidoka.CodingPack.{Error, Read, Workspace}
   alias Jido.Console.Coding.Local.Adapter
+  alias Jido.Console.Coding.Environment
   alias Jidoka.Cancellation.Token
 
   @canary "jido-controlled-boundary-canary\n"
@@ -174,10 +175,7 @@ defmodule Jido.Console.Release.Boundaries do
   defp execute_process_case!("owner_exit", fixture) do
     {owner, monitor} =
       spawn_monitor(fn ->
-        adapter_command!(fixture.executable, ["owner_exit", fixture.state], 10_000,
-          temporary_root: fixture.root,
-          workspace_root: fixture.workspace
-        )
+        adapter_command!(fixture.executable, ["owner_exit", fixture.state], 10_000, workspace_root: fixture.workspace)
       end)
 
     wait_for_child!(fixture)
@@ -198,7 +196,6 @@ defmodule Jido.Console.Release.Boundaries do
       Task.async(fn ->
         adapter_command!(fixture.executable, [name, fixture.state], timeout,
           cancellation: token,
-          temporary_root: fixture.root,
           workspace_root: fixture.workspace
         )
       end)
@@ -217,6 +214,7 @@ defmodule Jido.Console.Release.Boundaries do
 
     try do
       workspace = Workspace.new!(root: workspace_root, access: [:shell])
+      {:ok, environment_contract} = Environment.resolve("coding.restricted", jido_home: Path.join(root, "home"))
 
       request = %{
         "command" => "git",
@@ -234,6 +232,7 @@ defmodule Jido.Console.Release.Boundaries do
         Keyword.merge(
           [
             workspace: workspace,
+            environment_contract: environment_contract,
             executables: %{
               "git" => executable,
               "sandbox-exec" => System.find_executable("sandbox-exec") || "sandbox-exec"

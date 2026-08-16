@@ -13,6 +13,8 @@ defmodule Jido.Console.Coding.Local do
   }
 
   alias Jidoka.Policy.Decision
+  alias Jido.Console.Coding.Environment
+  alias Jido.Console.Coding.Environment.Contract
   alias Jido.Console.Coding.Local.{Resources, Setup}
 
   @profile_id "coding.local"
@@ -28,14 +30,14 @@ defmodule Jido.Console.Coding.Local do
   def profile_id, do: @profile_id
 
   @doc "Creates folder-scoped coding ports for one validated workspace."
-  @spec prepare(Workspace.t()) :: {:ok, map()} | {:error, term()}
-  def prepare(%Workspace{} = workspace) do
+  @spec prepare(Workspace.t(), Contract.t()) :: {:ok, map()} | {:error, term()}
+  def prepare(%Workspace{} = workspace, %Contract{} = environment_contract) do
     with true <- Code.ensure_loaded?(Jido.Console.Coding.Local.Adapter),
          true <- Code.ensure_loaded?(Jido.Console.Coding.Local.MutationBackend),
          {:ok, executables} <- executables(),
          {:ok, mutation_state} <-
            Agent.start_link(fn -> %{snapshots: %{}, snapshot_bytes: 0} end) do
-      case prepare_resources(workspace, executables, mutation_state) do
+      case prepare_resources(workspace, environment_contract, executables, mutation_state) do
         {:ok, _local} = success ->
           success
 
@@ -52,24 +54,33 @@ defmodule Jido.Console.Coding.Local do
     end
   end
 
-  defp prepare_resources(workspace, executables, mutation_state) do
-    profile = profile()
+  defp prepare_resources(workspace, environment_contract, executables, mutation_state) do
+    profile = profile(environment_contract)
     registration = registration(profile)
 
-    case Manager.start_link(registration, policy(), workspace: workspace, executables: executables) do
-      {:ok, manager} -> prepare_binding(manager, profile, mutation_state)
+    manager_opts = [
+      workspace: workspace,
+      executables: executables,
+      environment_contract: environment_contract
+    ]
+
+    case Manager.start_link(registration, policy(), manager_opts) do
+      {:ok, manager} -> prepare_binding(manager, profile, mutation_state, environment_contract)
       {:error, _reason} = error -> error
     end
   end
 
-  defp prepare_binding(manager, profile, mutation_state) do
+  defp prepare_binding(manager, profile, mutation_state, environment_contract) do
     case Manager.open(manager, PolicyRequest.new!(profile_id: profile.profile_id)) do
-      {:ok, binding, _evidence} -> prepare_ports(manager, binding, profile, mutation_state)
-      {:error, _reason} = error -> stop_manager(manager, nil, error)
+      {:ok, binding, evidence} ->
+        prepare_ports(manager, binding, profile, mutation_state, environment_contract, evidence)
+
+      {:error, _reason} = error ->
+        stop_manager(manager, nil, error)
     end
   end
 
-  defp prepare_ports(manager, binding, profile, mutation_state) do
+  defp prepare_ports(manager, binding, profile, mutation_state, environment_contract, environment_evidence) do
     with {:ok, mutation} <-
            MutationPort.new(Jido.Console.Coding.Local.MutationBackend,
              state: mutation_state,
@@ -89,7 +100,13 @@ defmodule Jido.Console.Coding.Local do
          git: git,
          verify: verify,
          disable_tools: ["coding.shell"],
-         resources: %Resources{manager: manager, binding: binding, mutation_state: mutation_state}
+         resources: %Resources{
+           manager: manager,
+           binding: binding,
+           mutation_state: mutation_state,
+           environment_contract: environment_contract,
+           environment_evidence: environment_evidence
+         }
        }}
     else
       {:error, _reason} = error -> stop_manager(manager, binding, error)
@@ -112,21 +129,22 @@ defmodule Jido.Console.Coding.Local do
     :exit, _reason -> :ok
   end
 
-  defp profile do
+  defp profile(%Contract{} = environment_contract) do
     digest =
       ExecutionEnvironment.digest(%{
-        profile_id: @profile_id,
+        profile_id: environment_contract.profile_id,
         adapter_id: @adapter_id,
         revision: 1,
         isolation: :process,
         network: :disabled,
         workspace: :persistent,
         wall_time_ms: @wall_time_ms,
-        output_bytes: @output_bytes
+        output_bytes: @output_bytes,
+        environment_contract: Environment.digest(environment_contract)
       })
 
     SecurityProfile.new!(
-      profile_id: @profile_id,
+      profile_id: environment_contract.profile_id,
       revision: 1,
       digest: digest,
       adapter_id: @adapter_id,

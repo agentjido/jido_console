@@ -2,16 +2,18 @@ defmodule Jido.Console.Release.BoundariesTest do
   use ExUnit.Case, async: false
 
   alias Jido.Console.Release.Boundaries
+  alias Jido.Console.Coding.Environment
   alias Jido.Console.Coding.Local.Adapter
   alias Jidoka.CodingPack.Workspace
 
   test "cleans a controlled command directory when sandbox admission fails" do
     root = Path.join(System.tmp_dir!(), "jido-boundary-cleanup-#{System.unique_integer([:positive])}")
     workspace_root = Path.join(root, "workspace")
-    temporary_root = Path.join(root, "temporary")
     File.mkdir_p!(workspace_root)
-    File.mkdir_p!(temporary_root)
     on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, environment_contract} =
+             Environment.resolve("coding.restricted", jido_home: Path.join(root, "home"))
 
     request = %{
       "command" => "git",
@@ -28,11 +30,11 @@ defmodule Jido.Console.Release.BoundariesTest do
     opts = [
       workspace: Workspace.new!(root: workspace_root, access: [:shell]),
       executables: %{"git" => System.find_executable("git")},
-      temporary_root: temporary_root
+      environment_contract: environment_contract
     ]
 
     assert {:error, :local_coding_sandbox_unavailable} = Adapter.execute(nil, request, opts)
-    assert {:ok, []} = File.ls(temporary_root)
+    assert {:ok, []} = File.ls(environment_contract.tmpdir)
   end
 
   test "denies controlled traversal and symbolic-link escapes twice" do

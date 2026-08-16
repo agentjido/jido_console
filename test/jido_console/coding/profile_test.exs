@@ -17,7 +17,9 @@ defmodule Jido.Console.Coding.ProfileTest do
     assert profile.sandbox? == false
     assert profile.enforcement == :pending
     refute Profile.restricted_passed?(profile)
-    assert profile.environment["allowlist"] != []
+    assert profile.environment_contract.allowlist != []
+    assert profile.roots["home"] == profile.environment_contract.home
+    assert profile.roots["temporary"] == profile.environment_contract.tmpdir
     assert Map.has_key?(profile.roots, "workspace")
     assert Map.has_key?(profile.roots, "toolchain")
     assert Map.has_key?(profile.roots, "artifact")
@@ -43,6 +45,7 @@ defmodule Jido.Console.Coding.ProfileTest do
 
   test "restricted profile is compatible with the Jidoka contract shape", %{opts: opts} do
     assert {:ok, profile} = Profile.resolve(Profile.restricted_id(), opts)
+    assert :ok = Jidoka.ExecutionEnvironment.Contract.validate_safe_map(Profile.to_map(profile))
     digest = Jidoka.ExecutionEnvironment.digest(profile.roots)
 
     assert {:ok, contract} =
@@ -53,8 +56,8 @@ defmodule Jido.Console.Coding.ProfileTest do
                    %{kind: kind, digest: digest, writable: kind != :toolchain}
                  end),
                environment: %{
-                 allowlist: profile.environment["allowlist"],
-                 private_home: profile.environment["private_home"]
+                 allowlist: profile.environment_contract.allowlist,
+                 private_home: true
                },
                cancellation: %{enabled: true},
                deadline_ms: 30_000,

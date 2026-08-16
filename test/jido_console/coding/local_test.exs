@@ -57,8 +57,11 @@ defmodule Jido.Console.Coding.LocalTest do
         execution_profile: Local.profile_id()
       )
 
-    assert {:ok, local} = Local.prepare(workspace)
+    contract = environment_contract(root)
+    assert {:ok, local} = Local.prepare(workspace, contract)
     on_exit(fn -> Local.close(local.resources) end)
+    assert local.resources.environment_contract === contract
+    assert local.resources.binding.profile_id == contract.profile_id
 
     assert {:ok, edit} =
              Edit.run(workspace, local.mutation, %{
@@ -138,6 +141,7 @@ defmodule Jido.Console.Coding.LocalTest do
     assert {:ok, result, _evidence} =
              Jido.Console.Coding.Local.Adapter.execute(nil, request,
                workspace: workspace,
+               environment_contract: environment_contract(root),
                executables: %{
                  "git" => System.find_executable("yes"),
                  "sandbox-exec" => System.find_executable("sandbox-exec")
@@ -182,6 +186,7 @@ defmodule Jido.Console.Coding.LocalTest do
     assert {:ok, %{"status" => "timeout"}, _evidence} =
              Jido.Console.Coding.Local.Adapter.execute(nil, request,
                workspace: workspace,
+               environment_contract: environment_contract(root),
                executables: %{
                  "git" => executable,
                  "sandbox-exec" => System.find_executable("sandbox-exec")
@@ -216,6 +221,7 @@ defmodule Jido.Console.Coding.LocalTest do
     assert {:ok, %{"status" => "nonzero", "exit_status" => 1}, evidence} =
              Jido.Console.Coding.Local.Adapter.execute(nil, request,
                workspace: workspace,
+               environment_contract: environment_contract(root),
                network_allowlist: [%{host: "192.0.2.1"}],
                executables: %{
                  "git" => "/usr/bin/nc",
@@ -324,5 +330,14 @@ defmodule Jido.Console.Coding.LocalTest do
              provider_options[:response_format]
 
     assert required == ["type"]
+  end
+
+  defp environment_contract(root) do
+    assert {:ok, contract} =
+             Jido.Console.Coding.Environment.resolve("coding.restricted",
+               jido_home: Path.join(root, "home")
+             )
+
+    contract
   end
 end

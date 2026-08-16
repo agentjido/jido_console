@@ -8,10 +8,10 @@ defmodule Jido.Console.Coding.Profile do
   """
 
   alias Jido.Console.Coding.{Environment, RestrictedProfile}
+  alias Jido.Console.Coding.Environment.Contract
   alias Jido.Console.Home
 
   @trusted_id "coding.trusted-workspace"
-  @legacy_default "coding.default"
   @version 1
 
   @type t :: %{
@@ -22,7 +22,7 @@ defmodule Jido.Console.Coding.Profile do
           sandbox?: false,
           warning: String.t() | nil,
           enforcement: :pending | :reported,
-          environment: map(),
+          environment_contract: Contract.t() | nil,
           roots: map()
         }
 
@@ -87,13 +87,14 @@ defmodule Jido.Console.Coding.Profile do
       "sandbox" => profile.sandbox?,
       "warning" => profile.warning,
       "enforcement" => Atom.to_string(profile.enforcement),
-      "environment" => profile.environment,
+      "environment" => environment_evidence(profile.environment_contract),
       "roots" => root_presence(profile.roots)
     }
   end
 
   defp restricted(opts, extra) do
-    with {:ok, roots} <- restricted_roots(opts) do
+    with {:ok, contract} <- Environment.resolve(RestrictedProfile.id(), opts),
+         {:ok, roots} <- restricted_roots(contract, opts) do
       {:ok,
        %{
          id: RestrictedProfile.id(),
@@ -103,28 +104,31 @@ defmodule Jido.Console.Coding.Profile do
          sandbox?: false,
          warning: nil,
          enforcement: Keyword.get(opts, :restricted_enforcement, :pending),
-         environment: %{
-           "allowlist" => environment_allowlist(opts),
-           "private_home" => true
-         },
+         environment_contract: contract,
          roots: roots
        }}
     end
   end
 
   defp trusted(profile_id, opts) do
-    {:ok,
-     %{
-       id: profile_id,
-       version: @version,
-       class: :trusted_workspace,
-       explicit?: true,
-       sandbox?: false,
-       warning: trusted_warning(),
-       enforcement: :reported,
-       environment: %{"allowlist" => :host, "private_home" => false},
-       roots: %{"workspace" => Keyword.get(opts, :project_root)}
-     }}
+    with {:ok, contract} <- Environment.resolve(profile_id, opts) do
+      {:ok,
+       %{
+         id: profile_id,
+         version: @version,
+         class: :trusted_workspace,
+         explicit?: true,
+         sandbox?: false,
+         warning: trusted_warning(),
+         enforcement: :reported,
+         environment_contract: contract,
+         roots: %{
+           "workspace" => Keyword.get(opts, :project_root),
+           "temporary" => contract.tmpdir,
+           "home" => contract.home
+         }
+       }}
+    end
   end
 
   defp disabled do
@@ -136,14 +140,13 @@ defmodule Jido.Console.Coding.Profile do
       sandbox?: false,
       warning: nil,
       enforcement: :pending,
-      environment: %{},
+      environment_contract: nil,
       roots: %{}
     }
   end
 
-  defp restricted_roots(opts) do
-    with {:ok, artifacts} <- Home.path(:artifacts, opts),
-         {:ok, roots} <- Environment.declared_roots(opts) do
+  defp restricted_roots(%Contract{} = contract, opts) do
+    with {:ok, artifacts} <- Home.path(:artifacts, opts) do
       workspace = Keyword.get(opts, :project_root, File.cwd!())
 
       {:ok,
@@ -151,17 +154,13 @@ defmodule Jido.Console.Coding.Profile do
          "workspace" => workspace,
          "toolchain" => System.find_executable("mix") || "mix",
          "artifact" => artifacts,
-         "temporary" => roots.tmpdir,
-         "home" => roots.home
+         "temporary" => contract.tmpdir,
+         "home" => contract.home
        }}
     end
   end
 
-  defp environment_allowlist(opts) do
-    Keyword.get(opts, :environment_allowlist, Environment.default_allowlist())
-  end
-
-  defp known_trusted?(id), do: trusted?(id) or id == @legacy_default
+  defp known_trusted?(id), do: trusted?(id)
 
   defp selected?(opts, profile_id) do
     Keyword.get(opts, :coding_profile, Application.get_env(:jido_console, :coding_profile)) == profile_id
@@ -170,4 +169,7 @@ defmodule Jido.Console.Coding.Profile do
   defp root_presence(roots) when is_map(roots) do
     Map.new(roots, fn {key, value} -> {key, if(value in [nil, ""], do: "missing", else: "declared")} end)
   end
+
+  defp environment_evidence(nil), do: %{}
+  defp environment_evidence(%Contract{} = contract), do: Environment.evidence(contract)
 end

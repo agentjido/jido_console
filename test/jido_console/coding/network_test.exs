@@ -108,6 +108,7 @@ defmodule Jido.Console.Coding.NetworkTest do
 
     opts = [
       workspace: Workspace.new!(root: root, access: [:shell]),
+      environment_contract: environment_contract(root),
       executables: %{"git" => System.find_executable("nc") || "nc"}
     ]
 
@@ -151,6 +152,7 @@ defmodule Jido.Console.Coding.NetworkTest do
     assert {:ok, result, _evidence} =
              Adapter.execute(nil, request,
                workspace: Workspace.new!(root: root, access: [:shell]),
+               environment_contract: environment_contract(root),
                executables: %{
                  "git" => connector,
                  "sandbox-exec" => System.find_executable("sandbox-exec")
@@ -176,5 +178,14 @@ defmodule Jido.Console.Coding.NetworkTest do
     assert result["public_endpoints_contacted"] == 0
     assert Enum.map(result["network"], & &1["classification"]) == ["denied", "denied"]
     refute inspect(result) =~ "sk-"
+  end
+
+  defp environment_contract(root) do
+    assert {:ok, contract} =
+             Jido.Console.Coding.Environment.resolve("coding.restricted",
+               jido_home: Path.join(root, "home")
+             )
+
+    contract
   end
 end

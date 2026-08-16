@@ -25,6 +25,16 @@ defmodule Jido.Console.Coding.SetupTest do
     assert setup.context["coding"]["profile"]["id"] == "coding.restricted"
     assert setup.context["coding"]["profile"]["sandbox"] == false
     assert setup.context["coding"]["profile"]["enforcement"] == "pending"
+
+    assert setup.context["coding"]["profile"]["environment"] ==
+             Jido.Console.Coding.Environment.evidence(setup.environment_contract)
+
+    assert setup.local_resources.environment_contract === setup.environment_contract
+    assert setup.local_resources.binding.profile_id == setup.environment_contract.profile_id
+
+    assert setup.local_resources.environment_evidence.facts["environment_contract_digest"] ==
+             Jido.Console.Coding.Environment.digest(setup.environment_contract)
+
     assert setup.spec.id == "jido"
     assert Enum.any?(setup.spec.extensions, &(&1.id == "jido.coding_pack"))
     assert Map.has_key?(ExtensionSetup.registry(setup.extension_setup), "jido.coding_pack")

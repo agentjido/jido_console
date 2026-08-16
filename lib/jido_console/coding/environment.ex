@@ -1,65 +1,77 @@
 defmodule Jido.Console.Coding.Environment do
   @moduledoc """
-  Builds the restricted process environment: allowlisted keys and a private HOME.
+  Resolves and materializes the restricted process environment.
 
-  Credential values are never copied into arguments or evidence. Only declared
-  credential references may be present, and temporary files stay under Jido home.
+  Setup owns one secret-free contract. Credential values are resolved only when
+  the local adapter materializes the process environment for a command.
   """
 
+  alias Jido.Console.Coding.Environment.Contract
   alias Jido.Console.Coding.RestrictedProfile
+  alias Jido.Console.Credentials
   alias Jido.Console.Env
   alias Jido.Console.Home
 
-  @type manifest :: %{
-          profile_id: String.t(),
-          allowlist: [String.t()],
-          home: String.t(),
-          tmpdir: String.t(),
-          credential_refs: [String.t()],
-          keys: [String.t()]
-        }
-
-  @doc "Constructs a restricted environment or rejects an invalid contract."
-  @spec build(keyword()) :: {:ok, %{env: map(), manifest: manifest()}} | {:error, term()}
-  def build(opts \\ []) do
+  @doc "Resolves one secret-free restricted environment contract."
+  @spec resolve(String.t(), keyword()) :: {:ok, Contract.t()} | {:error, term()}
+  def resolve(profile_id, opts \\ []) when is_binary(profile_id) and profile_id != "" do
     with {:ok, allowlist} <- allowlist(opts),
-         :ok <- reject_undeclared_credentials(opts),
-         {:ok, roots} <- ensure_roots(opts),
-         env <- materialize(allowlist, roots, opts) do
+         {:ok, credential_refs} <- credential_refs(opts),
+         :ok <- reject_credentials_in_allowlist(allowlist),
+         {:ok, roots} <- ensure_roots(opts) do
       {:ok,
-       %{
-         env: env,
-         manifest: %{
-           profile_id: Keyword.get(opts, :profile_id, RestrictedProfile.id()),
-           allowlist: allowlist,
-           home: "private",
-           tmpdir: "declared",
-           credential_refs: credential_refs(opts),
-           keys: env |> Map.keys() |> Enum.sort()
-         }
+       %Contract{
+         profile_id: profile_id,
+         allowlist: allowlist,
+         credential_refs: credential_refs,
+         home: roots.home,
+         tmpdir: roots.tmpdir
        }}
     end
   end
 
-  @doc "Returns the default restricted environment allowlist."
-  @spec default_allowlist() :: [String.t()]
-  def default_allowlist, do: RestrictedProfile.environment_allowlist()
+  @doc "Materializes one contract at the final local process boundary."
+  @spec materialize(Contract.t(), keyword()) :: {:ok, map()}
+  def materialize(%Contract{} = contract, opts \\ []) do
+    host_env = Keyword.get_lazy(opts, :host_env, &System.get_env/0)
 
-  @doc "Returns the private HOME and TMPDIR paths for restricted execution."
-  @spec declared_roots(keyword()) :: {:ok, %{home: String.t(), tmpdir: String.t()}} | {:error, term()}
-  def declared_roots(opts \\ []) do
-    with {:ok, _home} <- Home.ensure(opts),
-         {:ok, cache} <- Home.path(:cache, opts) do
-      {:ok,
-       %{
-         home: Path.join(cache, "restricted-home"),
-         tmpdir: Path.join(cache, "restricted-tmp")
-       }}
-    end
+    env =
+      contract.allowlist
+      |> copy_allowlisted(host_env)
+      |> put_credentials(contract.credential_refs, host_env)
+      |> Map.put("HOME", contract.home)
+      |> Map.put("TMPDIR", contract.tmpdir)
+
+    {:ok, env}
+  end
+
+  @doc "Projects the secret-free contract for setup and execution evidence."
+  @spec evidence(Contract.t()) :: map()
+  def evidence(%Contract{} = contract) do
+    %{
+      "profile_id" => contract.profile_id,
+      "allowlist" => contract.allowlist,
+      "references" => contract.credential_refs,
+      "home" => "private",
+      "tmpdir" => "declared",
+      "contract_digest" => digest(contract)
+    }
+  end
+
+  @doc "Returns the stable digest that joins setup and execution evidence."
+  @spec digest(Contract.t()) :: String.t()
+  def digest(%Contract{} = contract) do
+    Jidoka.ExecutionEnvironment.digest(%{
+      profile_id: contract.profile_id,
+      allowlist: contract.allowlist,
+      credential_refs: contract.credential_refs,
+      home: contract.home,
+      tmpdir: contract.tmpdir
+    })
   end
 
   defp allowlist(opts) do
-    case Keyword.get(opts, :allowlist, RestrictedProfile.environment_allowlist()) do
+    case Keyword.get(opts, :environment_allowlist, RestrictedProfile.environment_allowlist()) do
       list when is_list(list) and list != [] ->
         if Enum.all?(list, &(&1 != "" and is_binary(&1))),
           do: {:ok, Enum.uniq(list)},
@@ -70,38 +82,61 @@ defmodule Jido.Console.Coding.Environment do
     end
   end
 
-  defp reject_undeclared_credentials(opts) do
-    requested = Keyword.get(opts, :credential_sources, [])
+  defp credential_refs(opts) do
+    case Keyword.get(opts, :credential_sources, []) do
+      requested when is_list(requested) -> validate_credential_refs(requested)
+      _invalid -> {:error, :invalid_credential_sources}
+    end
+  end
+
+  defp validate_credential_refs(requested) do
     declared = Env.provider_keys()
 
     undeclared = Enum.reject(requested, &(&1 in declared))
 
-    if undeclared == [], do: :ok, else: {:error, {:undeclared_credential_source, undeclared}}
+    if undeclared == [] do
+      {:ok, requested |> Enum.uniq() |> Enum.map(&("env:" <> &1))}
+    else
+      {:error, {:undeclared_credential_source, undeclared}}
+    end
+  end
+
+  defp reject_credentials_in_allowlist(allowlist) do
+    credential_keys = Enum.filter(allowlist, &(&1 in Env.provider_keys()))
+
+    if credential_keys == [],
+      do: :ok,
+      else: {:error, {:credential_in_environment_allowlist, credential_keys}}
   end
 
   defp ensure_roots(opts) do
-    with {:ok, roots} <- declared_roots(opts),
+    with {:ok, _home} <- Home.ensure(opts),
+         {:ok, cache} <- Home.path(:cache, opts),
+         roots = %{
+           home: Path.join(cache, "restricted-home"),
+           tmpdir: Path.join(cache, "restricted-tmp")
+         },
          :ok <- mkdir_private(roots.home),
          :ok <- mkdir_private(roots.tmpdir) do
       {:ok, roots}
     end
   end
 
-  defp materialize(allowlist, roots, opts) do
-    source = Keyword.get_lazy(opts, :host_env, &System.get_env/0)
-
+  defp copy_allowlisted(allowlist, source) do
     allowlist
     |> Enum.reduce(%{}, fn key, env ->
       if present?(Map.get(source, key)), do: Map.put(env, key, Map.fetch!(source, key)), else: env
     end)
-    |> Map.put("HOME", roots.home)
-    |> Map.put("TMPDIR", roots.tmpdir)
   end
 
-  defp credential_refs(opts) do
-    opts
-    |> Keyword.get(:credential_sources, [])
-    |> Enum.map(&("env:" <> &1))
+  defp put_credentials(env, refs, host_env) do
+    variables = Enum.map(refs, &String.replace_prefix(&1, "env:", ""))
+
+    variables
+    |> Credentials.resolve_all(host_env, %{})
+    |> Enum.reduce(env, fn credential, materialized ->
+      Map.put(materialized, credential.variable, credential.value)
+    end)
   end
 
   defp mkdir_private(path) do

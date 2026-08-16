@@ -4,6 +4,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
   @behaviour Jidoka.ExecutionEnvironment.Adapter
 
   alias Jido.Console.Coding.{Environment, Network}
+  alias Jido.Console.Coding.Environment.Contract
   alias Jido.Console.Process.Tree
   alias Jidoka.Cancellation
   alias Jidoka.CodingPack.Workspace
@@ -34,20 +35,25 @@ defmodule Jido.Console.Coding.Local.Adapter do
 
   @impl true
   def open(profile, _request, opts) do
-    workspace = Keyword.fetch!(opts, :workspace)
+    with %Contract{profile_id: profile_id} <- Keyword.fetch!(opts, :environment_contract),
+         true <- profile_id == profile.profile_id do
+      workspace = Keyword.fetch!(opts, :workspace)
 
-    binding =
-      Binding.new!(
-        adapter_id: profile.adapter_id,
-        adapter_version: @adapter_version,
-        profile_id: profile.profile_id,
-        profile_digest: profile.digest,
-        resource_ref: "local-folder-" <> String.replace_prefix(workspace.root_digest, "sha256:", ""),
-        revision: 0,
-        state: :available
-      )
+      binding =
+        Binding.new!(
+          adapter_id: profile.adapter_id,
+          adapter_version: @adapter_version,
+          profile_id: profile.profile_id,
+          profile_digest: profile.digest,
+          resource_ref: "local-folder-" <> String.replace_prefix(workspace.root_digest, "sha256:", ""),
+          revision: 0,
+          state: :available
+        )
 
-    {:ok, binding, evidence(opts)}
+      {:ok, binding, evidence(opts)}
+    else
+      false -> {:error, :environment_contract_profile_mismatch}
+    end
   end
 
   @impl true
@@ -172,11 +178,13 @@ defmodule Jido.Console.Coding.Local.Adapter do
   end
 
   defp prepare_command_env(opts) do
-    with {:ok, %{env: env}} <- Environment.build(opts) do
+    contract = Keyword.fetch!(opts, :environment_contract)
+
+    with {:ok, env} <- Environment.materialize(contract, Keyword.take(opts, [:host_env])) do
       {:ok,
        %{
          env: Enum.map(env, fn {key, value} -> {String.to_charlist(key), String.to_charlist(value)} end),
-         tmpdir: Keyword.get(opts, :temporary_root, env["TMPDIR"])
+         tmpdir: contract.tmpdir
        }}
     end
   end
@@ -431,6 +439,12 @@ defmodule Jido.Console.Coding.Local.Adapter do
       "output_bytes" => Keyword.get(overrides, :output_bytes, 262_144)
     }
 
+    contract = Keyword.fetch!(opts, :environment_contract)
+
+    facts =
+      %{"environment_contract_digest" => Environment.digest(contract)}
+      |> Map.merge(Keyword.get(overrides, :facts, %{}))
+
     EnforcementEvidence.new!(
       status: :confirmed,
       adapter_id: @adapter_id,
@@ -440,7 +454,7 @@ defmodule Jido.Console.Coding.Local.Adapter do
       workspace: :persistent,
       applied_limits: Keyword.get(overrides, :applied_limits, limits),
       observed_at_ms: Keyword.get(opts, :observed_at_ms, System.system_time(:millisecond)),
-      facts: Keyword.get(overrides, :facts, %{})
+      facts: facts
     )
   end
 
