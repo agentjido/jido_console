@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [
     "jido_console-1f1.4"
@@ -12,8 +12,8 @@
   ],
   "parent": "jido_console-1f1",
   "priority": 0,
-  "status": "open",
+  "status": "in_progress",
   "title": "F-17: Store all model features in one capability map",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:51Z"
+  "updated_at": "2026-08-16T13:05:04Z"
 }
