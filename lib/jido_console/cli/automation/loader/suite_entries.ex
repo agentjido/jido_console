@@ -4,8 +4,8 @@ defmodule Jido.Console.Automation.Loader.SuiteEntries do
   import Jido.Console.Automation.Loader.Fields
 
   @doc false
-  @spec reject_agent_execution_controls(map()) :: :ok | {:error, term()}
-  def reject_agent_execution_controls(suite) do
+  @spec reject_agent_execution_controls(term()) :: :ok | {:error, term()}
+  def reject_agent_execution_controls(suite) when is_map(suite) do
     case Map.get(suite, "agents") do
       agents when is_list(agents) ->
         Enum.reduce_while(agents, :ok, fn
@@ -23,6 +23,8 @@ defmodule Jido.Console.Automation.Loader.SuiteEntries do
         :ok
     end
   end
+
+  def reject_agent_execution_controls(_suite), do: :ok
 
   @doc false
   @spec agents(map(), Path.t()) :: {:ok, [map()]} | {:error, term()}

@@ -343,6 +343,22 @@ defmodule Jido.Console.Automation.LoaderTest do
     end
   end
 
+  test "returns the suite schema error for an invalid run section before file IO", %{root: root} do
+    path = Path.join(root, "invalid-run.yml")
+
+    File.write!(path, """
+    version: 1
+    suite:
+      id: invalid_run
+      agents: [agent.yml]
+      scenarios: [missing-scenario.yml]
+      run: invalid
+    """)
+
+    assert {:error, {:document_schema_invalid, {:suite, ^path}, _errors}} =
+             Loader.load_suite(path)
+  end
+
   test "rejects unsupported versions, duplicate ids, and large files", %{root: root} do
     path = Path.join(root, "version.yml")
     File.write!(path, "version: 2\nscenario:\n  id: bad\n")

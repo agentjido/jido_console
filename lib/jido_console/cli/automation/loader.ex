@@ -13,10 +13,10 @@ defmodule Jido.Console.Automation.Loader do
 
     with {:ok, document, contents} <- Source.decode_file(path, opts),
          :ok <- version_one(document, path),
-         {:ok, raw_suite} <- required_map(document, "suite", path),
+         raw_suite = Map.get(document, "suite"),
          :ok <- reject_execution_controls(raw_suite),
          :ok <- SuiteEntries.reject_agent_execution_controls(raw_suite),
-         {:ok, raw_run} <- optional_section(raw_suite, "run"),
+         raw_run = section_value(raw_suite, "run"),
          :ok <- reject_execution_controls(raw_run),
          {:ok, document} <- InputSchema.validate_suite(document, path),
          suite = Map.fetch!(document, "suite"),
@@ -29,7 +29,7 @@ defmodule Jido.Console.Automation.Loader do
          {:ok, models} <- SuiteEntries.models(suite),
          repeats = matrix_value(suite, "repeats", 1),
          jobs = run_value(suite, "jobs", 1),
-         {:ok, output} <- optional_output(run_value(suite, "output", nil), Path.dirname(path)),
+         output = output_path(run_value(suite, "output", nil), Path.dirname(path)),
          :ok <- unique_values(agents, :key, :agent),
          :ok <- unique_values(scenarios, :id, :scenario),
          :ok <- unique_values(models, :key, :model) do
@@ -58,7 +58,7 @@ defmodule Jido.Console.Automation.Loader do
 
     with {:ok, document, contents} <- Source.decode_file(path, opts),
          :ok <- version_one(document, path),
-         {:ok, raw_scenario} <- required_map(document, "scenario", path),
+         raw_scenario = Map.get(document, "scenario"),
          :ok <- reject_execution_controls(raw_scenario),
          {:ok, document} <- InputSchema.validate_scenario(document, path),
          scenario = Map.fetch!(document, "scenario"),
@@ -72,7 +72,7 @@ defmodule Jido.Console.Automation.Loader do
          id: id,
          path: path,
          digest: digest(contents),
-         tags: string_list(Map.get(scenario, "tags", [])),
+         tags: Map.get(scenario, "tags", []),
          execution_profile: execution_profile,
          turns: turns
        }}
@@ -147,4 +147,10 @@ defmodule Jido.Console.Automation.Loader do
     |> maybe_put(:equals, Map.get(assertions, "equals"))
     |> maybe_put(:operation_called, Map.get(assertions, "operation_called"))
   end
+
+  defp section_value(section, key) when is_map(section), do: Map.get(section, key)
+  defp section_value(_section, _key), do: nil
+
+  defp output_path(nil, _base_dir), do: nil
+  defp output_path(path, base_dir), do: resolve_path(base_dir, path)
 end
