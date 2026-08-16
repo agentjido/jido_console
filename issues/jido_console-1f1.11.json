@@ -7,11 +7,13 @@
   "created": "2026-08-16T13:00:12Z",
   "description": "Audit rank: 11 of 30.\n\nOwner: JC-04 Automation execution.\nEvidence: lib/jido_console/cli/automation/engine.ex:4-11; coordinator.ex:135-151,243-253,329-333.\nWork: Require start/2, await/2, and cancel/2. Remove the coordinator synchronous fallback. Keep any synchronous convenience outside the Engine behavior.\nAcceptance: All engines satisfy one protocol. Coordinator tests cover start, await, cancel, timeout, and crash without a second lifecycle.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.11",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-06: Use one asynchronous automation engine protocol",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:42Z"
+  "updated_at": "2026-08-16T13:00:49Z"
 }
