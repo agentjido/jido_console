@@ -494,9 +494,6 @@ defmodule Jido.Console.Tui do
          workers
        ) do
     case Workers.take_down(workers, worker_pid, worker_ref) do
-      {:ok, %{kind: :stream_relay}, workers} ->
-        loop(state, terminal, runtime, opts, startup, workers)
-
       {:ok, worker, workers} ->
         handle_completed_effect(
           state,
