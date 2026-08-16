@@ -8,7 +8,8 @@ defmodule Jido.Console.Session.Drain do
   @type item :: %{
           identity: map(),
           status: atom(),
-          descendants: [String.t()]
+          descendants: [String.t()],
+          parent_stopped?: boolean()
         }
 
   @type t :: %{items: %{String.t() => item()}}
@@ -50,8 +51,17 @@ defmodule Jido.Console.Session.Drain do
 
       true ->
         descendants = List.delete(item.descendants, worker_id)
-        status = if descendants == [] and worker_id == identity.id, do: :drained, else: item.status
-        items = Map.put(drain.items, identity.id, %{item | descendants: descendants, status: status})
+        parent_stopped? = item.parent_stopped? or worker_id == identity.id
+        status = if descendants == [] and parent_stopped?, do: :drained, else: item.status
+
+        items =
+          Map.put(drain.items, identity.id, %{
+            item
+            | descendants: descendants,
+              status: status,
+              parent_stopped?: parent_stopped?
+          })
+
         {:ok, %{drain | items: items}}
     end
   end
@@ -73,7 +83,8 @@ defmodule Jido.Console.Session.Drain do
           Map.put(drain.items, identity.id, %{
             identity: identity,
             status: status,
-            descendants: descendants
+            descendants: descendants,
+            parent_stopped?: false
           })
     }
   end

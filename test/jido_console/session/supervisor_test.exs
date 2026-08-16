@@ -51,11 +51,25 @@ defmodule Jido.Console.Session.SupervisorTest do
   end
 
   test "normal stop removes the registry entry", %{registry: registry, sessions: sessions} do
-    opts = [session_id: "ses_stop", registry: registry, supervisor: sessions]
+    session_id = "ses_stop_#{System.unique_integer([:positive])}"
+    opts = [session_id: session_id, registry: registry, supervisor: sessions]
     {:ok, pid} = DynamicSupervisor.start_session(Placeholder, opts)
     ref = Process.monitor(pid)
     :ok = Elixir.DynamicSupervisor.terminate_child(sessions, pid)
     assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 1_000
-    assert {:error, :not_found} = Registry.lookup("ses_stop", registry)
+    refute Process.alive?(pid)
+
+    Enum.reduce_while(1..20, :retry, fn _, _ ->
+      case Registry.lookup(session_id, registry) do
+        {:error, :not_found} ->
+          {:halt, :ok}
+
+        {:ok, _pid} ->
+          Process.sleep(5)
+          {:cont, :retry}
+      end
+    end)
+
+    assert {:error, :not_found} = Registry.lookup(session_id, registry)
   end
 end

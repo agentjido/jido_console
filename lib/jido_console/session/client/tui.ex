@@ -19,6 +19,7 @@ defmodule Jido.Console.Session.Client.TUI do
   @doc "Reattaches the TUI to the same session."
   @spec reattach(Client.t(), keyword()) :: {:ok, Client.t()} | {:error, term()}
   def reattach(handle, opts \\ []) do
+    _ = Client.detach(handle)
     Client.attach(handle.session.id, opts)
   end
 end

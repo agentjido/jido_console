@@ -20,8 +20,15 @@ defmodule Jido.Console.Session.Supervisor do
     name = Keyword.get(opts, :name, __MODULE__)
 
     case Process.whereis(name) do
-      pid when is_pid(pid) -> {:ok, pid}
-      nil -> start_link(opts)
+      pid when is_pid(pid) ->
+        {:ok, pid}
+
+      nil ->
+        case start_link(opts) do
+          {:ok, pid} -> {:ok, pid}
+          {:error, {:already_started, pid}} -> {:ok, pid}
+          other -> other
+        end
     end
   end
 
