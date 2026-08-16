@@ -1,0 +1,14 @@
+{
+  "protocol": "jido.session",
+  "version": "1",
+  "family": "control",
+  "type": "attach",
+  "id": "plt_control_1",
+  "session_id": "ses_demo",
+  "created_at": "2026-08-15T12:00:00Z",
+  "payload": {
+    "client_id": "cli_tui",
+    "attachment_id": "att_1",
+    "capabilities": ["input", "output", "snapshot", "control"]
+  }
+}

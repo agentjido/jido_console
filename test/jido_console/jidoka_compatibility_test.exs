@@ -2,10 +2,12 @@ defmodule Jido.Console.JidokaCompatibilityTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Release.Identity
+  alias Jido.Console.Session.Jidoka, as: SessionJidoka
+  alias Jidoka.Event
   alias Jidoka.ExecutionEnvironment.RestrictedContract
   alias Jidoka.Policy.Decision
 
-  @jidoka_ref "7a346949aeb5c829ee0fad7b6b38eb23839b1384"
+  @jidoka_ref "701cf25a5c922755f4c53f25eb9721f1c85adf0a"
 
   test "the pinned Jidoka source is one immutable Git commit" do
     assert Identity.jidoka_ref() == @jidoka_ref
@@ -42,5 +44,18 @@ defmodule Jido.Console.JidokaCompatibilityTest do
              )
 
     assert :ok = RestrictedContract.compatible?(contract)
+  end
+
+  test "ordered events, handles, and projection use the documented facade" do
+    events = [
+      Event.build(:turn_started, [], request_id: "compat-1", seq: 0),
+      Event.build(:turn_finished, [], request_id: "compat-1", seq: 1)
+    ]
+
+    assert :ok = SessionJidoka.validate_events(events)
+    assert {:ok, projected} = SessionJidoka.project_events(events)
+    assert Enum.map(projected, & &1.request_id) == ["compat-1", "compat-1"]
+    assert List.last(projected).terminal?
+    assert {:ok, _} = Jason.encode(projected)
   end
 end

@@ -5,6 +5,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
 
   alias Jido.Console.Automation.{Limits, Replay, Result}
   alias Jido.Console.Extensions
+  alias Jido.Console.Session.Client.Automation, as: SessionAutomation
   alias Jidoka.Effect.OperationResult
   alias Jidoka.Eval
   alias Jidoka.Eval.Case, as: EvalCase
@@ -40,6 +41,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
     started_ms = monotonic_ms(opts)
 
     with {:ok, session} <- Jidoka.Session.start(cell.spec, session_id: session_id(cell)),
+         {:ok, _client} <- SessionAutomation.attach_cell(session_id(cell), Keyword.take(opts, [:registry, :supervisor])),
          {:ok, extension_runtime} <-
            Extensions.open(
              session,

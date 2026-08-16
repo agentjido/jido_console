@@ -6,7 +6,7 @@ defmodule Jido.Console.MixProject do
   @version "0.1.0"
   @source_url "https://github.com/agentjido/jido_console"
   @description "Terminal and automation harness for the Jidoka agent framework."
-  @jidoka_ref "7a346949aeb5c829ee0fad7b6b38eb23839b1384"
+  @jidoka_ref "701cf25a5c922755f4c53f25eb9721f1c85adf0a"
 
   def project do
     [
@@ -41,7 +41,8 @@ defmodule Jido.Console.MixProject do
 
   def application do
     [
-      extra_applications: extra_applications(Mix.env())
+      extra_applications: extra_applications(Mix.env()),
+      mod: {Jido.Console.Application, []}
     ]
   end
 

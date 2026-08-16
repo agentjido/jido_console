@@ -3,6 +3,8 @@ defmodule Jido.Console.Tui do
 
   alias Jido.Console.Tui.{Effects, Selection, Shutdown, State, View, Workers}
   alias Jido.Console.Coding.Setup
+  alias Jido.Console.Session.Client.TUI, as: SessionTUI
+  alias Jido.Console.Session.Identity
   alias Jido.Console.Terminal
 
   @frame_interval_ms 33
@@ -44,6 +46,8 @@ defmodule Jido.Console.Tui do
   end
 
   defp run_terminal_loop(terminal, runtime, agent, opts) do
+    session_client = attach_session_client(opts)
+
     state =
       State.new(
         nil,
@@ -52,7 +56,8 @@ defmodule Jido.Console.Tui do
           prepare_prompt: true,
           runtime_status: :starting,
           model: Keyword.get(opts, :model),
-          coding_profile: Keyword.get(opts, :coding_profile)
+          coding_profile: Keyword.get(opts, :coding_profile),
+          session_client: session_client
         ] ++ Keyword.take(opts, [:catalog_entries])
       )
 
@@ -322,6 +327,8 @@ defmodule Jido.Console.Tui do
         )
 
       {:jido_runtime_startup, ^startup_pid, {:ok, startup}} ->
+        state = attach_session_client_if_needed(state, opts)
+
         continue(
           state,
           {:runtime_ready, startup.session, startup.coding.instructions},
@@ -580,6 +587,25 @@ defmodule Jido.Console.Tui do
       value when is_integer(value) and value >= 0 -> value
       _other -> default
     end
+  end
+
+  defp attach_session_client_if_needed(%State{session_client: nil} = state, opts) do
+    %{state | session_client: attach_session_client(opts)}
+  end
+
+  defp attach_session_client_if_needed(state, _opts), do: state
+
+  defp attach_session_client(opts) do
+    supervisor_opts = Keyword.take(opts, [:name, :registry, :sessions])
+    _ = Jido.Console.Session.Supervisor.ensure_started(supervisor_opts)
+    session_id = Keyword.get_lazy(opts, :session_id, fn -> Identity.new!(:session).id end)
+
+    case SessionTUI.attach(session_id, Keyword.take(opts, [:registry, :supervisor])) do
+      {:ok, handle} -> handle
+      {:error, _reason} -> nil
+    end
+  rescue
+    _exception -> nil
   end
 
   defp process_opts(opts), do: Keyword.take(opts, [:name, :jido_home, :id])

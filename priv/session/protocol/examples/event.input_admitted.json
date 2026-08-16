@@ -1,0 +1,18 @@
+{
+  "protocol": "jido.session",
+  "version": "1",
+  "family": "event",
+  "type": "input_admitted",
+  "id": "plt_event_1",
+  "session_id": "ses_demo",
+  "created_at": "2026-08-15T12:00:00Z",
+  "payload": {
+    "sequence": 1,
+    "durability": "process",
+    "sensitivity": "public",
+    "origin": {"kind": "client", "actor_id": "cli_tui"},
+    "trust": {"evidence": "admitted", "policy": "session-owner"},
+    "input_id": "inp_1",
+    "client_id": "cli_tui"
+  }
+}

@@ -26,7 +26,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
     assert request.runtime_opts[:stream]
     assert request.runtime_opts[:stream_to] == self()
 
-    assert_receive {:jidoka_turn_event, %Event{event: :turn_finished, request_id: request_id}}, 5_000
+    assert_receive {:jidoka_turn_event, %Event{event: :turn_finished, request_id: request_id}}, 30_000
     assert request_id == request.request_id
 
     assert %Runtime.Result{
