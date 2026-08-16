@@ -9,11 +9,13 @@
   "created": "2026-08-16T13:00:10Z",
   "description": "Audit rank: 5 of 30.\n\nOwner: JC-17 Release contract and publication.\nEvidence: lib/jido_console/release/matrix.ex:9-84; channel.ex:13; homebrew.ex:43-49; npm.ex:61-67.\nWork: Make archive, Homebrew, and npm execute and report their own install, first-run, update, and remove stages. Return one common channel result with payload identity. Matrix only validates and compares results.\nAcceptance: A failure in one real channel fails only that cell. Every result has four stages, checksum, provenance, version, and license identity.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.5",
-  "labels": [],
+  "labels": [
+    "audit-finding"
+  ],
   "parent": "jido_console-1f1",
   "priority": 0,
   "status": "open",
   "title": "F-27: Make each release channel own its lifecycle evidence",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:44Z"
+  "updated_at": "2026-08-16T13:00:47Z"
 }
