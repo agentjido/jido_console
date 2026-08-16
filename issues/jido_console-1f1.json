@@ -2,6 +2,7 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-16T15:04:13Z",
   "created": "2026-08-16T12:58:49Z",
   "description": "Next single milestone for the unreleased Jido Console project.\n\nGoal:\nAddress every accepted finding from the complete jido_console simplification audit.\n\nWork boundary:\n- 30 child tasks, one for each retained finding.\n- Simplify data structures, state, control flow, algorithms, and ownership.\n- Convert the project to use Splode errors as the single error system.\n- Do not add backward-compatibility aliases, deprecation periods, legacy decoders, or old-arity shims.\n- Preserve intentional trust boundaries and separate owners identified by the audit.\n\nExit gate:\n- All 30 child tasks are closed.\n- All task acceptance checks pass.\n- The dependency graph is complete.\n- The complete product and release validation set passes.\n- No accepted audit finding remains unresolved.\n\nPriority:\nP0. This epic is the next work before any later milestone or feature work.",
   "id": "jido_console-1f1",
@@ -10,8 +11,8 @@
     "next-milestone"
   ],
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Milestone: Simplify the Unreleased Jido Console Codebase",
   "type": "epic",
-  "updated_at": "2026-08-16T13:04:07Z"
+  "updated_at": "2026-08-16T15:04:13Z"
 }
