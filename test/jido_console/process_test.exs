@@ -66,12 +66,43 @@ defmodule Jido.Console.ProcessTest do
 
   test "shutdown is idempotent and clears the home marker", %{opts: opts} do
     pid = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+    ref = Elixir.Process.monitor(pid)
     assert {:ok, _} = Process.register(:interactive, pid, opts)
     assert {:ok, stopped} = Process.stop("interactive", opts)
     assert stopped.status == :stopped
+    assert_receive {:DOWN, ^ref, :process, ^pid, :shutdown}
     assert {:ok, already} = Process.stop("interactive", opts)
     assert already.readiness == "already stopped"
     assert {:ok, []} = Process.list(opts)
+  end
+
+  test "an owner can stop its own record and finish cleanup", %{opts: opts} do
+    test_pid = self()
+
+    owner =
+      spawn(fn ->
+        {:ok, _record} = Process.register(:interactive, self(), opts)
+        send(test_pid, {:owner_ready, self()})
+
+        receive do
+          :stop -> send(test_pid, {:owner_stopped, self(), Process.stop("interactive", opts)})
+        end
+
+        receive do
+          :finish -> :ok
+        end
+      end)
+
+    assert_receive {:owner_ready, ^owner}
+    send(owner, :stop)
+
+    assert_receive {:owner_stopped, ^owner, {:ok, %{status: :stopped}}}
+    assert Elixir.Process.alive?(owner)
+    assert {:ok, []} = Process.list(opts)
+
+    ref = Elixir.Process.monitor(owner)
+    send(owner, :finish)
+    assert_receive {:DOWN, ^ref, :process, ^owner, :normal}
   end
 
   test "rejects a second live registration for the same process", %{opts: opts} do

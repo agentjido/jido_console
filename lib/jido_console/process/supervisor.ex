@@ -70,22 +70,22 @@ defmodule Jido.Console.Process.Supervisor do
     end
   end
 
-  def handle_call({:stop, name}, _from, state) do
+  def handle_call({:stop, name}, {caller, _tag}, state) do
     {reply, state} =
       case Contract.identity_for_name(name) do
-        {:ok, identity} -> stop_one(state, identity)
+        {:ok, identity} -> stop_one(state, identity, caller)
         {:error, _reason} = error -> {error, state}
       end
 
     {:reply, reply, state}
   end
 
-  def handle_call(:stop_all, _from, state) do
+  def handle_call(:stop_all, {caller, _tag}, state) do
     {records, state} =
       state.processes
       |> Map.keys()
       |> Enum.reduce({[], state}, fn identity, {acc, state} ->
-        case stop_one(state, identity) do
+        case stop_one(state, identity, caller) do
           {{:ok, record}, state} -> {[record | acc], state}
           {{:error, _reason}, state} -> {acc, state}
         end
@@ -131,11 +131,11 @@ defmodule Jido.Console.Process.Supervisor do
     |> GenServer.call(message)
   end
 
-  defp stop_one(state, identity) do
+  defp stop_one(state, identity, caller) do
     case Map.pop(state.processes, identity) do
       {%{record: record, monitor: mon}, processes} ->
         Elixir.Process.demonitor(mon, [:flush])
-        stop_owner(record)
+        stop_owner(record, caller)
         {:ok, stopped} = finalize(record, :stopped, nil, state.opts)
         {{:ok, Contract.public(stopped)}, %{state | processes: processes}}
 
@@ -214,6 +214,9 @@ defmodule Jido.Console.Process.Supervisor do
   end
 
   defp stop_owner(_record), do: :ok
+
+  defp stop_owner(%{owner_pid: caller}, caller), do: :ok
+  defp stop_owner(record, _caller), do: stop_owner(record)
 
   defp beam_os_pid do
     case Integer.parse(System.pid()) do

@@ -73,10 +73,17 @@ defmodule Jido.Console do
   defp dispatch_fast(_args), do: :continue
 
   defp start_probe_or_run(args) do
-    if Jido.Console.Release.Probe.configured?() do
-      System.halt(Jido.Console.Release.Probe.run(args, cli_run: &run/2))
-    else
-      start_and_run(args)
+    case Jido.Console.Bootstrap.start_applications() do
+      :ok ->
+        if Jido.Console.Release.Probe.configured?() do
+          System.halt(Jido.Console.Release.Probe.run(args, cli_run: &run/2))
+        else
+          start_and_run(args)
+        end
+
+      {:error, reason} ->
+        fail("could not start: #{inspect(reason)}")
+        System.halt(1)
     end
   end
 
