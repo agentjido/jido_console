@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-1f1.13"
+  ],
   "blocks": [],
   "created": "2026-08-16T13:00:12Z",
   "description": "Audit rank: 10 of 30.\n\nOwner: JC-05 Automation results and JSONL.\nEvidence: lib/jido_console/cli/automation/result.ex:17-61; result_value.ex:15-50; engine/jidoka.ex:449-491.\nWork: Make turns and execution status authoritative. Derive turn count, usage, and evaluation in Result construction. Permit an override only for evidence that cannot exist in turn data, and validate it.\nAcceptance: A result cannot contain counts, usage, or evaluation that disagree with its turns. Result, replay, limits, and engine tests pass.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
@@ -13,5 +15,5 @@
   "status": "open",
   "title": "F-08: Derive automation result facts from turns",
   "type": "task",
-  "updated_at": "2026-08-16T13:00:49Z"
+  "updated_at": "2026-08-16T14:12:45Z"
 }
