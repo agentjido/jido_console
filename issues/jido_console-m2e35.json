@@ -8,10 +8,10 @@
   "description": "Roadmap source: `roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e35-publish-v0-2-release.md`\nRoadmap version: `1.0.7`\nTarget release: `v0.2`\nDelivery unit: `one_pull_request`\n\n# M2-E35: Publish and Record Jido Console v0.2\n\n## Goal\n\nPublish and record the audited Jido Console v0.2 release.\n\n## Scope\n\n- Publish through the protected release workflow after the v0.2 audit approves the exact payload.\n- Publish the same tested native payload through every claimed channel.\n- Create the immutable version tag and release record.\n- Record checksums, provenance, channel results, and partial-publish handling.\n\n## Out of Scope\n\n- A new payload, source commit, or support claim.\n- A release when the audit is blocked.\n- New platform or channel claims.\n- Post-release feature work.\n\n## Dependencies\n\nThis epic depends on M2-E34 for the approved audit of the exact v0.2 source and payload.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one release pull request. The pull request binds the audited source and payload and invokes the protected release workflow after merge. The workflow publishes and records only the audited v0.2 payload. The pull request must not claim publication before the workflow succeeds.\n\n## Acceptance Checks\n\n- The protected release workflow accepts only the source and payload approved by M2-E34.\n- Every claimed channel receives the same tested native payload, version, checksums, and provenance.\n- The immutable v0.2 tag and release record identify the exact source and payload.\n- Partial publish failure has a recorded stop, repair, or rollback path.\n- The published release record links the roadmap milestone, epics, proof, audit, and channel evidence.\n- The release record states that accepted input can be lost on an application crash before Milestone 3.\n\n## Proof Artifacts\n\n- Protected-workflow publication record.\n- Immutable tag and release record.\n- Channel publication evidence.\n- Checksums and provenance record.\n- Partial-publish handling record.\n\n## Milestone Traceability\n\nThis epic owns the Milestone 2 release effect: publish and record Jido Console v0.2.",
   "id": "jido_console-m2e35",
   "labels": [
+    "disposition:not-published",
     "effort:medium",
     "milestone-2",
     "one-pr",
-    "readiness:ready",
     "roadmap",
     "v0.2"
   ],
@@ -25,5 +25,5 @@
   "status": "open",
   "title": "M2-E35: Publish and Record Jido Console v0.2",
   "type": "epic",
-  "updated_at": "2026-08-16T19:22:28Z"
+  "updated_at": "2026-08-16T19:24:45Z"
 }
