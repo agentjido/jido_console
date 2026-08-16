@@ -17,7 +17,6 @@
     "effort:medium",
     "milestone-1",
     "one-pr",
-    "readiness:planned",
     "roadmap",
     "v0.1"
   ],
@@ -25,5 +24,5 @@
   "status": "closed",
   "title": "M1-E27: Verify the v0.1 Channel Matrix",
   "type": "epic",
-  "updated_at": "2026-08-15T15:00:10Z"
+  "updated_at": "2026-08-16T19:27:17Z"
 }
