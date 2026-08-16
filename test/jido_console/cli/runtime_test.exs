@@ -156,7 +156,12 @@ defmodule Jido.Console.Runtime.JidokaTest do
     File.write!(Path.join(root, "AGENTS.md"), "Use the coding operations.")
     on_exit(fn -> File.rm_rf!(root) end)
 
-    assert {:ok, setup} = Setup.prepare(Jido.Console.DefaultAgent, project_root: root)
+    assert {:ok, setup} =
+             Setup.prepare(Jido.Console.DefaultAgent,
+               project_root: root,
+               jido_home: Path.join(root, "home")
+             )
+
     on_exit(fn -> Setup.close(setup) end)
 
     assert {:ok, %Runtime.Session{} = session} =
