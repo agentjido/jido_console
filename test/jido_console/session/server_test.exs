@@ -59,6 +59,11 @@ defmodule Jido.Console.Session.ServerTest do
     assert {:ok, delivery} = Server.ack(server, client.id, session.id, sequence)
     assert delivery.last_acked == sequence
     assert delivery.pending == []
+
+    assert {:ok, recovered, _state} = Server.recover(server, client.id, [])
+    refute recovered.gap?
+    assert :ok = Server.stop(server)
+    refute Process.alive?(server)
   end
 
   test "stale, repeated, and cross-session results cannot resolve current work", %{server: server, session: session} do

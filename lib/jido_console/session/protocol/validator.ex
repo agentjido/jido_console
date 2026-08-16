@@ -190,7 +190,7 @@ defmodule Jido.Console.Session.Protocol.Validator do
   defp encoded_size(value) do
     case Jason.encode(value) do
       {:ok, json} -> byte_size(json)
-      {:error, _reason} -> 0
+      {:error, _reason} -> :infinity
     end
   end
 end

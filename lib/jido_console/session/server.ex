@@ -15,6 +15,7 @@ defmodule Jido.Console.Session.Server do
     Identity,
     Identity.Admission,
     Input,
+    Recovery,
     Reducer,
     Registry,
     State
@@ -104,6 +105,20 @@ defmodule Jido.Console.Session.Server do
     GenServer.call(server, {:put_delivery, client_id, delivery})
   end
 
+  @doc "Recovers one attached client from a delivery gap."
+  @spec recover(name(), String.t(), [map()]) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
+  def recover(server, client_id, suffix) do
+    GenServer.call(server, {:recover, client_id, suffix})
+  end
+
+  @doc "Stops one live session server."
+  @spec stop(name()) :: :ok
+  def stop(server) do
+    GenServer.stop(server, :normal, 5_000)
+  catch
+    :exit, {:noproc, _info} -> :ok
+  end
+
   @impl true
   def init(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
@@ -126,16 +141,17 @@ defmodule Jido.Console.Session.Server do
     if client.session_id != state.session.id do
       {:reply, {:error, :cross_session_result}, state}
     else
-      ref = Process.monitor(pid)
+      {previous, clients} = Map.pop(state.clients, client.id)
+      if previous, do: Process.demonitor(previous.ref, [:flush])
 
       record = %{
         identity: client,
         pid: pid,
-        ref: ref,
+        ref: Process.monitor(pid),
         delivery: Delivery.new(client_id: client.id, session_id: state.session.id)
       }
 
-      clients = Map.put(state.clients, client.id, record)
+      clients = Map.put(clients, client.id, record)
       {:reply, {:ok, Reducer.snapshot(state.state)}, %{state | clients: clients}}
     end
   end
@@ -187,6 +203,23 @@ defmodule Jido.Console.Session.Server do
           {:ok, delivery} ->
             clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
             {:reply, {:ok, delivery}, %{state | clients: clients}}
+
+          {:error, _reason} = error ->
+            {:reply, error, state}
+        end
+    end
+  end
+
+  def handle_call({:recover, client_id, suffix}, _from, state) do
+    case Map.fetch(state.clients, client_id) do
+      :error ->
+        {:reply, {:error, :not_attached}, state}
+
+      {:ok, client} ->
+        case Recovery.recover(state.state, client.delivery, suffix) do
+          {:ok, delivery, recovered} ->
+            clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
+            {:reply, {:ok, delivery, recovered}, %{state | clients: clients}}
 
           {:error, _reason} = error ->
             {:reply, error, state}
@@ -255,6 +288,9 @@ defmodule Jido.Console.Session.Server do
     case Delivery.offer(client.delivery, update) do
       {:ok, delivery, payload} ->
         send(client.pid, {:session_updated, session_id, payload})
+        %{client | delivery: delivery}
+
+      {:gap, delivery, nil} ->
         %{client | delivery: delivery}
 
       {:gap, delivery, gap} ->

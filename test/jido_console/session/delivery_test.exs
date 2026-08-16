@@ -27,5 +27,6 @@ defmodule Jido.Console.Session.DeliveryTest do
     assert {:gap, gapped, gap} = Delivery.offer(delivery, %{"sequence" => 2})
     assert gapped.gap?
     assert gap["current_sequence"] == 2
+    assert {:gap, ^gapped, nil} = Delivery.offer(gapped, %{"sequence" => 3})
   end
 end

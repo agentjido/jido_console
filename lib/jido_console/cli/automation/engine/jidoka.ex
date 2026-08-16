@@ -40,22 +40,31 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
     started_at = utc_now(opts)
     started_ms = monotonic_ms(opts)
 
-    with {:ok, session} <- Jidoka.Session.start(cell.spec, session_id: session_id(cell)),
-         {:ok, _client} <- SessionAutomation.attach_cell(session_id(cell), Keyword.take(opts, [:registry, :supervisor])),
-         {:ok, extension_runtime} <-
-           Extensions.open(
-             session,
-             cell.spec.extensions,
-             Map.get(cell, :extensions, %{registry: %{}}),
-             :automation,
-             operations: Keyword.get(cell.runtime_opts, :operations)
-           ) do
-      start_sequence(cell, extension_runtime, opts, started_at, started_ms)
-    end
+    result =
+      with {:ok, session} <- Jidoka.Session.start(cell.spec, session_id: session_id(cell)),
+           {:ok, _client} <-
+             SessionAutomation.attach_cell(session_id(cell), Keyword.take(opts, [:registry, :supervisor])),
+           {:ok, extension_runtime} <-
+             Extensions.open(
+               session,
+               cell.spec.extensions,
+               Map.get(cell, :extensions, %{registry: %{}}),
+               :automation,
+               operations: Keyword.get(cell.runtime_opts, :operations)
+             ) do
+        start_sequence(cell, extension_runtime, opts, started_at, started_ms)
+      end
+
+    if match?({:error, _reason}, result), do: stop_attached_session(cell, opts)
+    result
   rescue
-    exception -> {:error, exception}
+    exception ->
+      stop_attached_session(cell, opts)
+      {:error, exception}
   catch
-    kind, reason -> {:error, {kind, reason}}
+    kind, reason ->
+      stop_attached_session(cell, opts)
+      {:error, {kind, reason}}
   end
 
   defp start_sequence(cell, extension_runtime, opts, started_at, started_ms) do
@@ -147,6 +156,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
       end
 
     close_result = Extensions.close(request.extension_host)
+    stop_attached_session(request.cell, opts)
 
     result
     |> apply_extension_close(close_result)
@@ -155,6 +165,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
     exception ->
       Replay.stop(request.replay_player)
       Extensions.close(request.extension_host)
+      stop_attached_session(request.cell, opts)
 
       failed_result(
         request.cell,
@@ -169,6 +180,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
     kind, reason ->
       Replay.stop(request.replay_player)
       Extensions.close(request.extension_host)
+      stop_attached_session(request.cell, opts)
 
       failed_result(
         request.cell,
@@ -444,6 +456,15 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
   defp operation_name(_operation), do: nil
 
   defp session_id(cell), do: "sess-" <> String.slice(cell.cell_id, 0, 32)
+
+  defp stop_attached_session(cell, opts) do
+    registry = Keyword.get(opts, :registry, Jido.Console.Session.Registry)
+
+    case Jido.Console.Session.Registry.lookup(session_id(cell), registry) do
+      {:ok, pid} -> Jido.Console.Session.Server.stop(pid)
+      {:error, :not_found} -> :ok
+    end
+  end
 
   defp sequence_runtime_opts(cell, opts) do
     cell.runtime_opts
