@@ -2,6 +2,7 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-08-16T13:19:53Z",
   "created": "2026-08-16T13:00:18Z",
   "description": "Audit rank: 29 of 30.\n\nOwner: JC-22 Release readiness and traceability.\nEvidence: dev/jido_console/release/readiness.ex:13-50; audit.ex:10-14,58-62.\nWork: Use one ordered {name, runner} registry. Derive checks/0 and run!/2 from it. Preserve check order, option forwarding, and unknown-name errors.\nAcceptance: Every advertised name has exactly one runner. Every runner is advertised. Default audit uses registry order. Unknown names fail before a check starts.\n\nProject state: unreleased. Do not add compatibility aliases, deprecation paths, legacy decoders, or old-arity shims.",
   "id": "jido_console-1f1.29",
@@ -10,8 +11,8 @@
   ],
   "parent": "jido_console-1f1",
   "priority": 0,
-  "status": "in_progress",
+  "status": "closed",
   "title": "F-30: Use one ordered release-readiness registry",
   "type": "task",
-  "updated_at": "2026-08-16T13:12:25Z"
+  "updated_at": "2026-08-16T13:19:53Z"
 }
