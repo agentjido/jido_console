@@ -20,22 +20,6 @@ defmodule Jido.Console.Process.Supervisor do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
-  @doc """
-  Starts the supervisor if it is not already running.
-
-  The server is parented by a keeper process so a short-lived caller such as
-  the TUI can exit without taking the named registry down.
-  """
-  @spec ensure_started(keyword()) :: {:ok, pid()} | {:error, term()}
-  def ensure_started(opts \\ []) do
-    name = Keyword.get(opts, :name, __MODULE__)
-
-    case Elixir.Process.whereis(name) do
-      pid when is_pid(pid) -> {:ok, pid}
-      nil -> start_detached(name, opts)
-    end
-  end
-
   @doc "Registers an owned process and marks it ready."
   @spec register(Contract.kind(), pid(), keyword()) :: {:ok, Contract.process_record()} | {:error, term()}
   def register(kind, pid, opts \\ []) do
@@ -142,71 +126,10 @@ defmodule Jido.Console.Process.Supervisor do
   end
 
   defp call(opts, message) do
-    with {:ok, pid} <- ensure_started(opts) do
-      call_server(pid, message, opts)
-    end
+    opts
+    |> Keyword.get(:name, __MODULE__)
+    |> GenServer.call(message)
   end
-
-  defp call_server(pid, message, opts) do
-    GenServer.call(pid, message)
-  catch
-    :exit, reason ->
-      if retryable_call_exit?(reason) do
-        retry_call(opts, message)
-      else
-        exit(reason)
-      end
-  end
-
-  defp retry_call(opts, message) do
-    Elixir.Process.sleep(10)
-
-    with {:ok, pid} <- ensure_started(opts) do
-      GenServer.call(pid, message)
-    end
-  end
-
-  defp retryable_call_exit?(:noproc), do: true
-  defp retryable_call_exit?(:normal), do: true
-  defp retryable_call_exit?(:shutdown), do: true
-  defp retryable_call_exit?({reason, _info}) when reason in [:noproc, :normal, :shutdown], do: true
-  defp retryable_call_exit?(_reason), do: false
-
-  defp start_detached(name, opts) do
-    starter = self()
-    ref = make_ref()
-
-    keeper =
-      spawn(fn ->
-        Elixir.Process.flag(:trap_exit, true)
-
-        result =
-          case GenServer.start_link(__MODULE__, opts, name: name) do
-            {:ok, pid} -> {:ok, pid}
-            {:error, {:already_started, pid}} -> {:ok, pid}
-            other -> other
-          end
-
-        send(starter, {ref, result})
-        keep_parent(result)
-      end)
-
-    receive do
-      {^ref, result} -> result
-    after
-      5_000 ->
-        Elixir.Process.exit(keeper, :kill)
-        {:error, :process_supervisor_start_timeout}
-    end
-  end
-
-  defp keep_parent({:ok, pid}) do
-    receive do
-      {:EXIT, ^pid, _reason} -> :ok
-    end
-  end
-
-  defp keep_parent(_result), do: :ok
 
   defp stop_one(state, identity) do
     case Map.pop(state.processes, identity) do

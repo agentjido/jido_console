@@ -11,8 +11,7 @@ defmodule Jido.Console.Bootstrap do
     ensure_started = Keyword.get(opts, :ensure_all_started, &Application.ensure_all_started/1)
 
     with :ok <- make_priv_files_accessible(opts),
-         {:ok, _applications} <- ensure_started.(:jido_console),
-         {:ok, _supervisor} <- Jido.Console.Process.Supervisor.ensure_started(opts) do
+         {:ok, _applications} <- ensure_started.(:jido_console) do
       :ok
     end
   end

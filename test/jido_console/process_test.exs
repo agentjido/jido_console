@@ -11,11 +11,12 @@ defmodule Jido.Console.ProcessTest do
     File.mkdir_p!(root)
     name = :"jido-process-#{System.unique_integer([:positive])}"
     opts = [jido_home: Path.join(root, "home"), name: name]
+    {:ok, supervisor} = Jido.Console.Process.Supervisor.start_link(opts)
 
     on_exit(fn ->
-      if pid = Elixir.Process.whereis(name) do
+      if Elixir.Process.alive?(supervisor) do
         try do
-          GenServer.stop(pid, :shutdown, 1_000)
+          GenServer.stop(supervisor, :shutdown, 1_000)
         catch
           :exit, _reason -> :ok
         end
@@ -82,6 +83,23 @@ defmodule Jido.Console.ProcessTest do
     Elixir.Process.exit(second, :kill)
   end
 
+  test "concurrent registrations use one process manager", %{opts: opts} do
+    first = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+    second = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+
+    results =
+      [first, second]
+      |> Task.async_stream(&Process.register(:interactive, &1, opts), ordered: false)
+      |> Enum.map(fn {:ok, result} -> result end)
+
+    assert Enum.count(results, &match?({:ok, %{status: :ready}}, &1)) == 1
+    assert Enum.count(results, &match?({:error, :process_already_registered}, &1)) == 1
+    assert is_pid(Elixir.Process.whereis(opts[:name]))
+
+    Elixir.Process.exit(first, :kill)
+    Elixir.Process.exit(second, :kill)
+  end
+
   test "rejects an id that conflicts with the contract identity", %{opts: opts} do
     owner = spawn(fn -> Elixir.Process.sleep(:infinity) end)
 
@@ -144,25 +162,41 @@ defmodule Jido.Console.ProcessTest do
     assert {:ok, []} = Process.list(opts)
   end
 
-  test "process supervisor stays up after the starter exits", %{opts: opts} do
-    name = Keyword.fetch!(opts, :name)
-    parent = self()
+  test "the application owns one default process manager" do
+    application = Elixir.Process.whereis(Jido.Console.Supervisor)
+    manager = Elixir.Process.whereis(Jido.Console.Process.Supervisor)
 
-    starter =
-      spawn(fn ->
-        {:ok, pid} = Jido.Console.Process.Supervisor.ensure_started(opts)
-        send(parent, {:started, pid})
-      end)
+    assert is_pid(application)
+    assert is_pid(manager)
 
-    assert_receive {:started, supervisor}
-    assert_receive_gone(starter)
-    assert Elixir.Process.whereis(name) == supervisor
-    assert Elixir.Process.alive?(supervisor)
+    assert {Jido.Console.Process.Supervisor, ^manager, :worker, [Jido.Console.Process.Supervisor]} =
+             List.keyfind(
+               Supervisor.which_children(application),
+               Jido.Console.Process.Supervisor,
+               0
+             )
+  end
 
-    owner = spawn(fn -> Elixir.Process.sleep(:infinity) end)
-    assert {:ok, record} = Process.register(:interactive, owner, opts)
-    assert record.status == :ready
-    Elixir.Process.exit(owner, :kill)
+  test "an explicit process manager restarts and stops with its supervisor", %{root: root} do
+    name = :"jido-supervised-process-#{System.unique_integer([:positive])}"
+    home = Path.join(root, "supervised-home")
+    child = {Jido.Console.Process.Supervisor, name: name, jido_home: home}
+    {:ok, supervisor} = Supervisor.start_link([child], strategy: :one_for_one)
+    Elixir.Process.unlink(supervisor)
+    first = Elixir.Process.whereis(name)
+    first_ref = Elixir.Process.monitor(first)
+
+    Elixir.Process.exit(first, :kill)
+    assert_receive {:DOWN, ^first_ref, :process, ^first, :killed}
+
+    second = wait_for_replacement(name, first)
+    assert is_pid(second)
+    assert Elixir.Process.alive?(second)
+
+    second_ref = Elixir.Process.monitor(second)
+    :ok = Supervisor.stop(supervisor, :shutdown)
+    assert_receive {:DOWN, ^second_ref, :process, ^second, :shutdown}
+    refute Elixir.Process.whereis(name)
   end
 
   test "register succeeds after the previous owner process exits", %{opts: opts} do
@@ -233,5 +267,18 @@ defmodule Jido.Console.ProcessTest do
   defp assert_receive_gone(pid) do
     ref = Elixir.Process.monitor(pid)
     assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 200
+  end
+
+  defp wait_for_replacement(name, previous) do
+    Enum.reduce_while(1..20, nil, fn _, _acc ->
+      case Elixir.Process.whereis(name) do
+        pid when is_pid(pid) and pid != previous ->
+          {:halt, pid}
+
+        _missing ->
+          Elixir.Process.sleep(5)
+          {:cont, nil}
+      end
+    end)
   end
 end
