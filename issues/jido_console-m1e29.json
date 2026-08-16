@@ -42,7 +42,6 @@
     "effort:medium",
     "milestone-1",
     "one-pr",
-    "readiness:planned",
     "roadmap",
     "v0.1"
   ],
@@ -50,5 +49,5 @@
   "status": "closed",
   "title": "M1-E29: Audit and Record the v0.1 Release Decision",
   "type": "epic",
-  "updated_at": "2026-08-15T15:01:54Z"
+  "updated_at": "2026-08-16T19:27:17Z"
 }
