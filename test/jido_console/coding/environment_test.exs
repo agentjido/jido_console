@@ -61,4 +61,11 @@ defmodule Jido.Console.Coding.EnvironmentTest do
     refute Map.has_key?(built.env, "OPENAI_API_KEY")
     refute inspect(built) =~ "sk-secret"
   end
+
+  test "accepts broader provider variables loaded by Env", %{opts: opts} do
+    assert {:ok, built} =
+             Environment.build(opts ++ [credential_sources: ["GROQ_API_KEY", "XAI_API_KEY"]])
+
+    assert built.manifest.credential_refs == ["env:GROQ_API_KEY", "env:XAI_API_KEY"]
+  end
 end

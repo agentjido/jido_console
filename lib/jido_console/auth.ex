@@ -2,10 +2,14 @@ defmodule Jido.Console.Auth do
   @moduledoc """
   Resolves provider credentials from declared sources and reports redacted status.
 
-  Host environment variables take precedence over an explicitly selected private
-  environment file. Credential values are never returned from diagnostic APIs.
+  Declared variable order selects between provider alternatives. For each
+  variable, the host environment takes precedence over an explicitly selected
+  private environment file. Credential values are never returned from
+  diagnostic APIs.
   """
 
+  alias Jido.Console.Credentials
+  alias Jido.Console.Home
   alias Jido.Console.Models
   alias Jido.Console.Providers.Redaction
 
@@ -148,19 +152,18 @@ defmodule Jido.Console.Auth do
   defp first_present(rows, opts) do
     host = Keyword.get_lazy(opts, :host_env, &System.get_env/0)
     file_env = Keyword.get(opts, :resolved_file_env, %{})
+    variables = Enum.map(rows, & &1.variable)
 
-    Enum.find_value(rows, fn row ->
-      cond do
-        present?(Map.get(host, row.variable)) ->
-          {:present, :host_env, row.variable, "host environment #{row.variable} is set"}
+    case Credentials.resolve(variables, host, file_env) do
+      {:ok, %{source: :host_env, variable: variable}} ->
+        {:present, :host_env, variable, "host environment #{variable} is set"}
 
-        present?(Map.get(file_env, row.variable)) ->
-          {:present, :env_file, row.variable, "private env file provides #{row.variable}"}
+      {:ok, %{source: :env_file, variable: variable}} ->
+        {:present, :env_file, variable, "private env file provides #{variable}"}
 
-        true ->
-          nil
-      end
-    end)
+      :missing ->
+        nil
+    end
   end
 
   defp file_env(opts) do
@@ -171,31 +174,8 @@ defmodule Jido.Console.Auth do
   end
 
   defp load_env_file(path) do
-    with :ok <- secure_file(path) do
-      Dotenvy.source([%{}, path])
-    end
-  rescue
-    exception -> {:error, {:dotenv_load_failed, exception.__struct__}}
+    Credentials.read_private_env_file(path)
   end
-
-  defp secure_file(path) do
-    case File.lstat(path) do
-      {:ok, %{type: :regular}} ->
-        case Jido.Console.Home.check_private(path) do
-          :ok -> :ok
-          {:error, {:unsafe_permissions, ^path, _mode}} -> {:error, {:dotenv_permissions_too_open, path}}
-          {:error, reason} -> {:error, reason}
-        end
-
-      {:ok, %{type: type}} ->
-        {:error, {:dotenv_not_regular, path, type}}
-
-      {:error, reason} ->
-        {:error, {:dotenv_stat_failed, path, reason}}
-    end
-  end
-
-  defp present?(value), do: is_binary(value) and String.trim(value) != ""
 
   defp encode_status(row) do
     %{
@@ -209,7 +189,7 @@ defmodule Jido.Console.Auth do
   end
 
   defp home_label(opts) do
-    case Jido.Console.Home.resolve(opts) do
+    case Home.resolve(opts) do
       {:ok, _home} -> "configured"
       {:error, _reason} -> "unavailable"
     end

@@ -6,8 +6,8 @@ defmodule Jido.Console.Coding.Environment do
   credential references may be present, and temporary files stay under Jido home.
   """
 
-  alias Jido.Console.Auth
   alias Jido.Console.Coding.RestrictedProfile
+  alias Jido.Console.Env
   alias Jido.Console.Home
 
   @type manifest :: %{
@@ -72,7 +72,7 @@ defmodule Jido.Console.Coding.Environment do
 
   defp reject_undeclared_credentials(opts) do
     requested = Keyword.get(opts, :credential_sources, [])
-    declared = Auth.sources() |> Map.values() |> List.flatten() |> Enum.map(& &1.variable)
+    declared = Env.provider_keys()
 
     undeclared = Enum.reject(requested, &(&1 in declared))
 
