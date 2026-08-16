@@ -40,12 +40,95 @@ defmodule Jido.Console.Release.Homebrew do
     end
   end
 
-  @doc "Installs through the shared channel lifecycle using the Homebrew cell."
+  @doc "Executes and reports the Homebrew lifecycle."
+  @spec lifecycle(Path.t(), Path.t(), keyword()) :: Channel.result()
+  def lifecycle(payload_dir, prefix, opts \\ []) do
+    Channel.execute(:homebrew, Channel.identity(payload_dir), %{
+      install: fn state ->
+        case install(payload_dir, prefix, opts) do
+          {:ok, install} ->
+            evidence =
+              Channel.install_evidence(install, "homebrew_formula", %{
+                "formula_revision" => @revision,
+                "formula" => Path.relative_to(install.formula_path, prefix),
+                "cellar" => Path.relative_to(install.root, prefix)
+              })
+
+            {:ok, Map.put(state, :install, install), evidence}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end,
+      first_run: fn %{install: install} = state ->
+        case Channel.first_run(install) do
+          {:ok, evidence} ->
+            {:ok, state, Map.put(evidence, "formula_revision", @revision)}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end,
+      update: fn %{install: install} = state ->
+        case install(payload_dir, prefix, opts) do
+          {:ok, updated} ->
+            evidence =
+              Channel.identity_evidence("update", updated.payload_identity, %{
+                "method" => "homebrew_formula",
+                "from_revision" => install.formula_revision,
+                "to_revision" => updated.formula_revision
+              })
+
+            {:ok, Map.put(state, :install, updated), evidence}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end,
+      remove: fn %{install: install} = state ->
+        case remove(install) do
+          {:ok, evidence} -> {:ok, state, evidence}
+          {:error, reason} -> {:error, reason}
+        end
+      end
+    })
+  end
+
+  @doc "Installs the formula and its verified payload into a Homebrew cellar."
   @spec install(Path.t(), Path.t(), keyword()) :: {:ok, Channel.install()} | {:error, term()}
   def install(payload_dir, prefix, opts \\ []) do
     with {:ok, text} <- formula(payload_dir, opts),
-         :ok <- reject_build_steps(text) do
-      Channel.install(:homebrew, payload_dir, prefix, opts)
+         :ok <- reject_build_steps(text),
+         {:ok, identity} <- Channel.identity(payload_dir),
+         cellar = Path.join(prefix, "Cellar/jido/#{identity["version"]}"),
+         formula_path = Path.join(prefix, "Formula/jido.rb"),
+         :ok <- write_formula(formula_path, text),
+         {:ok, install} <- Channel.install_payload(:homebrew, payload_dir, cellar, opts) do
+      {:ok,
+       Map.merge(install, %{
+         owner_root: prefix,
+         formula_path: formula_path,
+         formula_revision: @revision
+       })}
+    end
+  end
+
+  @doc "Removes the formula and the owned Homebrew cellar."
+  @spec remove(map()) :: {:ok, map()} | {:error, term()}
+  def remove(install) do
+    case File.rm_rf(install.owner_root) do
+      {:ok, _files} ->
+        {:ok,
+         %{
+           "stage" => "remove",
+           "status" => "pass",
+           "method" => "homebrew_uninstall",
+           "formula_revision" => install.formula_revision,
+           "root_exists" => File.exists?(install.owner_root)
+         }}
+
+      {:error, reason, path} ->
+        {:error, {:homebrew_remove_failed, path, reason}}
     end
   end
 
@@ -55,6 +138,10 @@ defmodule Jido.Console.Release.Homebrew do
     else
       :ok
     end
+  end
+
+  defp write_formula(path, text) do
+    with :ok <- File.mkdir_p(Path.dirname(path)), do: File.write(path, text)
   end
 
   defp archive_name(directory) do

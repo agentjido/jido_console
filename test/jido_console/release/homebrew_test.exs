@@ -1,7 +1,7 @@
 defmodule Jido.Console.Release.HomebrewTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Release.{Channel, Homebrew, PayloadFixture}
+  alias Jido.Console.Release.{Homebrew, PayloadFixture}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-brew-#{System.unique_integer([:positive])}")
@@ -21,10 +21,16 @@ defmodule Jido.Console.Release.HomebrewTest do
     refute formula =~ "mix"
     refute formula =~ "erl"
 
-    assert {:ok, install} = Homebrew.install(payload, prefix, public_key: key.public)
-    assert {:ok, first} = Channel.first_run(install)
+    result = Homebrew.lifecycle(payload, prefix, public_key: key.public)
+    assert result["status"] == "pass"
+    assert Enum.map(result["stages"], & &1["stage"]) == ~w(install first_run update remove)
+    first = Enum.find(result["stages"], &(&1["stage"] == "first_run"))
+    install = Enum.find(result["stages"], &(&1["stage"] == "install"))
     assert first["compiled"] == false
-    assert {:ok, _} = Channel.remove(install)
-    refute inspect(Channel.evidence(:homebrew, [first])) =~ "sk-"
+    assert install["method"] == "homebrew_formula"
+    assert install["formula"] == "Formula/jido.rb"
+    assert install["cellar"] == "Cellar/jido/0.1.0"
+    refute File.exists?(prefix)
+    refute inspect(result) =~ "sk-"
   end
 end

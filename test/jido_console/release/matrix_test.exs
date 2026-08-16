@@ -17,6 +17,11 @@ defmodule Jido.Console.Release.MatrixTest do
     assert report["decision"] == "pass"
     assert length(report["supported_cells"]) == 3
     assert Enum.all?(report["supported_cells"], &(&1["status"] == "pass"))
+    assert Enum.all?(report["supported_cells"], &(length(&1["stages"]) == 4))
+    assert Enum.all?(report["supported_cells"], &Map.has_key?(&1["payload_identity"], "checksum"))
+    assert Enum.all?(report["supported_cells"], &Map.has_key?(&1["payload_identity"], "provenance"))
+    assert Enum.all?(report["supported_cells"], &Map.has_key?(&1["payload_identity"], "version"))
+    assert Enum.all?(report["supported_cells"], &Map.has_key?(&1["payload_identity"], "license"))
     assert report["comparison"]["status"] == "pass"
     assert "linux" in report["untested"]
     refute Enum.any?(report["untested"], &(&1 == "supported"))
@@ -30,7 +35,23 @@ defmodule Jido.Console.Release.MatrixTest do
              Matrix.verify(payload, public_key: key.public, root: Path.join(root, "fail"))
 
     assert report["decision"] == "fail"
-    assert Enum.any?(report["supported_cells"], &(&1["status"] == "fail"))
-    assert Enum.any?(report["supported_cells"], &(&1["stage"] == "install"))
+    assert Enum.all?(report["supported_cells"], &(&1["status"] == "fail"))
+    assert Enum.all?(report["supported_cells"], &(hd(&1["stages"])["stage"] == "install"))
+  end
+
+  test "a Homebrew failure fails only its cell", %{root: root, payload: payload, key: key} do
+    assert {:error, {:matrix_failed, report}} =
+             Matrix.verify(payload,
+               public_key: key.public,
+               archive: "missing.tar.gz",
+               root: Path.join(root, "isolated-failure")
+             )
+
+    statuses = Map.new(report["supported_cells"], &{&1["channel"], &1["status"]})
+    assert statuses == %{"archive" => "pass", "homebrew" => "fail", "npm" => "pass"}
+
+    homebrew = Enum.find(report["supported_cells"], &(&1["channel"] == "homebrew"))
+    assert Enum.map(homebrew["stages"], & &1["status"]) == ["fail", "not_run", "not_run", "not_run"]
+    assert report["comparison"]["status"] == "pass"
   end
 end

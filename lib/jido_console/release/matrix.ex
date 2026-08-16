@@ -1,22 +1,22 @@
 defmodule Jido.Console.Release.Matrix do
   @moduledoc """
-  Verifies the v0.1 macOS ARM64 channel matrix against one signed payload.
+  Validates and compares the macOS ARM64 channel-owner results.
   """
 
   alias Jido.Console.Providers.Redaction
-  alias Jido.Console.Release.Channel
+  alias Jido.Console.Release.{Channel, Homebrew, Npm}
 
   @supported_cells [
-    %{platform: "darwin", arch: "arm64", channel: :archive},
-    %{platform: "darwin", arch: "arm64", channel: :homebrew},
-    %{platform: "darwin", arch: "arm64", channel: :npm}
+    %{platform: "darwin", arch: "arm64", channel: :archive, owner: Channel},
+    %{platform: "darwin", arch: "arm64", channel: :homebrew, owner: Homebrew},
+    %{platform: "darwin", arch: "arm64", channel: :npm, owner: Npm}
   ]
 
-  @doc "Returns the required v0.1 support cells."
+  @doc "Returns the required support cells without internal owner modules."
   @spec cells() :: [map()]
-  def cells, do: @supported_cells
+  def cells, do: Enum.map(@supported_cells, &Map.drop(&1, [:owner]))
 
-  @doc "Runs install, first run, update, and removal for every required cell."
+  @doc "Collects, validates, and compares every required channel result."
   @spec verify(Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def verify(payload_dir, opts \\ []) do
     root =
@@ -38,73 +38,64 @@ defmodule Jido.Console.Release.Matrix do
   end
 
   defp verify_cell(cell, payload_dir, root, opts) do
-    prefix = Path.join(root, "#{cell.channel}")
+    prefix = Path.join(root, Atom.to_string(cell.channel))
+    result = cell.owner.lifecycle(payload_dir, prefix, opts)
 
-    case run_lifecycle(cell.channel, payload_dir, prefix, opts) do
-      {:ok, install, stages} ->
-        %{
-          "platform" => cell.platform,
-          "arch" => cell.arch,
-          "channel" => Atom.to_string(cell.channel),
-          "status" => "pass",
-          "version" => install.version,
-          "license" => install.license,
-          "payload_sha256" => install.payload_sha256,
-          "stages" => stages
-        }
+    case Channel.validate_result(result, cell.channel) do
+      :ok ->
+        Map.merge(result, %{"platform" => cell.platform, "arch" => cell.arch})
 
-      {:error, {stage, reason}} ->
-        %{
-          "platform" => cell.platform,
-          "arch" => cell.arch,
-          "channel" => Atom.to_string(cell.channel),
-          "status" => "fail",
-          "stage" => Atom.to_string(stage),
-          "reason" => inspect(reason)
-        }
-    end
-  end
-
-  defp run_lifecycle(channel, payload_dir, prefix, opts) do
-    with {:ok, install} <- stage(:install, fn -> Channel.install(channel, payload_dir, prefix, opts) end),
-         {:ok, first} <- stage(:first_run, fn -> Channel.first_run(install) end),
-         {:ok, _updated} <- stage(:update, fn -> Channel.update(install, payload_dir, opts) end),
-         {:ok, removed} <- stage(:remove, fn -> Channel.remove(install) end) do
-      {:ok, install, [first, removed]}
-    end
-  end
-
-  defp stage(name, fun) do
-    case fun.() do
-      {:ok, value} -> {:ok, value}
-      {:error, reason} -> {:error, {name, reason}}
+      {:error, reason} ->
+        result
+        |> Map.put("status", "fail")
+        |> Map.put("validation_error", inspect(reason))
+        |> Map.merge(%{"platform" => cell.platform, "arch" => cell.arch})
     end
   end
 
   defp compare(results) do
-    passed = Enum.filter(results, &(&1["status"] == "pass"))
-    shas = passed |> Enum.map(& &1["payload_sha256"]) |> Enum.uniq()
-    versions = passed |> Enum.map(& &1["version"]) |> Enum.uniq()
-    licenses = passed |> Enum.map(& &1["license"]) |> Enum.uniq()
+    identities = results |> Enum.map(& &1["payload_identity"]) |> Enum.uniq()
 
-    cond do
-      passed == [] -> %{"status" => "fail", "reason" => "no passing cells"}
-      length(shas) != 1 -> %{"status" => "fail", "reason" => "payload checksum mismatch"}
-      length(versions) != 1 -> %{"status" => "fail", "reason" => "version mismatch"}
-      length(licenses) != 1 -> %{"status" => "fail", "reason" => "license mismatch"}
-      true -> %{"status" => "pass", "payload_sha256" => hd(shas), "version" => hd(versions)}
+    case identities do
+      [identity] ->
+        %{
+          "status" => "pass",
+          "checksum" => identity["checksum"],
+          "provenance" => identity["provenance"],
+          "version" => identity["version"],
+          "license" => identity["license"]
+        }
+
+      _other ->
+        %{"status" => "fail", "reason" => identity_mismatch(identities)}
+    end
+  end
+
+  defp identity_mismatch(identities) do
+    fields = ~w(checksum provenance version license)
+
+    fields
+    |> Enum.filter(fn field -> identities |> Enum.map(& &1[field]) |> Enum.uniq() |> length() > 1 end)
+    |> Enum.map_join(", ")
+    |> case do
+      "" -> "payload identity unavailable"
+      changed -> "payload identity mismatch: #{changed}"
     end
   end
 
   defp report(results, comparison) do
+    decision =
+      if comparison["status"] == "pass" and Enum.all?(results, &(&1["status"] == "pass")),
+        do: "pass",
+        else: "fail"
+
     %{
       "schema" => "jido.channel-matrix",
       "schema_version" => 1,
       "supported_cells" => results,
       "untested" => ["linux", "windows", "darwin-x64"],
       "comparison" => comparison,
-      "decision" =>
-        if(comparison["status"] == "pass" and Enum.all?(results, &(&1["status"] == "pass")), do: "pass", else: "fail"),
+      "decision" => decision,
       "summary" => Redaction.redact("matrix #{length(results)} cells")
     }
   end

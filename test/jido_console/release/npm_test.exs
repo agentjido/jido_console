@@ -1,7 +1,7 @@
 defmodule Jido.Console.Release.NpmTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Release.{Channel, Npm, PayloadFixture}
+  alias Jido.Console.Release.{Npm, PayloadFixture}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-npm-#{System.unique_integer([:positive])}")
@@ -25,10 +25,20 @@ defmodule Jido.Console.Release.NpmTest do
 
     Enum.each([:global, :local, :exec, :npx], fn flow ->
       prefix = Path.join(root, Atom.to_string(flow))
-      assert {:ok, install} = Npm.install(payload, prefix, flow, public_key: key.public)
-      assert {:ok, first} = Channel.first_run(install)
+      result = Npm.lifecycle(payload, prefix, npm_flow: flow, public_key: key.public)
+      assert result["status"] == "pass"
+      assert Enum.map(result["stages"], & &1["stage"]) == ~w(install first_run update remove)
+      first = Enum.find(result["stages"], &(&1["stage"] == "first_run"))
+      install = Enum.find(result["stages"], &(&1["stage"] == "install"))
       assert first["compiled"] == false
-      assert {:ok, _} = Channel.remove(install)
+      assert first["flow"] == Atom.to_string(flow)
+      assert install["method"] == "npm_package"
+      assert install["entry_package"] == Npm.entry_name()
+      assert install["target_package"] == Npm.target_name()
+      assert install["entry_path"] == "node_modules/@agentjido/jido-console"
+      assert install["target_path"] == "node_modules/@agentjido/jido-console-darwin-arm64"
+      assert install["executable"] == "bin/jido"
+      refute File.exists?(prefix)
     end)
   end
 end

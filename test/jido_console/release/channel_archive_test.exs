@@ -17,31 +17,42 @@ defmodule Jido.Console.Release.ChannelArchiveTest do
     File.mkdir_p!(Path.join(prefix, "user-data"))
     File.write!(Path.join(prefix, "user-data/.keep"), "keep")
 
-    assert {:ok, install} = Channel.install(:archive, payload, prefix, public_key: key.public)
-    assert install.version == "0.1.0"
-    assert {:ok, first} = Channel.first_run(install)
+    result = Channel.lifecycle(payload, prefix, public_key: key.public, user_data: ["user-data"])
+    assert :ok = Channel.validate_result(result, :archive)
+    assert result["status"] == "pass"
+    assert result["payload_identity"]["version"] == "0.1.0"
+    assert result["payload_identity"]["license"] == "Apache-2.0"
+    assert byte_size(result["payload_identity"]["checksum"]) == 64
+    assert result["payload_identity"]["provenance"] == %{}
+
+    assert Enum.map(result["stages"], & &1["stage"]) == ~w(install first_run update remove)
+    assert Enum.all?(result["stages"], &(&1["status"] == "pass"))
+    first = Enum.find(result["stages"], &(&1["stage"] == "first_run"))
+    removed = Enum.find(result["stages"], &(&1["stage"] == "remove"))
     assert first["compiled"] == false
     assert first["toolchain"] == "bundled"
     assert first["executable"] == "bin/jido"
 
-    assert {:error, :trusted_public_key_required} = Channel.install(:archive, payload, Path.join(prefix, "no-key"))
-
-    assert {:ok, updated} = Channel.update(install, payload, public_key: key.public)
-    assert updated.payload_sha256 == install.payload_sha256
-
-    assert {:ok, removed} = Channel.remove(updated, user_data: ["user-data"])
     assert File.exists?(Path.join(prefix, "user-data/.keep"))
     refute File.exists?(Path.join(prefix, "release.json"))
     assert removed["user_data"] == ["user-data"]
+    assert result["published"] == false
+    refute inspect(result) =~ "sk-"
 
-    report = Channel.evidence(:archive, [first, removed])
-    assert report["published"] == false
-    refute inspect(report) =~ "sk-"
+    assert {:error, :invalid_channel_result} =
+             Channel.validate_result(%{result | "stages" => tl(result["stages"])}, :archive)
+
+    no_key = Channel.lifecycle(payload, Path.join(prefix, "no-key"))
+    assert no_key["status"] == "fail"
+    assert Enum.map(no_key["stages"], & &1["status"]) == ["fail", "not_run", "not_run", "not_run"]
   end
 
   test "rejects a changed archive before installation", %{payload: payload, prefix: prefix, key: key} do
     File.write!(Path.join(payload, "jido-0.1.0-darwin-arm64.tar.gz"), "tampered")
-    assert {:error, {:checksum_mismatch, _name}} = Channel.install(:archive, payload, prefix, public_key: key.public)
+    result = Channel.lifecycle(payload, prefix, public_key: key.public)
+    assert result["status"] == "fail"
+    assert hd(result["stages"])["stage"] == "install"
+    assert hd(result["stages"])["reason"] =~ "checksum_mismatch"
     refute File.exists?(Path.join(prefix, "release.json"))
   end
 end
