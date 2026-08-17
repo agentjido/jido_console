@@ -4,13 +4,12 @@ type: epic
 title: Quarantine and Repair the Physical Store
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e20
+beadwork_id: jido_console-m3e20
 depends_on: [M3-E10, M3-E16, M3-E19]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E20: Quarantine and Repair the Physical Store

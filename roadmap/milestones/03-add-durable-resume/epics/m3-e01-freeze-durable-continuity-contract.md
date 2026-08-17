@@ -4,13 +4,12 @@ type: epic
 title: Freeze the Durable Continuity Contract
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e01
+beadwork_id: jido_console-m3e01
 depends_on: [M2-E37]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E01: Freeze the Durable Continuity Contract

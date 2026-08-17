@@ -1,8 +1,8 @@
 # Milestone 3 Planning Baseline
 
 This file freezes the design inputs for the proposed Milestone 3 epic
-specifications. It is not product code, it does not create Beadwork records,
-and it does not start Milestone 3 implementation.
+specifications. It is not product code, and it does not start Milestone 3
+implementation. The Beadwork records are loaded early for work tracking only.
 
 Milestone 3 implementation starts only after M2-E37 approves one exact
 Milestone 2 source, Jidoka revision, roadmap version, and production candidate
@@ -24,11 +24,13 @@ The closed M2-E11, M2-E28 through M2-E30, and M2-E33 through M2-E35 records
 are historical evidence. They do not replace the final-source checks in
 M2-E31, M2-E36, and M2-E37.
 
-There is no Milestone 3 implementation record in Beadwork. The existing
-`jido_console-x5b` planning record has M2-E37 as its only direct blocker. It
-stays open because it must compare this proposed plan with the exact M2-E37
-baseline, import the approved epic records, verify their dependency graph,
-and only then close. This pre-audit roadmap work does not change Beadwork.
+The `jido_console-m3` Beadwork parent and its 37 epic children were loaded on
+2026-08-16 by explicit user direction. M3-E01 has M2-E37 as its only direct
+cross-milestone blocker. The existing `jido_console-x5b` planning record also
+has M2-E37 as its only direct blocker. It stays open so that it can compare the
+preloaded records with the exact approved M2-E37 baseline, correct any drift,
+verify the dependency graph, and only then close. Loading records does not
+start Milestone 3 implementation.
 
 ## Storage Decision
 

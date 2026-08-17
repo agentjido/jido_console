@@ -4,13 +4,12 @@ type: epic
 title: Add TUI Continuity Operations
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e32
+beadwork_id: jido_console-m3e32
 depends_on: [M3-E24, M3-E25, M3-E26, M3-E28]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E32: Add TUI Continuity Operations

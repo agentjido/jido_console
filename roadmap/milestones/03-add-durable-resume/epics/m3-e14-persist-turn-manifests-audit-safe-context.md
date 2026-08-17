@@ -4,13 +4,12 @@ type: epic
 title: Persist Turn Manifests and Audit-Safe Context
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e14
+beadwork_id: jido_console-m3e14
 depends_on: [M3-E10, M3-E11, M3-E12, M3-E13]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E14: Persist Turn Manifests and Audit-Safe Context

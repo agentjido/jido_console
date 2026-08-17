@@ -4,13 +4,12 @@ type: epic
 title: Prove Durable Continuity Across Clients
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e33
+beadwork_id: jido_console-m3e33
 depends_on: [M3-E08, M3-E14, M3-E28, M3-E29, M3-E30, M3-E31, M3-E32]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E33: Prove Durable Continuity Across Clients

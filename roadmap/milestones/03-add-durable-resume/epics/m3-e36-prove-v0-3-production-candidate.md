@@ -4,13 +4,12 @@ type: epic
 title: Prove the v0.3 Production Candidate
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e36
+beadwork_id: jido_console-m3e36
 depends_on: [M3-E34, M3-E35]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E36: Prove the v0.3 Production Candidate

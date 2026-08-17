@@ -4,13 +4,12 @@ type: epic
 title: Persist Queues, Interactions, and Permissions
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e12
+beadwork_id: jido_console-m3e12
 depends_on: [M3-E11]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E12: Persist Queues, Interactions, and Permissions

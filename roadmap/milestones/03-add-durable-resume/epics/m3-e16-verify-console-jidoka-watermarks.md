@@ -4,13 +4,12 @@ type: epic
 title: Verify Console-to-Jidoka Watermarks
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e16
+beadwork_id: jido_console-m3e16
 depends_on: [M3-E05, M3-E10, M3-E11, M3-E15]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E16: Verify Console-to-Jidoka Watermarks

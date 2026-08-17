@@ -4,13 +4,12 @@ type: epic
 title: Build the Default SQLite Session Store
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e06
+beadwork_id: jido_console-m3e06
 depends_on: [M3-E02, M3-E03, M3-E05]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E06: Build the Default SQLite Session Store

@@ -4,13 +4,12 @@ type: epic
 title: Add Early Store Quota Primitives
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e08
+beadwork_id: jido_console-m3e08
 depends_on: [M3-E07]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E08: Add Early Store Quota Primitives

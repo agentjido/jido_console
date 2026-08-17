@@ -4,13 +4,12 @@ type: epic
 title: Prove v0.2-to-v0.3 Compatibility
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e35
+beadwork_id: jido_console-m3e35
 depends_on: [M3-E05, M3-E17, M3-E18, M3-E19, M3-E27, M3-E28, M3-E31, M3-E33]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E35: Prove v0.2-to-v0.3 Compatibility

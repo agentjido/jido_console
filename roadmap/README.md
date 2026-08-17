@@ -1,6 +1,6 @@
 # Jido Console Roadmap
 
-Roadmap version: **1.3.0**
+Roadmap version: **1.3.1**
 
 Roadmap status: **proposed**
 
@@ -82,7 +82,7 @@ The `milestone.md` file is the roadmap milestone item. It owns the goal, outcome
 5. Add the semantic protocol, one supervised session owner, and current-client migration as one v0.2 quality target.
 6. Complete the Milestone 2 closeout chain: canonical projection, bounded delivery, gap recovery, the final client contract, TUI migration, production-path parity, and legacy deletion.
 7. Requalify one exact post-closeout v0.2 artifact and complete the final evidence-only audit. Milestone 3 cannot start from the historical pre-closeout candidate or audit.
-8. Review the frozen Milestone 3 planning baseline and 37 proposed epic specifications. Do not import or start implementation before M2-E37 approves the exact source baseline.
+8. Keep the Milestone 3 parent and 37 epic records loaded for work tracking. Do not start implementation before M2-E37 approves the exact source baseline and `jido_console-x5b` verifies the preloaded graph against that baseline.
 9. Qualify SQLite in the packaged runtime, then add the bounded file-only store, restart-safe input, the shared Console-to-Jidoka watermark, and exact recovery.
 
 ## Common Milestone Release Gate

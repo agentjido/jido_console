@@ -4,13 +4,12 @@ type: epic
 title: Back Up and Verify the Durable Store
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e17
+beadwork_id: jido_console-m3e17
 depends_on: [M3-E07, M3-E08, M3-E10, M3-E16]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E17: Back Up and Verify the Durable Store

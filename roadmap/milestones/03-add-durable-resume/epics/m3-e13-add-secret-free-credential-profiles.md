@@ -4,13 +4,12 @@ type: epic
 title: Add Secret-Free Credential Profiles
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e13
+beadwork_id: jido_console-m3e13
 depends_on: [M3-E03, M3-E08]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E13: Add Secret-Free Credential Profiles

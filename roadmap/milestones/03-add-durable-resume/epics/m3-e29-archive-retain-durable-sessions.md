@@ -4,13 +4,12 @@ type: epic
 title: Archive and Retain Durable Sessions
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e29
+beadwork_id: jido_console-m3e29
 depends_on: [M3-E08, M3-E20, M3-E26]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E29: Archive and Retain Durable Sessions

@@ -4,13 +4,12 @@ type: epic
 title: Remove Durable Sessions Explicitly
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e30
+beadwork_id: jido_console-m3e30
 depends_on: [M3-E26, M3-E29]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E30: Remove Durable Sessions Explicitly

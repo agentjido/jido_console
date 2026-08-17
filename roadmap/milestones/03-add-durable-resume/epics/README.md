@@ -4,15 +4,13 @@ These 37 specifications split Milestone 3 into reviewable delivery units. Each
 approved epic is complete in exactly one pull request. A pull request must not
 combine two Milestone 3 epics.
 
-No Milestone 3 epic has a Beadwork record. Each `beadwork_import_id` is
-reserved for a later import. It is not a Beadwork issue ID. `beadwork_id`
-remains null until the import creates and verifies the matching record.
-Roadmap version 1.3.0 does not create, import, update, or synchronize Milestone
-3 Beadwork records.
+The `jido_console-m3` Beadwork parent contains all 37 epic records. Each epic
+file records its verified Beadwork ID. The records are loaded early for work
+tracking by explicit user direction. Loading them does not start implementation.
 
 The existing `jido_console-x5b` planning record stays open and blocked by
-M2-E37. After that audit, it must compare these specifications with the exact
-approved source, import the approved records, verify the graph, and close. No
+M2-E37. After that audit, it must compare the preloaded records with the exact
+approved source, correct any drift, verify the graph, and close. No
 implementation epic can start before that work.
 
 The [Milestone 3 planning baseline](../planning-baseline.md) freezes the local
@@ -22,7 +20,7 @@ operation matrix, crash matrix, exact hard limits, and qualification profile.
 
 ## Proposed Epic Order
 
-| Epic | Reserved import ID | One-pull-request result | Depends on |
+| Epic | Beadwork ID | One-pull-request result | Depends on |
 | --- | --- | --- | --- |
 | [M3-E01 Freeze durable continuity contract](m3-e01-freeze-durable-continuity-contract.md) | `jido_console-m3e01` | One contract freezes records, acknowledgements, modes, sensitive-value rules, fences, crash points, and limits. | M2-E37 |
 | [M3-E02 Qualify SQLite local store](m3-e02-qualify-sqlite-local-store.md) | `jido_console-m3e02` | One direct SQLite adapter passes package, durability, WAL, reader, temporary-file, and limit checks. | M3-E01 |
@@ -223,8 +221,8 @@ flowchart TB
 
 1. Finish the Milestone 2 closeout chain through M2-E37. Review can occur
    before that audit, but no Milestone 3 implementation starts.
-2. Use `jido_console-x5b` to compare the plan with the approved baseline,
-   import Beadwork records, and verify the graph.
+2. Use `jido_console-x5b` to compare the preloaded records with the approved
+   baseline, correct any drift, and verify the graph.
 3. Freeze the durability contract in M3-E01.
 4. Run SQLite qualification in M3-E02, record work in M3-E03, and the upstream
    Jidoka hardening pull request in M3-E04 in parallel.
@@ -254,32 +252,29 @@ flowchart TB
 18. Merge the evidence-only M3-E37 audit. Record publication as skipped and,
     if approved, name the exact Milestone 4 baseline.
 
-## Later Beadwork Import
+## Beadwork Load Record
 
-Run this procedure only after M2-E37 records an approved exact Milestone 3
-baseline. This roadmap change does not create, import, update, or synchronize
-Beadwork records.
+The records were loaded on 2026-08-16 before M2-E37 by explicit user
+direction. This early load supports work tracking only.
 
-1. Use `jido_console-x5b` as the import and graph-verification record.
-2. Create one epic for each `beadwork_import_id` from
-   `jido_console-m3e01` through `jido_console-m3e37`.
-3. Copy the complete Markdown source into the matching issue description.
-4. Use type `epic`, owner `Mike Hostetler`, priority P1 for the reviewed
-   critical path, and labels `milestone-3`, `one-pr`, `roadmap`, `v0.3`, and
-   `policy:no-publication`, plus one reviewed `effort:*` label. Do not add a
-   numeric estimate because the current Beadwork schema has no estimate field.
-5. Verify each created record with `bw show` before the roadmap records its
-   actual `beadwork_id`. Remove `beadwork_import_id` only after verification.
-6. Add every direct edge from front matter with
-   `bw dep add <blocker> blocks <blocked>`.
-7. Add the first cross-milestone edge with
-   `bw dep add jido_console-m2e37 blocks jido_console-m3e01`.
-8. Do not add redundant M2-E37 edges to downstream epics.
-9. Verify the Beadwork graph exactly matches the front matter and `bw ready`
-   shows only M3-E01 after the approved baseline is closed.
-10. Do not create child implementation tasks during import. Add them only when
-    one epic enters detailed implementation planning and repository policy
-    requires them.
+1. `jido_console-m3` is the parent epic. It is not a one-pull-request delivery
+   unit.
+2. `jido_console-m3e01` through `jido_console-m3e37` are the 37 child epics.
+   Each child has one `parent-child` relation to `jido_console-m3`.
+3. Each child has type `epic`, owner `Mike Hostetler`, priority P1, and labels
+   `milestone-3`, `one-pr`, `roadmap`, `v0.3`, and
+   `policy:no-publication`, plus exactly one reviewed `effort:*` label.
+4. M3-E01, M3-E05, M3-E09, M3-E23, M3-E25, M3-E27, and M3-E37 use
+   `effort:medium`. The other 30 epics use `effort:large`.
+5. The graph has 110 direct `blocks` relations. Only M3-E01 has the direct
+   cross-milestone blocker `jido_console-m2e37`.
+6. No child implementation tasks were created. Each generated epic remains
+   one pull request.
+7. `jido_console-x5b` remains open and blocked by M2-E37. After M2-E37, it
+   must compare the loaded records with the approved source, correct any
+   drift, verify all identifiers and relations, and close before implementation.
+8. When M2-E37 and `jido_console-x5b` are complete, `bw ready` must show
+   M3-E01 as the only ready Milestone 3 implementation epic.
 
 ## Pull Request Rule
 

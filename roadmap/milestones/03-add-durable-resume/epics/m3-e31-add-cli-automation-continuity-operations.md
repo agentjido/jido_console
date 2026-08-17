@@ -4,13 +4,12 @@ type: epic
 title: Add CLI, Text, JSON, and Automation Continuity Operations
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e31
+beadwork_id: jido_console-m3e31
 depends_on: [M3-E17, M3-E19, M3-E20, M3-E24, M3-E25, M3-E26, M3-E28, M3-E29, M3-E30]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E31: Add CLI, Text, JSON, and Automation Continuity Operations

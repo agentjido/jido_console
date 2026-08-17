@@ -3,10 +3,11 @@ milestone: 3
 type: release_milestone
 title: Add durable resume, fork, and audit
 status: proposed
+beadwork_id: jido_console-m3
 depends_on: [milestone-2]
 release: v0.3
 introduced_in: 0.1.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # Milestone 3: Add Durable Resume, Fork, and Audit
@@ -27,9 +28,9 @@ release-archive, or public release work while publication is disabled.
 
 ## Proposed Epic Specifications
 
-Milestone 3 has 37 proposed epic specifications. The complete order,
-dependency graph, later Beadwork import plan, and one-pull-request boundaries
-are in the
+Milestone 3 has 37 proposed epic specifications loaded below the
+`jido_console-m3` Beadwork parent. The complete order, dependency graph,
+Beadwork load record, and one-pull-request boundaries are in the
 [Milestone 3 epic index](epics/README.md).
 
 The [planning baseline](planning-baseline.md) freezes the durable record
@@ -66,11 +67,11 @@ Roadmap version 1.3.0 has produced and frozen these planning inputs:
 - An operation matrix for exact resume, transcript-only resume, retry, fork, repair, and abandon behavior.
 
 These inputs are in the planning baseline. The proposed epic files own the
-planned implementation scope and dependencies. Their `beadwork_id` values stay
-null until `jido_console-x5b` imports and verifies them after M2-E37. Beadwork
-will then own assignment and delivery status. No Milestone 3 implementation
-epic can start until M2-E37 approves the exact source baseline and the import
-graph passes.
+planned implementation scope and dependencies. Their Beadwork records were
+loaded early for work tracking by explicit user direction. M3-E01 remains
+blocked by M2-E37. No Milestone 3 implementation epic can start until M2-E37
+approves the exact source baseline and `jido_console-x5b` verifies the loaded
+graph against that baseline.
 
 ## Work
 

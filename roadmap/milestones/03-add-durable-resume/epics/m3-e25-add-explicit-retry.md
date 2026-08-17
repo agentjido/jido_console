@@ -4,13 +4,12 @@ type: epic
 title: Add Explicit Retry
 status: proposed
 milestone: milestone-3
-beadwork_id: null
-beadwork_import_id: jido_console-m3e25
+beadwork_id: jido_console-m3e25
 depends_on: [M3-E15, M3-E22, M3-E23, M3-E24]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.0
+last_updated_in: 1.3.1
 ---
 
 # M3-E25: Add Explicit Retry

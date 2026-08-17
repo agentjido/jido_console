@@ -4,6 +4,27 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-08-16
+
+### Added
+
+- Create the `jido_console-m3` Beadwork parent and load all 37 Milestone 3
+  one-pull-request epics below it with their final reserved identifiers.
+- Add 37 parent-child relations and the exact 110 direct roadmap dependency
+  relations, including the single M2-E37 to M3-E01 implementation gate.
+
+### Changed
+
+- Replace every Milestone 3 reserved import identifier with its verified
+  `beadwork_id` and record the loaded hierarchy in the milestone and epic
+  index.
+- Set all 37 required v0.3 epics to P1. Apply `effort:medium` to M3-E01,
+  M3-E05, M3-E09, M3-E23, M3-E25, M3-E27, and M3-E37, and apply
+  `effort:large` to the other 30 epics.
+- Load the records early for work tracking by explicit user direction. Keep
+  M3-E01 blocked by M2-E37, and keep `jido_console-x5b` open for final-source
+  comparison and graph verification before implementation starts.
+
 ## [1.3.0] - 2026-08-16
 
 ### Added
