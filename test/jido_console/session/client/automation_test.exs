@@ -1,6 +1,7 @@
 defmodule Jido.Console.Session.Client.AutomationTest do
   use ExUnit.Case, async: true
 
+  alias Jido.Console.Session.Client.Handle
   alias Jido.Console.Session.Client.Automation
   alias Jido.Console.Session.Supervisor
 
@@ -13,7 +14,11 @@ defmodule Jido.Console.Session.Client.AutomationTest do
 
     assert {:ok, first} = Automation.attach_cell("cell-a-#{suffix}", attach_opts)
     assert {:ok, second} = Automation.attach_cell("cell-b-#{suffix}", attach_opts)
-    refute first.server == second.server
-    refute first.session.id == second.session.id
+
+    first_identity = Handle.identity(first)
+    second_identity = Handle.identity(second)
+
+    refute first_identity.attachment_id == second_identity.attachment_id
+    refute first_identity.session_id == second_identity.session_id
   end
 end
