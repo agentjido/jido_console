@@ -4,6 +4,20 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.4] - 2026-08-17
+
+### Added
+
+- Add M2-E40 to preserve the native package root when npm exposes the Jido
+  command.
+
+### Changed
+
+- Make M2-E40 depend on M2-E39 and block M2-E36 after the channel gate found
+  that the copied npm launcher could not find its private runtime.
+- Increase the Milestone 2 epic count from 39 to 40 and add the npm repair to
+  the final closeout chain.
+
 ## [1.3.3] - 2026-08-17
 
 ### Added

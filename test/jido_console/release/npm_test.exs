@@ -1,7 +1,7 @@
 defmodule Jido.Console.Release.NpmTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Release.{Npm, PayloadFixture}
+  alias Jido.Console.Release.{Channel, Npm, PayloadFixture}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-npm-#{System.unique_integer([:positive])}")
@@ -40,5 +40,24 @@ defmodule Jido.Console.Release.NpmTest do
       assert install["executable"] == "bin/jido"
       refute File.exists?(prefix)
     end)
+  end
+
+  test "entry launcher keeps the native launcher in its target package", %{
+    payload: payload,
+    root: root,
+    key: key
+  } do
+    prefix = Path.join(root, "native-root")
+
+    assert {:ok, install} =
+             Npm.install(payload, prefix, :global, public_key: key.public)
+
+    entry_launcher = Path.join(install.entry_root, "bin/jido")
+    command = Path.join(prefix, "bin/jido")
+
+    assert File.read!(entry_launcher) =~ "jido-console-darwin-arm64"
+    assert {:ok, %{type: :symlink}} = File.lstat(command)
+    assert {:ok, %{"status" => "pass"}} = Channel.first_run(install)
+    assert {:ok, %{"status" => "pass"}} = Npm.remove(install)
   end
 end

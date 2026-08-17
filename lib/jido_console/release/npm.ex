@@ -199,10 +199,56 @@ defmodule Jido.Console.Release.Npm do
   end
 
   defp install_entry_executable(source, entry_executable, command) do
-    with :ok <- File.cp(source, entry_executable),
+    with {:ok, target} <- target_launcher(source),
+         :ok <- File.write(entry_executable, entry_launcher(target)),
          :ok <- File.chmod(entry_executable, 0o755),
-         :ok <- File.cp(entry_executable, command) do
-      File.chmod(command, 0o755)
+         :ok <- remove_command(command) do
+      File.ln_s(Path.relative_to(entry_executable, Path.dirname(command)), command)
+    end
+  end
+
+  defp target_launcher(source) do
+    target_package = package_basename(@target)
+
+    case Enum.split_while(Path.split(source), &(&1 != target_package)) do
+      {_prefix, [^target_package | relative]} when relative != [] ->
+        {:ok, Path.join(["..", "..", target_package | relative])}
+
+      _other ->
+        {:error, :npm_target_launcher_missing}
+    end
+  end
+
+  defp package_basename(package), do: package |> String.split("/") |> List.last()
+
+  defp entry_launcher(target) do
+    """
+    #!/bin/sh
+    set -eu
+
+    readlink_f() {
+      cd "$(dirname "$1")" >/dev/null
+      filename="$(basename "$1")"
+
+      if [ -h "$filename" ]; then
+        readlink_f "$(readlink "$filename")"
+      else
+        printf '%s/%s\n' "$(pwd -P)" "$filename"
+      fi
+    }
+
+    SELF="$(readlink_f "$0")"
+    ENTRY_BIN="$(CDPATH='' cd "$(dirname "$SELF")" && pwd -P)"
+
+    exec "$ENTRY_BIN/#{target}" "$@"
+    """
+  end
+
+  defp remove_command(command) do
+    case File.rm(command) do
+      :ok -> :ok
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 
