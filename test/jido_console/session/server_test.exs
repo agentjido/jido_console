@@ -103,7 +103,9 @@ defmodule Jido.Console.Session.ServerTest do
                token_secret: String.duplicate("t", 32)
              )
 
-    assert snapshot["payload"]["sequence"] == 0
+    assert snapshot["type"] == "attach_snapshot"
+    assert snapshot["payload"]["snapshot_sequence"] == 0
+    assert snapshot["payload"]["snapshot"]["sequence"] == 0
     test_pid = self()
 
     spec = [
@@ -154,6 +156,92 @@ defmodule Jido.Console.Session.ServerTest do
     assert {:ok, measurements} = Server.delivery_measurements(server, client.id, attachment.id)
     assert measurements.status == :gapped
     assert measurements.advisory_count == 0
+  end
+
+  test "bounded recovery queues output and resumes incremental delivery", %{
+    server: server,
+    session: session
+  } do
+    client = Identity.new!(:client, session_id: session.id)
+
+    assert {:ok, %{attachment: attachment}} =
+             Server.attach(server, client,
+               mode: :bounded,
+               return_attachment: true,
+               delivery_limits: %{ack_timeout_ms: 25},
+               token_secret: String.duplicate("r", 32)
+             )
+
+    test_pid = self()
+
+    spec = [
+      start: fn _owner -> {:ok, %{request_id: "recovery-request"}} end,
+      await: fn _request ->
+        send(test_pid, {:recovery_await, self()})
+
+        receive do
+          :finish_recovery -> :recovered
+        end
+      end
+    ]
+
+    assert {:ok, request} = Server.start_operation(server, client.id, spec)
+    assert_receive {:recovery_await, worker}
+    assert_receive {:jido_console_session, attachment_id, :output_ready}
+    assert attachment_id == attachment.id
+    assert {:ok, _batch} = Server.output(server, session.id, client.id, attachment.id)
+
+    assert_receive {:jido_console_session, ^attachment_id, :output_ready}, 200
+    assert {:gap, gap} = Server.output(server, session.id, client.id, attachment.id)
+
+    assert {:ok, snapshot} =
+             Server.begin_recovery(
+               server,
+               session.id,
+               client.id,
+               attachment.id,
+               gap["payload"]["gap_id"]
+             )
+
+    send(worker, :finish_recovery)
+    assert :recovered = Server.await_request(server, request, 1_000)
+
+    assert {:error, :delivery_recovering} =
+             Server.output(server, session.id, client.id, attachment.id)
+
+    assert {:ok, suffix} =
+             Server.replay_recovery(
+               server,
+               session.id,
+               client.id,
+               attachment.id,
+               snapshot["payload"]["recovery_token"]
+             )
+
+    assert Enum.map(suffix["payload"]["events"], & &1["type"]) == ["run_completed"]
+
+    assert {:ok, receipt} =
+             Server.complete_recovery(
+               server,
+               session.id,
+               client.id,
+               attachment.id,
+               suffix["payload"]["completion_token"]
+             )
+
+    assert receipt["payload"]["through_sequence"] == 2
+    assert :empty = Server.output(server, session.id, client.id, attachment.id)
+
+    next_spec = [
+      start: fn _owner -> {:ok, %{request_id: "post-recovery-request"}} end,
+      await: fn _request -> :post_recovery_done end
+    ]
+
+    assert {:ok, next_request} = Server.start_operation(server, client.id, next_spec)
+    assert :post_recovery_done = Server.await_request(server, next_request, 1_000)
+    assert_receive {:jido_console_session, ^attachment_id, :output_ready}
+    assert {:ok, next_batch} = Server.output(server, session.id, client.id, attachment.id)
+    assert Enum.map(next_batch["payload"]["events"], & &1["payload"]["sequence"]) == [3, 4]
   end
 
   test "stale, repeated, and cross-session results cannot resolve current work", %{server: server, session: session} do

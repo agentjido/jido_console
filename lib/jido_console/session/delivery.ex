@@ -35,6 +35,7 @@ defmodule Jido.Console.Session.Delivery do
           last_ack: map() | nil,
           inflight: map() | nil,
           gap: map() | nil,
+          recovery: map() | nil,
           limits: map(),
           secret: binary(),
           next_batch: pos_integer(),
@@ -65,6 +66,7 @@ defmodule Jido.Console.Session.Delivery do
       last_ack: nil,
       inflight: nil,
       gap: nil,
+      recovery: nil,
       limits: limits,
       secret: Keyword.get_lazy(opts, :token_secret, fn -> :crypto.strong_rand_bytes(32) end),
       next_batch: 1,
@@ -95,10 +97,10 @@ defmodule Jido.Console.Session.Delivery do
           make_gap(state, event_sequence(event), "update_too_large")
 
         length(state.queue) >= state.limits.queue_count ->
-          make_gap(state, event_sequence(event), "queue_count_overflow")
+          make_gap(state, event_sequence(event), overflow_reason(state, "queue_count_overflow"))
 
         state.queued_bytes + encoded_size > state.limits.queue_bytes ->
-          make_gap(state, event_sequence(event), "queue_byte_overflow")
+          make_gap(state, event_sequence(event), overflow_reason(state, "queue_byte_overflow"))
 
         true ->
           queue = state.queue ++ [event]
@@ -227,7 +229,8 @@ defmodule Jido.Console.Session.Delivery do
         queued_bytes: 0,
         inflight: nil,
         advisory_outstanding: false,
-        gap: nil
+        gap: nil,
+        recovery: nil
     }
   end
 
@@ -254,6 +257,10 @@ defmodule Jido.Console.Session.Delivery do
       advisory_count: if(state.advisory_outstanding, do: 1, else: 0)
     }
   end
+
+  @doc "Returns the encoded byte count for canonical queued events."
+  @spec queue_bytes([map()]) :: non_neg_integer()
+  def queue_bytes(events) when is_list(events), do: encoded_events_size(events)
 
   defp build_batch(state, events) do
     batch_id = "bat_#{state.next_batch}"
@@ -322,6 +329,7 @@ defmodule Jido.Console.Session.Delivery do
         queued_bytes: 0,
         inflight: nil,
         gap: gap,
+        recovery: nil,
         advisory_outstanding: true,
         next_gap: state.next_gap + 1
     }
@@ -437,4 +445,7 @@ defmodule Jido.Console.Session.Delivery do
 
   defp bounded_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp bounded_reason(reason), do: reason |> inspect(limit: 10, printable_limit: 200) |> String.slice(0, 256)
+
+  defp overflow_reason(%{status: :recovering}, _normal), do: "recovery_queue_overflow"
+  defp overflow_reason(_state, normal), do: normal
 end

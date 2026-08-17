@@ -63,6 +63,21 @@ defmodule Jido.Console.Session.State do
     }
   end
 
+  @doc "Returns the canonical state stored in attach and recovery snapshots."
+  @spec to_snapshot_protocol(t()) :: map()
+  def to_snapshot_protocol(state) do
+    %{
+      "session_id" => state.session_id,
+      "sequence" => state.sequence,
+      "history" => state.history,
+      "queues" => %{
+        "steering" => state.queues.steering,
+        "follow_up" => state.queues.follow_up
+      },
+      "active_run" => state.active_run
+    }
+  end
+
   defp reject_forbidden(value, _path)
        when is_pid(value) or is_reference(value) or is_function(value) or is_port(value) do
     {:error, :live_runtime_forbidden}

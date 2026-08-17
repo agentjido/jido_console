@@ -181,6 +181,33 @@ defmodule Jido.Console.Session.Server do
     GenServer.call(server, {:delivery_measurements, client_id, attachment_id})
   end
 
+  @doc "Begins bounded recovery for one exact delivery gap."
+  @spec begin_recovery(name(), String.t(), String.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def begin_recovery(server, session_id, client_id, attachment_id, gap_id) do
+    GenServer.call(server, {:begin_recovery, session_id, client_id, attachment_id, gap_id})
+  end
+
+  @doc "Returns the bounded suffix for one exact recovery transaction."
+  @spec replay_recovery(name(), String.t(), String.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def replay_recovery(server, session_id, client_id, attachment_id, recovery_token) do
+    GenServer.call(
+      server,
+      {:replay_recovery, session_id, client_id, attachment_id, recovery_token}
+    )
+  end
+
+  @doc "Completes one exact recovery transaction."
+  @spec complete_recovery(name(), String.t(), String.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def complete_recovery(server, session_id, client_id, attachment_id, completion_token) do
+    GenServer.call(
+      server,
+      {:complete_recovery, session_id, client_id, attachment_id, completion_token}
+    )
+  end
+
   @doc "Recovers one attached client from a delivery gap."
   @spec recover(name(), String.t()) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
   def recover(server, client_id) do
@@ -226,40 +253,10 @@ defmodule Jido.Console.Session.Server do
     if client.session_id != state.session.id do
       {:reply, {:error, :cross_session_result}, state}
     else
-      {previous, clients} = Map.pop(state.clients, client.id)
-      if previous, do: cleanup_client(previous)
-
-      attachment = attachment_identity(state.session.id, opts)
-
-      record = %{
-        identity: client,
-        attachment: attachment,
-        pid: pid,
-        ref: Process.monitor(pid),
-        mode: Keyword.get(opts, :mode, :legacy),
-        timer_ref: nil,
-        delivery:
-          Delivery.new(
-            client_id: client.id,
-            session_id: state.session.id,
-            attachment_id: attachment.id,
-            baseline: state.state.sequence,
-            limits: Keyword.get(opts, :delivery_limits, %{}),
-            token_secret: Keyword.get(opts, :token_secret, :crypto.strong_rand_bytes(32))
-          )
-      }
-
-      clients = Map.put(clients, client.id, record)
-      snapshot = Reducer.snapshot(state.state)
-
-      reply =
-        if Keyword.get(opts, :return_attachment, false) do
-          {:ok, %{attachment: attachment, snapshot: snapshot}}
-        else
-          {:ok, snapshot}
-        end
-
-      {:reply, reply, %{state | clients: clients}}
+      case attach_client(state, client, pid, opts) do
+        {:ok, state, reply} -> {:reply, {:ok, reply}, state}
+        {:error, reason} -> {:reply, {:error, reason}, state}
+      end
     end
   end
 
@@ -447,6 +444,75 @@ defmodule Jido.Console.Session.Server do
     case fetch_bounded_client(state, client_id, attachment_id) do
       {:ok, client} -> {:reply, {:ok, Delivery.measurements(client.delivery)}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call(
+        {:begin_recovery, session_id, client_id, attachment_id, gap_id},
+        _from,
+        state
+      ) do
+    identity = delivery_identity(session_id, client_id, attachment_id)
+
+    case fetch_bounded_client(state, client_id, attachment_id) do
+      {:ok, client} ->
+        case Recovery.begin(state.state, client.delivery, identity, gap_id) do
+          {:ok, delivery, snapshot} ->
+            client = client |> cancel_delivery_timer() |> put_delivery(delivery)
+            {:reply, {:ok, snapshot}, put_client(state, client_id, client)}
+
+          {:error, reason, _delivery} ->
+            {:reply, {:error, reason}, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call(
+        {:replay_recovery, session_id, client_id, attachment_id, recovery_token},
+        _from,
+        state
+      ) do
+    identity = delivery_identity(session_id, client_id, attachment_id)
+
+    case fetch_bounded_client(state, client_id, attachment_id) do
+      {:ok, client} ->
+        case Recovery.replay(state.state, client.delivery, identity, recovery_token) do
+          {:ok, delivery, suffix} ->
+            {:reply, {:ok, suffix}, put_client(state, client_id, put_delivery(client, delivery))}
+
+          {:error, reason, _delivery} ->
+            {:reply, {:error, reason}, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call(
+        {:complete_recovery, session_id, client_id, attachment_id, completion_token},
+        _from,
+        state
+      ) do
+    identity = delivery_identity(session_id, client_id, attachment_id)
+
+    case fetch_bounded_client(state, client_id, attachment_id) do
+      {:ok, client} ->
+        case Recovery.complete(client.delivery, identity, completion_token) do
+          {:ok, delivery, receipt, advisory?} ->
+            client = put_delivery(client, delivery)
+            if advisory?, do: send_ready(client)
+            {:reply, {:ok, receipt}, put_client(state, client_id, client)}
+
+          {:error, reason, _delivery} ->
+            {:reply, {:error, reason}, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -1157,6 +1223,50 @@ defmodule Jido.Console.Session.Server do
       :error -> {:error, :not_attached}
     end
   end
+
+  defp attach_client(state, client, pid, opts) do
+    attachment = attachment_identity(state.session.id, opts)
+    mode = Keyword.get(opts, :mode, :legacy)
+
+    delivery =
+      Delivery.new(
+        client_id: client.id,
+        session_id: state.session.id,
+        attachment_id: attachment.id,
+        baseline: state.state.sequence,
+        limits: Keyword.get(opts, :delivery_limits, %{}),
+        token_secret: Keyword.get(opts, :token_secret, :crypto.strong_rand_bytes(32))
+      )
+
+    identity = delivery_identity(state.session.id, client.id, attachment.id)
+
+    with {:ok, snapshot} <- attach_snapshot(mode, state.state, identity) do
+      record = %{
+        identity: client,
+        attachment: attachment,
+        pid: pid,
+        ref: Process.monitor(pid),
+        mode: mode,
+        timer_ref: nil,
+        delivery: delivery
+      }
+
+      {previous, clients} = Map.pop(state.clients, client.id)
+      if previous, do: cleanup_client(previous)
+      state = %{state | clients: Map.put(clients, client.id, record)}
+
+      reply =
+        if Keyword.get(opts, :return_attachment, false),
+          do: %{attachment: attachment, snapshot: snapshot},
+          else: snapshot
+
+      {:ok, state, reply}
+    end
+  end
+
+  defp attach_snapshot(:bounded, state, identity), do: Recovery.attach_snapshot(state, identity)
+  defp attach_snapshot(:legacy, state, _identity), do: {:ok, Reducer.snapshot(state)}
+  defp attach_snapshot(_mode, _state, _identity), do: {:error, :invalid_delivery_mode}
 
   defp handle_output_pull(state, client_id, client, identity) do
     case Delivery.pull(client.delivery, identity) do
