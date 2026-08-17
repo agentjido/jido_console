@@ -4,6 +4,7 @@
     "jido_console-zs5"
   ],
   "blocks": [
+    "jido_console-ih5",
     "jido_console-m2e36"
   ],
   "closed_at": "2026-08-17T17:45:46Z",
@@ -23,5 +24,5 @@
   "status": "closed",
   "title": "M2-E39: Restore Paint-First Packaged TUI Startup",
   "type": "epic",
-  "updated_at": "2026-08-17T17:45:46Z"
+  "updated_at": "2026-08-17T18:06:18Z"
 }
