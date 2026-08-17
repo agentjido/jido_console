@@ -30,15 +30,15 @@ defmodule Jido.Console.Session.Recovery do
         {:error, :recovery_not_required}
 
       true ->
-        recovered = %{
-          status: :open,
-          client_id: delivery.client_id,
-          session_id: delivery.session_id,
-          pending: [],
-          last_acked: state.sequence,
-          highest_offered: state.sequence,
-          bound: delivery.bound
-        }
+        recovered =
+          Delivery.new(
+            client_id: delivery.client_id,
+            session_id: delivery.session_id,
+            attachment_id: delivery.attachment_id,
+            baseline: state.sequence,
+            limits: delivery.limits,
+            token_secret: delivery.secret
+          )
 
         {:ok, recovered, state}
     end

@@ -4,7 +4,7 @@ defmodule Jido.Console.Session.Protocol do
 
   The versioned schema in `priv/session/protocol/jido.session.v1.json` is the
   source of truth for command, event, interaction, outcome, snapshot, replay,
-  and control families. This module loads that schema and answers compatibility,
+  control, and process-lifetime delivery families. This module loads that schema and answers compatibility,
   locality, bound, and authority questions. It does not generate language
   bindings or own a live session.
   """
@@ -13,7 +13,7 @@ defmodule Jido.Console.Session.Protocol do
   @schema_source Path.expand("../../../priv/session/protocol/#{@schema_name}", __DIR__)
   @external_resource @schema_source
   @schema_contents File.read!(@schema_source)
-  @families ~w(command event interaction response outcome snapshot replay control)
+  @families ~w(command delivery event interaction response outcome snapshot replay control)
   @required_type_keys ~w(locality fields)
   @shared "shared"
   @client_local "client_local"

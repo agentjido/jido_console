@@ -72,8 +72,9 @@ defmodule Jido.Console.Session.Server do
   end
 
   @doc "Attaches a client to the session and returns its current snapshot."
-  @spec attach(name(), Identity.t()) :: {:ok, map()} | {:error, term()}
-  def attach(server, client), do: GenServer.call(server, {:attach, client, self()})
+  @spec attach(name(), Identity.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def attach(server, client, opts \\ []),
+    do: GenServer.call(server, {:attach, client, self(), opts})
 
   @doc "Detaches a client without stopping session work."
   @spec detach(name(), Identity.t()) :: :ok | {:error, term()}
@@ -160,6 +161,26 @@ defmodule Jido.Console.Session.Server do
     GenServer.call(server, {:ack, client_id, session_id, sequence})
   end
 
+  @doc "Pulls one bounded canonical output batch for an exact attachment."
+  @spec output(name(), String.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:gap, map()} | :empty | {:error, term()}
+  def output(server, session_id, client_id, attachment_id) do
+    GenServer.call(server, {:output, session_id, client_id, attachment_id})
+  end
+
+  @doc "Acknowledges one exact bounded output batch."
+  @spec ack_output(name(), String.t(), String.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def ack_output(server, session_id, client_id, attachment_id, token) do
+    GenServer.call(server, {:ack_output, session_id, client_id, attachment_id, token})
+  end
+
+  @doc "Returns bounded delivery measurements for proof and diagnosis."
+  @spec delivery_measurements(name(), String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def delivery_measurements(server, client_id, attachment_id) do
+    GenServer.call(server, {:delivery_measurements, client_id, attachment_id})
+  end
+
   @doc "Recovers one attached client from a delivery gap."
   @spec recover(name(), String.t()) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
   def recover(server, client_id) do
@@ -201,22 +222,44 @@ defmodule Jido.Console.Session.Server do
   end
 
   @impl true
-  def handle_call({:attach, client, pid}, _from, state) do
+  def handle_call({:attach, client, pid, opts}, _from, state) do
     if client.session_id != state.session.id do
       {:reply, {:error, :cross_session_result}, state}
     else
       {previous, clients} = Map.pop(state.clients, client.id)
-      if previous, do: Process.demonitor(previous.ref, [:flush])
+      if previous, do: cleanup_client(previous)
+
+      attachment = attachment_identity(state.session.id, opts)
 
       record = %{
         identity: client,
+        attachment: attachment,
         pid: pid,
         ref: Process.monitor(pid),
-        delivery: Delivery.new(client_id: client.id, session_id: state.session.id)
+        mode: Keyword.get(opts, :mode, :legacy),
+        timer_ref: nil,
+        delivery:
+          Delivery.new(
+            client_id: client.id,
+            session_id: state.session.id,
+            attachment_id: attachment.id,
+            baseline: state.state.sequence,
+            limits: Keyword.get(opts, :delivery_limits, %{}),
+            token_secret: Keyword.get(opts, :token_secret, :crypto.strong_rand_bytes(32))
+          )
       }
 
       clients = Map.put(clients, client.id, record)
-      {:reply, {:ok, Reducer.snapshot(state.state)}, %{state | clients: clients}}
+      snapshot = Reducer.snapshot(state.state)
+
+      reply =
+        if Keyword.get(opts, :return_attachment, false) do
+          {:ok, %{attachment: attachment, snapshot: snapshot}}
+        else
+          {:ok, snapshot}
+        end
+
+      {:reply, reply, %{state | clients: clients}}
     end
   end
 
@@ -225,8 +268,8 @@ defmodule Jido.Console.Session.Server do
       {nil, _clients} ->
         {:reply, {:error, :not_attached}, state}
 
-      {%{ref: ref}, clients} ->
-        Process.demonitor(ref, [:flush])
+      {client, clients} ->
+        cleanup_client(client)
         {:reply, :ok, %{state | clients: clients}}
     end
   end
@@ -371,7 +414,7 @@ defmodule Jido.Console.Session.Server do
         {:reply, {:error, :not_attached}, state}
 
       {:ok, client} ->
-        case Delivery.ack(client.delivery, client_id, session_id, sequence) do
+        case legacy_ack(client, session_id, sequence, state.state.sequence) do
           {:ok, delivery} ->
             clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
             {:reply, {:ok, delivery}, %{state | clients: clients}}
@@ -379,6 +422,31 @@ defmodule Jido.Console.Session.Server do
           {:error, _reason} = error ->
             {:reply, error, state}
         end
+    end
+  end
+
+  def handle_call({:output, session_id, client_id, attachment_id}, _from, state) do
+    identity = delivery_identity(session_id, client_id, attachment_id)
+
+    case fetch_bounded_client(state, client_id, attachment_id) do
+      {:ok, client} -> handle_output_pull(state, client_id, client, identity)
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:ack_output, session_id, client_id, attachment_id, token}, _from, state) do
+    identity = delivery_identity(session_id, client_id, attachment_id)
+
+    case fetch_bounded_client(state, client_id, attachment_id) do
+      {:ok, client} -> handle_output_ack(state, client_id, client, identity, token)
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:delivery_measurements, client_id, attachment_id}, _from, state) do
+    case fetch_bounded_client(state, client_id, attachment_id) do
+      {:ok, client} -> {:reply, {:ok, Delivery.measurements(client.delivery)}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -426,8 +494,8 @@ defmodule Jido.Console.Session.Server do
       {nil, _clients} ->
         {:noreply, state}
 
-      {%{ref: ref}, clients} ->
-        Process.demonitor(ref, [:flush])
+      {client, clients} ->
+        cleanup_client(client)
         {:noreply, %{state | clients: clients}}
     end
   end
@@ -457,6 +525,15 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
+  def handle_info({:delivery_ack_timeout, attachment_id, timer_token}, state) do
+    clients =
+      Map.new(state.clients, fn {client_id, client} ->
+        {client_id, timeout_client(client, attachment_id, timer_token, state.state.sequence)}
+      end)
+
+    {:noreply, %{state | clients: clients}}
+  end
+
   def handle_info({ref, outcome}, state) when is_reference(ref) and is_map_key(state.tasks, ref) do
     Process.demonitor(ref, [:flush])
     {{kind, _pid}, tasks} = Map.pop(state.tasks, ref)
@@ -472,9 +549,14 @@ defmodule Jido.Console.Session.Server do
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     clients =
-      state.clients
-      |> Enum.reject(fn {_id, client} -> client.ref == ref end)
-      |> Map.new()
+      Enum.reduce(state.clients, %{}, fn {id, client}, clients ->
+        if client.ref == ref do
+          cleanup_client(client)
+          clients
+        else
+          Map.put(clients, id, client)
+        end
+      end)
 
     {:noreply, %{state | clients: clients}}
   end
@@ -996,7 +1078,7 @@ defmodule Jido.Console.Session.Server do
   defp admit_event_state(state, event) do
     case Reducer.apply_event(state.state, event) do
       {:ok, semantic} ->
-        clients = publish(state.clients, semantic)
+        clients = publish(state.clients, event, semantic)
         {:ok, %{state | state: semantic, clients: clients, reserved: max(state.reserved, semantic.sequence)}}
 
       {:error, reason} ->
@@ -1038,31 +1120,153 @@ defmodule Jido.Console.Session.Server do
   defp require_idle(%{active: nil}), do: :ok
   defp require_idle(_state), do: {:error, :session_busy}
 
-  defp publish(clients, session_state) do
-    update = session_state |> Reducer.snapshot() |> Map.put("coalesce", true)
-
+  defp publish(clients, event, session_state) do
     Map.new(clients, fn {id, client} ->
-      {id, deliver(client, session_state.session_id, update)}
+      {id, deliver(client, event, session_state)}
     end)
   end
 
-  defp deliver(client, session_id, update) do
-    case Delivery.offer(client.delivery, update) do
-      {:ok, delivery, payload} ->
-        send(client.pid, {:session_updated, session_id, payload})
-        %{client | delivery: delivery}
+  # Temporary M2-E27/M2-E32 debt: only legacy attachments get snapshot pushes.
+  defp deliver(%{mode: :legacy} = client, _event, session_state) do
+    send(client.pid, {:session_updated, session_state.session_id, Reducer.snapshot(session_state)})
+    client
+  end
 
-      {:gap, delivery, nil} ->
-        %{client | delivery: delivery}
+  defp deliver(client, event, _session_state) do
+    case Delivery.offer(client.delivery, event) do
+      {:ok, delivery, advisory?} ->
+        client = put_delivery(client, delivery)
+        if advisory?, do: send_ready(client)
+        client
 
-      {:gap, delivery, gap} ->
-        send(client.pid, {:session_gap, session_id, gap})
-        %{client | delivery: delivery}
+      {:duplicate, delivery} ->
+        put_delivery(client, delivery)
+
+      {:gap, delivery, _gap, advisory?} ->
+        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
+        if advisory?, do: send_ready(client)
+        client
     end
   end
 
+  defp fetch_bounded_client(state, client_id, attachment_id) do
+    case Map.fetch(state.clients, client_id) do
+      {:ok, %{mode: :bounded, attachment: %{id: ^attachment_id}} = client} -> {:ok, client}
+      {:ok, %{attachment: %{id: ^attachment_id}}} -> {:error, :bounded_delivery_not_enabled}
+      {:ok, _client} -> {:error, :delivery_identity_mismatch}
+      :error -> {:error, :not_attached}
+    end
+  end
+
+  defp handle_output_pull(state, client_id, client, identity) do
+    case Delivery.pull(client.delivery, identity) do
+      {:ok, delivery, batch} ->
+        client = client |> cancel_delivery_timer() |> put_delivery(delivery) |> schedule_delivery_timer()
+        {:reply, {:ok, batch}, put_client(state, client_id, client)}
+
+      {:gap, delivery, gap} ->
+        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
+        {:reply, {:gap, gap}, put_client(state, client_id, client)}
+
+      {:empty, delivery} ->
+        {:reply, :empty, put_client(state, client_id, put_delivery(client, delivery))}
+
+      {:error, reason, delivery} ->
+        {:reply, {:error, reason}, put_client(state, client_id, put_delivery(client, delivery))}
+    end
+  end
+
+  defp handle_output_ack(state, client_id, client, identity, token) do
+    case Delivery.ack(client.delivery, identity, token) do
+      {:ok, delivery, receipt, advisory?} ->
+        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
+        if advisory?, do: send_ready(client)
+        {:reply, {:ok, receipt}, put_client(state, client_id, client)}
+
+      {:error, reason, delivery} ->
+        {:reply, {:error, reason}, put_client(state, client_id, put_delivery(client, delivery))}
+    end
+  end
+
+  defp timeout_client(%{attachment: %{id: attachment_id}} = client, attachment_id, timer_token, sequence) do
+    case Delivery.timeout(client.delivery, attachment_id, timer_token, sequence) do
+      {:gap, delivery, _gap, advisory?} ->
+        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
+        if advisory?, do: send_ready(client)
+        client
+
+      {:ok, delivery} ->
+        put_delivery(client, delivery)
+    end
+  end
+
+  defp timeout_client(client, _attachment_id, _timer_token, _sequence), do: client
+
+  defp legacy_ack(%{mode: :legacy, delivery: delivery}, session_id, sequence, owner_sequence) do
+    if delivery.session_id == session_id,
+      do: Delivery.legacy_ack(delivery, sequence, owner_sequence),
+      else: {:error, :identity_mismatch}
+  end
+
+  defp legacy_ack(_client, _session_id, _sequence, _owner_sequence),
+    do: {:error, :exact_acknowledgement_required}
+
+  defp delivery_identity(session_id, client_id, attachment_id),
+    do: %{session_id: session_id, client_id: client_id, attachment_id: attachment_id}
+
+  defp attachment_identity(session_id, opts) do
+    case Keyword.get(opts, :attachment_id) do
+      nil -> Identity.new!(:attachment, session_id: session_id)
+      id -> Identity.new!(:attachment, id: id, session_id: session_id)
+    end
+  end
+
+  defp send_ready(client) do
+    advisory = Delivery.advisory(client.delivery)
+
+    if :erlang.external_size(advisory) <= client.delivery.limits.advisory_bytes do
+      send(client.pid, advisory)
+    end
+
+    :ok
+  end
+
+  defp schedule_delivery_timer(client) do
+    inflight = client.delivery.inflight
+
+    timer_ref =
+      Process.send_after(
+        self(),
+        {:delivery_ack_timeout, client.attachment.id, inflight.timer_token},
+        client.delivery.limits.ack_timeout_ms
+      )
+
+    %{client | timer_ref: timer_ref}
+  end
+
+  defp cancel_delivery_timer(%{timer_ref: nil} = client), do: client
+
+  defp cancel_delivery_timer(client) do
+    Process.cancel_timer(client.timer_ref)
+    %{client | timer_ref: nil}
+  end
+
+  defp cleanup_client(client) do
+    client = cancel_delivery_timer(client)
+    Process.demonitor(client.ref, [:flush])
+    Delivery.detach(client.delivery)
+    :ok
+  end
+
+  defp put_delivery(client, delivery), do: %{client | delivery: delivery}
+  defp put_client(state, client_id, client), do: %{state | clients: Map.put(state.clients, client_id, client)}
+
   defp broadcast_runtime(clients, message),
-    do: Enum.each(clients, fn {_id, client} -> send(client.pid, message) end)
+    do:
+      Enum.each(clients, fn
+        {_id, %{mode: :legacy} = client} -> send(client.pid, message)
+        {_id, _bounded_client} -> :ok
+      end)
 
   defp close_runtime(nil), do: :ok
 

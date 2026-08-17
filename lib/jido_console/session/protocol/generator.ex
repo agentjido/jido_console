@@ -91,6 +91,8 @@ defmodule Jido.Console.Session.Protocol.Generator do
       "known_fields" => known_fields,
       "locality" => declaration["locality"]
     }
+    |> maybe_put("deprecated", declaration["deprecated"])
+    |> maybe_put("emission", declaration["emission"])
   end
 
   defp unique_fields(fields) do
@@ -159,7 +161,15 @@ defmodule Jido.Console.Session.Protocol.Generator do
 
             payload_fields = render_payload_fields(contract)
 
+            deprecation =
+              if contract["deprecated"] do
+                "\n/** @deprecated #{contract["emission"] || "compatibility only"} */"
+              else
+                ""
+              end
+
             declaration = """
+            #{deprecation}
             export interface #{name} extends ProtocolEnvelopeBase {
               family: #{inspect(family)};
               type: #{inspect(type)};
@@ -232,4 +242,7 @@ defmodule Jido.Console.Session.Protocol.Generator do
     |> String.split("_")
     |> Enum.map_join("", &String.capitalize/1)
   end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

@@ -131,6 +131,23 @@
         }
       }
     },
+    "delivery": {
+      "version": "1",
+      "compatibility": "additive",
+      "description": "Bounded process-lifetime client delivery values. These values do not enter semantic history or consume a Console sequence.",
+      "types": {
+        "output_batch": {
+          "locality": "shared",
+          "required": ["client_id", "attachment_id", "batch_id", "first_sequence", "through_sequence", "acknowledgement_token", "events"],
+          "fields": ["client_id", "attachment_id", "batch_id", "first_sequence", "through_sequence", "acknowledgement_token", "events"]
+        },
+        "gap": {
+          "locality": "shared",
+          "required": ["client_id", "attachment_id", "gap_id", "last_acknowledged_sequence", "current_owner_sequence", "reason"],
+          "fields": ["client_id", "attachment_id", "gap_id", "last_acknowledged_sequence", "current_owner_sequence", "reason"]
+        }
+      }
+    },
     "event": {
       "version": "1",
       "compatibility": "additive",
@@ -160,7 +177,12 @@
         "queue_changed": {"locality": "shared", "fields": ["queue", "items"]},
         "client_attached": {"locality": "shared", "fields": ["client_id", "attachment_id"]},
         "client_detached": {"locality": "shared", "fields": ["client_id", "attachment_id"]},
-        "delivery_gap": {"locality": "shared", "fields": ["client_id", "last_acknowledged", "current_sequence"]},
+        "delivery_gap": {
+          "locality": "shared",
+          "fields": ["client_id", "last_acknowledged", "current_sequence"],
+          "deprecated": true,
+          "emission": "input_only"
+        },
         "control_requested": {"locality": "shared", "fields": ["control_id", "control"]},
         "control_completed": {"locality": "shared", "fields": ["control_id", "result"]},
         "session_failed": {"locality": "shared", "fields": ["reason"]}

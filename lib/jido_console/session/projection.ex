@@ -82,19 +82,17 @@ defmodule Jido.Console.Session.Projection do
     cursor_limit = bounded_limit(opts, :cursor_limit, @max_cursors)
     recent_limit = bounded_limit(opts, :recent_limit, @max_recent)
 
-    cond do
-      active_count >= cursor_limit ->
-        {:error, :projection_cursor_limit}
-
-      true ->
-        {:ok,
-         %{
-           request_id: request_id,
-           last_sequence: -1,
-           recent: [],
-           recent_limit: recent_limit,
-           terminal: %{state: :none, event: nil, result: nil}
-         }}
+    if active_count >= cursor_limit do
+      {:error, :projection_cursor_limit}
+    else
+      {:ok,
+       %{
+         request_id: request_id,
+         last_sequence: -1,
+         recent: [],
+         recent_limit: recent_limit,
+         terminal: %{state: :none, event: nil, result: nil}
+       }}
     end
   end
 
@@ -113,8 +111,9 @@ defmodule Jido.Console.Session.Projection do
          {:ok, cursor} <- ensure_cursor(cursor, projected.request_id, opts),
          {:ok, digest, event_id} <- source_digest(projected),
          :ok <- admit_source(cursor, projected, digest, event_id),
-         {:ok, candidate} <- candidate(projected, context, event_id, opts),
-         next_cursor = advance(cursor, projected.seq, digest, event_id) do
+         {:ok, candidate} <- candidate(projected, context, event_id, opts) do
+      next_cursor = advance(cursor, projected.seq, digest, event_id)
+
       if projected.terminal? do
         next_cursor = put_terminal_event(next_cursor, candidate)
         {:hold_terminal, candidate, next_cursor}

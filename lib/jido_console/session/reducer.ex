@@ -11,11 +11,17 @@ defmodule Jido.Console.Session.Reducer do
   @doc "Applies one classified event to semantic state."
   @spec apply_event(State.t(), map()) :: {:ok, State.t()} | {:error, term()}
   def apply_event(state, event) when is_map(event) do
-    with {:ok, event} <- Event.validate(event),
+    with :ok <- reject_deprecated_event(event),
+         {:ok, event} <- Event.validate(event),
          :ok <- require_session(state, event) do
       reduce(state, event)
     end
   end
+
+  defp reject_deprecated_event(%{"family" => "event", "type" => "delivery_gap"}),
+    do: {:error, :deprecated_event_emission}
+
+  defp reject_deprecated_event(_event), do: :ok
 
   defp reduce(state, event) do
     payload = event["payload"] || %{}

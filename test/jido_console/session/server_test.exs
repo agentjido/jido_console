@@ -81,12 +81,79 @@ defmodule Jido.Console.Session.ServerTest do
 
     assert {:ok, delivery} = Server.ack(server, client.id, session.id, 0)
     assert delivery.last_acked == 0
-    assert delivery.pending == []
+    assert delivery.queue == []
 
     assert {:error, :future_ack} = Server.ack(server, client.id, session.id, 1)
     assert {:error, :recovery_not_required} = Server.recover(server, client.id)
     assert :ok = Server.stop(server)
     refute Process.alive?(server)
+  end
+
+  test "bounded attachments get one advisory and pull canonical batches", %{
+    server: server,
+    session: session
+  } do
+    client = Identity.new!(:client, session_id: session.id)
+
+    assert {:ok, %{attachment: attachment, snapshot: snapshot}} =
+             Server.attach(server, client,
+               mode: :bounded,
+               return_attachment: true,
+               delivery_limits: %{ack_timeout_ms: 25},
+               token_secret: String.duplicate("t", 32)
+             )
+
+    assert snapshot["payload"]["sequence"] == 0
+    test_pid = self()
+
+    spec = [
+      start: fn _owner -> {:ok, %{request_id: "bounded-request"}} end,
+      await: fn _request ->
+        send(test_pid, {:bounded_await, self()})
+
+        receive do
+          :finish_bounded -> :done
+        end
+      end
+    ]
+
+    assert {:ok, request} = Server.start_operation(server, client.id, spec)
+    assert_receive {:bounded_await, worker}
+    assert_receive {:jido_console_session, attachment_id, :output_ready}
+    assert attachment_id == attachment.id
+    refute_receive {:jido_console_session, ^attachment_id, :output_ready}, 20
+    refute_receive {:session_updated, _, _}, 20
+    refute_receive {:session_runtime_started, _, _}, 20
+
+    assert {:ok, batch} = Server.output(server, session.id, client.id, attachment.id)
+    assert batch["type"] == "output_batch"
+    assert Enum.map(batch["payload"]["events"], & &1["type"]) == ["run_started"]
+    token = batch["payload"]["acknowledgement_token"]
+
+    assert {:error, :ack_required} = Server.output(server, session.id, client.id, attachment.id)
+
+    assert {:error, :delivery_identity_mismatch} =
+             Server.output(server, session.id, client.id, "old_attachment")
+
+    assert {:ok, receipt} =
+             Server.ack_output(server, session.id, client.id, attachment.id, token)
+
+    assert receipt["through_sequence"] == 1
+
+    send(worker, :finish_bounded)
+    assert :done = Server.await_request(server, request, 1_000)
+    assert_receive {:jido_console_session, ^attachment_id, :output_ready}
+
+    assert {:ok, terminal_batch} = Server.output(server, session.id, client.id, attachment.id)
+    assert Enum.map(terminal_batch["payload"]["events"], & &1["type"]) == ["run_completed"]
+
+    assert_receive {:jido_console_session, ^attachment_id, :output_ready}, 200
+    assert {:gap, gap} = Server.output(server, session.id, client.id, attachment.id)
+    assert gap["payload"]["reason"] == "acknowledgement_timeout"
+
+    assert {:ok, measurements} = Server.delivery_measurements(server, client.id, attachment.id)
+    assert measurements.status == :gapped
+    assert measurements.advisory_count == 0
   end
 
   test "stale, repeated, and cross-session results cannot resolve current work", %{server: server, session: session} do
