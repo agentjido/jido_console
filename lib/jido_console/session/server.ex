@@ -24,6 +24,7 @@ defmodule Jido.Console.Session.Server do
     Reducer,
     Registry,
     Request,
+    Queue,
     State
   }
 
@@ -181,6 +182,12 @@ defmodule Jido.Console.Session.Server do
     GenServer.call(server, {:delivery_measurements, client_id, attachment_id})
   end
 
+  @doc "Runs one facade operation for an exact bounded client attachment."
+  @spec client_operation(name(), map(), term()) :: term()
+  def client_operation(server, identity, operation) do
+    GenServer.call(server, {:client_operation, identity, operation}, :infinity)
+  end
+
   @doc "Begins bounded recovery for one exact delivery gap."
   @spec begin_recovery(name(), String.t(), String.t(), String.t(), String.t()) ::
           {:ok, map()} | {:error, term()}
@@ -272,6 +279,13 @@ defmodule Jido.Console.Session.Server do
   end
 
   def handle_call(:state, _from, state), do: {:reply, state.state, state}
+
+  def handle_call({:client_operation, identity, operation}, from, state) do
+    case fetch_exact_client(state, identity) do
+      {:ok, client} -> execute_client_operation(operation, from, state, client)
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
 
   def handle_call({:runtime_info, client_id}, _from, state) do
     if attached?(state, client_id) do
@@ -1221,6 +1235,274 @@ defmodule Jido.Console.Session.Server do
       {:ok, %{attachment: %{id: ^attachment_id}}} -> {:error, :bounded_delivery_not_enabled}
       {:ok, _client} -> {:error, :delivery_identity_mismatch}
       :error -> {:error, :not_attached}
+    end
+  end
+
+  defp fetch_exact_client(state, identity) do
+    session_id = identity[:session_id] || identity["session_id"]
+    client_id = identity[:client_id] || identity["client_id"]
+    attachment_id = identity[:attachment_id] || identity["attachment_id"]
+
+    if session_id == state.session.id do
+      fetch_bounded_client(state, client_id, attachment_id)
+    else
+      {:error, :delivery_identity_mismatch}
+    end
+  end
+
+  defp execute_client_operation(:detach, _from, state, client) do
+    cleanup_client(client)
+    clients = Map.delete(state.clients, client.identity.id)
+    {:reply, :ok, %{state | clients: clients}}
+  end
+
+  defp execute_client_operation(:runtime_info, _from, state, _client) do
+    {:reply, {:ok, runtime_info_value(state)}, state}
+  end
+
+  defp execute_client_operation(:status, _from, state, client) do
+    status = %{
+      "session_id" => state.session.id,
+      "client_id" => client.identity.id,
+      "attachment_id" => client.attachment.id,
+      "sequence" => state.state.sequence,
+      "active_request" => active_public_request(state),
+      "delivery" => Atom.to_string(client.delivery.status),
+      "process_lifetime" => true
+    }
+
+    {:reply, {:ok, status}, state}
+  end
+
+  defp execute_client_operation(:snapshot, _from, state, _client) do
+    {:reply, {:ok, Reducer.snapshot(state.state)}, state}
+  end
+
+  defp execute_client_operation({:configure_runtime, runtime, agent, opts}, _from, state, _client) do
+    configure_client_runtime(state, runtime, agent, opts)
+  end
+
+  defp execute_client_operation({:start_turn, prompt, opts}, _from, state, _client) do
+    with :ok <- require_idle(state),
+         {:ok, spec} <- runtime_operation(state.runtime, prompt, opts),
+         {:ok, request, state} <- begin_operation(state, spec) do
+      {:reply, {:ok, request}, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp execute_client_operation({:start_operation, spec}, _from, state, _client) do
+    with :ok <- require_idle(state),
+         {:ok, normalized} <- normalize_operation(spec),
+         {:ok, request, state} <- begin_operation(state, normalized) do
+      {:reply, {:ok, request}, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp execute_client_operation({:await, %Request{} = request}, from, state, _client) do
+    await_client_request(state, request, from)
+  end
+
+  defp execute_client_operation({:cancel, %Request{} = request, opts}, _from, state, client) do
+    start_cancel(state, client.identity.id, request, opts, nil)
+  end
+
+  defp execute_client_operation({:cancel_wait, %Request{} = request, opts}, from, state, client) do
+    start_cancel(state, client.identity.id, request, opts, from)
+  end
+
+  defp execute_client_operation(
+         {:respond_review, decision, %Request{} = request, review, opts},
+         _from,
+         state,
+         client
+       ) do
+    respond_to_review(state, client.identity.id, decision, request, review, opts)
+  end
+
+  defp execute_client_operation({:input, operation, value}, _from, state, client) do
+    case apply_client_input(state, client, operation, value) do
+      {:ok, result, state} -> {:reply, {:ok, result}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp execute_client_operation({:effect, effect}, _from, state, client) do
+    case admit_client_event(state, client, "command_effected", %{
+           "command_id" => effect.command_id,
+           "effect" => Jido.Console.Session.Effect.to_protocol(effect)
+         }) do
+      {:ok, state} -> {:reply, {:ok, effect}, state}
+      {:error, reason, _state} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp execute_client_operation(_operation, _from, state, _client) do
+    {:reply, {:error, :unsupported_client_operation}, state}
+  end
+
+  defp configure_client_runtime(state, runtime, agent, opts) do
+    cond do
+      state.active != nil ->
+        {:reply, {:error, :session_busy}, state}
+
+      not is_atom(runtime) ->
+        {:reply, {:error, :invalid_runtime}, state}
+
+      true ->
+        case open_runtime(runtime, agent, opts) do
+          {:ok, configured} ->
+            close_runtime(state.runtime)
+            {:reply, :ok, %{state | runtime: configured}}
+
+          {:error, reason} ->
+            close_owned_resource(opts)
+            {:reply, {:error, reason}, state}
+        end
+    end
+  end
+
+  defp await_client_request(state, request, from) do
+    cond do
+      request.session_id != state.session.id ->
+        {:reply, {:error, :cross_session_result}, state}
+
+      Map.has_key?(state.completed, request.id) ->
+        {:reply, Map.fetch!(state.completed, request.id), state}
+
+      state.active && state.active.request.id == request.id ->
+        active = Map.update!(state.active, :waiters, &(&1 ++ [from]))
+        {:noreply, %{state | active: active}}
+
+      true ->
+        {:reply, {:error, :stale_request}, state}
+    end
+  end
+
+  defp respond_to_review(state, client_id, decision, request, review, opts) do
+    with :ok <- require_attached(state, client_id),
+         true <- decision in [:approve, :deny],
+         {:ok, active} <- matching_active(state, request),
+         pending when not is_nil(pending) <- active.pending_result,
+         respond when is_function(respond, 5) <- active.respond_review do
+      owner = self()
+
+      task =
+        start_task(state, fn ->
+          safe_call(fn -> respond.(decision, pending, review, opts, owner) end)
+        end)
+
+      tasks = put_task(state.tasks, task, {:review, request.id})
+      active = %{active | pending_result: nil}
+      {:reply, {:ok, :requested}, %{state | active: active, tasks: tasks}}
+    else
+      false -> {:reply, {:error, :invalid_review_decision}, state}
+      nil -> {:reply, {:error, :review_not_pending}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp apply_client_input(state, client, :send, input) do
+    with :ok <- validate_client_input(state, client, input),
+         {:ok, state} <- admit_input_event(state, client, input) do
+      {:ok, input, state}
+    end
+  end
+
+  defp apply_client_input(state, client, operation, input) when operation in [:steer, :queue] do
+    queue = if operation == :steer, do: :steering, else: :follow_up
+
+    with :ok <- validate_client_input(state, client, input),
+         {:ok, state} <- admit_input_event(state, client, input),
+         item = input_queue_item(input, client),
+         {:ok, queues} <- Queue.add(state.state.queues, queue, item),
+         {:ok, state} <- admit_queue_event(state, client, queue, queues[queue]) do
+      {:ok, input, state}
+    end
+  end
+
+  defp apply_client_input(state, client, :remove, %{queue: queue, input_id: input_id}) do
+    with {:ok, queues} <- Queue.remove(state.state.queues, queue, input_id),
+         {:ok, state} <- admit_queue_event(state, client, queue, queues[queue]) do
+      {:ok, %{operation: :remove, queue: queue, input_id: input_id}, state}
+    end
+  end
+
+  defp apply_client_input(_state, _client, _operation, _value),
+    do: {:error, :invalid_client_input_operation}
+
+  defp validate_client_input(state, client, input) do
+    cond do
+      input.identity.session_id != state.session.id -> {:error, :cross_session_result}
+      input.client_id != client.identity.id -> {:error, :delivery_identity_mismatch}
+      true -> :ok
+    end
+  end
+
+  defp admit_input_event(state, client, input) do
+    state = %{state | inputs: bounded_append(state.inputs, input)}
+
+    admit_client_event(state, client, "input_admitted", %{
+      "input_id" => input.identity.id,
+      "client_id" => client.identity.id
+    })
+  end
+
+  defp admit_queue_event(state, client, queue, items) do
+    admit_client_event(state, client, "queue_changed", %{
+      "queue" => Atom.to_string(queue),
+      "items" => items
+    })
+  end
+
+  defp admit_client_event(state, client, type, fields) do
+    sequence = state.state.sequence + 1
+
+    attrs =
+      Map.merge(fields, %{
+        "type" => type,
+        "id" => "plt_client_#{client.identity.id}_#{sequence}",
+        "session_id" => state.session.id,
+        "sequence" => sequence,
+        "durability" => "process",
+        "sensitivity" => "public",
+        "origin" => %{"kind" => "client", "actor_id" => client.identity.id},
+        "trust" => %{"evidence" => "session-client", "policy" => "session-owner"},
+        "identities" => [
+          Identity.to_protocol(state.session),
+          Identity.to_protocol(client.identity),
+          Identity.to_protocol(client.attachment)
+        ]
+      })
+
+    with {:ok, event} <- Event.classify(attrs) do
+      admit_event_state(state, event)
+    end
+  end
+
+  defp input_queue_item(input, client) do
+    %{
+      "session_id" => input.identity.session_id,
+      "input_id" => input.identity.id,
+      "client_id" => client.identity.id,
+      "text" => input.text
+    }
+  end
+
+  defp runtime_info_value(state) do
+    case state.runtime do
+      nil ->
+        %{configured?: false, active_request: active_public_request(state)}
+
+      runtime ->
+        %{
+          configured?: true,
+          active_request: active_public_request(state),
+          client_setup: runtime.client_setup
+        }
     end
   end
 

@@ -7,6 +7,7 @@ defmodule Jido.Console.Session.Client.TUI do
   """
 
   alias Jido.Console.Session.Client
+  alias Jido.Console.Session.Client.Handle
 
   @doc "Attaches the TUI to a supervised session."
   @spec attach(String.t(), keyword()) :: {:ok, Client.t()} | {:error, term()}
@@ -20,7 +21,7 @@ defmodule Jido.Console.Session.Client.TUI do
   @spec reattach(Client.t(), keyword()) :: {:ok, Client.t()} | {:error, term()}
   def reattach(handle, opts \\ []) do
     _ = Client.detach(handle)
-    Client.attach(handle.session.id, opts)
+    Client.attach(Handle.identity(handle).session_id, opts)
   end
 
   @doc "Returns ordered semantic event types visible to the TUI client."

@@ -5,7 +5,7 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
 
   alias Jido.Console.Automation.{Limits, Replay, Result}
   alias Jido.Console.Extensions
-  alias Jido.Console.Session.{Client, Server}
+  alias Jido.Console.Session.Client
   alias Jido.Console.Session.Client.Automation, as: SessionAutomation
   alias Jidoka.Effect.OperationResult
   alias Jidoka.Eval
@@ -582,9 +582,6 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
 
   defp cleanup_client(client) do
     _ = Client.detach(client)
-    Server.stop(client.server)
     :ok
-  catch
-    :exit, _reason -> :ok
   end
 end
