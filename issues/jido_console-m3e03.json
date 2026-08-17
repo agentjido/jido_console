@@ -22,8 +22,8 @@
   ],
   "parent": "jido_console-m3",
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "M3-E03: Define Durable Records, Codecs, and Migrations",
   "type": "epic",
-  "updated_at": "2026-08-17T01:55:08Z"
+  "updated_at": "2026-08-17T19:45:12Z"
 }
