@@ -24,16 +24,19 @@ defmodule Jido.Console.Session.Client.Text do
   @doc "Returns ordered semantic event types after text projection."
   @spec observe(Client.t()) :: [String.t()]
   def observe(handle) do
-    events =
-      handle
-      |> Client.snapshot()
-      |> get_in(["payload", "state", "transcript"])
-      |> List.wrap()
+    case Client.snapshot(handle) do
+      {:ok, snapshot} ->
+        snapshot
+        |> get_in(["payload", "state", "transcript"])
+        |> List.wrap()
+        |> Enum.map(fn event ->
+          _line = render(event)
+          event["type"]
+        end)
 
-    Enum.map(events, fn event ->
-      _line = render(event)
-      event["type"]
-    end)
+      {:error, _reason} ->
+        []
+    end
   end
 
   defp reason(event) do
