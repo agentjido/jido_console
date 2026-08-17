@@ -1,6 +1,8 @@
 {
   "assignee": "Mike Hostetler",
-  "blocked_by": [],
+  "blocked_by": [
+    "jido_console-zs5"
+  ],
   "blocks": [
     "jido_console-m2e36"
   ],
@@ -19,5 +21,5 @@
   "status": "in_progress",
   "title": "M2-E39: Restore Paint-First Packaged TUI Startup",
   "type": "epic",
-  "updated_at": "2026-08-17T17:28:34Z"
+  "updated_at": "2026-08-17T17:42:04Z"
 }
