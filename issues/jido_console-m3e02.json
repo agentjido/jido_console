@@ -14,6 +14,7 @@
     "policy:no-publication",
     "risk:sqlite-adapter",
     "roadmap",
+    "status:skipped",
     "v0.3"
   ],
   "parent": "jido_console-m3",
@@ -27,5 +28,5 @@
   "status": "in_progress",
   "title": "M3-E02: Qualify SQLite for the Local Store",
   "type": "epic",
-  "updated_at": "2026-08-17T23:20:12Z"
+  "updated_at": "2026-08-17T23:20:13Z"
 }
