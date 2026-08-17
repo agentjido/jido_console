@@ -19,9 +19,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Roadmap blocker found during adapter qualification. Exqlite 0.39.0 is current, maintained, MIT, native, and directly supports the required pragmas and cancellation, but it does not expose sqlite3_backup_init, sqlite3_backup_step, or sqlite3_backup_finish. The upstream Exqlite issue Expose online backup api (#144) remains open: https://github.com/elixir-sqlite/exqlite/issues/144. Its source contains only SQLite internal backup symbols; no public adapter function exists. Current esqlite, sqlite, and xqlite source searches also expose no online-backup function. The frozen M3 baseline and M3-E17 require the SQLite online backup API, and M3-E02 says not to change engines or weaken the rule inside this PR. No M3-E02 commit or PR was created.",
+      "timestamp": "2026-08-17T19:45:09Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E02: Qualify SQLite for the Local Store",
   "type": "epic",
-  "updated_at": "2026-08-17T19:43:25Z"
+  "updated_at": "2026-08-17T19:45:09Z"
 }
