@@ -10,7 +10,7 @@ defmodule Jido.Console.Session.Server do
   use GenServer, restart: :temporary
 
   alias Jido.Console.Runtime.Result, as: RuntimeResult
-  alias Jido.Console.Runtime.Result.{Error, Ok, PendingReview}
+  alias Jido.Console.Runtime.Result.{Cancelled, Error, Ok, PendingReview}
 
   alias Jido.Console.Session.{
     Delivery,
@@ -28,6 +28,7 @@ defmodule Jido.Console.Session.Server do
   }
 
   @completed_limit 100
+  @terminal_event_wait_ms 50
 
   @type name :: GenServer.name() | pid()
 
@@ -438,6 +439,24 @@ defmodule Jido.Console.Session.Server do
     {:noreply, state}
   end
 
+  def handle_info({:projection_terminal_timeout, request_id, token}, state) do
+    case state.active do
+      %{request: %{id: ^request_id}, terminal_timer: %{token: ^token}, terminal_result: result}
+      when not is_nil(result) ->
+        active = state.active
+
+        state =
+          state
+          |> admit_owner_event(terminal_type(result), active.request, result_payload(result))
+          |> conclude_runtime_result(result)
+
+        {:noreply, state}
+
+      _other ->
+        {:noreply, state}
+    end
+  end
+
   def handle_info({ref, outcome}, state) when is_reference(ref) and is_map_key(state.tasks, ref) do
     Process.demonitor(ref, [:flush])
     {{kind, _pid}, tasks} = Map.pop(state.tasks, ref)
@@ -588,8 +607,9 @@ defmodule Jido.Console.Session.Server do
           runtime?: spec.runtime?,
           waiters: [],
           pending_result: nil,
-          seen: MapSet.new(),
-          last_jidoka_seq: %{}
+          terminal_result: nil,
+          terminal_timer: nil,
+          projection_cursor: projection_cursor!(request.request_id)
         }
 
         state = %{state | active: active}
@@ -704,18 +724,24 @@ defmodule Jido.Console.Session.Server do
     state = update_runtime_session(state, result)
     pending? = pending_result?(result)
 
-    state =
-      if pending?,
-        do: state,
-        else: admit_owner_event(state, terminal_type(result), active.request, result_payload(result))
+    cond do
+      pending? ->
+        broadcast_runtime(state.clients, {:session_runtime_result, state.session.id, active.request, result})
+        Enum.each(active.waiters, &GenServer.reply(&1, result))
+        %{state | active: %{active | pending_result: result, waiters: []}}
 
-    broadcast_runtime(state.clients, {:session_runtime_result, state.session.id, active.request, result})
-    Enum.each(active.waiters, &GenServer.reply(&1, result))
+      match?(%RuntimeResult{outcome: %Cancelled{}}, result) ->
+        state
+        |> admit_owner_event("run_failed", active.request, result_payload(result))
+        |> conclude_runtime_result(result)
 
-    if pending? do
-      %{state | active: %{active | pending_result: result, waiters: []}}
-    else
-      put_completed(%{state | active: nil}, active.request.id, result)
+      active.runtime? ->
+        admit_runtime_terminal_result(state, result)
+
+      true ->
+        state
+        |> admit_owner_event(terminal_type(result), active.request, result_payload(result))
+        |> conclude_runtime_result(result)
     end
   end
 
@@ -735,6 +761,7 @@ defmodule Jido.Console.Session.Server do
   defp pending_result?(_result), do: false
 
   defp terminal_type(%RuntimeResult{outcome: %Error{}}), do: "run_failed"
+  defp terminal_type(%RuntimeResult{outcome: %Cancelled{}}), do: "run_failed"
   defp terminal_type({:error, _reason}), do: "run_failed"
   defp terminal_type(_result), do: "run_completed"
 
@@ -775,51 +802,144 @@ defmodule Jido.Console.Session.Server do
     opts = [
       sequence: state.state.sequence + 1,
       session: state.session,
-      seen: active.seen,
-      last_jidoka_seq: Map.get(active.last_jidoka_seq, runtime_request_id(event))
+      request: active.request,
+      cursor: active.projection_cursor,
+      jidoka_request_id: active.request.request_id
     ]
 
     case Projection.project(event, opts) do
-      {:ok, projected} ->
-        if projected["type"] in ["run_completed", "run_failed"] do
-          track_projection(state, event)
-        else
-          case admit_event_state(state, projected) do
-            {:ok, state} ->
-              track_projection(state, event)
+      {:ok, projected, cursor} ->
+        case admit_event_state(state, projected) do
+          {:ok, state} ->
+            put_in(state.active.projection_cursor, cursor)
 
-            {:error, reason, state} ->
-              broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
-              state
-          end
+          {:error, reason, state} ->
+            broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+            state
         end
 
-      {:ignore, :duplicate} ->
+      {:hold_terminal, _candidate, cursor} ->
+        state = put_in(state.active.projection_cursor, cursor)
+        finalize_runtime_terminal(state)
+
+      {:ignore, :duplicate, _cursor} ->
         state
 
-      {:error, reason} ->
+      {:error, reason, _cursor} ->
         broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
         state
     end
   end
 
-  defp track_projection(state, event) do
-    request_id = runtime_request_id(event)
-    sequence = runtime_sequence(event)
-    key = {request_id, sequence}
+  defp admit_runtime_terminal_result(state, result) do
+    active = state.active
+    payload = result_payload(result)
 
-    active = %{
-      state.active
-      | seen: MapSet.put(state.active.seen, key),
-        last_jidoka_seq:
-          Map.put(
-            state.active.last_jidoka_seq,
-            request_id,
-            sequence
-          )
+    candidate = %{
+      "type" => terminal_type(result),
+      "fields" => terminal_fields(terminal_type(result), active.request, payload)
     }
 
-    %{state | active: active}
+    identity = %{
+      "session_id" => state.session.id,
+      "request_id" => active.request.request_id,
+      "run_id" => active.request.run_id
+    }
+
+    case Projection.admit_result(active.projection_cursor, identity, candidate) do
+      {:ok, cursor} ->
+        state
+        |> put_in([:active, :projection_cursor], cursor)
+        |> put_in([:active, :terminal_result], result)
+        |> finalize_runtime_terminal()
+        |> schedule_terminal_fallback()
+
+      {:ignore, :duplicate, _cursor} ->
+        state
+
+      {:error, reason, _cursor} ->
+        broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+        state
+    end
+  end
+
+  defp finalize_runtime_terminal(%{active: nil} = state), do: state
+
+  defp finalize_runtime_terminal(state) do
+    active = state.active
+
+    if active.terminal_result && Projection.terminal_ready?(active.projection_cursor) do
+      case Projection.finalize(active.projection_cursor, sequence: state.state.sequence + 1) do
+        {:ok, event, cursor} ->
+          case admit_event_state(state, event) do
+            {:ok, state} ->
+              state
+              |> put_in([:active, :projection_cursor], cursor)
+              |> conclude_runtime_result(active.terminal_result)
+
+            {:error, reason, state} ->
+              broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+              state
+          end
+
+        {:error, reason, _cursor} ->
+          broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+          state
+      end
+    else
+      state
+    end
+  end
+
+  defp conclude_runtime_result(state, result) do
+    active = state.active
+    cancel_terminal_timer(active)
+    broadcast_runtime(state.clients, {:session_runtime_result, state.session.id, active.request, result})
+    Enum.each(active.waiters, &GenServer.reply(&1, result))
+    put_completed(%{state | active: nil}, active.request.id, result)
+  end
+
+  defp schedule_terminal_fallback(%{active: nil} = state), do: state
+
+  defp schedule_terminal_fallback(%{active: %{terminal_timer: timer}} = state)
+       when not is_nil(timer),
+       do: state
+
+  defp schedule_terminal_fallback(state) do
+    active = state.active
+
+    if active.terminal_result && not Projection.terminal_ready?(active.projection_cursor) do
+      token = make_ref()
+
+      timer_ref =
+        Process.send_after(
+          self(),
+          {:projection_terminal_timeout, active.request.id, token},
+          @terminal_event_wait_ms
+        )
+
+      put_in(state.active.terminal_timer, %{token: token, ref: timer_ref})
+    else
+      state
+    end
+  end
+
+  defp cancel_terminal_timer(%{terminal_timer: %{ref: ref}}), do: Process.cancel_timer(ref)
+  defp cancel_terminal_timer(_active), do: false
+
+  defp terminal_fields("run_completed", request, payload) do
+    %{"run_id" => request.run_id, "outcome_id" => request.id, "content" => payload["content"]}
+  end
+
+  defp terminal_fields("run_failed", request, payload) do
+    %{"run_id" => request.run_id, "reason" => payload["error"] || payload["status"]}
+  end
+
+  defp projection_cursor!(request_id) do
+    case Projection.new_cursor(request_id) do
+      {:ok, cursor} -> cursor
+      {:error, reason} -> raise ArgumentError, "invalid projection cursor: #{inspect(reason)}"
+    end
   end
 
   defp admit_owner_event(state, type, request, extra) do
@@ -979,10 +1099,6 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp bounded_append(items, item), do: Enum.take(items ++ [item], -@completed_limit)
-  defp runtime_request_id(%{request_id: request_id}), do: request_id
-  defp runtime_request_id(_event), do: nil
-  defp runtime_sequence(%{seq: sequence}), do: sequence
-  defp runtime_sequence(_event), do: nil
   defp bounded_text(nil), do: nil
   defp bounded_text(text) when is_binary(text), do: String.slice(text, 0, 200_000)
   defp bounded_text(value), do: value |> inspect(limit: 20) |> String.slice(0, 4_096)

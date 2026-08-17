@@ -18,6 +18,10 @@ defmodule Jido.Console.Session.Jidoka do
   @spec project_events([Event.t()] | Event.t()) :: {:ok, term()} | {:error, term()}
   def project_events(events), do: Jidoka.project_events(events)
 
+  @doc "Returns the approved portable event names."
+  @spec event_names() :: [atom()]
+  def event_names, do: Event.events()
+
   @doc "Awaits a public Jidoka request handle."
   @spec await(term(), keyword()) :: term()
   def await(request, opts \\ []), do: Jidoka.await(request, opts)
