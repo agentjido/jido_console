@@ -1,0 +1,38 @@
+{
+  "schema": "jido.current-client-parity",
+  "version": 1,
+  "protocol_version": "1",
+  "session_id": "parity-session-v1",
+  "request_id": "parity-request-v1",
+  "prompt": "Reply with exactly OFFLINE.",
+  "content": "OFFLINE",
+  "approval_id": "parity-approval-v1",
+  "tool": {
+    "id": "parity-tool-v1",
+    "operation": "fixture.echo"
+  },
+  "expected_types": [
+    "run_started",
+    "tool_started",
+    "tool_completed",
+    "model_delta",
+    "permission_requested",
+    "permission_decided",
+    "run_completed"
+  ],
+  "expected_fingerprint": "sha256:075e0de8df90d5e56790a2b70e0a09099f142d07a2f3a6cd367cb9803f1252d8",
+  "automation": {
+    "agent": "release/fixtures/offline/agent.yml",
+    "scenario": "release/fixtures/offline/scenario.yml",
+    "suite": "release/fixtures/offline/suite.yml",
+    "replay_fixture": "priv/release/offline_fixture.json",
+    "replay_digest": "sha256:cace48232cdf26c6b325a45a1a0074cf1994e719b09eca534e29f2c7793636b8"
+  },
+  "approved_nondeterminism": [
+    "attachment identity",
+    "logical client identity",
+    "Console request identity",
+    "Console run identity",
+    "canonical event identity"
+  ]
+}

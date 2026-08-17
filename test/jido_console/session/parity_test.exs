@@ -1,70 +1,104 @@
 defmodule Jido.Console.Session.ParityTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Console.Session.{Client, Parity, Server}
-  alias Jido.Console.Session.Client.{Automation, TUI}
-  alias Jido.Console.Runtime.Result
-  alias Jidoka.Event
+  alias Jido.Console.TestSupport.CurrentClientParity, as: Parity
 
-  defmodule Runtime do
-    @behaviour Jido.Console.Runtime
+  test "all production client adapters keep one ordered semantic ledger" do
+    fixture = Parity.fixture!()
 
-    @impl true
-    def start_session(_agent, _opts), do: {:ok, :parity_session}
+    results =
+      Map.new(Parity.surfaces(), fn surface ->
+        {surface, Parity.run_surface!(surface, fixture)}
+      end)
 
-    @impl true
-    def start_turn(:parity_session, _prompt, owner, _opts) do
-      request = %{request_id: "parity-request"}
+    ledgers = results |> Map.values() |> Enum.map(& &1.ledger)
+    fingerprints = results |> Map.values() |> Enum.map(& &1.fingerprint) |> Enum.uniq()
+    side_effects = results |> Map.values() |> Enum.map(& &1.side_effects) |> Enum.uniq()
 
-      delta =
-        Event.build(:llm_delta, [],
-          request_id: request.request_id,
-          seq: 0,
-          data: %{chunk_type: :content, delta: "same"}
-        )
+    assert Enum.uniq(ledgers) == [results.tui.ledger]
+    assert Enum.map(results.tui.ledger, & &1["type"]) == fixture["expected_types"]
+    assert [_fingerprint] = fingerprints
+    assert results.tui.fingerprint == fixture["expected_fingerprint"]
+    assert [effects] = side_effects
 
-      send(owner, {:jidoka_turn_event, delta})
+    assert effects == %{
+             "content" => fixture["content"],
+             "permission" => "approved",
+             "terminal" => "run_completed",
+             "tool" => fixture["tool"]["operation"]
+           }
 
-      send(
-        owner,
-        {:jidoka_turn_event, Event.build(:turn_finished, [delta], request_id: request.request_id, seq: 1)}
-      )
-
-      {:ok, request}
-    end
-
-    @impl true
-    def await(request, _opts),
-      do: Result.ok(request.request_id, :parity_session, request, "same")
-
-    @impl true
-    def cancel(_request, _opts), do: {:error, :not_supported}
+    assert results.tui.renderer =~ fixture["content"]
+    assert results.tui.renderer =~ fixture["tool"]["operation"]
+    assert results.automation.renderer == fixture["expected_types"]
+    assert results.text.renderer =~ "run_completed"
+    assert Enum.map(results.json.renderer, & &1["type"]) == fixture["expected_types"]
   end
 
-  test "live clients observe the same ordered outcomes" do
-    session_id = "parity-#{System.unique_integer([:positive])}"
+  test "cancellation and canonical control output match for all adapters" do
+    fixture = Parity.fixture!()
 
-    assert {:ok, tui} = TUI.attach(session_id)
-    assert {:ok, automation} = Automation.attach_cell(session_id)
-    assert {:ok, text} = Client.attach(session_id)
-    assert {:ok, json} = Client.attach(session_id)
+    outcomes =
+      Map.new(Parity.surfaces(), fn surface ->
+        {surface, Parity.control_surface!(surface, fixture)}
+      end)
 
-    handles = %{tui: tui, automation: automation, text: text, json: json}
+    assert outcomes.tui == outcomes.automation
+    assert outcomes.tui == outcomes.text
+    assert outcomes.tui == outcomes.json
+    assert outcomes.tui.types == ["run_started", "control_requested", "control_completed", "run_failed"]
+    assert outcomes.tui.control == "ok"
+    assert outcomes.tui.terminal == "cancelled"
+  end
 
-    on_exit(fn ->
-      Enum.each(handles, fn {_kind, handle} -> Client.detach(handle) end)
-      Server.stop(tui.server)
-    end)
+  test "attach, gap recovery, stale completion, and detach match for all adapters" do
+    fixture = Parity.fixture!()
 
-    assert :ok = Client.configure_runtime(tui, Runtime, :agent)
-    assert {:ok, request} = Client.start_turn(tui, "show parity")
-    assert %Result{outcome: %Result.Ok{content: "same"}} = Client.await(tui, request)
+    outcomes =
+      Map.new(Parity.surfaces(), fn surface ->
+        {surface, Parity.lifecycle_surface!(surface, fixture)}
+      end)
 
-    assert Parity.same_outcomes?(handles)
-    observed = Parity.observe(handles)
-    assert observed.tui == ["run_started", "model_delta", "run_completed"]
-    assert observed.automation == observed.tui
-    assert observed.text == observed.tui
-    assert observed.json == observed.tui
+    assert outcomes.tui == outcomes.automation
+    assert outcomes.tui == outcomes.text
+    assert outcomes.tui == outcomes.json
+
+    assert outcomes.tui == %{
+             gap: "gap",
+             recovery: "recovery_snapshot",
+             suffix: "recovery_suffix",
+             stale_completion: {:error, :stale_completion_token},
+             receipt: "recovery_receipt",
+             detached: {:error, :not_attached}
+           }
+  end
+
+  test "the public TUI entry renders the same provider-free corpus" do
+    fixture = Parity.fixture!()
+    frame = Parity.run_tui_entry!(fixture)
+
+    assert frame =~ fixture["content"]
+    assert frame =~ fixture["tool"]["operation"]
+    assert frame =~ "idle · Enter sends"
+  end
+
+  test "public run and eval paths use the pinned replay without a live provider" do
+    fixture = Parity.fixture!()
+    outcomes = Parity.run_automation_paths!(fixture)
+
+    for {_path, outcome} <- outcomes do
+      assert outcome.record["schema"] == "jido.case-result"
+      assert outcome.record["schema_version"] == 1
+      assert outcome.record["execution"]["status"] == "ok"
+      assert outcome.record["evaluation"]["status"] == "passed"
+      assert outcome.record["capability_replay"]["status"] == "matched"
+
+      assert outcome.record["capability_replay"]["fixture_digest"] ==
+               fixture["automation"]["replay_digest"]
+
+      assert "manifest.json" in outcome.artifacts
+      assert "results.jsonl" in outcome.artifacts
+      assert "summary.json" in outcome.artifacts
+    end
   end
 end
