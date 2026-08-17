@@ -276,6 +276,9 @@ direction. This early load supports work tracking only.
 8. When M2-E37 and `jido_console-x5b` are complete, `bw ready` must show
    M3-E01 as the only ready Milestone 3 implementation epic.
 
+The [Milestone 3 delivery-readiness record](../readiness.md) validates the
+approved M2-E37 baseline and all loaded graph invariants before implementation.
+
 ## Pull Request Rule
 
 Each pull request must link its epic and the
