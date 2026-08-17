@@ -4,6 +4,79 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-08-16
+
+### Added
+
+- Add 37 complete proposed Milestone 3 epic specifications with one pull
+  request, acceptance boundary, proof set, and direct dependency list for each
+  epic after import.
+- Add a Milestone 3 planning baseline with the durable-record inventory,
+  acknowledgement rules, generation fence, recovery topology, watermark state
+  machine, operation matrix, crash matrix, hard growth limits, and candidate
+  qualification profile.
+- Add the read-only Milestone 2 Beadwork closeout review, exact nine-epic
+  critical chain, only-ready item, and the remaining `jido_console-x5b`
+  import responsibility.
+- Add separate epics for SQLite qualification, durable Console schemas,
+  upstream Jidoka hardening, the default store, bounded writer ownership,
+  early quotas, event history, restart-safe receipts, queues, secret-free
+  credential profiles, turn manifests, effects, watermarks, backup, migration,
+  restore, physical repair, recovery, exact and transcript-only resume,
+  semantic repair, retry, fork, history access, client attachment, archive,
+  destructive removal, client workflows, proof, candidate qualification, and
+  final audit.
+- Reserve deterministic Beadwork import IDs from `jido_console-m3e01` through
+  `jido_console-m3e37` while keeping every `beadwork_id` null. Do not load the
+  records before the Milestone 2 audit.
+
+### Changed
+
+- Select SQLite as the default Milestone 3 indexed engine. M3-E02 selects and
+  qualifies the direct Elixir adapter before storage implementation.
+- Freeze the SQLite, DETS, DuckDB, and versioned-plain-file comparison in the
+  planning baseline. M3-E02 verifies that record and supplies adapter evidence.
+- Require all product-created durable database, sidecar, lock, backup, archive,
+  quarantine, manifest, and temporary files to stay below `JIDO_HOME/state/`.
+- Use one bounded SQLite database with separate logical Console and Jidoka
+  truth tables, one supervised writer, a supervised stopped-store maintenance
+  owner, a home lock, exact database-page and WAL reserves, and hard category
+  and total-state limits.
+- Keep credential values outside durable state. Add secret-free profiles that
+  can read an existing environment, private dotenv, or operating-system
+  keychain reference only at the final provider or tool boundary. Do not let
+  Jido create or change an external secret value.
+- Split quota, backup, migration, restore, physical repair, archive, and
+  destructive removal into separate ownership and pull-request boundaries.
+- Keep source backups in the backup budget, current authority in the active
+  budget, and only one staged or prior image in the shared work pool. Use a
+  crash-safe external manifest for restore and repair role changes.
+- Start the supervised maintenance coordinator before any SQLite connection so
+  it can reconcile the external operation manifest with one clear owner.
+- Treat whole-store backups and quarantine images as indivisible copies. A
+  session removal blocks until separate whole-image retirement removes every
+  shared copy that contains the session.
+- Give confirmed session removal and whole-image retirement a small closed
+  control-capacity allowance. Require a stopped terminal or abandoned session,
+  generation fence, client detach, and writer maintenance barrier for
+  per-session removal.
+- Split recovery classification from exact and transcript-only owner startup.
+  Store migration runs once before the session catalog starts.
+- State the credential guarantee as structural credential-field rejection,
+  final-call containment, and declared-canary exclusion. Do not resolve an
+  external credential source to compare it with ordinary prompt text.
+- Make CLI text, CLI JSON, and automation explicit owners for non-TUI
+  continuity and administration. The TUI returns typed denial for unsupported
+  store-wide operations.
+- Add bounded current-state snapshots and ordered history pages for durable
+  sessions that cannot fit a complete transcript in the M2 snapshot limit.
+- Keep Milestone 3 proposed, keep `jido_console-x5b` open for post-audit import
+  and graph verification, and block all implementation on the approved M2-E37
+  source baseline.
+- Allow the local planning baseline and proposed epic specifications to finish
+  before M2-E37. Keep Beadwork import, readiness, and implementation blocked
+  until that audit approves the exact source.
+
 ## [1.2.0] - 2026-08-16
 
 ### Added

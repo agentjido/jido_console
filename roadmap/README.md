@@ -1,6 +1,6 @@
 # Jido Console Roadmap
 
-Roadmap version: **1.2.0**
+Roadmap version: **1.3.0**
 
 Roadmap status: **proposed**
 
@@ -60,7 +60,7 @@ Gate 0 is a readiness milestone. Every numbered directory in `roadmap/milestones
 | Gate 0 | [Establish release readiness](milestones/00-establish-release-readiness/milestone.md) | Repeatable evidence and an owned delivery graph | No release |
 | Milestone 1 | [Ship the trustworthy local kernel](milestones/01-ship-trustworthy-local-kernel/milestone.md) | Safe local multi-model coding | v0.1 |
 | Milestone 2 | [Ship the supervised session plane](milestones/02-ship-supervised-session-plane/milestone.md) | One owner and one protocol for all current clients | v0.2 |
-| Milestone 3 | [Add durable resume, fork, and audit](milestones/03-add-durable-resume/milestone.md) | Restart-safe acknowledged state | v0.3 |
+| Milestone 3 | [Add durable resume, fork, and audit](milestones/03-add-durable-resume/milestone.md) | Restart-safe acknowledged state in one bounded local store | v0.3 |
 | Milestone 4 | [Add supervised multi-agent work](milestones/04-add-supervised-multi-agent-work/milestone.md) | Durable child agents and owned worktree lanes | v0.4 |
 | Milestone 5 | [Add the local LiveView workbench](milestones/05-add-local-liveview-workbench/milestone.md) | Loopback-only single-user web workbench | v0.5 |
 | Milestone 6 | [Add isolated local executors](milestones/06-add-isolated-local-executors/milestone.md) | Location-neutral restricted local adapters | v0.6 |
@@ -82,8 +82,8 @@ The `milestone.md` file is the roadmap milestone item. It owns the goal, outcome
 5. Add the semantic protocol, one supervised session owner, and current-client migration as one v0.2 quality target.
 6. Complete the Milestone 2 closeout chain: canonical projection, bounded delivery, gap recovery, the final client contract, TUI migration, production-path parity, and legacy deletion.
 7. Requalify one exact post-closeout v0.2 artifact and complete the final evidence-only audit. Milestone 3 cannot start from the historical pre-closeout candidate or audit.
-8. Before Milestone 3 epic generation, freeze the durable-record inventory, acknowledgement rule, recovery topology, session-generation fence, storage evaluation, commit-reconciliation state machine, and crash matrix.
-9. Add restart-safe input, the shared Console-to-Jidoka watermark, and exact recovery.
+8. Review the frozen Milestone 3 planning baseline and 37 proposed epic specifications. Do not import or start implementation before M2-E37 approves the exact source baseline.
+9. Qualify SQLite in the packaged runtime, then add the bounded file-only store, restart-safe input, the shared Console-to-Jidoka watermark, and exact recovery.
 
 ## Common Milestone Release Gate
 
@@ -141,7 +141,9 @@ All channel candidates must wrap the same tested native payload. Add another pla
 23. ReqLLM access does not mean Jido Console support. A support claim needs declared contract evidence.
 24. Never change the selected model silently. A trust, cost, or capability boundary change needs consent.
 25. Record exact model, settings, prompt, tool-schema, and skill-schema identity for a durable turn.
-26. Credential values do not enter configuration, durable state, events, logs, traces, artifacts, or command arguments.
+26. Credential-specific product fields accept references only. A credential
+    value materialized at the final call boundary does not enter configuration,
+    durable state, events, logs, traces, artifacts, or command arguments.
 27. Tools, agents, and executors receive an explicit environment and credential allowlist.
 28. A trusted-workspace mode is not a sandbox and cannot satisfy a restricted-execution claim.
 29. Homebrew, npm, and direct archives wrap the same tested native payload.
@@ -149,6 +151,16 @@ All channel candidates must wrap the same tested native payload. Add another pla
 31. A client consumes canonical Console protocol data. It never consumes a raw Jidoka or runtime event stream.
 32. A client-delivery bound includes the receiving process mailbox and copied payload data. Bounded sender bookkeeping alone is not sufficient.
 33. Recovery fences results from every earlier session generation and does not expose a ready session or wake execution before reconciliation completes.
+34. Every product-created durable database, sidecar, lock, backup, archive, quarantine, manifest, and temporary file stays below `JIDO_HOME/state/`.
+35. One supervised writer owns the writable Milestone 3 SQLite connection. Console JSON records and Jidoka execution values stay in separate logical tables and contracts.
+36. Exact resume never changes silently to transcript-only resume. Retry, repair, abandon, and fork are separate typed operations.
+37. Durable file, record, session, database, queue, replay, snapshot, backup, and archive use has a hard declared bound before acknowledgement.
+38. Normal durable work cannot consume the declared database-page, WAL, or state-tree control reserve.
+39. SQLite readers, WAL growth, temporary work, backup, migration, restore, repair, archive, and removal have explicit stop and ownership rules.
+40. Durable credential profiles store only stable reference identity. Jido resolves an external credential source read only and only at the final provider or tool boundary.
+41. Structural credential-bearing input validation occurs before a Console or
+    Jidoka durable write. Final-call credential containment is the value control.
+    A post-write scan is evidence, not the control.
 
 ## Release Evidence Policy
 
