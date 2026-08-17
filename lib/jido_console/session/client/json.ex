@@ -23,12 +23,19 @@ defmodule Jido.Console.Session.Client.JSON do
   @doc "Returns ordered semantic event types after JSON projection."
   @spec observe(Client.t()) :: [String.t()]
   def observe(handle) do
-    events =
-      handle
-      |> Client.snapshot()
-      |> get_in(["payload", "state", "transcript"])
-      |> List.wrap()
+    case Client.snapshot(handle) do
+      {:ok, snapshot} ->
+        snapshot
+        |> get_in(["payload", "state", "transcript"])
+        |> List.wrap()
+        |> observed_types()
 
+      {:error, _reason} ->
+        []
+    end
+  end
+
+  defp observed_types(events) do
     with {:ok, encoded} <- encode_stream(events),
          {:ok, decoded} <- Jason.decode(encoded) do
       Enum.map(decoded, & &1["type"])
@@ -37,7 +44,7 @@ defmodule Jido.Console.Session.Client.JSON do
     end
   end
 
-  defp sanitize(value) when is_pid(value) or is_reference(value) or is_function(value), do: nil
+  defp sanitize(value) when is_pid(value) or is_reference(value) or is_function(value) or is_port(value), do: nil
 
   defp sanitize(value) when is_map(value) do
     Map.new(value, fn {key, item} -> {key, sanitize(item)} end)
