@@ -10,9 +10,10 @@ its rules in an implementation pull request.
 
 ## File-Only Storage Boundary
 
-SQLite is the selected local engine class. One direct Elixir adapter must pass
-qualification before the default store can use it. The product does not call a
-host `sqlite3` command and does not use a database service.
+SQLite is the selected local engine class. The default store declares one
+direct Elixir adapter and proves its required behavior with the production
+store. The product does not call a host `sqlite3` command and does not use a
+database service.
 
 All session-store files are below this root:
 

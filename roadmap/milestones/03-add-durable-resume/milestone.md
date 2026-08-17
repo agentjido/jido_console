@@ -7,7 +7,7 @@ beadwork_id: jido_console-m3
 depends_on: [milestone-2]
 release: v0.3
 introduced_in: 0.1.0
-last_updated_in: 1.3.1
+last_updated_in: 1.3.5
 ---
 
 # Milestone 3: Add Durable Resume, Fork, and Audit
@@ -75,7 +75,9 @@ graph against that baseline.
 
 ## Work
 
-- Use SQLite as the default embedded indexed store after its direct Elixir adapter passes packaging and crash qualification.
+- Use SQLite as the default embedded indexed store. M3-E06 declares the direct
+  Elixir adapter and proves the minimum package, path, commit, reopen, and crash
+  behavior with the production store.
 - Put the database, WAL, SHM, lock, backup, archive, quarantine, manifest, and temporary files below `JIDO_HOME/state/sessions/v1/`.
 - Use one database with exact page, WAL, reader, backup, archive, work-pool, and complete-tree limits. Return a typed capacity result before durable acknowledgement.
 - Keep Console JSON records and authoritative Jidoka session values in separate logical tables and behind separate public contracts.

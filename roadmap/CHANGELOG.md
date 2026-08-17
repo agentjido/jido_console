@@ -4,6 +4,20 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.5] - 2026-08-17
+
+### Changed
+
+- Skip M3-E02 as a separate SQLite qualification pull request and remove it as
+  a dependency of M3-E06.
+- Move the minimum direct-adapter, package, pragma, commit, reopen, path, and
+  crash checks into M3-E06 so the store proves the dependency that it uses.
+- Let M3-E17 use the SQLite `VACUUM INTO` snapshot operation supported through
+  SQL by the selected adapter. Keep the writer barrier, private staging,
+  verification, crash cleanup, and capacity rules.
+- Keep M3-E02 as a closed historical decision record with no implementation
+  pull request.
+
 ## [1.3.4] - 2026-08-17
 
 ### Added

@@ -9,7 +9,7 @@ depends_on: [M3-E07, M3-E08, M3-E10, M3-E16]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.1
+last_updated_in: 1.3.5
 ---
 
 # M3-E17: Back Up and Verify the Durable Store
@@ -20,7 +20,8 @@ Create one consistent, private, bounded, and verified local backup without copyi
 
 ## Scope
 
-- Use a writer-owned barrier and the SQLite online backup API.
+- Use a writer-owned barrier and SQLite `VACUUM INTO` to create one
+  transactionally consistent snapshot through the selected adapter's SQL path.
 - Reserve source-plus-destination high-water bytes before backup starts.
 - Write a manifest with source store identity, schema, chain heads, watermarks, record counts, file digest, size, and private modes.
 - Verify the completed database and manifest before the backup becomes usable.
@@ -60,7 +61,8 @@ session removal, client, candidate, audit, or publication work.
 
 ### Decisions and invariants
 
-- A raw copy of an open database is not a backup.
+- A raw copy of an open database is not a backup. Do not require an adapter C
+  backup API.
 - The live source remains authoritative throughout backup.
 - A staged backup is not usable until database and manifest verification pass.
 - Three files are a count ceiling. All verified backups together stay at or below 1 GiB.
@@ -75,7 +77,8 @@ session removal, client, candidate, audit, or publication work.
 
 1. Add writer backup barriers and one backup operation identity.
 2. Add quota reservation for the source and staged destination high-water size.
-3. Add SQLite online backup into private staging under the state root.
+3. Add SQLite `VACUUM INTO` into a new private staging path under the state
+   root.
 4. Add manifest creation and full database, schema, head, watermark, count, digest, and mode verification.
 5. Adopt the verified backup atomically and rotate surplus verified automatic backups.
 6. Add exact whole-backup report, confirmation, retirement, and repeat results.
@@ -109,7 +112,8 @@ barrier or rewrite a shared backup in place.
 
 ## Acceptance Checks
 
-- Live backup uses the SQLite online backup API under writer ownership.
+- Live backup uses SQLite `VACUUM INTO` under writer ownership and produces a
+  transactionally consistent snapshot.
 - The source remains authoritative and writable only after the barrier releases.
 - A backup becomes usable only after full database and manifest verification.
 - Automatic backups stay at or below three files and 1 GiB aggregate.

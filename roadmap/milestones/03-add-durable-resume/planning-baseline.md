@@ -80,17 +80,17 @@ remains a Jidoka compatibility fixture, but it is not the default because its
 mailbox, record growth, migration, indexed replay, and repair contracts do not
 meet this milestone.
 
-The SQLite qualification epic selects and proves the direct adapter in the
-packaged macOS ARM64 runtime. It does not repeat the engine selection. If no
-adapter can satisfy the frozen contract, implementation stops and the roadmap
-decision must change before storage work starts.
+M3-E02 is skipped as a separate qualification gate. M3-E06 selects the direct
+adapter and proves the minimum package, path, pragma, commit, reopen, crash,
+and integrity behavior with the production store. Later operational epics
+prove their own maintenance behavior.
 
 ## Frozen Storage Evaluation Matrix
 
 This planning comparison uses the local repository requirements and the local
 Jidoka and Jido Console source. It selects the engine class. It is not adapter
-or performance proof. M3-E02 verifies this record and supplies the missing
-package, crash, path, and latency evidence for one direct SQLite adapter.
+or performance proof. M3-E06 verifies the adapter behavior required by the
+production store. M3-E17 and M3-E34 own backup and full crash evidence.
 
 | Criterion | SQLite | DETS | DuckDB | Versioned plain files |
 | --- | --- | --- | --- | --- |
@@ -99,19 +99,19 @@ package, crash, path, and latency evidence for one direct SQLite adapter.
 | Unique idempotency keys and indexed event ranges | Native unique and ordered indexes | Key lookup exists; ordered multi-index replay is custom | Query support exists; session-write qualification is not present | Needs new indexes, compaction, and corruption handling |
 | One commit across separate Console and Jidoka table families | One database transaction | No shared transaction across the required record families | Technically possible, but it adds an unqualified analytical native dependency | Needs a new journal and commit protocol |
 | Schema versions, migrations, and future-version rejection | Schema and migration ledger fit directly | Needs value rewrites and custom migration ownership | Schema work is possible but does not remove the package and writer gaps | Every migration and rollback rule is new code |
-| Consistent online backup and verified restore | SQLite online backup and integrity APIs fit directly | Close, sync, and copy do not give the required shared online snapshot | Export and copy paths need separate qualification | Needs a new snapshot, manifest, and restore protocol |
+| Consistent backup and verified restore | SQLite `VACUUM INTO` supplies a transactional snapshot through SQL; integrity checks verify it | Close, sync, and copy do not give the required shared snapshot | Export and copy paths need separate qualification | Needs a new snapshot, manifest, and restore protocol |
 | Integrity check, staged repair, and derived rebuild | Native integrity checks plus product digests | Limited engine checks; product repair remains custom | Engine checks exist, but the full local lifecycle is unqualified | All checks and repair tools are new code |
 | Hard database, temporary-data, and growth limits | Page, WAL, reader, and temporary rules can be measured and enforced | No complete indexed replay, retention, archive, or compaction contract | File and temporary growth controls are not qualified for this package | Every limit and high-water calculation is new code |
 | Bounded BEAM writer and reader integration | One supervised writer and bounded readers match the design | A wrapper is possible, but the current durable fixture has no complete bound | Native analytical execution adds a larger boundary to supervise | A wrapper is possible after a complete storage engine is built |
-| Sync-before-reply and crash recovery | `FULL` synchronous transactions can support the acknowledgement rule after E02 proof | Sync exists, but multi-record crash outcome needs a new protocol | Needs native package and crash qualification | Needs a new fsync, rename, journal, and replay proof |
-| Latency and deadline qualification | The direct adapter must pass M3-E02 and the frozen qualification profile | Custom multi-record coordination has no qualifying result | Session-write latency is not qualified | New journal, fsync, and index work has no qualifying result |
-| Packaged runtime and maintenance cost | One direct adapter must pass M3-E02 | Built into OTP, but functional gaps remain | Adds an unselected native analytical dependency | No dependency, but the project must build and maintain a database engine |
+| Sync-before-reply and crash recovery | `FULL` synchronous transactions support the acknowledgement rule after production-store proof | Sync exists, but multi-record crash outcome needs a new protocol | Needs native package and crash qualification | Needs a new fsync, rename, journal, and replay proof |
+| Latency and deadline qualification | M3-E06 proves the live path; each maintenance epic proves its own operation | Custom multi-record coordination has no qualifying result | Session-write latency is not qualified | New journal, fsync, and index work has no qualifying result |
+| Packaged runtime and maintenance cost | M3-E06 declares and proves one direct adapter | Built into OTP, but functional gaps remain | Adds an unselected native analytical dependency | No dependency, but the project must build and maintain a database engine |
 | Decision | **Selected engine class; adapter proof required** | Compatibility fixture only | Comparison fixture only | Manifest and small-file fixture only |
 
 SQLite is the only option in this comparison that supplies the required
 transaction, index, backup, and integrity primitives without making Jido
-Console build a database engine or adopt an analytical engine. M3-E02 can block
-the plan if the direct adapter, packaged payload, or file-boundary proof fails.
+Console build a database engine or adopt an analytical engine. M3-E06 returns a
+roadmap defect if its direct adapter cannot satisfy the live store contract.
 
 ## File and Security Rules
 
@@ -613,8 +613,8 @@ unsafe effect is `uncertain` and is never repeated automatically.
   preconditions, transaction, and verification.
 - Reject an unknown future schema before any write.
 - Create and verify a pre-migration SQLite backup before the first migration.
-- Use the SQLite online backup API while the writer owns a backup barrier. Do
-  not copy an open database with ordinary file-copy logic.
+- Use SQLite `VACUUM INTO` while the writer owns a backup barrier. Do not copy
+  an open database with ordinary file-copy logic.
 - Restore only after the incoming database, manifest, schema, chain heads,
   watermarks, and checksums verify.
 - Preserve the prior live store until staged replacement verifies.

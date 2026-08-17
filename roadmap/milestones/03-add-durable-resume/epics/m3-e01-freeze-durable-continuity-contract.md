@@ -9,7 +9,7 @@ depends_on: [M2-E37]
 release: v0.3
 delivery_unit: one_pull_request
 introduced_in: 1.3.0
-last_updated_in: 1.3.1
+last_updated_in: 1.3.5
 ---
 
 # M3-E01: Freeze the Durable Continuity Contract
@@ -90,7 +90,10 @@ Deliver this epic in exactly one pull request. The pull request delivers only th
 
 ### Completion boundary and handoff
 
-M3-E02, M3-E03, and M3-E04 can start in parallel from this contract. All three must return a roadmap defect instead of changing a frozen rule inside their implementation pull request.
+M3-E03 and M3-E04 can start in parallel from this contract. M3-E02 is skipped.
+M3-E06 owns the minimum direct-adapter proof with the production store. An
+implementation pull request must return a roadmap defect instead of changing a
+frozen durability or path rule.
 
 ### Risks and controls
 

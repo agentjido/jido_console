@@ -1,8 +1,9 @@
 # Milestone 3 Proposed Epics
 
-These 37 specifications split Milestone 3 into reviewable delivery units. Each
-approved epic is complete in exactly one pull request. A pull request must not
-combine two Milestone 3 epics.
+These 37 records split Milestone 3 into reviewable delivery units. M3-E02 is a
+skipped historical decision record. Each approved implementation epic is
+complete in exactly one pull request. A pull request must not combine two
+Milestone 3 implementation epics.
 
 The `jido_console-m3` Beadwork parent contains all 37 epic records. Each epic
 file records its verified Beadwork ID. The records are loaded early for work
@@ -23,11 +24,11 @@ operation matrix, crash matrix, exact hard limits, and qualification profile.
 | Epic | Beadwork ID | One-pull-request result | Depends on |
 | --- | --- | --- | --- |
 | [M3-E01 Freeze durable continuity contract](m3-e01-freeze-durable-continuity-contract.md) | `jido_console-m3e01` | One contract freezes records, acknowledgements, modes, sensitive-value rules, fences, crash points, and limits. | M2-E37 |
-| [M3-E02 Qualify SQLite local store](m3-e02-qualify-sqlite-local-store.md) | `jido_console-m3e02` | One direct SQLite adapter passes package, durability, WAL, reader, temporary-file, and limit checks. | M3-E01 |
+| [M3-E02 Qualify SQLite local store](m3-e02-qualify-sqlite-local-store.md) | `jido_console-m3e02` | **Skipped.** M3-E06 proves the direct adapter with the production store. | M3-E01 |
 | [M3-E03 Define durable records, codecs, and migrations](m3-e03-define-durable-records-codecs-migrations.md) | `jido_console-m3e03` | Versioned Console records, Jidoka envelopes, profile metadata, digests, and migrations have deterministic codecs. | M3-E01 |
 | [M3-E04 Harden and qualify Jidoka durable store](m3-e04-qualify-jidoka-durable-store-contract.md) | `jido_console-m3e04` | One upstream Jidoka pull request hardens and proves the public durable-store contract. | M3-E01 |
 | [M3-E05 Pin durable Jidoka boundary](m3-e05-pin-prove-durable-jidoka-boundary.md) | `jido_console-m3e05` | Console pins and proves one immutable Jidoka durable contract through its public facade. | M3-E04 |
-| [M3-E06 Build default SQLite session store](m3-e06-build-default-sqlite-session-store.md) | `jido_console-m3e06` | One bounded SQLite repository keeps Console and Jidoka truth in separate table families. | M3-E02, M3-E03, M3-E05 |
+| [M3-E06 Build default SQLite session store](m3-e06-build-default-sqlite-session-store.md) | `jido_console-m3e06` | One bounded SQLite repository declares and proves Exqlite and keeps Console and Jidoka truth in separate table families. | M3-E03, M3-E05 |
 | [M3-E07 Own durable home and bounded writes](m3-e07-own-durable-home-bound-storage-writes.md) | `jido_console-m3e07` | One home lock and supervised writer own all private bounded writes. | M3-E06 |
 | [M3-E08 Add early store quota primitives](m3-e08-add-early-store-quota-primitives.md) | `jido_console-m3e08` | Page, WAL, file-category, tree, and maintenance reservations stop growth before acknowledgement. | M3-E07 |
 | [M3-E09 Add durable generation fencing](m3-e09-add-durable-session-generation-fencing.md) | `jido_console-m3e09` | Every old owner, worker, timer, reply, and client is fenced before mutation. | M3-E08 |
@@ -69,7 +70,7 @@ and evidence gate. It is not Milestone 3 implementation.
 flowchart TB
     M2E37["M2-E37<br/>Final v0.2 audit"]
     E01["M3-E01<br/>Durability contract"]
-    E02["M3-E02<br/>SQLite qualification"]
+    E02["M3-E02<br/>Skipped"]
     E03["M3-E03<br/>Records and codecs"]
     E04["M3-E04<br/>Jidoka hardening"]
     E05["M3-E05<br/>Jidoka pin"]
@@ -106,11 +107,9 @@ flowchart TB
     E36["M3-E36<br/>Candidate proof"]
     E37["M3-E37<br/>Source audit"]
     M2E37 --> E01
-    E01 --> E02
     E01 --> E03
     E01 --> E04
     E04 --> E05
-    E02 --> E06
     E03 --> E06
     E05 --> E06
     E06 --> E07
@@ -224,10 +223,10 @@ flowchart TB
 2. Use `jido_console-x5b` to compare the preloaded records with the approved
    baseline, correct any drift, and verify the graph.
 3. Freeze the durability contract in M3-E01.
-4. Run SQLite qualification in M3-E02, record work in M3-E03, and the upstream
-   Jidoka hardening pull request in M3-E04 in parallel.
-5. Pin the approved Jidoka result in M3-E05 and join the three foundations in
-   M3-E06.
+4. Keep M3-E02 as a skipped decision record. Run record work in M3-E03 and the
+   upstream Jidoka hardening pull request in M3-E04 in parallel.
+5. Pin the approved Jidoka result in M3-E05. M3-E06 then declares and proves
+   Exqlite while it builds the production store from M3-E03 and M3-E05.
 6. Add the single writer and home owner in M3-E07, then add early quota
    reservations in M3-E08 and generation fencing in M3-E09.
 7. Persist canonical events in M3-E10, restart-safe admission in M3-E11, and
