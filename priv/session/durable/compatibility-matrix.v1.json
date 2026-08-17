@@ -1,0 +1,18 @@
+{
+  "schema": "jido.console.durable-compatibility",
+  "version": 1,
+  "current": {
+    "store_format": 1,
+    "record_schema": 1,
+    "jidoka_envelope": 1
+  },
+  "rules": [
+    {"input": "store_format_1", "result": "current", "mutation": false},
+    {"input": "future_store_format", "result": "incompatible_future_store_format", "mutation": false},
+    {"input": "unknown_record_schema", "result": "incompatible_record_schema", "mutation": false},
+    {"input": "unknown_record_type", "result": "unknown_record_type", "mutation": false},
+    {"input": "noncanonical_json", "result": "noncanonical_record", "mutation": false},
+    {"input": "invalid_jidoka_value", "result": "invalid_jidoka_value", "mutation": false},
+    {"input": "credential_bearing_value", "result": "sensitive_value_rejected", "mutation": false}
+  ]
+}
