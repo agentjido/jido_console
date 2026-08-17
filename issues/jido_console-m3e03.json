@@ -25,11 +25,15 @@
     {
       "text": "Implementation complete. Evidence: focused durable suite 21 passed; full release coverage suite 722 passed and 1 skipped; coverage 90.1%; locked dependencies, Credo, Dialyzer, Doctor, docs, and diff checks passed. The final local-sibling Jidoka gate used clean revision ea849f74cbdee699c1b5a62541311536a78b5ce6 and failed 25 existing compatibility tests because that old revision lacks approved public APIs such as Jidoka.Chat.Request.request_id/1 and Jidoka.ExecutionEnvironment.Selection. This is the same external repository-state mismatch recorded for M3-E01; the approved Jidoka pin remains 29246d0. No M3-E03 storage I/O is present.",
       "timestamp": "2026-08-17T20:19:30Z"
+    },
+    {
+      "text": "Accepted and merged. PR #12 passed the full GitHub matrix after one retry of an unrelated worker-monitor race. Final CI: compile, audit, Credo, Dialyzer, docs, format, unused dependencies, Elixir 1.18, 1.19, and 1.20 tests, and summary all passed. Elixir 1.20 coverage was 90.1%. Source commit 411277d; immutable milestone-3 integration commit 6690311e9f33b6f99183e2801d07dc26a8dda907.",
+      "timestamp": "2026-08-17T20:34:35Z"
     }
   ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E03: Define Durable Records, Codecs, and Migrations",
   "type": "epic",
-  "updated_at": "2026-08-17T20:19:30Z"
+  "updated_at": "2026-08-17T20:34:35Z"
 }
