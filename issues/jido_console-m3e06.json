@@ -1,7 +1,6 @@
 {
   "assignee": "Mike Hostetler",
   "blocked_by": [
-    "jido_console-m3e02",
     "jido_console-m3e03",
     "jido_console-m3e05"
   ],
@@ -24,5 +23,5 @@
   "status": "open",
   "title": "M3-E06: Build the Default SQLite Session Store",
   "type": "epic",
-  "updated_at": "2026-08-17T01:55:08Z"
+  "updated_at": "2026-08-17T23:20:12Z"
 }
