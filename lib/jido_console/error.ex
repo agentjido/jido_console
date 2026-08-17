@@ -515,6 +515,13 @@ defmodule Jido.Console.Error do
     end
   end
 
+  defp cause_reason(%{} = reason) do
+    case {fetch(reason, :type), fetch(reason, :values)} do
+      {type, [tag | _rest]} when type in [:tuple, "tuple"] -> cause_reason(tag)
+      _portable -> nil
+    end
+  end
+
   defp cause_reason(_reason), do: nil
 
   defp reason_text(reason) when is_atom(reason), do: reason |> Atom.to_string() |> reason_text()

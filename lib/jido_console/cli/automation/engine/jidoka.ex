@@ -397,6 +397,12 @@ defmodule Jido.Console.Automation.Engine.Jidoka do
     }
   end
 
+  defp evaluate(_cell, %{assertions: assertions}, _request, _result, _current_operations)
+       when is_map(assertions) and map_size(assertions) == 0,
+       do: []
+
+  defp evaluate(_cell, %{assertions: []}, _request, _result, _current_operations), do: []
+
   defp evaluate(cell, turn, request, result, current_operations) do
     scoped_agent_state = %{result.agent_state | operation_results: current_operations}
     scoped_result = %{result | agent_state: scoped_agent_state}

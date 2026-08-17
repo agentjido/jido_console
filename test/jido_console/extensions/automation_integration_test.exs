@@ -56,18 +56,19 @@ defmodule Jido.Console.ExtensionsAutomationIntegrationTest do
 
     llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "Hello"}} end
 
-    stdout =
-      capture_io(fn ->
-        assert {:ok, %{status: :passed}} =
-                 Automation.execute(
-                   ["run", "--agent", paths.agent, "--input", paths.input],
-                   extension_record_files: [paths.records],
-                   project_root: root,
-                   built_in_extension_resolver: resolver,
-                   runtime_opts: [llm: llm],
-                   run_id: "extension-run"
-                 )
+    {outcome, stdout} =
+      with_io(fn ->
+        Automation.execute(
+          ["run", "--agent", paths.agent, "--input", paths.input],
+          extension_record_files: [paths.records],
+          project_root: root,
+          built_in_extension_resolver: resolver,
+          runtime_opts: [llm: llm],
+          run_id: "extension-run"
+        )
       end)
+
+    assert {:ok, %{status: :passed}} = outcome, stdout
 
     assert_receive :extension_opened
     assert_receive :extension_closed

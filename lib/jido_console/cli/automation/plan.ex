@@ -173,13 +173,13 @@ defmodule Jido.Console.Automation.Plan do
     else
       with :ok <- ensure_resolver_loaded(resolver),
            {:ok, request} <- PolicyRequest.new(profile_id: profile_id),
-           {:ok, registration} <-
+           {:ok, selection} <-
              ProfileResolver.resolve(
                request,
                resolver,
                Keyword.get(opts, :execution_profile_resolver_opts, [])
              ) do
-        {:ok, %{request: request, registration: registration}}
+        {:ok, %{selection: selection}}
       end
     end
   end

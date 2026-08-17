@@ -8,8 +8,10 @@ defmodule Jido.Console.Automation.ResultTest do
   alias Jidoka.ExecutionEnvironment.Checkpoint
   alias Jidoka.ExecutionEnvironment.EnforcementEvidence
   alias Jidoka.ExecutionEnvironment.PolicyRequest
+  alias Jidoka.ExecutionEnvironment.ProfileResolver
   alias Jidoka.ExecutionEnvironment.Registration
   alias Jidoka.ExecutionEnvironment.SecurityProfile
+  alias Jidoka.ExecutionEnvironment.Selection
   alias Jidoka.Session.Environment
 
   @profile_digest "sha256:" <> String.duplicate("a", 64)
@@ -319,7 +321,8 @@ defmodule Jido.Console.Automation.ResultTest do
         networks: [:disabled],
         workspaces: [:ephemeral],
         immutable_image_evidence: true,
-        checkpoint: true
+        checkpoint: true,
+        capability_ids: ["tools.shell"]
       )
 
     registration =
@@ -333,10 +336,16 @@ defmodule Jido.Console.Automation.ResultTest do
         }
       )
 
-    %{request: request, registration: registration}
+    {:ok, selection} =
+      ProfileResolver.resolve(request, fn _profile_id, _opts -> {:ok, registration} end)
+
+    %{selection: selection}
   end
 
-  defp completed_environment(%{request: request, registration: registration}) do
+  defp completed_environment(%{selection: selection}) do
+    request = Selection.request(selection)
+    registration = Selection.registration(selection)
+
     evidence =
       EnforcementEvidence.new!(
         status: :confirmed,

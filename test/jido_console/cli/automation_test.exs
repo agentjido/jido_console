@@ -496,7 +496,7 @@ defmodule Jido.Console.AutomationTest do
 
     assert [record] = decode_jsonl(output)
     assert record["execution"]["status"] == "error"
-    assert record["error"]["message"] =~ "execution failed"
+    assert record["error"]["message"] == "invalid type: expected integer"
   end
 
   test "a task exit gives a failed terminal lifecycle with a complete error record", %{root: root} do

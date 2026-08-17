@@ -13,6 +13,7 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
   alias Jidoka.ExecutionEnvironment.Checkpoint
   alias Jidoka.ExecutionEnvironment.EnforcementEvidence
   alias Jidoka.ExecutionEnvironment.PolicyRequest
+  alias Jidoka.ExecutionEnvironment.ProfileResolver
   alias Jidoka.ExecutionEnvironment.Registration
   alias Jidoka.ExecutionEnvironment.SecurityProfile
   alias Jidoka.Policy.Decision
@@ -792,7 +793,10 @@ defmodule Jido.Console.Automation.Engine.JidokaTest do
         capabilities: capabilities
       )
 
-    %{request: request, registration: registration}
+    {:ok, selection} =
+      ProfileResolver.resolve(request, fn _profile_id, _opts -> {:ok, registration} end)
+
+    %{selection: selection}
   end
 
   defp allow_environment_policy do

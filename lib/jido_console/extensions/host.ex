@@ -50,7 +50,10 @@ defmodule Jido.Console.Extensions.Host do
   def close(host), do: Jidoka.Extension.Host.close(host)
 
   defp configure_host(session, host, opts) do
-    with {:ok, compiled} <- Jidoka.Operation.Source.compile(Jidoka.Extension.Host.operation_sources(host)),
+    sources = Jidoka.Extension.Host.operation_sources(host)
+
+    with :ok <- ensure_source_modules_loaded(sources),
+         {:ok, compiled} <- Jidoka.Operation.Source.compile(sources),
          {:ok, spec} <- put_operations(session.spec, compiled.operations) do
       runtime_opts = [
         operations:
@@ -64,6 +67,15 @@ defmodule Jido.Console.Extensions.Host do
 
       {:ok, %{session: %{session | spec: spec}, host: host, runtime_opts: runtime_opts}}
     end
+  end
+
+  defp ensure_source_modules_loaded(sources) do
+    Enum.reduce_while(List.wrap(sources), :ok, fn %module{}, :ok ->
+      case Code.ensure_loaded(module) do
+        {:module, ^module} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, {:operation_source_module_unavailable, module, reason}}}
+      end
+    end)
   end
 
   defp put_operations(spec, operations) do

@@ -2,6 +2,7 @@ defmodule Jido.Console.Automation.PlanTest do
   use ExUnit.Case, async: false
 
   alias Jido.Console.Automation.{Loader, Plan}
+  alias Jidoka.ExecutionEnvironment.Selection
 
   setup do
     root =
@@ -71,8 +72,9 @@ defmodule Jido.Console.Automation.PlanTest do
                runtime_opts: [llm: llm]
              )
 
-    assert cell.execution_environment.request.profile_id == "agent-profile"
-    assert cell.execution_environment.registration.profile.profile_id == "agent-profile"
+    selection = cell.execution_environment.selection
+    assert Selection.request(selection).profile_id == "agent-profile"
+    assert Selection.registration(selection).profile.profile_id == "agent-profile"
     assert cell.runtime_opts[:llm] == llm
 
     [manifest_cell] = plan.manifest.cells
@@ -99,7 +101,7 @@ defmodule Jido.Console.Automation.PlanTest do
                execution_profile_resolver: resolver
              )
 
-    assert environment.registration.profile.profile_id == "offline-example"
+    assert Selection.registration(environment.selection).profile.profile_id == "offline-example"
   end
 
   test "uses command, scenario, agent, suite, and none precedence", %{root: root} do
@@ -239,7 +241,7 @@ defmodule Jido.Console.Automation.PlanTest do
   end
 
   defp profile_id({:ok, %{cells: [%{execution_environment: environment}]}}),
-    do: environment.request.profile_id
+    do: environment.selection |> Selection.request() |> Map.fetch!(:profile_id)
 
   defp resolver(opts \\ []) do
     fn profile_id, _resolver_opts -> {:ok, registration(profile_id, opts)} end

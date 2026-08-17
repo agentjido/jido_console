@@ -311,7 +311,7 @@ defmodule Jido.Console.Runtime.Jidoka do
 
     @type t :: %__MODULE__{
             request_id: String.t(),
-            request: term(),
+            request: Jidoka.Chat.Request.t(),
             session: Session.t(),
             runtime_opts: keyword()
           }
@@ -345,11 +345,12 @@ defmodule Jido.Console.Runtime.Jidoka do
 
     case Jidoka.chat_async(session.data, prompt, opts) do
       {:ok, request} ->
-        runtime_opts = Keyword.put(opts, :request_id, request.request_id)
+        request_id = Jidoka.Chat.Request.request_id(request)
+        runtime_opts = Keyword.put(opts, :request_id, request_id)
 
         {:ok,
          %Request{
-           request_id: request.request_id,
+           request_id: request_id,
            request: request,
            session: session,
            runtime_opts: runtime_opts

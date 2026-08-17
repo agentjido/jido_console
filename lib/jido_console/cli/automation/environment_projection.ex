@@ -6,7 +6,7 @@ defmodule Jido.Console.Automation.EnvironmentProjection do
   alias Jidoka.ExecutionEnvironment.Checkpoint
   alias Jidoka.ExecutionEnvironment.EnforcementEvidence
   alias Jidoka.ExecutionEnvironment.PolicyRequest
-  alias Jidoka.ExecutionEnvironment.Registration
+  alias Jidoka.ExecutionEnvironment.Selection
   alias Jidoka.Session.Environment
 
   @limit_fact_keys ~w(
@@ -52,21 +52,29 @@ defmodule Jido.Console.Automation.EnvironmentProjection do
     |> Map.put(:status, failed_environment_status(error))
   end
 
-  defp identity_projection(%{request: %PolicyRequest{} = request, registration: %Registration{} = registration}) do
-    profile = registration.profile
+  defp identity_projection(%{selection: selection}) do
+    case Selection.validate(selection) do
+      {:ok, selection} ->
+        request = Selection.request(selection)
+        registration = Selection.registration(selection)
+        profile = registration.profile
 
-    %{
-      requested: %{
-        profile_id: request.profile_id,
-        capability_ids: request.capability_ids,
-        policy_digest: ExecutionEnvironment.digest(PolicyRequest.to_map(request))
-      },
-      resolved: %{
-        profile_id: profile.profile_id,
-        profile_digest: profile.digest,
-        registration_fingerprint: registration.fingerprint
-      }
-    }
+        %{
+          requested: %{
+            profile_id: request.profile_id,
+            capability_ids: request.capability_ids,
+            policy_digest: ExecutionEnvironment.digest(PolicyRequest.to_map(request))
+          },
+          resolved: %{
+            profile_id: profile.profile_id,
+            profile_digest: profile.digest,
+            registration_fingerprint: registration.fingerprint
+          }
+        }
+
+      {:error, _reason} ->
+        %{status: :rejected}
+    end
   end
 
   defp identity_projection(_invalid), do: %{status: :rejected}

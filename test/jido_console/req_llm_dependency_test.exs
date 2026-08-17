@@ -37,8 +37,8 @@ defmodule Jido.Console.ReqLLMDependencyTest do
                Jidoka.Adapter.ReqLLM.ResponseAdapter.decision(response, nil, Jason.encode!(object))
 
       assert decision.type == :operation
-      assert decision.name == "lookup"
-      assert decision.arguments == %{}
+      assert Jidoka.Effect.LLMDecision.name(decision) == "lookup"
+      assert Jidoka.Effect.LLMDecision.arguments(decision) == %{}
       assert decision.parts == []
     end
   end

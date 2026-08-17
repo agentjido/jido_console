@@ -22,7 +22,7 @@ defmodule Jido.Console.Runtime.JidokaTest do
 
     assert {:ok, %Runtime.Request{} = request} = Runtime.start_turn(session, "hello", self(), llm: llm)
 
-    assert request.request_id == request.request.request_id
+    assert request.request_id == Jidoka.Chat.Request.request_id(request.request)
     assert request.runtime_opts[:request_id] == request.request_id
     assert request.runtime_opts[:llm] == llm
     assert request.runtime_opts[:stream]

@@ -8,6 +8,7 @@ defmodule Jido.Console.Coding.Local do
     AdapterCapabilities,
     Manager,
     PolicyRequest,
+    ProfileResolver,
     Registration,
     SecurityProfile
   }
@@ -56,6 +57,7 @@ defmodule Jido.Console.Coding.Local do
 
   defp prepare_resources(workspace, environment_contract, executables, mutation_state) do
     profile = profile(environment_contract)
+    request = PolicyRequest.new!(profile_id: profile.profile_id)
     registration = registration(profile)
 
     manager_opts = [
@@ -64,14 +66,15 @@ defmodule Jido.Console.Coding.Local do
       environment_contract: environment_contract
     ]
 
-    case Manager.start_link(registration, policy(), manager_opts) do
-      {:ok, manager} -> prepare_binding(manager, profile, mutation_state, environment_contract)
-      {:error, _reason} = error -> error
+    with {:ok, selection} <-
+           ProfileResolver.resolve(request, fn _profile_id, _opts -> {:ok, registration} end),
+         {:ok, manager} <- Manager.start_link(selection, policy(), manager_opts) do
+      prepare_binding(manager, request, profile, mutation_state, environment_contract)
     end
   end
 
-  defp prepare_binding(manager, profile, mutation_state, environment_contract) do
-    case Manager.open(manager, PolicyRequest.new!(profile_id: profile.profile_id)) do
+  defp prepare_binding(manager, request, profile, mutation_state, environment_contract) do
+    case Manager.open(manager, request) do
       {:ok, binding, evidence} ->
         prepare_ports(manager, binding, profile, mutation_state, environment_contract, evidence)
 

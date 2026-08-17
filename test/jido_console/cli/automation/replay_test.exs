@@ -7,6 +7,7 @@ defmodule Jido.Console.Automation.ReplayTest do
   alias Jido.Console.Automation.{Loader, Plan, Result}
   alias Jido.Console.Automation.Replay
   alias Jidoka.Agent.Spec
+  alias Jidoka.ExecutionEnvironment.{AdapterCapabilities, PolicyRequest, ProfileResolver, Registration, SecurityProfile}
   alias Jidoka.Replay.Capabilities, as: ReplayCapabilities
   alias Jidoka.Replay.Fixture
   alias Jidoka.Replay.Recorder
@@ -280,7 +281,7 @@ defmodule Jido.Console.Automation.ReplayTest do
     assert :ok = Replay.stop(nil)
 
     assert {:error, {:invalid_replay_profile, 42}} =
-             Replay.resolve(%{registration: %{metadata: %{"jido_console.replay" => 42}}})
+             Replay.resolve(environment_metadata(42))
 
     invalid_profiles = [
       {%{"mode" => "live"}, {:invalid_replay_profile_mode, "live"}},
@@ -301,7 +302,7 @@ defmodule Jido.Console.Automation.ReplayTest do
     ]
 
     for {metadata, expected} <- invalid_profiles do
-      environment = %{registration: %{metadata: %{"jido_console.replay" => metadata}}}
+      environment = environment_metadata(metadata)
       assert {:error, ^expected} = Replay.resolve(environment)
     end
 
@@ -313,7 +314,7 @@ defmodule Jido.Console.Automation.ReplayTest do
     }
 
     assert {:error, {:invalid_replay_compatibility, _reason}} =
-             Replay.resolve(%{registration: %{metadata: %{"jido_console.replay" => unsafe}}})
+             Replay.resolve(environment_metadata(unsafe))
 
     inline = %{
       "mode" => "replay",
@@ -322,7 +323,7 @@ defmodule Jido.Console.Automation.ReplayTest do
       "compatibility" => nil
     }
 
-    assert {:ok, replay} = Replay.resolve(%{registration: %{metadata: %{jido_console_replay: inline}}})
+    assert {:ok, replay} = Replay.resolve(environment_metadata(inline, :jido_console_replay))
     assert {:ok, player} = Replay.open(replay)
     assert Replay.put_runtime([keep: true], player)[:capabilities]
     assert :ok = Replay.stop(player)
@@ -449,7 +450,44 @@ defmodule Jido.Console.Automation.ReplayTest do
         extra
       )
 
-    %{registration: %{metadata: %{"jido_console.replay" => config}}}
+    environment_metadata(config)
+  end
+
+  defp environment_metadata(metadata, key \\ "jido_console.replay") do
+    profile =
+      SecurityProfile.new!(
+        profile_id: "replay",
+        revision: 1,
+        digest: "sha256:" <> String.duplicate("a", 64),
+        adapter_id: "test.replay",
+        required_isolation: :container,
+        required_network: :disabled,
+        required_workspace: :ephemeral
+      )
+
+    capabilities =
+      AdapterCapabilities.new!(
+        adapter_id: "test.replay",
+        adapter_version: "1",
+        isolations: [:container],
+        networks: [:disabled],
+        workspaces: [:ephemeral]
+      )
+
+    registration =
+      Registration.new!(
+        profile: profile,
+        adapter: ForbiddenEnvironmentAdapter,
+        capabilities: capabilities,
+        metadata: %{key => metadata}
+      )
+
+    request = PolicyRequest.new!(profile_id: profile.profile_id)
+
+    {:ok, selection} =
+      ProfileResolver.resolve(request, fn _profile_id, _opts -> {:ok, registration} end)
+
+    %{selection: selection}
   end
 
   defp write_offline_suite(root) do

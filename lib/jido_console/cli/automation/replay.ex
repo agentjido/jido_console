@@ -3,6 +3,7 @@ defmodule Jido.Console.Automation.Replay do
 
   alias Jido.Console.Automation.{Contract, ReplayProjection, Result}
   alias Jidoka.ExecutionEnvironment.Contract, as: EnvironmentContract
+  alias Jidoka.ExecutionEnvironment.Selection
   alias Jidoka.Replay.Capabilities, as: ReplayCapabilities
   alias Jidoka.Replay.Fixture
   alias Jidoka.Replay.Recorder
@@ -19,10 +20,14 @@ defmodule Jido.Console.Automation.Replay do
 
   def resolve(nil, _opts), do: {:ok, live()}
 
-  def resolve(%{registration: registration}, opts) do
-    registration.metadata
-    |> metadata_value("jido_console.replay")
-    |> resolve_metadata(opts)
+  def resolve(%{selection: selection}, opts) do
+    with {:ok, selection} <- Selection.validate(selection) do
+      selection
+      |> Selection.registration()
+      |> Map.fetch!(:metadata)
+      |> metadata_value("jido_console.replay")
+      |> resolve_metadata(opts)
+    end
   end
 
   def resolve(_environment, _opts), do: {:error, :invalid_replay_profile_environment}
