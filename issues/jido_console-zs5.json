@@ -4,6 +4,8 @@
   "blocks": [
     "jido_console-m2e36"
   ],
+  "closed_at": "2026-08-17T17:28:06Z",
+  "close_reason": "Implemented private release acceptance home isolation, added regression coverage and roadmap proof, and passed focused tests plus mix precommit.",
   "created": "2026-08-17T17:17:00Z",
   "description": "Roadmap source: roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e38-isolate-release-acceptance-home.md. Give installed-artifact acceptance one explicit private JIDO_HOME in its clean environment. Prove startup, offline commands, TUI probes, workflow probes, and cleanup without using the operator home. This repair blocks M2-E36.",
   "id": "jido_console-zs5",
@@ -15,8 +17,8 @@
     "v0.2"
   ],
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "M2-E38: Isolate the Release Acceptance Home",
   "type": "epic",
-  "updated_at": "2026-08-17T17:17:07Z"
+  "updated_at": "2026-08-17T17:28:06Z"
 }
