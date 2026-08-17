@@ -362,6 +362,9 @@ defmodule Jido.Console.Session.Server do
       Map.has_key?(state.completed, request.id) ->
         {:reply, Map.fetch!(state.completed, request.id), state}
 
+      state.active && state.active.request.id == request.id && state.active.pending_result != nil ->
+        {:reply, state.active.pending_result, state}
+
       state.active && state.active.request.id == request.id ->
         active = Map.update!(state.active, :waiters, &(&1 ++ [from]))
         {:noreply, %{state | active: active}}
@@ -391,12 +394,14 @@ defmodule Jido.Console.Session.Server do
          respond when is_function(respond, 5) <- active.respond_review do
       owner = self()
 
+      review = matching_pending_review(pending, review)
+
       task =
         start_task(state, fn ->
           safe_call(fn -> respond.(decision, pending, review, opts, owner) end)
         end)
 
-      tasks = put_task(state.tasks, task, {:review, request.id})
+      tasks = put_task(state.tasks, task, {:review, request.id, decision, review_id(review)})
       active = %{active | pending_result: nil}
       {:reply, {:ok, :requested}, %{state | active: active, tasks: tasks}}
     else
@@ -836,10 +841,14 @@ defmodule Jido.Console.Session.Server do
       else: state
   end
 
-  defp complete_task(state, {:review, request_id}, outcome) do
-    if active_request?(state, request_id),
-      do: complete_runtime_result(state, unwrap_task(outcome)),
-      else: state
+  defp complete_task(state, {:review, request_id, decision, approval_id}, outcome) do
+    if active_request?(state, request_id) do
+      state
+      |> admit_permission_decision(decision, approval_id)
+      |> complete_runtime_result(unwrap_task(outcome))
+    else
+      state
+    end
   end
 
   defp complete_task(state, {:cancel, request_id, waiters}, outcome) do
@@ -851,7 +860,10 @@ defmodule Jido.Console.Session.Server do
 
       state =
         state
-        |> admit_control("control_completed", active.request, "cancel")
+        |> admit_owner_event("control_completed", active.request, %{
+          "control" => "cancel",
+          "result" => public_control_result(result)
+        })
         |> broadcast_control_result(result)
 
       case {state.active.runtime?, result} do
@@ -888,7 +900,7 @@ defmodule Jido.Console.Session.Server do
 
     cond do
       pending? ->
-        broadcast_runtime(state.clients, {:session_runtime_result, state.session.id, active.request, result})
+        state = admit_pending_review(state, result)
         Enum.each(active.waiters, &GenServer.reply(&1, result))
         %{state | active: %{active | pending_result: result, waiters: []}}
 
@@ -931,7 +943,8 @@ defmodule Jido.Console.Session.Server do
     %{
       "status" => Atom.to_string(RuntimeResult.status(result)),
       "content" => bounded_text(content),
-      "error" => nil
+      "error" => nil,
+      "view" => result_view(result)
     }
   end
 
@@ -945,6 +958,78 @@ defmodule Jido.Console.Session.Server do
 
   defp result_payload({:error, reason}), do: %{"status" => "error", "error" => portable_reason(reason)}
   defp result_payload(_result), do: %{"status" => "completed"}
+
+  defp result_view(%RuntimeResult{outcome: %Ok{coding_reviews: reviews}}) do
+    %{"coding_reviews" => portable_record(reviews)}
+  end
+
+  defp admit_pending_review(state, %RuntimeResult{outcome: %PendingReview{reviews: reviews}}) do
+    review = List.first(reviews) || %{}
+
+    attrs = %{
+      "approval_id" => review_id(review) || "approval_#{state.active.request.id}",
+      "principal" => "user",
+      "scope" => review_field(review, :operation) || "session",
+      "review" => portable_record(review)
+    }
+
+    admit_owner_event(state, "permission_requested", state.active.request, attrs)
+  end
+
+  defp admit_pending_review(state, _result), do: state
+
+  defp admit_permission_decision(state, decision, approval_id) do
+    attrs = %{
+      "approval_id" => approval_id || "approval_#{state.active.request.id}",
+      "decision" => if(decision == :approve, do: "approved", else: "denied")
+    }
+
+    admit_owner_event(state, "permission_decided", state.active.request, attrs)
+  end
+
+  defp matching_pending_review(
+         %RuntimeResult{outcome: %PendingReview{reviews: reviews}},
+         candidate
+       ) do
+    id = review_id(candidate)
+    Enum.find(reviews, candidate, &(review_id(&1) == id))
+  end
+
+  defp matching_pending_review(_pending, candidate), do: candidate
+
+  defp review_id(review), do: review_field(review, :interrupt_id) || review_field(review, :id)
+
+  defp review_field(review, key) when is_map(review) do
+    Map.get(review, key) || Map.get(review, Atom.to_string(key))
+  end
+
+  defp review_field(_review, _key), do: nil
+
+  defp public_control_result({:error, reason}),
+    do: %{"status" => "error", "reason" => portable_reason(reason)}
+
+  defp public_control_result({:ok, result}),
+    do: %{"status" => "ok", "result" => portable_reason(result)}
+
+  defp public_control_result(result),
+    do: %{"status" => "ok", "result" => portable_reason(result)}
+
+  defp portable_record(%module{} = value) when module not in [Date, Time, DateTime, NaiveDateTime] do
+    value |> Map.from_struct() |> portable_record()
+  end
+
+  defp portable_record(value) when is_map(value) do
+    Map.new(value, fn {key, item} -> {to_string(key), portable_record(item)} end)
+  end
+
+  defp portable_record(value) when is_list(value), do: Enum.map(value, &portable_record/1)
+
+  defp portable_record(value)
+       when is_pid(value) or is_reference(value) or is_port(value) or is_function(value),
+       do: inspect(value)
+
+  defp portable_record(value) when is_atom(value), do: Atom.to_string(value)
+  defp portable_record(value), do: value
 
   defp stop_await_task(state, request_id) do
     case Enum.find(state.tasks, fn {_ref, {kind, _pid}} -> kind == {:await, request_id} end) do
@@ -1090,7 +1175,12 @@ defmodule Jido.Console.Session.Server do
   defp cancel_terminal_timer(_active), do: false
 
   defp terminal_fields("run_completed", request, payload) do
-    %{"run_id" => request.run_id, "outcome_id" => request.id, "content" => payload["content"]}
+    %{
+      "run_id" => request.run_id,
+      "outcome_id" => request.id,
+      "content" => payload["content"],
+      "view" => payload["view"] || %{}
+    }
   end
 
   defp terminal_fields("run_failed", request, payload) do
@@ -1140,7 +1230,12 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp owner_event_fields("run_completed", request, extra) do
-    %{"run_id" => request.run_id, "outcome_id" => request.id, "content" => extra["content"]}
+    %{
+      "run_id" => request.run_id,
+      "outcome_id" => request.id,
+      "content" => extra["content"],
+      "view" => extra["view"] || %{}
+    }
   end
 
   defp owner_event_fields("run_failed", request, extra) do
@@ -1152,7 +1247,23 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp owner_event_fields("control_completed", request, extra) do
-    %{"control_id" => request.id, "result" => extra["control"]}
+    %{"control_id" => request.id, "result" => extra["result"] || extra["control"]}
+  end
+
+  defp owner_event_fields("permission_requested", _request, extra) do
+    %{
+      "approval_id" => extra["approval_id"],
+      "principal" => extra["principal"],
+      "scope" => extra["scope"],
+      "review" => extra["review"]
+    }
+  end
+
+  defp owner_event_fields("permission_decided", _request, extra) do
+    %{
+      "approval_id" => extra["approval_id"],
+      "decision" => extra["decision"]
+    }
   end
 
   defp admit_event_state(state, event) do
@@ -1373,6 +1484,9 @@ defmodule Jido.Console.Session.Server do
       Map.has_key?(state.completed, request.id) ->
         {:reply, Map.fetch!(state.completed, request.id), state}
 
+      state.active && state.active.request.id == request.id && state.active.pending_result != nil ->
+        {:reply, state.active.pending_result, state}
+
       state.active && state.active.request.id == request.id ->
         active = Map.update!(state.active, :waiters, &(&1 ++ [from]))
         {:noreply, %{state | active: active}}
@@ -1390,12 +1504,14 @@ defmodule Jido.Console.Session.Server do
          respond when is_function(respond, 5) <- active.respond_review do
       owner = self()
 
+      review = matching_pending_review(pending, review)
+
       task =
         start_task(state, fn ->
           safe_call(fn -> respond.(decision, pending, review, opts, owner) end)
         end)
 
-      tasks = put_task(state.tasks, task, {:review, request.id})
+      tasks = put_task(state.tasks, task, {:review, request.id, decision, review_id(review)})
       active = %{active | pending_result: nil}
       {:reply, {:ok, :requested}, %{state | active: active, tasks: tasks}}
     else
@@ -1653,12 +1769,8 @@ defmodule Jido.Console.Session.Server do
   defp put_delivery(client, delivery), do: %{client | delivery: delivery}
   defp put_client(state, client_id, client), do: %{state | clients: Map.put(state.clients, client_id, client)}
 
-  defp broadcast_runtime(clients, message),
-    do:
-      Enum.each(clients, fn
-        {_id, %{mode: :legacy} = client} -> send(client.pid, message)
-        {_id, _bounded_client} -> :ok
-      end)
+  # Runtime ingress stays owner-local. All attached clients use bounded output.
+  defp broadcast_runtime(_clients, _message), do: :ok
 
   defp close_runtime(nil), do: :ok
 

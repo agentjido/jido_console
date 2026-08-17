@@ -192,9 +192,7 @@ defmodule Jido.Console.Session.Client do
   @doc false
   @spec start_turn(t(), String.t(), keyword()) :: {:ok, Request.t()} | {:error, term()}
   def start_turn(handle, prompt, opts \\ []) do
-    with {:ok, _input} <- send(handle, prompt) do
-      Local.call(handle, {:start_turn, prompt, opts})
-    end
+    Local.call(handle, {:start_turn, prompt, opts})
   end
 
   @doc false

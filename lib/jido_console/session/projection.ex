@@ -166,9 +166,12 @@ defmodule Jido.Console.Session.Projection do
 
   def finalize(%{terminal: %{event: event, result: %{value: result}}} = cursor, opts)
       when is_map(event) and is_map(result) do
+    shared = ~w(id session_id sequence durability sensitivity origin trust identities)
+
     attrs =
       event
       |> normalize()
+      |> Map.take(shared)
       |> Map.put("type", result[:type] || result["type"] || event[:type] || event["type"])
       |> Map.put("sequence", Keyword.get(opts, :sequence, event[:sequence] || event["sequence"]))
       |> Map.merge(result[:fields] || result["fields"] || %{})
@@ -291,7 +294,7 @@ defmodule Jido.Console.Session.Projection do
     attrs =
       %{
         type: type,
-        id: "plt_" <> String.replace_prefix(event_id, "jsk_", ""),
+        id: canonical_event_id(event_id, context.console_request_id),
         session_id: context.session.id,
         sequence: Keyword.fetch!(opts, :sequence),
         durability: "process",
@@ -306,6 +309,11 @@ defmodule Jido.Console.Session.Projection do
       :ok -> {:ok, attrs}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp canonical_event_id(event_id, console_request_id) do
+    digest = :crypto.hash(:sha256, event_id <> ":" <> console_request_id)
+    "plt_" <> Base.url_encode64(digest, padding: false)
   end
 
   defp protocol_fields("model_delta", projected, context) do

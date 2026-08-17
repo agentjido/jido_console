@@ -320,7 +320,6 @@ defmodule Jido.Console.Session.ServerTest do
     session: session
   } do
     client = Identity.new!(:client, session_id: session.id)
-    session_id = session.id
     assert {:ok, _snapshot} = Server.attach(server, client)
     assert {:error, :runtime_not_configured} = Server.start_turn(server, client.id, "prompt", [])
     assert {:error, :invalid_session_operation} = Server.start_operation(server, client.id, :invalid)
@@ -366,7 +365,7 @@ defmodule Jido.Console.Session.ServerTest do
     assert request.run_id == "run-fixed"
     assert_receive {:operation_started, ^server}
     assert_receive {:operation_awaiting, await_worker, raw_request}
-    assert_receive {:session_runtime_started, ^session_id, ^request}
+    refute_receive {:session_runtime_started, _, _}, 20
 
     assert {:ok, %{active_request: ^request}} = Server.runtime_info(server, client.id)
     assert {:error, :session_busy} = Server.start_operation(server, client.id, spec)
@@ -383,7 +382,7 @@ defmodule Jido.Console.Session.ServerTest do
 
     assert {:ok, :requested} = Server.cancel_request(server, client.id, request, reason: :user)
     assert_receive {:operation_cancelled, ^raw_request, [reason: :user]}
-    assert_receive {:session_control_result, ^session_id, ^request, {:ok, :cancelled}}
+    refute_receive {:session_control_result, _, _, _}, 20
 
     assert {:ok, :cancelled} = Server.cancel_request_wait(server, client.id, request, [], 1_000)
     assert_receive {:operation_cancelled, ^raw_request, []}
@@ -409,7 +408,6 @@ defmodule Jido.Console.Session.ServerTest do
     session: session
   } do
     client = Identity.new!(:client, session_id: session.id)
-    session_id = session.id
     assert {:ok, _snapshot} = Server.attach(server, client)
     test_pid = self()
 
@@ -425,7 +423,8 @@ defmodule Jido.Console.Session.ServerTest do
     ]
 
     assert {:ok, request} = Server.start_operation(server, client.id, pending_spec)
-    assert_receive {:session_runtime_result, ^session_id, ^request, %RuntimeResult{}}
+    assert %RuntimeResult{} = Server.await_request(server, request, 1_000)
+    refute_receive {:session_runtime_result, _, _, _}, 20
     assert {:ok, %{active_request: ^request}} = Server.runtime_info(server, client.id)
 
     assert {:ok, :requested} =
@@ -433,6 +432,15 @@ defmodule Jido.Console.Session.ServerTest do
 
     assert_receive {:review_response, :approve, %RuntimeResult{}, %{id: "review"}, [source: :test], ^server}
     assert :review_complete = Server.await_request(server, request, 1_000)
+
+    [requested, decided] =
+      server
+      |> Server.state()
+      |> Map.fetch!(:history)
+      |> Enum.filter(&(&1["type"] in ["permission_requested", "permission_decided"]))
+
+    assert requested["payload"]["approval_id"] == "review"
+    assert decided["payload"]["approval_id"] == requested["payload"]["approval_id"]
 
     blocking_spec = [
       start: fn _owner -> {:ok, %{request_id: "cancel-timeout"}} end,
@@ -457,7 +465,7 @@ defmodule Jido.Console.Session.ServerTest do
     assert {:error, :session_cancel_timeout} = Server.cancel_request_wait(server, client.id, request, [], 0)
     assert_receive {:cancel_waiting, cancel_worker}
     send(cancel_worker, :finish_cancel)
-    assert_receive {:session_control_result, ^session_id, ^request, {:ok, :cancelled}}
+    refute_receive {:session_control_result, _, _, _}, 20
     send(await_worker, :finish_wait)
     assert :finished = Server.await_request(server, request, 1_000)
 

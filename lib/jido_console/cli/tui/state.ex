@@ -1,7 +1,7 @@
 defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
-  alias Jido.Console.Tui.{Activity, Editor, EventProjection, SafeText, Selection, Turn}
+  alias Jido.Console.Tui.{Activity, Editor, EventProjection, SafeText, Selection, SemanticProjection, Turn}
   alias Jido.Console.Runtime.Result, as: RuntimeResult
   alias Jido.Console.Runtime.Result.{Cancelled, Error, Hibernated, Ok, PendingReview}
   alias Jido.Console.Session.Request, as: SessionRequest
@@ -15,6 +15,8 @@ defmodule Jido.Console.Tui.State do
             __MODULE__,
             %{
               session: Zoi.any(),
+              semantic_session_id: Zoi.string() |> Zoi.nullish(),
+              semantic_sequence: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0),
               size: Zoi.tuple({Zoi.integer() |> Zoi.positive(), Zoi.integer() |> Zoi.positive()}),
               session_client: Zoi.any() |> Zoi.nullish(),
               editor: Zoi.struct(Editor) |> Zoi.optional() |> Zoi.default(%Editor{}),
@@ -79,9 +81,25 @@ defmodule Jido.Console.Tui.State do
   @spec restore_snapshot(t(), map() | nil, SessionRequest.t() | nil) :: t()
   def restore_snapshot(state, snapshot, active_request \\ nil)
 
+  def restore_snapshot(
+        %__MODULE__{} = state,
+        %{"family" => "delivery", "payload" => %{"snapshot" => semantic}},
+        active_request
+      )
+      when is_map(semantic) do
+    restore_semantic_state(state, semantic, active_request)
+  end
+
   def restore_snapshot(%__MODULE__{} = state, %{"payload" => %{"state" => semantic}}, active_request)
       when is_map(semantic) do
+    restore_semantic_state(state, semantic, active_request)
+  end
+
+  def restore_snapshot(%__MODULE__{} = state, _snapshot, _active_request), do: state
+
+  defp restore_semantic_state(state, semantic, active_request) do
     transcript = Map.get(semantic, "transcript", [])
+    transcript = if transcript == [], do: semantic_transcript(semantic["history"] || []), else: transcript
 
     restored =
       Enum.reduce(transcript, %{turns: [], messages: [], active: nil, next_id: 0}, fn event, acc ->
@@ -103,11 +121,41 @@ defmodule Jido.Console.Tui.State do
         turns: retain(restored.turns, state.turn_limit),
         next_turn_id: restored.next_id,
         activity: activity,
+        semantic_session_id: semantic["session_id"],
+        semantic_sequence: semantic["sequence"] || 0,
         dirty?: true
     }
   end
 
-  def restore_snapshot(%__MODULE__{} = state, _snapshot, _active_request), do: state
+  @doc "Applies a complete ordered canonical batch as one local transaction."
+  @spec apply_session_events(t(), [map()]) :: {:ok, t()} | {:error, term()}
+  def apply_session_events(state, events) when is_list(events) do
+    Enum.reduce_while(events, {:ok, state}, fn event, {:ok, current} ->
+      case apply_session_event(current, event) do
+        {:ok, next} -> {:cont, {:ok, next}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @doc "Applies one exact next canonical event to renderer-local state."
+  @spec apply_session_event(t(), map()) :: {:ok, t()} | {:error, term()}
+  def apply_session_event(state, event) do
+    payload = event["payload"] || %{}
+    sequence = payload["sequence"]
+
+    with {:ok, event} <- Jido.Console.Session.Event.validate(event),
+         true <- event["session_id"] == state.semantic_session_id,
+         true <- sequence == state.semantic_sequence + 1,
+         request_id = request_id(state),
+         {:ok, projection} <- SemanticProjection.project(event, request_id) do
+      state = %{state | semantic_sequence: sequence}
+      {:ok, apply_semantic_projection(state, event, projection)}
+    else
+      false -> {:error, :invalid_tui_event_order}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   @spec active_request(t()) :: SessionRequest.t() | nil
   def active_request(%__MODULE__{activity: activity}), do: Activity.request(activity)
@@ -311,7 +359,7 @@ defmodule Jido.Console.Tui.State do
 
     state = %{
       state
-      | activity: {:active, request, turn, :streaming},
+      | activity: started_activity(request, turn),
         next_turn_id: next_turn_id,
         dirty?: true
     }
@@ -329,6 +377,13 @@ defmodule Jido.Console.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:turn_started, _request}), do: {state, []}
+
+  def update(%__MODULE__{} = state, {:session_event, event}) do
+    case apply_session_event(state, event) do
+      {:ok, state} -> {state, []}
+      {:error, _reason} -> {state, []}
+    end
+  end
 
   def update(%__MODULE__{activity: activity} = state, {:jidoka, event}) do
     turn = Activity.turn(activity)
@@ -634,7 +689,30 @@ defmodule Jido.Console.Tui.State do
      }, [{:respond_review, decision, request, result, review}]}
   end
 
+  defp respond_to_review(
+         %__MODULE__{activity: {:review, request, turn, event, :awaiting}} = state,
+         decision
+       )
+       when is_map(event) and not is_struct(event) do
+    review = List.first(turn.reviews) || %{}
+    turn = turn |> Turn.decide_review(review, decision) |> Turn.resume()
+
+    {%{
+       state
+       | activity: {:review, request, turn, event, {:responding, decision}},
+         dirty?: true
+     }, [{:respond_review, decision, request, event, review}]}
+  end
+
   defp respond_to_review(state, _decision), do: {state, []}
+
+  defp started_activity(request, %Turn{} = turn) do
+    if Enum.any?(turn.reviews, &(Map.get(&1, :status) == :pending)) do
+      {:review, request, turn, %{}, :awaiting}
+    else
+      {:active, request, turn, :streaming}
+    end
+  end
 
   defp mark_finishing({:active, request, _old_turn, _phase}, %Turn{status: :terminal} = turn),
     do: {:active, request, turn, :finishing}
@@ -684,7 +762,7 @@ defmodule Jido.Console.Tui.State do
 
   defp restore_event(acc, %{"type" => "run_started", "payload" => payload}) do
     prompt = Map.get(payload, "prompt", "")
-    turn = Turn.new(acc.next_id, prompt) |> Turn.put_request(%{request_id: payload["request_id"]})
+    turn = Turn.new(acc.next_id, prompt) |> Turn.put_request(%{request_id: payload["turn_id"]})
     messages = if prompt == "", do: acc.messages, else: acc.messages ++ [%{role: :user, content: prompt}]
     %{acc | active: turn, messages: messages, next_id: acc.next_id + 1}
   end
@@ -712,4 +790,122 @@ defmodule Jido.Console.Tui.State do
 
   defp put_snapshot_request(turn, %SessionRequest{} = request), do: Turn.put_request(turn, request)
   defp put_snapshot_request(turn, _request), do: turn
+
+  defp semantic_transcript(history) do
+    Enum.reject(history, &(&1["type"] in ~w(control_requested control_completed queue_changed)))
+  end
+
+  defp request_id(state) do
+    case Activity.request(state.activity) do
+      %SessionRequest{request_id: request_id} -> request_id
+      _request -> nil
+    end
+  end
+
+  defp apply_semantic_projection(state, event, projection) do
+    case event["type"] do
+      type when type in ["run_completed", "run_failed", "session_failed"] ->
+        finish_semantic(state, event, projection)
+
+      "permission_requested" ->
+        apply_permission_request(state, event, projection)
+
+      "permission_decided" ->
+        apply_permission_decision(state, projection)
+
+      "control_completed" ->
+        apply_control_result(state, event)
+
+      _type ->
+        apply_turn_projection(state, projection)
+    end
+  end
+
+  defp apply_turn_projection(state, projection) do
+    case Activity.turn(state.activity) do
+      %Turn{} = turn ->
+        case Turn.apply_event(turn, projection) do
+          {:ok, turn} -> %{state | activity: Activity.replace_turn(state.activity, turn), dirty?: true}
+          {:ignore, _reason} -> state
+        end
+
+      nil ->
+        state
+    end
+  end
+
+  defp apply_permission_request(state, event, projection) do
+    state = apply_turn_projection(state, projection)
+
+    case {Activity.request(state.activity), Activity.turn(state.activity)} do
+      {%SessionRequest{} = request, %Turn{} = turn} ->
+        %{state | activity: {:review, request, turn, event, :awaiting}, dirty?: true}
+
+      _other ->
+        state
+    end
+  end
+
+  defp apply_permission_decision(state, projection) do
+    state = apply_turn_projection(state, projection)
+
+    case state.activity do
+      {:review, request, turn, _event, _status} ->
+        %{state | activity: {:active, request, turn, :streaming}, dirty?: true}
+
+      _activity ->
+        state
+    end
+  end
+
+  defp finish_semantic(state, event, projection) do
+    payload = event["payload"]
+    status = projection.data.status
+    content = payload["content"] || Activity.streaming(state.activity)
+    reason = payload["reason"]
+    changes = get_in(payload, ["view", "coding_reviews"]) || []
+    state = %{state | coding_reviews: retain(changes, @review_limit)}
+
+    next_activity =
+      case status do
+        value when value in [:completed, :cancelled] -> :idle
+        :hibernated -> {:failed, :hibernated, reason, "Agent paused."}
+        :failed -> {:failed, :turn, reason, format_error(reason)}
+      end
+
+    {state, []} =
+      finish(state, state.session, content, next_activity,
+        outcome: status,
+        changes: changes
+      )
+
+    state
+  end
+
+  defp apply_control_result(state, event) do
+    case get_in(event, ["payload", "result"]) do
+      %{"status" => "error", "reason" => reason}
+      when reason in ["request_already_finished", ":request_already_finished"] ->
+        state
+
+      %{"status" => "error", "reason" => reason} ->
+        if Activity.turn(state.activity) do
+          {state, []} =
+            finish(
+              state,
+              state.session,
+              Activity.streaming(state.activity),
+              {:failed, :turn, reason, format_error(reason)},
+              outcome: :failed
+            )
+
+          state
+        else
+          state
+        end
+
+      _result ->
+        state
+    end
+  end
 end

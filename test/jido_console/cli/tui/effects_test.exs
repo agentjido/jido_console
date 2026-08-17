@@ -22,8 +22,13 @@ defmodule Jido.Console.Tui.EffectsTest do
       {:ok, :requested}
     end
 
-    def respond_review(handle, decision, request, review, opts) do
-      send(handle.test_pid, {:review_response, decision, request, review, opts})
+    def approve(handle, request, review, opts) do
+      send(handle.test_pid, {:review_response, :approve, request, review, opts})
+      {:ok, :requested}
+    end
+
+    def reject(handle, request, review, opts) do
+      send(handle.test_pid, {:review_response, :deny, request, review, opts})
       {:ok, :requested}
     end
   end
@@ -45,7 +50,7 @@ defmodule Jido.Console.Tui.EffectsTest do
 
     assert_receive {:turn_started, "first", turn_options}
     assert turn_options[:turn_opts][:context] == %{}
-    assert :ignore = complete_single(workers)
+    assert {:event, {:turn_started, ^request}} = complete_single(workers)
 
     context = %{"source" => "test"}
 
@@ -60,7 +65,7 @@ defmodule Jido.Console.Tui.EffectsTest do
 
     assert_receive {:turn_started, "second", turn_options}
     assert turn_options[:turn_opts][:context] == context
-    assert :ignore = complete_single(workers)
+    assert {:event, {:turn_started, ^request}} = complete_single(workers)
 
     assert {:continue, workers} =
              Effects.dispatch(

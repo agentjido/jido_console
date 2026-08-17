@@ -4,6 +4,7 @@ defmodule Jido.Console.Tui.StateTest do
   alias Jido.Console.Tui.{State, Turn}
   alias Jido.Console.Runtime.Jidoka, as: Runtime
   alias Jido.Console.Runtime.Result
+  alias Jido.Console.Session.Event, as: SessionEvent
   alias Jido.Console.Session.Request, as: SessionRequest
   alias Jidoka.Cancellation
   alias Jidoka.Event
@@ -481,6 +482,42 @@ defmodule Jido.Console.Tui.StateTest do
     {state, []} = State.update(state, {:turn_started, request})
     assert {^state, []} = State.update(state, {:terminal, {:key, :enter}})
     assert {^state, []} = State.update(state, {:terminal, {:key, :escape}})
+  end
+
+  test "keeps a permission event active when it arrives before the request handle" do
+    state =
+      State.new(:session, {80, 24})
+      |> starting_state("review")
+      |> Map.put(:semantic_session_id, "session")
+
+    {:ok, permission} =
+      SessionEvent.classify(%{
+        type: "permission_requested",
+        session_id: "session",
+        sequence: 1,
+        durability: "process",
+        sensitivity: "redacted",
+        origin: %{kind: "jidoka", actor_id: "runtime"},
+        trust: %{evidence: "projected", policy: "session-owner"},
+        identities: [
+          %{"kind" => "jidoka_request", "id" => "request-1", "session_id" => "session"}
+        ],
+        approval_id: "review-1",
+        principal: "user",
+        scope: "write_file"
+      })
+
+    assert {:ok, state} = State.apply_session_event(state, permission)
+    request = session_request("request-1")
+    {state, []} = State.update(state, {:turn_started, request})
+
+    assert {:review, ^request, %Turn{}, %{}, :awaiting} = state.activity
+
+    assert {state, [{:respond_review, :approve, ^request, %{}, review}]} =
+             State.update(state, {:terminal, {:text, "a"}})
+
+    assert review.id == "review-1"
+    assert {:review, ^request, %Turn{}, %{}, {:responding, :approve}} = state.activity
   end
 
   test "accepts only checked events for the active request" do

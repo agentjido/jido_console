@@ -1,7 +1,7 @@
 defmodule Jido.Console.Tui.Turn do
   @moduledoc false
 
-  alias Jido.Console.Tui.{EventProjection, SafeText}
+  alias Jido.Console.Tui.SafeText
 
   @assistant_limit 200_000
   @prompt_limit 65_536
@@ -151,12 +151,12 @@ defmodule Jido.Console.Tui.Turn do
     %{turn | reviews: reviews}
   end
 
-  @spec apply_event(t(), EventProjection.t()) :: {:ok, t()} | {:ignore, atom()}
-  def apply_event(%__MODULE__{request_id: request_id}, %EventProjection{request_id: other})
-      when request_id != other,
+  @spec apply_event(t(), map()) :: {:ok, t()} | {:ignore, atom()}
+  def apply_event(%__MODULE__{request_id: request_id}, %{request_id: other})
+      when not is_nil(request_id) and not is_nil(other) and request_id != other,
       do: {:ignore, :stale_request}
 
-  def apply_event(%__MODULE__{} = turn, %EventProjection{} = projection) do
+  def apply_event(%__MODULE__{} = turn, projection) when is_map(projection) do
     cond do
       MapSet.member?(turn.seen_events, projection.id) ->
         {:ignore, :duplicate}
@@ -197,11 +197,11 @@ defmodule Jido.Console.Tui.Turn do
     }
   end
 
-  defp apply_projection(turn, %EventProjection{kind: :assistant_delta, data: %{text: text}}) do
+  defp apply_projection(turn, %{kind: :assistant_delta, data: %{text: text}}) do
     %{turn | assistant: retain_text(turn.assistant <> text, @assistant_limit)}
   end
 
-  defp apply_projection(turn, %EventProjection{kind: :tool, data: data} = projection) do
+  defp apply_projection(turn, %{kind: :tool, data: data} = projection) do
     id = data.id
 
     event = %{
@@ -242,16 +242,16 @@ defmodule Jido.Console.Tui.Turn do
     %{turn | tools: tools, tool_order: order}
   end
 
-  defp apply_projection(turn, %EventProjection{kind: :review, data: data}) do
+  defp apply_projection(turn, %{kind: :review, data: data}) do
     reviews = turn.reviews |> put_record(normalize_record(data)) |> retain(@record_limit)
     %{turn | reviews: reviews}
   end
 
-  defp apply_projection(turn, %EventProjection{kind: :outcome, data: data}) do
+  defp apply_projection(turn, %{kind: :outcome, data: data}) do
     %{turn | outcome: normalize_record(data), status: :terminal}
   end
 
-  defp apply_projection(turn, %EventProjection{}), do: turn
+  defp apply_projection(turn, _projection), do: turn
 
   defp record_event(turn, projection) do
     event = %{id: projection.id, seq: projection.seq, event: projection.event, kind: projection.kind}

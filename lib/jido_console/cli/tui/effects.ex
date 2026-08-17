@@ -60,13 +60,10 @@ defmodule Jido.Console.Tui.Effects do
           Workers.start(workers, {:session_review, decision}, fn ->
             review_opts = Keyword.get(opts, :review_opts, [])
 
-            session_client_module.respond_review(
-              state.session_client,
-              decision,
-              request,
-              review,
-              review_opts
-            )
+            case decision do
+              :approve -> session_client_module.approve(state.session_client, request, review, review_opts)
+              :deny -> session_client_module.reject(state.session_client, request, review, review_opts)
+            end
           end)
 
         {:cont, {:continue, workers}}
@@ -97,7 +94,7 @@ defmodule Jido.Console.Tui.Effects do
 
   def complete(%Worker{kind: :session_start_turn}, outcome) do
     case outcome do
-      {:ok, {:ok, _request}} -> :ignore
+      {:ok, {:ok, request}} -> {:event, {:turn_started, request}}
       {:ok, {:error, reason}} -> {:event, {:turn_result, {:error, reason}}}
       {:ok, other} -> {:event, {:turn_result, {:error, {:invalid_start_turn_result, other}}}}
       {:crash, reason} -> {:event, {:turn_result, {:error, reason}}}

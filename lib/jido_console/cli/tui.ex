@@ -46,7 +46,7 @@ defmodule Jido.Console.Tui do
   end
 
   defp run_terminal_loop(terminal, runtime, agent, opts) do
-    with {:ok, session_client} <- attach_session_client(opts) do
+    with {:ok, %{handle: session_client, snapshot: attach_snapshot}} <- attach_session_client(opts) do
       runtime_info =
         case Client.runtime_info(session_client) do
           {:ok, info} -> info
@@ -63,7 +63,7 @@ defmodule Jido.Console.Tui do
             model: Keyword.get(opts, :model),
             coding_profile: Keyword.get(opts, :coding_profile),
             session_client: session_client,
-            session_snapshot: session_client.snapshot,
+            session_snapshot: attach_snapshot,
             session_request: Map.get(runtime_info, :active_request)
           ] ++ Keyword.take(opts, [:catalog_entries])
         )
@@ -275,61 +275,8 @@ defmodule Jido.Console.Tui do
       {:jido_terminal, ref, event} when ref == terminal.ref ->
         continue(state, {:terminal, event}, terminal, runtime, opts, startup, workers)
 
-      {:session_runtime_event, _session_id, request, event} ->
-        continue_if_active_request(
-          state,
-          request,
-          {:jidoka, event},
-          terminal,
-          runtime,
-          opts,
-          startup,
-          workers
-        )
-
-      {:session_runtime_started, _session_id, request} ->
-        continue(state, {:turn_started, request}, terminal, runtime, opts, startup, workers)
-
-      {:session_runtime_result, _session_id, request, result} ->
-        continue(
-          state,
-          {:turn_result, request, result},
-          terminal,
-          runtime,
-          opts,
-          startup,
-          workers
-        )
-
-      {:session_runtime_error, _session_id, request, reason} ->
-        continue_if_active_request(
-          state,
-          request,
-          {:turn_result, request, {:error, reason}},
-          terminal,
-          runtime,
-          opts,
-          startup,
-          workers
-        )
-
-      {:session_control_result, _session_id, _request, {:error, :request_already_finished}} ->
-        loop(state, terminal, runtime, opts, startup, workers)
-
-      {:session_control_result, _session_id, request, {:error, reason}} ->
-        continue_if_active_request(
-          state,
-          request,
-          {:turn_result, request, {:error, reason}},
-          terminal,
-          runtime,
-          opts,
-          startup,
-          workers
-        )
-
-      {:session_control_result, _session_id, _request, _result} ->
-        loop(state, terminal, runtime, opts, startup, workers)
+      {:jido_console_session, attachment_id, :output_ready} ->
+        handle_client_ready(state, attachment_id, terminal, runtime, opts, startup, workers)
 
       {:jido_tui_effect_result, worker_pid, outcome} ->
         handle_effect_result(
@@ -402,12 +349,6 @@ defmodule Jido.Console.Tui do
             {{:error, reason}, state, workers}
         end
 
-      {:session_updated, _session_id, snapshot} ->
-        loop(acknowledge_session_update(state, snapshot), terminal, runtime, opts, startup, workers)
-
-      {:session_gap, _session_id, _gap} ->
-        loop(recover_session_client(state), terminal, runtime, opts, startup, workers)
-
       _message ->
         loop(state, terminal, runtime, opts, startup, workers)
     end
@@ -439,14 +380,6 @@ defmodule Jido.Console.Tui do
     case State.startup_failure(state) do
       {:ok, reason} -> {:error, reason}
       :none -> :ok
-    end
-  end
-
-  defp continue_if_active_request(state, request, event, terminal, runtime, opts, startup, workers) do
-    if State.active_request(state) == request do
-      continue(state, event, terminal, runtime, opts, startup, workers)
-    else
-      loop(state, terminal, runtime, opts, startup, workers)
     end
   end
 
@@ -574,23 +507,23 @@ defmodule Jido.Console.Tui do
     end
   end
 
-  defp acknowledge_session_update(%State{session_client: nil} = state, _snapshot), do: state
-
-  defp acknowledge_session_update(%State{session_client: handle} = state, snapshot) do
-    sequence = snapshot["payload"]["sequence"] || snapshot["sequence"] || 0
-
-    case Client.ack(handle, sequence) do
-      {:ok, _delivery} -> state
-      {:error, _reason} -> state
-    end
-  end
-
-  defp recover_session_client(%State{session_client: nil} = state), do: state
-
-  defp recover_session_client(%State{session_client: handle} = state) do
-    case Client.recover(handle) do
-      {:ok, _delivery, _recovered} -> state
-      {:error, _reason} -> state
+  defp handle_client_ready(
+         %State{session_client: handle} = state,
+         attachment_id,
+         terminal,
+         runtime,
+         opts,
+         startup,
+         workers
+       ) do
+    if Client.Handle.identity(handle).attachment_id == attachment_id do
+      case SessionTUI.consume(handle, state) do
+        {:ok, state} -> loop(schedule_render(state), terminal, runtime, opts, startup, workers)
+        {:empty, state} -> loop(state, terminal, runtime, opts, startup, workers)
+        {:error, _reason, state} -> loop(state, terminal, runtime, opts, startup, workers)
+      end
+    else
+      loop(state, terminal, runtime, opts, startup, workers)
     end
   end
 
@@ -599,8 +532,11 @@ defmodule Jido.Console.Tui do
     _ = Jido.Console.Session.Supervisor.ensure_started(supervisor_opts)
     session_id = Keyword.get_lazy(opts, :session_id, fn -> Identity.new!(:session).id end)
 
-    case SessionTUI.attach(session_id, Keyword.take(opts, [:registry, :supervisor, :tasks])) do
-      {:ok, handle} -> {:ok, handle}
+    client_opts =
+      Keyword.take(opts, [:registry, :supervisor, :tasks, :delivery_limits, :catalog, :descriptor])
+
+    case SessionTUI.attach(session_id, client_opts) do
+      {:ok, attached} -> {:ok, attached}
       {:error, reason} -> {:error, {:session_attach_failed, reason}}
     end
   rescue
