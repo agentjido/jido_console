@@ -20,9 +20,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Delivered by upstream Jidoka PR https://github.com/agentjido/jidoka/pull/61. Source commit: ed6a19189eb101c31daf7f6a0e89daedc2feb900. Immutable merge commit: caef68851df6812bf97c1ff2d815da610ab78c62. Evidence: local full suite 831 passed and 42 excluded; durable parity matrix 43 passed; conformance suite 5 passed; compile with warnings-as-errors, Credo higher-priority, Dialyzer, Doctor, docs, and docs consistency passed. GitHub CI passed all supported Elixir/OTP tests, Dialyzer, quality, docs, and Livebooks.",
+      "timestamp": "2026-08-17T23:45:14Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E04: Harden and Qualify the Jidoka Durable Store Contract",
   "type": "epic",
-  "updated_at": "2026-08-17T20:35:04Z"
+  "updated_at": "2026-08-17T23:45:14Z"
 }
