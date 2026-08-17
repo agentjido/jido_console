@@ -1,0 +1,236 @@
+{
+  "archive_tested": true,
+  "artifact": "jido-0.1.0-darwin-arm64.tar.gz",
+  "coding_workflow": {
+    "after_digest": "sha256:d7258bc3d0080ae0722c476a96b072ded6b678f76145d278891f15d9c04a9106",
+    "before_digest": "sha256:cba213ba38ff23f20272da58dca8a1d64ec22669d89798f678dde1c6fb8ea914",
+    "changed_paths": [
+      "lib/rate_limiter.ex"
+    ],
+    "package_writable": false,
+    "passed": true,
+    "provider_calls": false,
+    "repository_oracle": "passed",
+    "system_toolchain": {
+      "blocked": [
+        "erl",
+        "elixir",
+        "mix"
+      ],
+      "invocations": []
+    },
+    "verification": {
+      "command": "mix test",
+      "runner": "private_runtime",
+      "status": "passed"
+    },
+    "workspace_outside_package": true,
+    "workspace_writable": true
+  },
+  "commands": [
+    {
+      "name": "version",
+      "status": 0
+    },
+    {
+      "name": "help",
+      "status": 0
+    },
+    {
+      "name": "run_help",
+      "status": 0
+    },
+    {
+      "name": "eval_help",
+      "status": 0
+    },
+    {
+      "name": "execution_error",
+      "status": 1
+    },
+    {
+      "name": "usage_error",
+      "status": 64
+    },
+    {
+      "matched": true,
+      "name": "provider_free_offline_replay",
+      "status": 0
+    },
+    {
+      "name": "native_library_load",
+      "status": 0
+    }
+  ],
+  "completed_at": "2026-08-17T18:36:25.415711Z",
+  "gates": [
+    "archive checksum",
+    "metadata contract",
+    "internal file inventory",
+    "private runtime",
+    "notices and evidence",
+    "startup performance",
+    "packaged commands",
+    "paint-first TUI",
+    "read-only installation",
+    "external coding workflow"
+  ],
+  "home": {
+    "isolated": true,
+    "operator_home_used": false,
+    "source": "JIDO_HOME"
+  },
+  "isolated_path_features": [
+    "spaces",
+    "non_ascii"
+  ],
+  "jidoka_ref": "29246d0a762fe1b17f4250e4f5c98c9f3f6d8419",
+  "live_provider_calls": false,
+  "path": {
+    "elixir": false,
+    "erl": false,
+    "mix": false,
+    "value": "/usr/bin:/bin"
+  },
+  "read_only_installation": {
+    "package_writable": false,
+    "passed": true
+  },
+  "schema": "jido.acceptance",
+  "schema_version": 1,
+  "sha256": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+  "started_at": "2026-08-17T18:35:34.867170Z",
+  "startup": {
+    "first_frame": {
+      "cold_ms": 243.0,
+      "warm_median_ms": 241.0,
+      "warm_p95_ms": 263.0,
+      "warm_runs": 20,
+      "warm_samples_ms": [
+        274.0,
+        238.0,
+        233.0,
+        250.0,
+        243.0,
+        231.0,
+        247.0,
+        232.0,
+        248.0,
+        244.0,
+        238.0,
+        233.0,
+        241.0,
+        255.0,
+        241.0,
+        226.0,
+        220.0,
+        241.0,
+        263.0,
+        245.0
+      ]
+    },
+    "help": {
+      "cold_ms": 1189.669,
+      "warm_median_ms": 210.447,
+      "warm_p95_ms": 226.355,
+      "warm_runs": 20,
+      "warm_samples_ms": [
+        203.627,
+        202.881,
+        197.859,
+        224.92,
+        226.355,
+        213.13,
+        213.97,
+        206.207,
+        208.995,
+        210.986,
+        203.875,
+        229.281,
+        222.945,
+        207.784,
+        209.908,
+        208.192,
+        220.884,
+        204.898,
+        223.126,
+        225.075
+      ]
+    },
+    "limits_ms": {
+      "first_frame": 500.0,
+      "help": 500.0,
+      "runtime_ready": 1250.0,
+      "version": 500.0
+    },
+    "runtime_ready": {
+      "cold_ms": 1323.0,
+      "warm_median_ms": 1018.5,
+      "warm_p95_ms": 1068.0,
+      "warm_runs": 20,
+      "warm_samples_ms": [
+        1067.0,
+        1012.0,
+        1003.0,
+        1049.0,
+        1015.0,
+        1001.0,
+        1031.0,
+        1022.0,
+        1040.0,
+        1058.0,
+        998.0,
+        1008.0,
+        1040.0,
+        1010.0,
+        1003.0,
+        990.0,
+        1038.0,
+        1011.0,
+        1108.0,
+        1068.0
+      ]
+    },
+    "version": {
+      "cold_ms": 201.09,
+      "warm_median_ms": 222.062,
+      "warm_p95_ms": 238.755,
+      "warm_runs": 20,
+      "warm_samples_ms": [
+        206.685,
+        202.926,
+        210.534,
+        228.42,
+        302.732,
+        222.818,
+        218.024,
+        233.022,
+        230.41,
+        226.937,
+        214.693,
+        211.435,
+        213.704,
+        224.088,
+        219.517,
+        234.904,
+        221.305,
+        238.755,
+        233.731,
+        209.342
+      ]
+    }
+  },
+  "status": "passed",
+  "target": "darwin-arm64",
+  "tui": {
+    "ctrl_c_clean_exit": true,
+    "erlang_break_menu": false,
+    "first_paint_before_ready": true,
+    "input_during_startup": true,
+    "pseudo_terminal_only": true,
+    "queued_submission_count": 1,
+    "startup_failure_display": true,
+    "terminal_cleanup": true
+  },
+  "version": "0.1.0"
+}

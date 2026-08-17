@@ -10,11 +10,10 @@ evidence. It does not change an existing proof record.
 | M2-E38 | `release-acceptance-home.md` | Prove the clean installed-artifact environment uses one private product home. |
 | M2-E39 | `paint-first-packaged-tui.md` | Prove paint-first packaged startup, supervised attach, input queueing, and visible failure. |
 | M2-E40 | `npm-native-root.md` | Prove the npm entry command runs the native launcher from the target package root. |
-| M2-E36 | `v0-2-closeout-candidate.md` | Prove one exact post-closeout source and production artifact. |
+| M2-E36 | [`v0-2-closeout-candidate.md`](v0-2-closeout-candidate.md) | Passed: one exact post-closeout source and production artifact. |
 | M2-E37 | `v0-2-closeout-audit.md` | Audit that source and artifact, reaffirm skipped publication, and name the Milestone 3 baseline. |
 
-These records do not exist until their owning epics complete. M2-E37 is the
-final Milestone 2 gate. It does not authorize publication.
+M2-E37 is the final Milestone 2 gate. It does not authorize publication.
 
 ## Historical Evidence
 

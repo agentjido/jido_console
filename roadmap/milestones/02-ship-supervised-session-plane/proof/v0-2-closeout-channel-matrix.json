@@ -1,0 +1,320 @@
+{
+  "comparison": {
+    "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+    "license": "see LICENSE",
+    "provenance": {
+      "build_time_utc": "2026-08-17T18:16:52Z",
+      "build_type": "local-macos-arm64-mix-release",
+      "builder": "mix jido.release",
+      "distribution": {
+        "github": false,
+        "homebrew": false
+      },
+      "inputs": {
+        "elixir": "1.20.2",
+        "jidoka": "0.9.1",
+        "jidoka_ref": "29246d0a762fe1b17f4250e4f5c98c9f3f6d8419",
+        "mix_lock_sha256": "0a27a559158aee74633008987d5c9cfc68502778476fb3a65dd33fb0f1056f80",
+        "otp": "29",
+        "toolchain_sha256": "6cc0316a440c6aae9d884d2d704ff970f8455c34b054103ed9e64056a2c5caf6"
+      },
+      "schema": "jido.provenance",
+      "schema_version": 1,
+      "source": {
+        "commit": "e7ee26e70c571c9af50ba9840d17f3524ba5e7e0",
+        "dirty": false
+      },
+      "subject": {
+        "name": "jido-0.1.0-darwin-arm64.tar.gz",
+        "sha256": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35"
+      },
+      "target": "darwin-arm64",
+      "trust": {
+        "notarized": false,
+        "publishable": true,
+        "signed": false
+      }
+    },
+    "status": "pass",
+    "version": "0.1.0"
+  },
+  "decision": "pass",
+  "schema": "jido.channel-matrix",
+  "schema_version": 1,
+  "summary": "matrix 3 cells",
+  "supported_cells": [
+    {
+      "arch": "arm64",
+      "channel": "archive",
+      "payload_identity": {
+        "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+        "license": "see LICENSE",
+        "provenance": {
+          "build_time_utc": "2026-08-17T18:16:52Z",
+          "build_type": "local-macos-arm64-mix-release",
+          "builder": "mix jido.release",
+          "distribution": {
+            "github": false,
+            "homebrew": false
+          },
+          "inputs": {
+            "elixir": "1.20.2",
+            "jidoka": "0.9.1",
+            "jidoka_ref": "29246d0a762fe1b17f4250e4f5c98c9f3f6d8419",
+            "mix_lock_sha256": "0a27a559158aee74633008987d5c9cfc68502778476fb3a65dd33fb0f1056f80",
+            "otp": "29",
+            "toolchain_sha256": "6cc0316a440c6aae9d884d2d704ff970f8455c34b054103ed9e64056a2c5caf6"
+          },
+          "schema": "jido.provenance",
+          "schema_version": 1,
+          "source": {
+            "commit": "e7ee26e70c571c9af50ba9840d17f3524ba5e7e0",
+            "dirty": false
+          },
+          "subject": {
+            "name": "jido-0.1.0-darwin-arm64.tar.gz",
+            "sha256": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35"
+          },
+          "target": "darwin-arm64",
+          "trust": {
+            "notarized": false,
+            "publishable": true,
+            "signed": false
+          }
+        },
+        "version": "0.1.0"
+      },
+      "platform": "darwin",
+      "published": false,
+      "schema": "jido.channel-lifecycle",
+      "schema_version": 1,
+      "stages": [
+        {
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "license": "see LICENSE",
+          "method": "archive",
+          "root": "archive",
+          "stage": "install",
+          "status": "pass",
+          "version": "0.1.0"
+        },
+        {
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "compiled": false,
+          "executable": "jido-0.1.0-darwin-arm64/bin/jido",
+          "license": "see LICENSE",
+          "stage": "first_run",
+          "status": "pass",
+          "toolchain": "bundled",
+          "version": "0.1.0"
+        },
+        {
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "license": "see LICENSE",
+          "method": "archive",
+          "stage": "update",
+          "status": "pass",
+          "version": "0.1.0"
+        },
+        {
+          "root_exists": true,
+          "stage": "remove",
+          "status": "pass",
+          "user_data": []
+        }
+      ],
+      "status": "pass",
+      "summary": "archive channel pass"
+    },
+    {
+      "arch": "arm64",
+      "channel": "homebrew",
+      "payload_identity": {
+        "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+        "license": "see LICENSE",
+        "provenance": {
+          "build_time_utc": "2026-08-17T18:16:52Z",
+          "build_type": "local-macos-arm64-mix-release",
+          "builder": "mix jido.release",
+          "distribution": {
+            "github": false,
+            "homebrew": false
+          },
+          "inputs": {
+            "elixir": "1.20.2",
+            "jidoka": "0.9.1",
+            "jidoka_ref": "29246d0a762fe1b17f4250e4f5c98c9f3f6d8419",
+            "mix_lock_sha256": "0a27a559158aee74633008987d5c9cfc68502778476fb3a65dd33fb0f1056f80",
+            "otp": "29",
+            "toolchain_sha256": "6cc0316a440c6aae9d884d2d704ff970f8455c34b054103ed9e64056a2c5caf6"
+          },
+          "schema": "jido.provenance",
+          "schema_version": 1,
+          "source": {
+            "commit": "e7ee26e70c571c9af50ba9840d17f3524ba5e7e0",
+            "dirty": false
+          },
+          "subject": {
+            "name": "jido-0.1.0-darwin-arm64.tar.gz",
+            "sha256": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35"
+          },
+          "target": "darwin-arm64",
+          "trust": {
+            "notarized": false,
+            "publishable": true,
+            "signed": false
+          }
+        },
+        "version": "0.1.0"
+      },
+      "platform": "darwin",
+      "published": false,
+      "schema": "jido.channel-lifecycle",
+      "schema_version": 1,
+      "stages": [
+        {
+          "cellar": "Cellar/jido/0.1.0",
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "formula": "Formula/jido.rb",
+          "formula_revision": 1,
+          "license": "see LICENSE",
+          "method": "homebrew_formula",
+          "root": "0.1.0",
+          "stage": "install",
+          "status": "pass",
+          "version": "0.1.0"
+        },
+        {
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "compiled": false,
+          "executable": "jido-0.1.0-darwin-arm64/bin/jido",
+          "formula_revision": 1,
+          "license": "see LICENSE",
+          "stage": "first_run",
+          "status": "pass",
+          "toolchain": "bundled",
+          "version": "0.1.0"
+        },
+        {
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "from_revision": 1,
+          "license": "see LICENSE",
+          "method": "homebrew_formula",
+          "stage": "update",
+          "status": "pass",
+          "to_revision": 1,
+          "version": "0.1.0"
+        },
+        {
+          "formula_revision": 1,
+          "method": "homebrew_uninstall",
+          "root_exists": false,
+          "stage": "remove",
+          "status": "pass"
+        }
+      ],
+      "status": "pass",
+      "summary": "homebrew channel pass"
+    },
+    {
+      "arch": "arm64",
+      "channel": "npm",
+      "payload_identity": {
+        "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+        "license": "see LICENSE",
+        "provenance": {
+          "build_time_utc": "2026-08-17T18:16:52Z",
+          "build_type": "local-macos-arm64-mix-release",
+          "builder": "mix jido.release",
+          "distribution": {
+            "github": false,
+            "homebrew": false
+          },
+          "inputs": {
+            "elixir": "1.20.2",
+            "jidoka": "0.9.1",
+            "jidoka_ref": "29246d0a762fe1b17f4250e4f5c98c9f3f6d8419",
+            "mix_lock_sha256": "0a27a559158aee74633008987d5c9cfc68502778476fb3a65dd33fb0f1056f80",
+            "otp": "29",
+            "toolchain_sha256": "6cc0316a440c6aae9d884d2d704ff970f8455c34b054103ed9e64056a2c5caf6"
+          },
+          "schema": "jido.provenance",
+          "schema_version": 1,
+          "source": {
+            "commit": "e7ee26e70c571c9af50ba9840d17f3524ba5e7e0",
+            "dirty": false
+          },
+          "subject": {
+            "name": "jido-0.1.0-darwin-arm64.tar.gz",
+            "sha256": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35"
+          },
+          "target": "darwin-arm64",
+          "trust": {
+            "notarized": false,
+            "publishable": true,
+            "signed": false
+          }
+        },
+        "version": "0.1.0"
+      },
+      "platform": "darwin",
+      "published": false,
+      "schema": "jido.channel-lifecycle",
+      "schema_version": 1,
+      "stages": [
+        {
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "entry_package": "@agentjido/jido-console",
+          "entry_path": "node_modules/@agentjido/jido-console",
+          "executable": "bin/jido",
+          "flow": "global",
+          "license": "see LICENSE",
+          "method": "npm_package",
+          "root": "npm",
+          "stage": "install",
+          "status": "pass",
+          "target_package": "@agentjido/jido-console-darwin-arm64",
+          "target_path": "node_modules/@agentjido/jido-console-darwin-arm64",
+          "version": "0.1.0"
+        },
+        {
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "compiled": false,
+          "executable": "bin/jido",
+          "flow": "global",
+          "license": "see LICENSE",
+          "stage": "first_run",
+          "status": "pass",
+          "toolchain": "bundled",
+          "version": "0.1.0"
+        },
+        {
+          "checksum": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35",
+          "flow": "global",
+          "license": "see LICENSE",
+          "method": "npm_package",
+          "stage": "update",
+          "status": "pass",
+          "target_package": "@agentjido/jido-console-darwin-arm64",
+          "version": "0.1.0"
+        },
+        {
+          "entry_package": "@agentjido/jido-console",
+          "flow": "global",
+          "method": "npm_uninstall",
+          "root_exists": false,
+          "stage": "remove",
+          "status": "pass",
+          "target_package": "@agentjido/jido-console-darwin-arm64"
+        }
+      ],
+      "status": "pass",
+      "summary": "npm channel pass"
+    }
+  ],
+  "untested": [
+    "linux",
+    "windows",
+    "darwin-x64"
+  ]
+}

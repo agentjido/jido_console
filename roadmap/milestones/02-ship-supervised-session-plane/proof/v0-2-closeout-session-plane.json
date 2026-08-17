@@ -1,0 +1,169 @@
+{
+  "artifact_runtime": {
+    "code_paths": {
+      "Jido.Console.Session.Cancellation": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Cancellation.beam",
+      "Jido.Console.Session.Client": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Client.beam",
+      "Jido.Console.Session.Client.Automation": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Client.Automation.beam",
+      "Jido.Console.Session.Client.Boundary": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Client.Boundary.beam",
+      "Jido.Console.Session.Client.JSON": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Client.JSON.beam",
+      "Jido.Console.Session.Client.TUI": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Client.TUI.beam",
+      "Jido.Console.Session.Client.Text": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Client.Text.beam",
+      "Jido.Console.Session.Delivery": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Delivery.beam",
+      "Jido.Console.Session.Drain": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Drain.beam",
+      "Jido.Console.Session.Recovery": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Recovery.beam",
+      "Jido.Console.Session.Server": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/lib/jido_console-0.1.0/ebin/Elixir.Jido.Console.Session.Server.beam"
+    },
+    "install_root": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64",
+    "private_runtime": "/private/tmp/jido-m2e36-artifact.4FcfE7/jido-0.1.0-darwin-arm64/libexec/bin/jido"
+  },
+  "current_client_parity": {
+    "automation_paths": {
+      "eval": "passed",
+      "run": "passed"
+    },
+    "control_result": "ok",
+    "control_terminal": "cancelled",
+    "control_types": [
+      "run_started",
+      "control_requested",
+      "control_completed",
+      "run_failed"
+    ],
+    "expected_types": [
+      "run_started",
+      "tool_started",
+      "tool_completed",
+      "model_delta",
+      "permission_requested",
+      "permission_decided",
+      "run_completed"
+    ],
+    "fixture_version": 1,
+    "ledger_fingerprint": "sha256:075e0de8df90d5e56790a2b70e0a09099f142d07a2f3a6cd367cb9803f1252d8",
+    "lifecycle": {
+      "detached": "{:error, :not_attached}",
+      "gap": "gap",
+      "receipt": "recovery_receipt",
+      "recovery": "recovery_snapshot",
+      "stale_completion": "{:error, :stale_completion_token}",
+      "suffix": "recovery_suffix"
+    },
+    "live_provider_calls": false,
+    "public_tui_entry": "pass",
+    "same_ledger": true,
+    "same_side_effects": true,
+    "surfaces": [
+      "tui",
+      "automation",
+      "text",
+      "json"
+    ]
+  },
+  "known_limit": "Recovery is process-lifetime only; it is not application-restart recovery, durable resume, or a durable receipt.",
+  "lifecycle_and_cleanup": {
+    "active_request_after_cancel": null,
+    "attachment_replaced": true,
+    "cancel_result": "cancelled",
+    "cancellation_status": "cancelled",
+    "detach_kept_owner_alive": true,
+    "exact_drain_complete": true,
+    "parent_first_drain_complete": false,
+    "server_stopped": true,
+    "typed_start_failure": "artifact_start_failure"
+  },
+  "raw_path_guard": {
+    "approved_ingresses": [
+      {
+        "function": "handle_info/2",
+        "path": "lib/jido_console/session/server.ex"
+      }
+    ],
+    "deliberate_fixture_rejected": true,
+    "legacy_owner_violations": 0,
+    "parity_deliberate_tokens": [
+      "{:jidoka,",
+      "Session.Server"
+    ],
+    "parity_oracle_violations": 0,
+    "parity_raw_violations": 0,
+    "tui_boundary_violations": 0
+  },
+  "receiver_bounds": {
+    "attached_delivery": {
+      "advisory_count": 1,
+      "inflight_bytes": 0,
+      "queue_count": 0,
+      "queued_bytes": 0,
+      "status": "gapped"
+    },
+    "attached_owner_operations": 100,
+    "attached_owner_sequence": 200,
+    "copied_message_bytes": 62,
+    "copied_message_count": 1,
+    "held_ms": 5100,
+    "inflight_batch": {
+      "bytes": 7461,
+      "count": 16,
+      "first_sequence": 1,
+      "measurements": {
+        "advisory_count": 0,
+        "inflight_bytes": 7461,
+        "queue_count": 0,
+        "queued_bytes": 0,
+        "status": "ack_required"
+      },
+      "through_sequence": 16
+    },
+    "limits": {
+      "ack_timeout_ms": 5000,
+      "advisory_bytes": 4096,
+      "advisory_count": 1,
+      "batch_bytes": 262144,
+      "batch_count": 16,
+      "copied_bytes": 262144,
+      "queue_bytes": 1048576,
+      "queue_count": 32
+    },
+    "mailbox_count": 1,
+    "stopped_delivery": {
+      "advisory_count": 1,
+      "inflight_bytes": 0,
+      "queue_count": 0,
+      "queued_bytes": 0,
+      "status": "gapped"
+    },
+    "timeout_reason": "acknowledgement_timeout",
+    "updates_offered": 10000
+  },
+  "recovery_and_incremental_output": {
+    "gap_reason": "acknowledgement_timeout",
+    "ordinary_envelope_types": [
+      "output_batch",
+      "output_batch"
+    ],
+    "ordinary_incremental_sequences": [
+      [
+        1,
+        2
+      ],
+      [
+        3
+      ]
+    ],
+    "owner_sequence": 3,
+    "post_recovery_incremental_sequences": [
+      4
+    ],
+    "receipt_through_sequence": 3,
+    "restored_equals_owner": true,
+    "snapshot_sequence": 1,
+    "suffix_sequences": [
+      2,
+      3
+    ],
+    "suffix_through_sequence": 3
+  },
+  "schema": "jido.m2e36-artifact-proof",
+  "schema_version": 1,
+  "status": "pass"
+}

@@ -1,0 +1,33 @@
+{
+  "build_time_utc": "2026-08-17T18:16:52Z",
+  "build_type": "local-macos-arm64-mix-release",
+  "builder": "mix jido.release",
+  "distribution": {
+    "github": false,
+    "homebrew": false
+  },
+  "inputs": {
+    "elixir": "1.20.2",
+    "jidoka": "0.9.1",
+    "jidoka_ref": "29246d0a762fe1b17f4250e4f5c98c9f3f6d8419",
+    "mix_lock_sha256": "0a27a559158aee74633008987d5c9cfc68502778476fb3a65dd33fb0f1056f80",
+    "otp": "29",
+    "toolchain_sha256": "6cc0316a440c6aae9d884d2d704ff970f8455c34b054103ed9e64056a2c5caf6"
+  },
+  "schema": "jido.provenance",
+  "schema_version": 1,
+  "source": {
+    "commit": "e7ee26e70c571c9af50ba9840d17f3524ba5e7e0",
+    "dirty": false
+  },
+  "subject": {
+    "name": "jido-0.1.0-darwin-arm64.tar.gz",
+    "sha256": "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35"
+  },
+  "target": "darwin-arm64",
+  "trust": {
+    "notarized": false,
+    "publishable": true,
+    "signed": false
+  }
+}
