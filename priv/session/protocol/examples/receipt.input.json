@@ -1,0 +1,17 @@
+{
+  "protocol": "jido.session",
+  "version": "1",
+  "family": "receipt",
+  "type": "input",
+  "id": "rcp_input_fixture",
+  "session_id": "ses_fixture",
+  "payload": {
+    "operation_id": "op_input_fixture",
+    "idempotency_key": "idem_input_fixture",
+    "payload_digest": "sha256:input-fixture",
+    "sequence": 12,
+    "durability": "durable",
+    "commit_boundary": "sqlite_full_commit",
+    "status": "committed"
+  }
+}

@@ -76,16 +76,64 @@
       "attachment",
       "input",
       "command",
-      "invocation"
+      "invocation",
+      "operation",
+      "result",
+      "receipt",
+      "generation",
+      "owner_instance",
+      "watermark",
+      "snapshot"
     ]
   },
   "classifications": {
     "version": "1",
     "compatibility": "additive",
-    "durability": ["ephemeral", "process"],
+    "durability": ["ephemeral", "process", "durable"],
     "sensitivity": ["public", "redacted", "secret"],
     "origin_kinds": ["client", "session", "worker", "jidoka", "system"],
     "trust_fields": ["evidence", "policy"]
+  },
+  "sensitive_values": {
+    "version": "1",
+    "allowed_reference_fields": [
+      "credential_profile_id",
+      "credential_reference_id",
+      "credential_source_identity"
+    ],
+    "forbidden_field_names": [
+      "api_key",
+      "authorization",
+      "cookie",
+      "credential",
+      "credential_value",
+      "password",
+      "private_key",
+      "secret",
+      "secret_value",
+      "token"
+    ],
+    "forbidden_shell_flags": [
+      "--api-key",
+      "--authorization",
+      "--cookie",
+      "--credential",
+      "--password",
+      "--secret",
+      "--token"
+    ],
+    "structural_string_fields": [
+      "arguments",
+      "effective_arguments",
+      "environment",
+      "headers",
+      "metadata",
+      "uri",
+      "url"
+    ],
+    "uri_fields": ["uri", "url"],
+    "rejection_types": ["sensitive_value_rejected", "sensitive_result_blocked"],
+    "detail_limit_bytes": 2048
   },
   "families": {
     "command": {
@@ -302,6 +350,182 @@
         "drain": {
           "locality": "shared",
           "fields": ["control_id", "run_id"]
+        }
+      }
+    },
+    "receipt": {
+      "version": "1",
+      "compatibility": "additive",
+      "description": "Durable commit receipts and the separate process-lifetime client acknowledgement.",
+      "types": {
+        "input": {
+          "locality": "shared",
+          "required": ["operation_id", "idempotency_key", "payload_digest", "sequence", "durability", "commit_boundary", "status"],
+          "fields": ["operation_id", "idempotency_key", "payload_digest", "sequence", "durability", "commit_boundary", "status"],
+          "field_values": {"durability": ["durable"], "commit_boundary": ["sqlite_full_commit"], "status": ["committed", "timeout_unknown"]}
+        },
+        "command": {
+          "locality": "shared",
+          "required": ["operation_id", "idempotency_key", "payload_digest", "result_id", "effective_arguments", "sequence", "durability", "commit_boundary", "status"],
+          "fields": ["operation_id", "idempotency_key", "payload_digest", "result_id", "effective_arguments", "sequence", "durability", "commit_boundary", "status"],
+          "field_values": {"durability": ["durable"], "commit_boundary": ["sqlite_full_commit"], "status": ["committed", "timeout_unknown"]}
+        },
+        "console_event": {
+          "locality": "shared",
+          "required": ["operation_id", "event_id", "sequence", "chain_digest", "durability", "commit_boundary", "status"],
+          "fields": ["operation_id", "event_id", "sequence", "chain_digest", "durability", "commit_boundary", "status"],
+          "field_values": {"durability": ["durable"], "commit_boundary": ["sqlite_full_commit"], "status": ["committed", "timeout_unknown"]}
+        },
+        "jidoka_checkpoint": {
+          "locality": "shared",
+          "required": ["operation_id", "jidoka_session_id", "jidoka_revision", "snapshot_id", "value_digest", "durability", "commit_boundary", "status"],
+          "fields": ["operation_id", "jidoka_session_id", "jidoka_revision", "snapshot_id", "value_digest", "durability", "commit_boundary", "status"],
+          "field_values": {"durability": ["durable"], "commit_boundary": ["jidoka_store_transition"], "status": ["committed", "timeout_unknown"]}
+        },
+        "effect_start": {
+          "locality": "shared",
+          "required": ["operation_id", "result_id", "arguments_digest", "safety_class", "replay_rule", "approval_id", "durability", "commit_boundary", "status"],
+          "fields": ["operation_id", "result_id", "arguments_digest", "safety_class", "replay_rule", "approval_id", "durability", "commit_boundary", "status"],
+          "field_values": {"durability": ["durable"], "commit_boundary": ["sqlite_full_commit"], "status": ["committed", "timeout_unknown"]}
+        },
+        "effect_result": {
+          "locality": "shared",
+          "required": ["operation_id", "result_id", "jidoka_revision", "result_status", "durability", "commit_boundary", "status"],
+          "fields": ["operation_id", "result_id", "jidoka_revision", "result_status", "durability", "commit_boundary", "status"],
+          "field_values": {"durability": ["durable"], "commit_boundary": ["jidoka_store_transition"], "status": ["committed", "timeout_unknown"]}
+        },
+        "watermark": {
+          "locality": "shared",
+          "required": ["operation_id", "watermark_id", "watermark_state", "durability", "commit_boundary", "status"],
+          "fields": ["operation_id", "watermark_id", "watermark_state", "durability", "commit_boundary", "status"],
+          "field_values": {"watermark_state": ["verified"], "durability": ["durable"], "commit_boundary": ["verified_watermark_commit"], "status": ["committed", "timeout_unknown"]}
+        },
+        "client_output": {
+          "locality": "client_local",
+          "required": ["attachment_id", "through_sequence", "durability", "commit_boundary", "status"],
+          "fields": ["attachment_id", "through_sequence", "durability", "commit_boundary", "status"],
+          "field_values": {"durability": ["process"], "commit_boundary": ["live_attachment_apply"], "status": ["applied"]}
+        }
+      }
+    },
+    "generation": {
+      "version": "1",
+      "compatibility": "additive",
+      "description": "Durable owner-generation claims and stale-operation results.",
+      "types": {
+        "claim": {
+          "locality": "shared",
+          "required": ["generation", "owner_instance_id", "prior_generation", "operation_id", "status"],
+          "fields": ["generation", "owner_instance_id", "prior_generation", "operation_id", "status"],
+          "field_values": {"status": ["claimed", "conflict", "timeout_unknown"]}
+        },
+        "fenced_operation": {
+          "locality": "shared",
+          "required": ["generation", "owner_instance_id", "operation_id", "status"],
+          "fields": ["generation", "owner_instance_id", "operation_id", "status"],
+          "field_values": {"status": ["accepted", "stale_generation", "wrong_owner"]}
+        }
+      }
+    },
+    "watermark": {
+      "version": "1",
+      "compatibility": "additive",
+      "description": "One verified Console-to-Jidoka durable boundary.",
+      "types": {
+        "console_jidoka": {
+          "locality": "shared",
+          "required": ["watermark_id", "generation", "console_sequence", "console_event_id", "console_chain_digest", "jidoka_session_id", "jidoka_revision", "jidoka_snapshot_id", "jidoka_value_digest", "jidoka_request_id", "jidoka_lease_id", "protocol_version", "durable_schema_version", "state"],
+          "fields": ["watermark_id", "generation", "console_sequence", "console_event_id", "console_chain_digest", "jidoka_session_id", "jidoka_revision", "jidoka_snapshot_id", "jidoka_value_digest", "jidoka_request_id", "jidoka_lease_id", "protocol_version", "durable_schema_version", "state"],
+          "field_values": {"state": ["reserved", "jidoka_committed", "console_committed", "verified", "repair_required", "abandoned"]}
+        }
+      }
+    },
+    "recovery": {
+      "version": "1",
+      "compatibility": "additive",
+      "description": "Store and session recovery states that do not grant execution authority.",
+      "types": {
+        "store_state": {
+          "locality": "shared",
+          "required": ["state", "schema_version", "diagnostics"],
+          "fields": ["state", "schema_version", "diagnostics"],
+          "field_values": {"state": ["validating_home", "recovering_maintenance", "migrating_store", "verifying_store", "store_ready", "unavailable"]}
+        },
+        "session_state": {
+          "locality": "shared",
+          "required": ["generation", "state", "diagnostics"],
+          "fields": ["generation", "state", "diagnostics"],
+          "field_values": {"state": ["loading", "claiming_generation", "verifying_history", "reconciling", "rebuilding", "exact_candidate", "transcript_candidate", "repair_required", "unavailable", "ready_exact", "ready_transcript_only"]}
+        },
+        "continuity_mode": {
+          "locality": "shared",
+          "required": ["mode", "ready", "execution_authority", "watermark_id"],
+          "fields": ["mode", "ready", "execution_authority", "watermark_id"],
+          "field_values": {"mode": ["exact", "transcript_only"], "ready": [true, false], "execution_authority": ["none", "explicit_continuation_only", "read_only"]}
+        }
+      }
+    },
+    "operation": {
+      "version": "1",
+      "compatibility": "additive",
+      "description": "Separate typed results for continuity and administrative operations.",
+      "types": {
+        "exact_resume": {
+          "locality": "shared",
+          "required": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule"],
+          "fields": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "watermark_id", "generation"],
+          "field_values": {"status": ["ready_exact", "rejected"], "mode": ["exact"], "calls_model_or_tool": [false], "watermark_required": ["yes"]}
+        },
+        "transcript_only_resume": {
+          "locality": "shared",
+          "required": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule"],
+          "fields": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "last_verified_watermark_id"],
+          "field_values": {"status": ["ready_transcript_only", "rejected"], "mode": ["transcript_only"], "calls_model_or_tool": [false], "watermark_required": ["no"]}
+        },
+        "retry": {
+          "locality": "shared",
+          "required": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "new_request_id", "new_result_id"],
+          "fields": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "new_request_id", "new_result_id"],
+          "field_values": {"status": ["reserved", "rejected", "timeout_unknown"], "mode": ["retry"], "calls_model_or_tool": [true], "watermark_required": ["no"]}
+        },
+        "repair": {
+          "locality": "shared",
+          "required": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "decision_id"],
+          "fields": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "decision_id"],
+          "field_values": {"status": ["planned", "completed", "rejected", "timeout_unknown"], "mode": ["repair"], "calls_model_or_tool": [false], "watermark_required": ["depends_on_case"]}
+        },
+        "abandon": {
+          "locality": "shared",
+          "required": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "decision_id"],
+          "fields": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "decision_id"],
+          "field_values": {"status": ["abandoned", "rejected", "timeout_unknown"], "mode": ["abandon"], "calls_model_or_tool": [false], "watermark_required": ["no"]}
+        },
+        "fork": {
+          "locality": "shared",
+          "required": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "child_session_id", "parent_boundary"],
+          "fields": ["operation_id", "status", "mode", "calls_model_or_tool", "watermark_required", "authority_rule", "child_session_id", "parent_boundary"],
+          "field_values": {"status": ["forked", "rejected", "timeout_unknown"], "mode": ["exact_fork", "transcript_only_fork"], "calls_model_or_tool": [false], "watermark_required": ["yes", "no"]}
+        }
+      }
+    },
+    "rejection": {
+      "version": "1",
+      "compatibility": "additive",
+      "description": "Bounded redacted results for structural admission and final-call containment.",
+      "types": {
+        "sensitive_value_rejected": {
+          "locality": "shared",
+          "required": ["operation_id", "phase", "surface", "reason", "redacted_details"],
+          "fields": ["operation_id", "phase", "surface", "reason", "redacted_details"],
+          "field_values": {"phase": ["before_persistence"], "surface": ["input", "command", "effect", "metadata", "error", "jidoka_value"]},
+          "max_encoded_bytes": 65536
+        },
+        "sensitive_result_blocked": {
+          "locality": "shared",
+          "required": ["operation_id", "phase", "surface", "reason", "redacted_details"],
+          "fields": ["operation_id", "phase", "surface", "reason", "redacted_details"],
+          "field_values": {"phase": ["final_boundary"], "surface": ["provider_arguments", "provider_result", "tool_arguments", "tool_result"]},
+          "max_encoded_bytes": 65536
         }
       }
     }

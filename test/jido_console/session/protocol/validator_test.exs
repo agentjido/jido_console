@@ -1,7 +1,7 @@
 defmodule Jido.Console.Session.Protocol.ValidatorTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Session.Protocol
+  alias Jido.Console.Session.{Continuity, Protocol}
   alias Jido.Console.Session.Protocol.{Generated, Generator, Validator}
 
   test "generated Elixir and TypeScript types stay synchronized with the schema" do
@@ -144,8 +144,155 @@ defmodule Jido.Console.Session.Protocol.ValidatorTest do
 
     assert {:error, :unknown_data_overflow} = Validator.validate(envelope(%{"payload" => too_many_unknown}))
 
-    assert {:error, :unknown_data_overflow} =
+    assert {:error, {:forbidden_runtime_value, :function}} =
              Validator.validate(envelope(%{"payload" => %{"text" => "hello", "callback" => fn -> :ok end}}))
+  end
+
+  test "durable protocol families expose separate generated result contracts" do
+    assert Generated.types("receipt") ==
+             ~w(client_output command console_event effect_result effect_start input jidoka_checkpoint watermark)
+
+    assert Generated.types("generation") == ~w(claim fenced_operation)
+    assert Generated.types("watermark") == ["console_jidoka"]
+    assert Generated.types("recovery") == ~w(continuity_mode session_state store_state)
+
+    assert Generated.types("operation") ==
+             ~w(abandon exact_resume fork repair retry transcript_only_resume)
+
+    assert Generated.types("rejection") ==
+             ~w(sensitive_result_blocked sensitive_value_rejected)
+
+    exact = get_in(Generated.catalog(), ["families", "operation", "types", "exact_resume"])
+    transcript = get_in(Generated.catalog(), ["families", "operation", "types", "transcript_only_resume"])
+    retry = get_in(Generated.catalog(), ["families", "operation", "types", "retry"])
+
+    assert exact["field_values"]["watermark_required"] == ["yes"]
+    assert transcript["field_values"]["mode"] == ["transcript_only"]
+    assert retry["field_values"]["calls_model_or_tool"] == [true]
+  end
+
+  test "canonical durable fixtures validate through generated contracts" do
+    root = Path.dirname(Protocol.schema_path())
+
+    for name <- ~w(
+          receipt.input.json
+          generation.claim.json
+          watermark.console_jidoka.json
+          recovery.session_state.json
+          operation.exact_resume.json
+          rejection.sensitive_value_rejected.json
+        ) do
+      assert {:ok, validated} =
+               root
+               |> Path.join("examples/#{name}")
+               |> File.read!()
+               |> Validator.validate_json()
+
+      assert validated["protocol"] == "jido.session"
+    end
+  end
+
+  test "fixed values reject an invalid continuity mode and watermark state" do
+    assert {:error, {:invalid_protocol_field_value, "recovery", "continuity_mode", "mode"}} =
+             protocol_envelope("recovery", "continuity_mode", %{
+               "mode" => "silent_downgrade",
+               "ready" => false,
+               "execution_authority" => "none",
+               "watermark_id" => nil
+             })
+             |> Validator.validate()
+
+    assert {:error, {:invalid_protocol_field_value, "watermark", "console_jidoka", "state"}} =
+             watermark_envelope("implicitly_verified")
+             |> Validator.validate()
+  end
+
+  test "structural credential canaries fail with bounded redacted results" do
+    path =
+      Continuity.schema_path()
+      |> Path.dirname()
+      |> Path.join("rejection-fixtures.v1.json")
+
+    fixtures = path |> File.read!() |> Jason.decode!()
+    assert fixtures["canary"] == "CANARY_DO_NOT_STORE"
+
+    transition = Enum.find(fixtures["generated_cases"], &(&1["name"] == "invalid_watermark_transition"))
+    assert {:ok, contract} = Continuity.schema()
+
+    assert {:error, {:invalid_watermark_transition, "reserved", "verified"}} =
+             Continuity.validate_watermark_transition(contract, transition["from"], transition["to"])
+
+    Enum.each(fixtures["cases"], fn fixture ->
+      assert {:error, {:sensitive_value_rejected, surface, details}} =
+               Validator.validate(fixture["envelope"])
+
+      assert is_binary(surface) and surface != ""
+      assert details["redacted"] == true
+      refute inspect({surface, details}) =~ fixtures["canary"]
+    end)
+
+    assert {:ok, _value} =
+             Validator.validate(
+               envelope(%{
+                 "payload" => %{
+                   "text" => "A normal prompt can name ${SERVICE_TOKEN} without secret resolution.",
+                   "credential_profile_id" => "profile_fixture"
+                 }
+               })
+             )
+  end
+
+  test "final-call containment blocks a materialized value without returning it" do
+    canary = "MATERIALIZED_CANARY_VALUE"
+
+    value =
+      protocol_envelope("outcome", "completed", %{
+        "ref_id" => "run_fixture",
+        "content" => "provider returned #{canary}",
+        "view" => %{}
+      })
+
+    assert {:error, {:sensitive_result_blocked, :final_boundary, details}} =
+             Validator.validate_final_boundary(value, [canary])
+
+    assert details["redacted"] == true
+    assert details["path"] == "payload.content"
+    refute inspect(details) =~ canary
+    assert {:ok, ^value} = Validator.validate_final_boundary(value, ["different value"])
+  end
+
+  test "PID, reference, port, function, struct, and non-string keys cannot enter generated values" do
+    port = Port.open({:spawn, "true"}, [])
+
+    on_exit(fn ->
+      if Port.info(port), do: Port.close(port)
+    end)
+
+    assert_runtime_rejection(self(), :pid)
+    assert_runtime_rejection(make_ref(), :reference)
+    assert_runtime_rejection(port, :port)
+    assert_runtime_rejection(fn -> :ok end, :function)
+
+    assert {:error, {:forbidden_runtime_value, :struct}} =
+             Validator.validate(envelope(%{"payload" => %{"text" => %URI{host: "example.test"}}}))
+
+    assert {:error, :non_string_protocol_key} =
+             Validator.validate(envelope(%{"payload" => %{"text" => %{:atom_key => true}}}))
+  end
+
+  test "rejection details keep their exact encoded bound" do
+    oversized = String.duplicate("x", 65_536)
+
+    value =
+      protocol_envelope("rejection", "sensitive_value_rejected", %{
+        "operation_id" => "op_fixture",
+        "phase" => "before_persistence",
+        "surface" => "metadata",
+        "reason" => "fixture",
+        "redacted_details" => oversized
+      })
+
+    assert {:error, :oversized_protocol_payload} = Validator.validate(value)
   end
 
   defp envelope(overrides) do
@@ -177,5 +324,33 @@ defmodule Jido.Console.Session.Protocol.ValidatorTest do
           fields
         )
     })
+  end
+
+  defp protocol_envelope(family, type, payload) do
+    envelope(%{"family" => family, "type" => type, "payload" => payload})
+  end
+
+  defp watermark_envelope(state) do
+    protocol_envelope("watermark", "console_jidoka", %{
+      "watermark_id" => "wm_fixture",
+      "generation" => 2,
+      "console_sequence" => 4,
+      "console_event_id" => "evt_fixture",
+      "console_chain_digest" => "sha256:console",
+      "jidoka_session_id" => "jidoka_fixture",
+      "jidoka_revision" => 3,
+      "jidoka_snapshot_id" => "snapshot_fixture",
+      "jidoka_value_digest" => "sha256:jidoka",
+      "jidoka_request_id" => "request_fixture",
+      "jidoka_lease_id" => "lease_fixture",
+      "protocol_version" => "1",
+      "durable_schema_version" => "1",
+      "state" => state
+    })
+  end
+
+  defp assert_runtime_rejection(runtime_value, kind) do
+    assert {:error, {:forbidden_runtime_value, ^kind}} =
+             Validator.validate(envelope(%{"payload" => %{"text" => runtime_value}}))
   end
 end

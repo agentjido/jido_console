@@ -1,0 +1,18 @@
+{
+  "protocol": "jido.session",
+  "version": "1",
+  "family": "operation",
+  "type": "exact_resume",
+  "id": "opr_exact_fixture",
+  "session_id": "ses_fixture",
+  "payload": {
+    "operation_id": "op_exact_fixture",
+    "status": "ready_exact",
+    "mode": "exact",
+    "calls_model_or_tool": false,
+    "watermark_required": "yes",
+    "authority_rule": "new_generation_and_valid_jidoka_lease",
+    "watermark_id": "wm_fixture",
+    "generation": 4
+  }
+}
