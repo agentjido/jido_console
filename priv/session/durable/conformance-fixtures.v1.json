@@ -1,0 +1,35 @@
+{
+  "schema": "jido.console.durable-conformance-fixtures",
+  "version": 1,
+  "canonical_record": {
+    "record_schema": "jido.console.record",
+    "record_schema_version": 1,
+    "store_format_version": 1,
+    "record_type": "input_receipt",
+    "record_id": "record-fixture",
+    "scope_id": "session-fixture",
+    "generation": 1,
+    "sequence": 0,
+    "prior_record_digest": "genesis",
+    "payload": {
+      "operation_id": "operation-fixture",
+      "idempotency_key": "idempotency-fixture",
+      "payload_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "input_id": "input-fixture",
+      "admission_state": "committed"
+    }
+  },
+  "negative_cases": [
+    {"name": "future_store", "expected": "incompatible_future_store_format"},
+    {"name": "unknown_record", "expected": "unknown_record_type"},
+    {"name": "noncanonical_json", "expected": "noncanonical_record"},
+    {"name": "record_digest_tamper", "expected": "record_digest_mismatch"},
+    {"name": "record_insertion", "expected": "prior_record_digest_mismatch"},
+    {"name": "record_deletion", "expected": "prior_record_digest_mismatch"},
+    {"name": "record_reordering", "expected": "prior_record_digest_mismatch"},
+    {"name": "credential_field", "expected": "sensitive_value_rejected"},
+    {"name": "runtime_value", "expected": "sensitive_value_rejected"},
+    {"name": "oversized_record", "expected": "oversized_record"},
+    {"name": "oversized_jidoka_value", "expected": "oversized_jidoka_value"}
+  ]
+}

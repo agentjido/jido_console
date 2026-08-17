@@ -1,0 +1,175 @@
+{
+  "schema": "jido.console.durable-catalog",
+  "version": 1,
+  "store_format_version": 1,
+  "record_schema_version": 1,
+  "record_envelope": {
+    "required": ["record_schema", "record_schema_version", "store_format_version", "record_type", "record_id", "scope_id", "generation", "sequence", "prior_record_digest", "payload"],
+    "fields": ["record_schema", "record_schema_version", "store_format_version", "record_type", "record_id", "scope_id", "generation", "sequence", "prior_record_digest", "payload"]
+  },
+  "record_types": {
+    "store_manifest": {
+      "required": ["format", "schema_version", "migration_checksums", "product_instance_id", "limits_digest"],
+      "fields": ["format", "schema_version", "migration_checksums", "product_instance_id", "limits_digest", "created_at_ms"]
+    },
+    "session_manifest": {
+      "required": ["session_id", "lifecycle", "generation", "continuity_mode", "current_heads"],
+      "fields": ["session_id", "lifecycle", "generation", "continuity_mode", "current_heads", "terminal_status"]
+    },
+    "generation_claim": {
+      "required": ["session_id", "generation", "owner_instance_id", "prior_generation"],
+      "fields": ["session_id", "generation", "owner_instance_id", "prior_generation", "operation_id"]
+    },
+    "canonical_console_event": {
+      "required": ["event_id", "sequence", "event_class", "origin", "trust", "sensitivity", "event"],
+      "fields": ["event_id", "sequence", "event_class", "origin", "trust", "sensitivity", "event", "jidoka_link"]
+    },
+    "input_receipt": {
+      "required": ["operation_id", "idempotency_key", "payload_digest", "input_id", "admission_state"],
+      "fields": ["operation_id", "idempotency_key", "payload_digest", "input_id", "admission_state", "principal_id"]
+    },
+    "command_receipt": {
+      "required": ["operation_id", "idempotency_key", "command_id", "effective_arguments", "result_id"],
+      "fields": ["operation_id", "idempotency_key", "command_id", "effective_arguments", "result_id", "principal_id"]
+    },
+    "queue_mutation": {
+      "required": ["queue_kind", "item_id", "position", "action", "result"],
+      "fields": ["queue_kind", "item_id", "position", "action", "result", "payload_digest"]
+    },
+    "interaction_permission": {
+      "required": ["request_id", "scope", "principal_id", "decision", "consumed"],
+      "fields": ["request_id", "scope", "principal_id", "decision", "consumed", "expires_at_ms"]
+    },
+    "turn_manifest": {
+      "required": ["request_id", "provider_id", "model_id", "settings_digest", "prompt_digest", "tool_schema_digest", "skill_schema_digest", "workspace_digest", "credential_profile_id", "credential_reference_id"],
+      "fields": ["request_id", "provider_id", "model_id", "settings_digest", "prompt_digest", "tool_schema_digest", "skill_schema_digest", "workspace_digest", "credential_profile_id", "credential_reference_id", "execution_environment_id"]
+    },
+    "effect_reservation": {
+      "required": ["result_id", "effective_arguments", "safety_class", "replay_rule", "approval_id"],
+      "fields": ["result_id", "effective_arguments", "safety_class", "replay_rule", "approval_id", "credential_reference_id", "workspace_digest"]
+    },
+    "effect_resolution": {
+      "required": ["result_id", "status", "jidoka_revision"],
+      "fields": ["result_id", "status", "jidoka_revision", "result_digest", "decision_id"]
+    },
+    "verified_watermark": {
+      "required": ["watermark_id", "console_identity", "console_digest", "jidoka_identity", "jidoka_digest", "state"],
+      "fields": ["watermark_id", "console_identity", "console_digest", "jidoka_identity", "jidoka_digest", "state"]
+    },
+    "fork_reservation_lineage": {
+      "required": ["operation_id", "child_session_id", "parent_session_id", "parent_boundary", "authority_reset"],
+      "fields": ["operation_id", "child_session_id", "parent_session_id", "parent_boundary", "authority_reset", "mode"]
+    },
+    "administrative_decision": {
+      "required": ["decision_id", "operation", "status", "principal_id", "evidence_digest"],
+      "fields": ["decision_id", "operation", "status", "principal_id", "evidence_digest", "confirmation_id"]
+    },
+    "audit_chain": {
+      "required": ["prior_digest", "current_digest", "schema", "session_id", "generation", "sequence"],
+      "fields": ["prior_digest", "current_digest", "schema", "session_id", "generation", "sequence"]
+    },
+    "credential_profile_reference": {
+      "required": ["profile_id", "profile_version", "source_identity", "references"],
+      "fields": ["profile_id", "profile_version", "source_identity", "references", "disabled"]
+    }
+  },
+  "field_types": {
+    "action": "string",
+    "admission_state": "string",
+    "approval_id": "string_or_null",
+    "authority_reset": "boolean",
+    "child_session_id": "string",
+    "command_id": "string",
+    "confirmation_id": "string_or_null",
+    "console_digest": "digest",
+    "console_identity": "map",
+    "consumed": "boolean",
+    "continuity_mode": "string",
+    "created_at_ms": "integer",
+    "credential_profile_id": "string_or_null",
+    "credential_reference_id": "string_or_null",
+    "current_digest": "digest",
+    "current_heads": "map",
+    "decision": "string",
+    "decision_id": "string",
+    "disabled": "boolean",
+    "effective_arguments": "json",
+    "event": "map",
+    "event_class": "string",
+    "event_id": "string",
+    "evidence_digest": "digest",
+    "execution_environment_id": "string_or_null",
+    "expires_at_ms": "integer_or_null",
+    "format": "string",
+    "generation": "integer",
+    "idempotency_key": "string",
+    "input_id": "string",
+    "item_id": "string",
+    "jidoka_digest": "digest",
+    "jidoka_identity": "map",
+    "jidoka_link": "map_or_null",
+    "jidoka_revision": "integer",
+    "lifecycle": "string",
+    "limits_digest": "digest",
+    "migration_checksums": "list",
+    "mode": "string",
+    "model_id": "string",
+    "operation": "string",
+    "operation_id": "string",
+    "origin": "string",
+    "owner_instance_id": "string",
+    "parent_boundary": "map",
+    "parent_session_id": "string",
+    "payload_digest": "digest",
+    "position": "integer",
+    "principal_id": "string",
+    "prior_digest": "digest_or_genesis",
+    "prior_generation": "integer",
+    "product_instance_id": "string",
+    "profile_id": "string",
+    "profile_version": "integer",
+    "prompt_digest": "digest",
+    "provider_id": "string",
+    "queue_kind": "string",
+    "references": "list",
+    "replay_rule": "string",
+    "request_id": "string",
+    "result": "json",
+    "result_digest": "digest_or_null",
+    "result_id": "string",
+    "safety_class": "string",
+    "schema": "string",
+    "schema_version": "integer",
+    "scope": "string",
+    "sensitivity": "string",
+    "sequence": "integer",
+    "session_id": "string",
+    "settings_digest": "digest",
+    "skill_schema_digest": "digest",
+    "source_identity": "string",
+    "state": "string",
+    "status": "string",
+    "terminal_status": "string_or_null",
+    "tool_schema_digest": "digest",
+    "trust": "string",
+    "watermark_id": "string",
+    "workspace_digest": "digest"
+  },
+  "limits": {
+    "console_record_bytes": 262144,
+    "jidoka_value_bytes": 134217728,
+    "credential_metadata_bytes": 16384,
+    "unknown_fields": 0
+  },
+  "jidoka_envelope": {
+    "schema": "jido.console.jidoka-value",
+    "version": 1,
+    "required": ["schema", "version", "jidoka_schema_version", "jidoka_revision", "encoded_value", "encoded_value_bytes", "value_digest"]
+  },
+  "migrations": {
+    "current_store_format": 1,
+    "supported_store_formats": [1],
+    "future_version_result": "incompatible_future_store_format",
+    "step_identity": ["id", "source_version", "target_version", "checksum"]
+  }
+}
