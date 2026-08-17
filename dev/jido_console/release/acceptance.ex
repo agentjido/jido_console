@@ -30,6 +30,7 @@ defmodule Jido.Console.Release.Acceptance do
 
     isolation = Path.join(System.tmp_dir!(), "jido acceptance spaces-µ-#{System.unique_integer([:positive])}")
     File.mkdir_p!(isolation)
+    runtime_env = acceptance_environment!(isolation)
 
     try do
       root = extract_archive!(archive, isolation, expected_version, expected_target)
@@ -51,14 +52,22 @@ defmodule Jido.Console.Release.Acceptance do
       gate!("private runtime", fn -> validate_private_runtime!(root, metadata) end)
       gate!("notices and evidence", fn -> validate_evidence!(archive, metadata, expected_sha256) end)
 
-      startup = gate!("startup performance", fn -> startup_evidence!(bin, warm_runs, limits) end)
-      commands = gate!("packaged commands", fn -> command_evidence!(bin, root, expected_version) end)
-      tui = gate!("paint-first TUI", fn -> tui_evidence!(bin, isolation) end)
-      read_only = gate!("read-only installation", fn -> read_only_evidence!(root, bin, expected_version) end)
+      startup =
+        gate!("startup performance", fn -> startup_evidence!(bin, warm_runs, limits, runtime_env) end)
+
+      commands =
+        gate!("packaged commands", fn -> command_evidence!(bin, root, expected_version, runtime_env) end)
+
+      tui = gate!("paint-first TUI", fn -> tui_evidence!(bin, isolation, runtime_env) end)
+
+      read_only =
+        gate!("read-only installation", fn ->
+          read_only_evidence!(root, bin, expected_version, runtime_env)
+        end)
 
       coding =
         gate!("external coding workflow", fn ->
-          coding_workflow_evidence!(root, bin, isolation)
+          coding_workflow_evidence!(root, bin, isolation, runtime_env)
         end)
 
       evidence = %{
@@ -73,6 +82,11 @@ defmodule Jido.Console.Release.Acceptance do
         "target" => expected_target,
         "jidoka_ref" => metadata["runtime"]["jidoka_ref"],
         "archive_tested" => true,
+        "home" => %{
+          "source" => "JIDO_HOME",
+          "isolated" => true,
+          "operator_home_used" => false
+        },
         "isolated_path_features" => ["spaces", "non_ascii"],
         "path" => %{"value" => "/usr/bin:/bin", "erl" => false, "elixir" => false, "mix" => false},
         "live_provider_calls" => false,
@@ -126,10 +140,19 @@ defmodule Jido.Console.Release.Acceptance do
     }
   end
 
-  defp startup_evidence!(bin, warm_runs, limits) when warm_runs > 0 do
-    help = command_samples(bin, ["--help"], warm_runs + 1)
-    version = command_samples(bin, ["--version"], warm_runs + 1)
-    {first_frame, runtime_ready} = tui_samples(bin, warm_runs + 1)
+  @doc false
+  @spec acceptance_environment!(Path.t()) :: %{required(String.t()) => String.t()}
+  def acceptance_environment!(isolation) when is_binary(isolation) do
+    home = Path.join(isolation, "jido-home")
+    File.mkdir_p!(home)
+    File.chmod!(home, 0o700)
+    %{"JIDO_HOME" => home}
+  end
+
+  defp startup_evidence!(bin, warm_runs, limits, runtime_env) when warm_runs > 0 do
+    help = command_samples(bin, ["--help"], warm_runs + 1, runtime_env)
+    version = command_samples(bin, ["--version"], warm_runs + 1, runtime_env)
+    {first_frame, runtime_ready} = tui_samples(bin, warm_runs + 1, runtime_env)
 
     stats = %{
       "help" => statistics!(help),
@@ -153,7 +176,7 @@ defmodule Jido.Console.Release.Acceptance do
     Map.put(stats, "limits_ms", limits)
   end
 
-  defp command_evidence!(bin, root, version) do
+  defp command_evidence!(bin, root, version, runtime_env) do
     checks = [
       {"version", ["--version"], 0, "jido #{version}"},
       {"help", ["--help"], 0, "Usage:"},
@@ -165,7 +188,7 @@ defmodule Jido.Console.Release.Acceptance do
 
     results =
       Enum.map(checks, fn {name, args, status, text} ->
-        {output, actual_status} = run_command(bin, args)
+        {output, actual_status} = run_command(bin, args, runtime_env)
 
         if actual_status != status, do: raise("#{name} returned #{actual_status}, expected #{status}: #{output}")
         unless String.contains?(output, text), do: raise("#{name} output did not contain #{inspect(text)}")
@@ -173,14 +196,14 @@ defmodule Jido.Console.Release.Acceptance do
       end)
 
     suite = Path.join(root, "share/jido/offline/suite.yml")
-    {output, status} = run_command(bin, ["eval", suite])
+    {output, status} = run_command(bin, ["eval", suite], runtime_env)
 
     if status != 0 or not String.contains?(output, ~s("status":"matched")) do
       raise "offline replay failed with status #{status}: #{output}"
     end
 
     {native_output, native_status} =
-      run_command(bin, [], %{"JIDO_RELEASE_NATIVE_PROBE" => "1"})
+      run_command(bin, [], Map.put(runtime_env, "JIDO_RELEASE_NATIVE_PROBE", "1"))
 
     if native_status != 0 or not String.contains?(native_output, "native probe passed") do
       raise "native library probe failed with status #{native_status}: #{native_output}"
@@ -193,7 +216,7 @@ defmodule Jido.Console.Release.Acceptance do
       ]
   end
 
-  defp tui_evidence!(bin, isolation) do
+  defp tui_evidence!(bin, isolation, runtime_env) do
     log = Path.join(isolation, "queued-turn.log")
 
     success_script = """
@@ -239,12 +262,12 @@ defmodule Jido.Console.Release.Acceptance do
         isolated_command(
           "/usr/bin/expect",
           ["-c", success_script],
-          %{
+          Map.merge(runtime_env, %{
             "JIDO_BIN" => bin,
             "JIDO_RELEASE_TUI_PROBE" => "success",
             "JIDO_RELEASE_TUI_PROBE_DELAY_MS" => "1000",
             "JIDO_RELEASE_TUI_PROBE_LOG" => log
-          }
+          })
         ),
         cd: bin |> Path.dirname() |> Path.dirname(),
         stderr_to_stdout: true
@@ -281,11 +304,11 @@ defmodule Jido.Console.Release.Acceptance do
         isolated_command(
           "/usr/bin/expect",
           ["-c", failure_script],
-          %{
+          Map.merge(runtime_env, %{
             "JIDO_BIN" => bin,
             "JIDO_RELEASE_TUI_PROBE" => "failure",
             "JIDO_RELEASE_TUI_PROBE_DELAY_MS" => "300"
-          }
+          })
         ),
         cd: bin |> Path.dirname() |> Path.dirname(),
         stderr_to_stdout: true
@@ -306,7 +329,7 @@ defmodule Jido.Console.Release.Acceptance do
     }
   end
 
-  defp read_only_evidence!(root, bin, version) do
+  defp read_only_evidence!(root, bin, version, runtime_env) do
     root
     |> Path.join("**/*")
     |> Path.wildcard(match_dot: true)
@@ -317,7 +340,7 @@ defmodule Jido.Console.Release.Acceptance do
     end)
 
     File.chmod!(root, 0o555)
-    {output, status} = run_command(bin, ["--version"])
+    {output, status} = run_command(bin, ["--version"], runtime_env)
 
     if status != 0 or not String.contains?(output, "jido #{version}"),
       do: raise("read-only package did not run: #{output}")
@@ -325,7 +348,7 @@ defmodule Jido.Console.Release.Acceptance do
     %{"passed" => true, "package_writable" => false}
   end
 
-  defp coding_workflow_evidence!(package_root, bin, isolation) do
+  defp coding_workflow_evidence!(package_root, bin, isolation, runtime_env) do
     workspace = Path.join(isolation, "external-writable-workspace")
     expected = Path.join(isolation, "expected-rate-limiter.ex")
     log = Path.join(isolation, "coding-workflow.jsonl")
@@ -397,7 +420,7 @@ defmodule Jido.Console.Release.Acceptance do
         isolated_command(
           "/usr/bin/expect",
           ["-c", script],
-          %{
+          Map.merge(runtime_env, %{
             "JIDO_BIN" => bin,
             "JIDO_RELEASE_TUI_PROBE" => "workflow",
             "JIDO_RELEASE_TUI_PROBE_DELAY_MS" => "25",
@@ -410,7 +433,7 @@ defmodule Jido.Console.Release.Acceptance do
             "JIDO_PROBE_PROMPT_3" => Enum.at(prompts, 2),
             "JIDO_RUNTIME_TRAP_LOG" => trap_log,
             "PATH" => trap_dir <> ":/usr/bin:/bin"
-          }
+          })
         ),
         cd: workspace,
         stderr_to_stdout: true
@@ -506,15 +529,15 @@ defmodule Jido.Console.Release.Acceptance do
     |> Enum.sort()
   end
 
-  defp command_samples(bin, args, count) do
+  defp command_samples(bin, args, count, runtime_env) do
     Enum.map(1..count, fn _index ->
       started = System.monotonic_time()
-      {_output, 0} = run_command(bin, args)
+      {_output, 0} = run_command(bin, args, runtime_env)
       (System.monotonic_time() - started) |> System.convert_time_unit(:native, :microsecond) |> Kernel./(1_000)
     end)
   end
 
-  defp tui_samples(bin, count) do
+  defp tui_samples(bin, count, runtime_env) do
     script = """
     set timeout 12
     log_user 0
@@ -545,7 +568,7 @@ defmodule Jido.Console.Release.Acceptance do
         isolated_command(
           "/usr/bin/expect",
           ["-c", script],
-          %{"JIDO_BIN" => bin, "JIDO_SAMPLE_COUNT" => Integer.to_string(count)}
+          Map.merge(runtime_env, %{"JIDO_BIN" => bin, "JIDO_SAMPLE_COUNT" => Integer.to_string(count)})
         ),
         cd: bin |> Path.dirname() |> Path.dirname(),
         stderr_to_stdout: true
@@ -648,7 +671,7 @@ defmodule Jido.Console.Release.Acceptance do
     if String.contains?(public_text, home), do: raise("public evidence contains a private host path")
   end
 
-  defp run_command(bin, args, extra_env \\ %{}) do
+  defp run_command(bin, args, extra_env) do
     package_root = bin |> Path.dirname() |> Path.dirname()
 
     System.cmd("/usr/bin/env", isolated_command(bin, args, extra_env),

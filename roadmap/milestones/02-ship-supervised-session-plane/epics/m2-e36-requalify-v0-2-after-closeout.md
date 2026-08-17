@@ -5,11 +5,11 @@ title: Requalify the v0.2 Production Candidate After Closeout
 status: proposed
 milestone: milestone-2
 beadwork_id: jido_console-m2e36
-depends_on: [M2-E32]
+depends_on: [M2-E32, M2-E38]
 release: v0.2
 delivery_unit: one_pull_request
 introduced_in: 1.2.0
-last_updated_in: 1.2.0
+last_updated_in: 1.3.2
 ---
 
 # M2-E36: Requalify the v0.2 Production Candidate After Closeout
@@ -45,7 +45,9 @@ Milestone 2 closeout work.
 ## Dependencies
 
 This epic depends on M2-E32 because the candidate must contain all closeout
-implementation, production parity, and legacy-path deletion work.
+implementation, production parity, and legacy-path deletion work. It depends
+on M2-E38 because every installed-artifact probe must use the repaired private
+acceptance home.
 
 M2-E33 is historical candidate evidence for an earlier source. It is not a
 dependency and does not qualify this candidate.
@@ -62,6 +64,8 @@ support claim, publish v0.2, or change the candidate after evidence starts.
 
 - M2-E09, M2-E17, M2-E18, M2-E26, M2-E27, M2-E31, and M2-E32 are complete.
 - M2-E28, M2-E29, and M2-E30 production client paths still pass M2-E31.
+- M2-E38 proves the installed artifact can start with an explicit private
+  `JIDO_HOME` and no operator `HOME`.
 - The working tree is clean and every dependency is locked.
 - The support matrix and packaging channels are unchanged unless a separate roadmap change approves them.
 - No critical defect is open against the Milestone 2 claim.

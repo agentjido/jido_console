@@ -6,7 +6,7 @@ status: proposed
 depends_on: [milestone-1]
 release: v0.2
 introduced_in: 0.1.0
-last_updated_in: 1.2.0
+last_updated_in: 1.3.2
 ---
 
 # Milestone 2: Ship the Semantic and Supervised Session Plane
@@ -39,7 +39,7 @@ separates the historical records from the final closeout evidence.
 
 ## Generated Epics
 
-The [Milestone 2 epic index](epics/README.md) splits this milestone into 37 epics. Each epic is the scope for exactly one pull request.
+The [Milestone 2 epic index](epics/README.md) splits this milestone into 38 epics. Each epic is the scope for exactly one pull request.
 
 ## Work
 
@@ -83,6 +83,7 @@ M2-E31 parity proof.
 | M2-E27 | Production TUI cutover and active raw-route removal | Other clients or broad legacy deletion |
 | M2-E31 | Production-entry parity proof for all current clients | Product behavior fixes |
 | M2-E32 | Isolated legacy deletion and no-return guard | Replacement behavior |
+| M2-E38 | Private acceptance home in the clean artifact environment | Product home changes or candidate proof |
 | M2-E36 | Exact post-closeout candidate and artifact proof | Product fixes or publication |
 | M2-E37 | Final evidence audit and Milestone 3 baseline | Candidate changes or Milestone 3 planning |
 
@@ -94,7 +95,8 @@ flowchart LR
     E26 --> E27["M2-E27<br/>TUI cutover"]
     E27 --> E31["M2-E31<br/>Client parity"]
     E31 --> E32["M2-E32<br/>Legacy deletion"]
-    E32 --> E36["M2-E36<br/>Candidate proof"]
+    E32 --> E38["M2-E38<br/>Acceptance home"]
+    E38 --> E36["M2-E36<br/>Candidate proof"]
     E36 --> E37["M2-E37<br/>Final audit"]
 ```
 

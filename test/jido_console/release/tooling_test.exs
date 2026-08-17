@@ -26,6 +26,16 @@ defmodule Jido.Console.Release.ToolingTest do
            }
   end
 
+  test "creates one private isolated product home for artifact acceptance", %{root: root} do
+    operator_home = System.user_home!()
+
+    assert %{"JIDO_HOME" => home} = Acceptance.acceptance_environment!(root)
+    assert home == Path.join(root, "jido-home")
+    refute String.starts_with?(home, operator_home <> "/")
+    assert File.dir?(home)
+    assert Bitwise.band(File.stat!(home).mode, 0o777) == 0o700
+  end
+
   test "detects a changed file digest", %{root: root} do
     path = Path.join(root, "artifact")
     File.write!(path, "first")

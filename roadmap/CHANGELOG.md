@@ -4,6 +4,20 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] - 2026-08-17
+
+### Added
+
+- Add M2-E38 to give installed-artifact acceptance one explicit private
+  `JIDO_HOME` in its clean environment.
+
+### Changed
+
+- Make M2-E38 block M2-E36 after the candidate gate proved that an environment
+  without `HOME` could not start the application.
+- Increase the Milestone 2 epic count from 37 to 38 and add the repair to the
+  final closeout chain.
+
 ## [1.3.1] - 2026-08-16
 
 ### Added
