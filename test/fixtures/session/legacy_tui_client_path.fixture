@@ -1,0 +1,12 @@
+defmodule LegacyTuiClientPath do
+  @moduledoc false
+
+  alias Jido.Console.Session.Server
+  alias Jidoka.Event
+
+  def attach(server, client), do: Server.attach(server, client, mode: :legacy, return_attachment: false)
+  def update(state, {:jidoka, %Event{}}), do: state
+  def ack(server, client, session, sequence), do: Server.ack(server, client, session, sequence)
+  def recover(server, client), do: Server.recover(server, client)
+  defp broadcast_runtime(clients, message), do: send(clients, message)
+end

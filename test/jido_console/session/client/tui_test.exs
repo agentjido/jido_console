@@ -170,12 +170,4 @@ defmodule Jido.Console.Session.Client.TUITest do
     assert recovered.semantic_sequence == 2
     assert :empty = Client.output(attached.handle)
   end
-
-  test "the production loop has no raw runtime receive route" do
-    source = File.read!("lib/jido_console/cli/tui.ex")
-
-    for raw <- ["session_runtime_", "session_control_result", "{:jidoka,", "{:session_updated,", "{:session_gap,"] do
-      refute source =~ raw
-    end
-  end
 end

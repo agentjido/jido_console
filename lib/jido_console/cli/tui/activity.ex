@@ -1,7 +1,6 @@
 defmodule Jido.Console.Tui.Activity do
   @moduledoc "Tagged semantic activity for the interactive TUI."
 
-  alias Jido.Console.Runtime.Result
   alias Jido.Console.Session.Request
   alias Jido.Console.Tui.Turn
 
@@ -14,7 +13,7 @@ defmodule Jido.Console.Tui.Activity do
           | {:starting, {:runtime, :empty | :submit_when_ready}}
           | {:starting, {:turn, Turn.t()}}
           | {:active, Request.t(), Turn.t(), :streaming | :finishing}
-          | {:review, Request.t(), Turn.t(), Result.t(), :awaiting | {:responding, decision()}}
+          | {:review, Request.t(), Turn.t(), map(), :awaiting | {:responding, decision()}}
           | {:cancelling, Turn.t(), :before_start | {:request, Request.t()}}
           | {:failed, failure_kind(), term(), String.t()}
 

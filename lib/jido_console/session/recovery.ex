@@ -214,31 +214,6 @@ defmodule Jido.Console.Session.Recovery do
     end
   end
 
-  @doc "Compatibility wrapper for the temporary legacy route."
-  @spec recover(State.t(), Delivery.t()) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
-  def recover(state, delivery) do
-    cond do
-      delivery.session_id != state.session_id ->
-        {:error, :cross_session_result}
-
-      delivery.status != :gapped ->
-        {:error, :recovery_not_required}
-
-      true ->
-        recovered =
-          Delivery.new(
-            client_id: delivery.client_id,
-            session_id: delivery.session_id,
-            attachment_id: delivery.attachment_id,
-            baseline: state.sequence,
-            limits: delivery.limits,
-            token_secret: delivery.secret
-          )
-
-        {:ok, recovered, state}
-    end
-  end
-
   @doc "Returns the Milestone 3 durability boundary."
   @spec limitation() :: String.t()
   def limitation,

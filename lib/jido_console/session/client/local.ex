@@ -216,8 +216,6 @@ defmodule Jido.Console.Session.Client.Local do
 
   defp attach_options(opts) do
     [
-      mode: :bounded,
-      return_attachment: true,
       delivery_limits: Keyword.get(opts, :delivery_limits, %{})
     ]
     |> maybe_put(:token_secret, Keyword.get(opts, :token_secret))

@@ -155,13 +155,6 @@ defmodule Jido.Console.Session.Server do
   @spec admit_input(name(), Input.t()) :: {:ok, Input.t()} | {:error, term()}
   def admit_input(server, input), do: GenServer.call(server, {:admit_input, input})
 
-  @doc "Acknowledges a delivered sequence for one attached client."
-  @spec ack(name(), String.t(), String.t(), non_neg_integer()) ::
-          {:ok, Delivery.t()} | {:error, term()}
-  def ack(server, client_id, session_id, sequence) do
-    GenServer.call(server, {:ack, client_id, session_id, sequence})
-  end
-
   @doc "Pulls one bounded canonical output batch for an exact attachment."
   @spec output(name(), String.t(), String.t(), String.t()) ::
           {:ok, map()} | {:gap, map()} | :empty | {:error, term()}
@@ -213,12 +206,6 @@ defmodule Jido.Console.Session.Server do
       server,
       {:complete_recovery, session_id, client_id, attachment_id, completion_token}
     )
-  end
-
-  @doc "Recovers one attached client from a delivery gap."
-  @spec recover(name(), String.t()) :: {:ok, Delivery.t(), State.t()} | {:error, term()}
-  def recover(server, client_id) do
-    GenServer.call(server, {:recover, client_id})
   end
 
   @doc "Stops one live session server."
@@ -424,23 +411,6 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  def handle_call({:ack, client_id, session_id, sequence}, _from, state) do
-    case Map.fetch(state.clients, client_id) do
-      :error ->
-        {:reply, {:error, :not_attached}, state}
-
-      {:ok, client} ->
-        case legacy_ack(client, session_id, sequence, state.state.sequence) do
-          {:ok, delivery} ->
-            clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
-            {:reply, {:ok, delivery}, %{state | clients: clients}}
-
-          {:error, _reason} = error ->
-            {:reply, error, state}
-        end
-    end
-  end
-
   def handle_call({:output, session_id, client_id, attachment_id}, _from, state) do
     identity = delivery_identity(session_id, client_id, attachment_id)
 
@@ -535,23 +505,6 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  def handle_call({:recover, client_id}, _from, state) do
-    case Map.fetch(state.clients, client_id) do
-      :error ->
-        {:reply, {:error, :not_attached}, state}
-
-      {:ok, client} ->
-        case Recovery.recover(state.state, client.delivery) do
-          {:ok, delivery, recovered} ->
-            clients = Map.put(state.clients, client_id, %{client | delivery: delivery})
-            {:reply, {:ok, delivery, recovered}, %{state | clients: clients}}
-
-          {:error, _reason} = error ->
-            {:reply, error, state}
-        end
-    end
-  end
-
   def handle_call({:admit_result, identity, result}, _from, state) do
     if identity.session_id != state.session.id do
       {:reply, {:error, :cross_session_result}, state}
@@ -588,7 +541,6 @@ defmodule Jido.Console.Session.Server do
   @impl true
   def handle_info({:jidoka_turn_event, event}, %{active: active} = state) when not is_nil(active) do
     state = project_runtime_event(state, event)
-    broadcast_runtime(state.clients, {:session_runtime_event, state.session.id, active.request, event})
     {:noreply, state}
   end
 
@@ -786,7 +738,6 @@ defmodule Jido.Console.Session.Server do
           |> maybe_put("prompt", Map.get(spec, :prompt))
 
         state = admit_owner_event(state, "run_started", request, started_payload)
-        broadcast_runtime(state.clients, {:session_runtime_started, state.session.id, request})
         task = start_task(state, fn -> safe_call(fn -> spec.await.(raw_request) end) end)
         tasks = put_task(state.tasks, task, {:await, request.id})
         {:ok, request, %{state | tasks: tasks}}
@@ -859,12 +810,10 @@ defmodule Jido.Console.Session.Server do
       active = state.active
 
       state =
-        state
-        |> admit_owner_event("control_completed", active.request, %{
+        admit_owner_event(state, "control_completed", active.request, %{
           "control" => "cancel",
           "result" => public_control_result(result)
         })
-        |> broadcast_control_result(result)
 
       case {state.active.runtime?, result} do
         {true, {:ok, %Jidoka.Cancellation{} = cancellation}} ->
@@ -1060,8 +1009,7 @@ defmodule Jido.Console.Session.Server do
           {:ok, state} ->
             put_in(state.active.projection_cursor, cursor)
 
-          {:error, reason, state} ->
-            broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+          {:error, _reason, state} ->
             state
         end
 
@@ -1072,8 +1020,7 @@ defmodule Jido.Console.Session.Server do
       {:ignore, :duplicate, _cursor} ->
         state
 
-      {:error, reason, _cursor} ->
-        broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+      {:error, _reason, _cursor} ->
         state
     end
   end
@@ -1104,8 +1051,7 @@ defmodule Jido.Console.Session.Server do
       {:ignore, :duplicate, _cursor} ->
         state
 
-      {:error, reason, _cursor} ->
-        broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+      {:error, _reason, _cursor} ->
         state
     end
   end
@@ -1124,13 +1070,11 @@ defmodule Jido.Console.Session.Server do
               |> put_in([:active, :projection_cursor], cursor)
               |> conclude_runtime_result(active.terminal_result)
 
-            {:error, reason, state} ->
-              broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+            {:error, _reason, state} ->
               state
           end
 
-        {:error, reason, _cursor} ->
-          broadcast_runtime(state.clients, {:session_runtime_error, state.session.id, active.request, reason})
+        {:error, _reason, _cursor} ->
           state
       end
     else
@@ -1141,7 +1085,6 @@ defmodule Jido.Console.Session.Server do
   defp conclude_runtime_result(state, result) do
     active = state.active
     cancel_terminal_timer(active)
-    broadcast_runtime(state.clients, {:session_runtime_result, state.session.id, active.request, result})
     Enum.each(active.waiters, &GenServer.reply(&1, result))
     put_completed(%{state | active: nil}, active.request.id, result)
   end
@@ -1277,11 +1220,6 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp broadcast_control_result(state, result) do
-    broadcast_runtime(state.clients, {:session_control_result, state.session.id, state.active.request, result})
-    state
-  end
-
   defp put_completed(state, request_id, result) do
     order = state.completed_order ++ [request_id]
     completed = Map.put(state.completed, request_id, result)
@@ -1317,12 +1255,6 @@ defmodule Jido.Console.Session.Server do
     end)
   end
 
-  # Temporary M2-E27/M2-E32 debt: only legacy attachments get snapshot pushes.
-  defp deliver(%{mode: :legacy} = client, _event, session_state) do
-    send(client.pid, {:session_updated, session_state.session_id, Reducer.snapshot(session_state)})
-    client
-  end
-
   defp deliver(client, event, _session_state) do
     case Delivery.offer(client.delivery, event) do
       {:ok, delivery, advisory?} ->
@@ -1342,8 +1274,7 @@ defmodule Jido.Console.Session.Server do
 
   defp fetch_bounded_client(state, client_id, attachment_id) do
     case Map.fetch(state.clients, client_id) do
-      {:ok, %{mode: :bounded, attachment: %{id: ^attachment_id}} = client} -> {:ok, client}
-      {:ok, %{attachment: %{id: ^attachment_id}}} -> {:error, :bounded_delivery_not_enabled}
+      {:ok, %{attachment: %{id: ^attachment_id}} = client} -> {:ok, client}
       {:ok, _client} -> {:error, :delivery_identity_mismatch}
       :error -> {:error, :not_attached}
     end
@@ -1624,7 +1555,6 @@ defmodule Jido.Console.Session.Server do
 
   defp attach_client(state, client, pid, opts) do
     attachment = attachment_identity(state.session.id, opts)
-    mode = Keyword.get(opts, :mode, :legacy)
 
     delivery =
       Delivery.new(
@@ -1638,13 +1568,12 @@ defmodule Jido.Console.Session.Server do
 
     identity = delivery_identity(state.session.id, client.id, attachment.id)
 
-    with {:ok, snapshot} <- attach_snapshot(mode, state.state, identity) do
+    with {:ok, snapshot} <- Recovery.attach_snapshot(state.state, identity) do
       record = %{
         identity: client,
         attachment: attachment,
         pid: pid,
         ref: Process.monitor(pid),
-        mode: mode,
         timer_ref: nil,
         delivery: delivery
       }
@@ -1653,18 +1582,9 @@ defmodule Jido.Console.Session.Server do
       if previous, do: cleanup_client(previous)
       state = %{state | clients: Map.put(clients, client.id, record)}
 
-      reply =
-        if Keyword.get(opts, :return_attachment, false),
-          do: %{attachment: attachment, snapshot: snapshot},
-          else: snapshot
-
-      {:ok, state, reply}
+      {:ok, state, %{attachment: attachment, snapshot: snapshot}}
     end
   end
-
-  defp attach_snapshot(:bounded, state, identity), do: Recovery.attach_snapshot(state, identity)
-  defp attach_snapshot(:legacy, state, _identity), do: {:ok, Reducer.snapshot(state)}
-  defp attach_snapshot(_mode, _state, _identity), do: {:error, :invalid_delivery_mode}
 
   defp handle_output_pull(state, client_id, client, identity) do
     case Delivery.pull(client.delivery, identity) do
@@ -1709,15 +1629,6 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp timeout_client(client, _attachment_id, _timer_token, _sequence), do: client
-
-  defp legacy_ack(%{mode: :legacy, delivery: delivery}, session_id, sequence, owner_sequence) do
-    if delivery.session_id == session_id,
-      do: Delivery.legacy_ack(delivery, sequence, owner_sequence),
-      else: {:error, :identity_mismatch}
-  end
-
-  defp legacy_ack(_client, _session_id, _sequence, _owner_sequence),
-    do: {:error, :exact_acknowledgement_required}
 
   defp delivery_identity(session_id, client_id, attachment_id),
     do: %{session_id: session_id, client_id: client_id, attachment_id: attachment_id}
@@ -1768,9 +1679,6 @@ defmodule Jido.Console.Session.Server do
 
   defp put_delivery(client, delivery), do: %{client | delivery: delivery}
   defp put_client(state, client_id, client), do: %{state | clients: Map.put(state.clients, client_id, client)}
-
-  # Runtime ingress stays owner-local. All attached clients use bounded output.
-  defp broadcast_runtime(_clients, _message), do: :ok
 
   defp close_runtime(nil), do: :ok
 

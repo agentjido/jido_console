@@ -1,21 +1,20 @@
 defmodule Jido.Console.Tui.TurnTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Tui.{EventProjection, Turn}
-  alias Jidoka.Event
+  alias Jido.Console.Tui.{SemanticProjection, Turn}
 
   test "rejects stale, duplicate, and out-of-order events" do
     turn = Turn.new(0, "prompt") |> Turn.put_request(%{request_id: "request-1"})
-    current = projection(:llm_delta, "request-1", 1, data: %{chunk_type: :content, delta: "one"})
+    current = assistant_projection("request-1", 1, "one")
     assert {:ok, turn} = Turn.apply_event(turn, current)
     assert turn.assistant == "one"
 
     assert {:ignore, :duplicate} = Turn.apply_event(turn, current)
 
-    older = projection(:llm_delta, "request-1", 0, data: %{chunk_type: :content, delta: "old"})
+    older = assistant_projection("request-1", 0, "old")
     assert {:ignore, :out_of_order} = Turn.apply_event(turn, older)
 
-    stale = projection(:llm_delta, "request-2", 2, data: %{chunk_type: :content, delta: "stale"})
+    stale = assistant_projection("request-2", 2, "stale")
     assert {:ignore, :stale_request} = Turn.apply_event(turn, stale)
     assert turn.assistant == "one"
   end
@@ -23,10 +22,10 @@ defmodule Jido.Console.Tui.TurnTest do
   test "keeps parallel effects distinct by effect id" do
     turn = Turn.new(0, "prompt") |> Turn.put_request(%{request_id: "request-1"})
 
-    first = tool_projection(:effect_planned, 0, "effect-a")
-    second = tool_projection(:effect_planned, 1, "effect-b")
-    running = tool_projection(:capability_call_started, 2, "effect-a")
-    completed = tool_projection(:capability_call_completed, 3, "effect-a")
+    first = tool_projection(:tool_started, 0, "effect-a", :running)
+    second = tool_projection(:tool_started, 1, "effect-b", :running)
+    running = tool_projection(:tool_started, 2, "effect-a", :running)
+    completed = tool_projection(:tool_completed, 3, "effect-a", :completed)
 
     assert {:ok, turn} = Turn.apply_event(turn, first)
     assert {:ok, turn} = Turn.apply_event(turn, second)
@@ -35,8 +34,8 @@ defmodule Jido.Console.Tui.TurnTest do
 
     assert turn.tool_order == ["effect-a", "effect-b"]
     assert turn.tools["effect-a"].status == :completed
-    assert turn.tools["effect-b"].status == :planned
-    assert Enum.map(turn.tools["effect-a"].events, & &1.status) == [:planned, :running, :completed]
+    assert turn.tools["effect-b"].status == :running
+    assert Enum.map(turn.tools["effect-a"].events, & &1.status) == [:running, :running, :completed]
   end
 
   test "records bounded attachment metadata, reviews, changes, and outcome" do
@@ -56,11 +55,22 @@ defmodule Jido.Console.Tui.TurnTest do
     turn = Turn.new(4, "change it", context) |> Turn.put_request(%{request_id: "request-1"})
     assert turn.attachments == [%{"path" => "lib/value.ex", "size" => 12, "sha256" => "sha256:value"}]
 
-    review =
-      projection(:approval_requested, "request-1", 0,
+    review = %SemanticProjection{
+      id: "review-event",
+      request_id: "request-1",
+      seq: 0,
+      event: :permission_requested,
+      kind: :review,
+      data: %{
+        id: "review-1",
         operation: "write_file",
-        data: %{interrupt_id: "review-1", reason: "manual"}
-      )
+        status: :pending,
+        reason: "manual",
+        decision: nil,
+        expires_at_ms: nil,
+        summary: "manual"
+      }
+    }
 
     assert {:ok, turn} = Turn.apply_event(turn, review)
 
@@ -109,8 +119,8 @@ defmodule Jido.Console.Tui.TurnTest do
     assert Enum.find(failed.reviews, &(&1.id == "atom-interrupt")).status == :expired
     assert Turn.fail_review(Turn.new(6, "none"), "failure").reviews == []
 
-    event = %EventProjection{
-      id: :unhandled,
+    event = %SemanticProjection{
+      id: "unhandled",
       request_id: "request-1",
       seq: 0,
       event: :unknown,
@@ -128,16 +138,16 @@ defmodule Jido.Console.Tui.TurnTest do
 
     turn =
       Enum.reduce(0..200, turn, fn index, current ->
-        projection = %EventProjection{
-          id: {:tool, index},
+        projection = %SemanticProjection{
+          id: "tool-#{index}",
           request_id: "request-1",
           seq: index + 2,
-          event: :effect_planned,
+          event: :tool_started,
           kind: :tool,
           data: %{
             id: index,
             operation: "tool",
-            status: :planned,
+            status: :running,
             summary: nil,
             error: nil,
             loop_index: nil
@@ -154,18 +164,32 @@ defmodule Jido.Console.Tui.TurnTest do
     assert Turn.finish(turn, :completed, nil, reviews: :invalid, changes: :invalid).changes == []
   end
 
-  defp tool_projection(event, seq, effect_id) do
-    projection(event, "request-1", seq,
-      effect_id: effect_id,
-      effect_kind: :operation,
-      operation: "read_file"
-    )
+  defp assistant_projection(request_id, seq, text) do
+    %SemanticProjection{
+      id: "event-#{request_id}-#{seq}",
+      request_id: request_id,
+      seq: seq,
+      event: :model_delta,
+      kind: :assistant_delta,
+      data: %{text: text}
+    }
   end
 
-  defp projection(event, request_id, seq, attrs) do
-    event
-    |> Event.build([], Keyword.merge([request_id: request_id, seq: seq], attrs))
-    |> EventProjection.project()
-    |> then(fn {:ok, projection} -> projection end)
+  defp tool_projection(event, seq, effect_id, status) do
+    %SemanticProjection{
+      id: "event-#{effect_id}-#{seq}",
+      request_id: "request-1",
+      seq: seq,
+      event: event,
+      kind: :tool,
+      data: %{
+        id: effect_id,
+        operation: "read_file",
+        status: status,
+        summary: nil,
+        error: nil,
+        loop_index: nil
+      }
+    }
   end
 end

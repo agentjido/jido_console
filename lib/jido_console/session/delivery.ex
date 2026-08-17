@@ -234,18 +234,6 @@ defmodule Jido.Console.Session.Delivery do
     }
   end
 
-  @doc "Supports only the temporary legacy TUI acknowledgement route."
-  @spec legacy_ack(t(), non_neg_integer(), non_neg_integer()) :: {:ok, t()} | {:error, term()}
-  def legacy_ack(state, sequence, owner_sequence)
-      when is_integer(sequence) and sequence >= state.last_acked and sequence <= owner_sequence do
-    {:ok, %{state | last_acked: sequence}}
-  end
-
-  def legacy_ack(state, sequence, _owner_sequence) when sequence < state.last_acked,
-    do: {:error, :stale_ack}
-
-  def legacy_ack(_state, _sequence, _owner_sequence), do: {:error, :future_ack}
-
   @doc "Returns copied and queued payload measurements."
   @spec measurements(t()) :: map()
   def measurements(state) do

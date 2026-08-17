@@ -2,15 +2,11 @@ defmodule Jido.Console.Tui.StateTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Tui.{State, Turn}
-  alias Jido.Console.Runtime.Jidoka, as: Runtime
-  alias Jido.Console.Runtime.Result
   alias Jido.Console.Session.Event, as: SessionEvent
   alias Jido.Console.Session.Request, as: SessionRequest
-  alias Jidoka.Cancellation
-  alias Jidoka.Event
 
-  test "submits a prompt and commits a streamed result" do
-    state = State.new(:session, {80, 24})
+  test "submits a prompt and commits canonical session output" do
+    state = %{State.new(:session, {80, 24}) | semantic_session_id: "session"}
     {state, []} = State.update(state, {:terminal, {:text, "hello"}})
     {state, [{:start_turn, "hello"}]} = State.update(state, {:terminal, {:key, :enter}})
     assert state.messages == [%{role: :user, content: "hello"}]
@@ -18,26 +14,11 @@ defmodule Jido.Console.Tui.StateTest do
     request = session_request("request-1")
     {state, []} = State.update(state, {:turn_started, request})
 
-    delta =
-      Event.build(:llm_delta, [],
-        request_id: "request-1",
-        data: %{chunk_type: :content, delta: "Hi"}
-      )
-
-    {state, []} = State.update(state, {:jidoka, delta})
+    state = apply_semantic(state, "model_delta", %{text: "Hi"})
     assert State.active_turn(state).assistant == "Hi"
 
-    terminal = Event.build(:turn_finished, [delta], request_id: "request-1")
-    {state, []} = State.update(state, {:jidoka, terminal})
-    assert {:active, ^request, %Turn{}, :finishing} = state.activity
+    state = apply_semantic(state, "run_completed", %{content: "Hi there"})
 
-    {state, []} =
-      State.update(
-        state,
-        {:turn_result, request, runtime_result(:ok, request, :next_session, content: "Hi there")}
-      )
-
-    assert state.session == :next_session
     assert state.activity == :idle
     assert state.messages |> List.last() |> Map.fetch!(:content) == "Hi there"
   end
@@ -70,16 +51,11 @@ defmodule Jido.Console.Tui.StateTest do
     request = session_request("review")
     turn = Turn.new(1, "prompt")
 
-    pending =
-      Result.pending_review("review", :session, :handle, [%{id: "review"}])
-      |> put_in([Access.key!(:outcome), Access.key!(:reviews)], [])
-
-    review_state = %{state | activity: {:review, request, turn, pending, :awaiting}}
+    review_state = %{state | activity: {:review, request, turn, %{}, :awaiting}}
 
     for input <- [
           {:terminal, {:paste, "ignored"}},
-          {:terminal, {:key, :newline}},
-          {:terminal, {:text, "a"}}
+          {:terminal, {:key, :newline}}
         ] do
       assert {^review_state, []} = State.update(review_state, input)
     end
@@ -107,35 +83,6 @@ defmodule Jido.Console.Tui.StateTest do
     assert [%Turn{status: :finished}] = restored.turns
   end
 
-  test "commits a normalized runtime result for the active request" do
-    session =
-      struct!(Runtime.Session,
-        data: :next_data,
-        extension_host: :extension_host,
-        runtime_opts: [operations: :operations],
-        local_resources: :local_resources
-      )
-
-    runtime_request =
-      struct!(Runtime.Request,
-        request_id: "request-1",
-        request: :opaque_request,
-        session: session,
-        runtime_opts: [request_id: "request-1"]
-      )
-
-    request = session_request("request-1")
-    result = Result.ok(runtime_request.request_id, session, runtime_request, "normalized answer")
-
-    state = active_state(State.new(:old_session, {80, 24}), request)
-    {state, []} = State.update(state, {:turn_result, request, result})
-
-    assert state.session == session
-    assert State.active_request(state) == nil
-    assert state.activity == :idle
-    assert List.last(state.messages).content == "normalized answer"
-  end
-
   test "archives one explicit turn record with prompt, attachment, assistant, and outcome" do
     context = %{
       "coding" => %{
@@ -160,20 +107,9 @@ defmodule Jido.Console.Tui.StateTest do
     request = session_request("request-1")
     {state, []} = State.update(state, {:turn_started, request})
 
-    delta =
-      Event.build(:llm_delta, [],
-        request_id: "request-1",
-        seq: 0,
-        data: %{chunk_type: :content, delta: "partial"}
-      )
-
-    {state, []} = State.update(state, {:jidoka, delta})
-
-    {state, []} =
-      State.update(
-        state,
-        {:turn_result, request, runtime_result(:ok, request, :next_session, content: "final answer")}
-      )
+    state = %{state | semantic_session_id: "session"}
+    state = apply_semantic(state, "model_delta", %{text: "partial"})
+    state = apply_semantic(state, "run_completed", %{content: "final answer"})
 
     assert State.active_turn(state) == nil
     assert [turn] = state.turns
@@ -186,75 +122,6 @@ defmodule Jido.Console.Tui.StateTest do
 
     assert turn.assistant == "final answer"
     assert turn.outcome.status == :completed
-  end
-
-  test "keeps one wrapped turn through repeated approval and denial pauses" do
-    request = session_request("request-1")
-    first_review = review("review-1", "write_file", %{"path" => "\e[31mlib/a.ex\e[0m"})
-    second_review = review("review-2", "shell", %{"command" => "mix test\e[2J"})
-
-    state = State.new(:session, {80, 24})
-    {state, []} = State.update(state, {:terminal, {:text, "change it"}})
-    {state, [{:start_turn, "change it"}]} = State.update(state, {:terminal, {:key, :enter}})
-    {state, []} = State.update(state, {:turn_started, request})
-
-    first_pause = runtime_result(:pending_review, request, :wrapped_session_1, pending_reviews: [first_review])
-    {state, []} = State.update(state, {:turn_result, request, first_pause})
-
-    assert {:review, ^request, %Turn{}, ^first_pause, :awaiting} = state.activity
-    assert state.session == :wrapped_session_1
-    assert state.turns == []
-    assert State.active_turn(state).reviews |> hd() |> Map.fetch!(:arguments_summary) == "%{\"path\" => \"lib/a.ex\"}"
-
-    assert {state, [{:respond_review, :approve, ^request, ^first_pause, ^first_review}]} =
-             State.update(state, {:terminal, {:text, "a"}})
-
-    assert {:review, ^request, %Turn{}, ^first_pause, {:responding, :approve}} = state.activity
-    assert {^state, []} = State.update(state, {:terminal, {:text, "d"}})
-
-    second_pause = runtime_result(:pending_review, request, :wrapped_session_2, pending_reviews: [second_review])
-    {state, []} = State.update(state, {:turn_result, second_pause})
-    assert state.session == :wrapped_session_2
-    assert {:review, ^request, %Turn{}, ^second_pause, :awaiting} = state.activity
-
-    assert {state, [{:respond_review, :deny, ^request, ^second_pause, ^second_review}]} =
-             State.update(state, {:terminal, {:text, "d"}})
-
-    denied =
-      runtime_result(:error, request, :wrapped_session_3,
-        error: :review_denied,
-        approval: :denied
-      )
-
-    {state, []} = State.update(state, {:turn_result, denied})
-
-    assert state.session == :wrapped_session_3
-    assert State.active_turn(state) == nil
-    assert [turn] = state.turns
-    assert Enum.map(turn.reviews, & &1.decision) == [:approve, :deny]
-    assert Enum.map(turn.reviews, & &1.status) == [:approved, :denied]
-    assert turn.outcome.status == :failed
-  end
-
-  test "records an expired approval without losing its decision" do
-    request = session_request("request-1")
-
-    pending =
-      runtime_result(:pending_review, request, :wrapped_session,
-        pending_reviews: [review("review-1", "write_file", %{})]
-      )
-
-    state = State.new(:session, {80, 24}) |> starting_state()
-    {state, []} = State.update(state, {:turn_started, request})
-    {state, []} = State.update(state, {:turn_result, request, pending})
-    {state, [_effect]} = State.update(state, {:terminal, {:text, "a"}})
-
-    expired = runtime_result(:error, request, :wrapped_session, error: :review_expired)
-    {state, []} = State.update(state, {:turn_result, expired})
-
-    assert [turn] = state.turns
-    assert [%{decision: :approve, status: :expired, error: error}] = turn.reviews
-    assert error =~ "expired"
   end
 
   test "queues the current prompt until the runtime is ready" do
@@ -300,43 +167,6 @@ defmodule Jido.Console.Tui.StateTest do
     assert {:active, ^request, %Turn{assistant: "restored"}, :streaming} = ready.activity
     assert ready.session == :session
     assert ready.project_instructions == [%{"path" => "AGENTS.md"}]
-  end
-
-  test "ignores a late result from an older request" do
-    current = session_request("current")
-    old = session_request("old")
-    state = active_state(State.new(:session, {80, 24}), current)
-
-    assert {^state, []} =
-             State.update(
-               state,
-               {:turn_result, old, runtime_result(:ok, old, :old_session, content: "old answer")}
-             )
-  end
-
-  test "commits one completed result after a cancellation race" do
-    request = session_request("request-1")
-
-    state = active_state(State.new(:session, {80, 24}), request)
-    {state, [{:cancel_turn, ^request}]} = State.update(state, {:terminal, {:key, :ctrl_c}})
-    state = %{state | messages: [%{role: :user, content: "hello"}]}
-
-    {state, []} =
-      State.update(
-        state,
-        {:turn_result, request, runtime_result(:ok, request, :next_session, content: "completed")}
-      )
-
-    assert state.activity == :idle
-    assert State.active_request(state) == nil
-    assert Enum.count(state.messages, &(&1.role == :assistant)) == 1
-    assert List.last(state.messages).content == "completed"
-
-    assert {^state, []} =
-             State.update(
-               state,
-               {:turn_result, request, runtime_result(:ok, request, :next_session, content: "duplicate")}
-             )
   end
 
   test "Ctrl-C exits while idle and cancels while running" do
@@ -388,16 +218,14 @@ defmodule Jido.Console.Tui.StateTest do
 
     {state, [{:start_turn, "one\nline"}]} = State.update(state, {:terminal, {:key, :enter}})
 
-    {state, []} =
-      State.update(state, {:turn_result, runtime_result(:ok, :request, state.session, content: "done")})
+    state = apply_semantic(state, "run_completed", %{content: "done"})
 
     state =
       Enum.reduce(["two", "three"], state, fn prompt, state ->
         {state, []} = State.update(state, {:terminal, {:text, prompt}})
         {state, [{:start_turn, ^prompt}]} = State.update(state, {:terminal, {:key, :enter}})
 
-        {state, []} =
-          State.update(state, {:turn_result, runtime_result(:ok, :request, state.session, content: "done")})
+        state = apply_semantic(state, "run_completed", %{content: "done"})
 
         state
       end)
@@ -430,8 +258,7 @@ defmodule Jido.Console.Tui.StateTest do
     {state, [{:start_turn, "first"}]} = State.update(state, {:terminal, {:key, :enter}})
     {state, []} = State.update(state, {:terminal, {:text, "next\e[2J draft"}})
 
-    {state, []} =
-      State.update(state, {:turn_result, runtime_result(:ok, :request, state.session, content: "answer")})
+    state = apply_semantic(state, "run_completed", %{content: "answer"})
 
     assert state.editor.text == "next draft"
   end
@@ -451,11 +278,7 @@ defmodule Jido.Console.Tui.StateTest do
         {state, [{:start_turn, ^prompt}]} = State.update(state, {:terminal, {:key, :enter}})
         assert state.scroll_offset == 0
 
-        {state, []} =
-          State.update(
-            state,
-            {:turn_result, runtime_result(:ok, :request, state.session, content: "answer #{prompt}")}
-          )
+        state = apply_semantic(state, "run_completed", %{content: "answer #{prompt}"})
 
         state
       end)
@@ -520,71 +343,9 @@ defmodule Jido.Console.Tui.StateTest do
     assert {:review, ^request, %Turn{}, %{}, {:responding, :approve}} = state.activity
   end
 
-  test "accepts only checked events for the active request" do
-    other_delta =
-      Event.build(:llm_delta, [],
-        request_id: "other",
-        data: %{chunk_type: :content, delta: "ignored"}
-      )
-
-    idle = State.new(:session, {80, 24})
-    assert {^idle, []} = State.update(idle, {:jidoka, other_delta})
-
-    request = session_request("current")
-    idle_starting = starting_state(idle)
-    {running, []} = State.update(idle_starting, {:turn_started, request})
-    assert {^running, []} = State.update(running, {:jidoka, other_delta})
-
-    current_delta =
-      Event.build(:llm_delta, [],
-        request_id: "current",
-        data: %{chunk_type: :content, delta: "accepted"}
-      )
-
-    {running, []} = State.update(running, {:jidoka, current_delta})
-    assert State.active_turn(running).assistant == "accepted"
-
-    assert {^idle, []} = State.update(idle, {:turn_started, :opaque})
-  end
-
-  test "normalizes all supported turn results" do
+  test "normalizes local client effect errors" do
     request = session_request("request-1")
     base = active_state(State.new(:session, {80, 24}), request, "partial")
-
-    {state, []} =
-      State.update(base, {:turn_result, runtime_result(:ok, request, :session, content: "answer")})
-
-    assert state.activity == :idle
-    assert List.last(state.messages).content == "answer"
-
-    {state, []} =
-      State.update(
-        base,
-        {:turn_result, runtime_result(:hibernated, request, :new_session, snapshot: :snapshot)}
-      )
-
-    assert state.session == :new_session
-    assert {:failed, :hibernated, _reason, "Agent paused."} = state.activity
-
-    {state, []} =
-      State.update(
-        base,
-        {:turn_result, runtime_result(:hibernated, request, :session, snapshot: :snapshot)}
-      )
-
-    assert state.session == :session
-    assert {:failed, :hibernated, _reason, "Agent paused."} = state.activity
-
-    cancellation = Cancellation.new!(request_id: "request-1", cancelled_at_ms: 0)
-
-    {state, []} =
-      State.update(
-        base,
-        {:turn_result, runtime_result(:cancelled, request, :session, cancellation: cancellation)}
-      )
-
-    assert state.activity == :idle
-    assert State.active_request(state) == nil
 
     {state, []} =
       State.update(base, {:turn_result, {:error, RuntimeError.exception("failed")}})
@@ -607,12 +368,11 @@ defmodule Jido.Console.Tui.StateTest do
     assert is_binary(error)
   end
 
-  test "keeps an empty transcript and ignores unknown events" do
+  test "keeps an empty transcript and ignores unknown local events" do
     request = session_request("request-1")
     state = %{active_state(State.new(:session, {80, 24}), request) | dirty?: false}
 
-    {state, []} =
-      State.update(state, {:turn_result, runtime_result(:ok, request, :session, content: "")})
+    state = apply_semantic(state, "run_completed", %{content: ""})
 
     assert state.messages == []
 
@@ -655,43 +415,11 @@ defmodule Jido.Console.Tui.StateTest do
     assert state.messages == []
   end
 
-  test "keeps runtime review projections and validates raw review events" do
-    digest = "sha256:" <> String.duplicate("a", 64)
-
-    review = %{
-      "kind" => "edit",
-      "path" => "lib/value.ex",
-      "action" => "edit",
-      "operation_id" => "edit-1",
-      "before_sha256" => digest,
-      "after_sha256" => digest,
-      "checkpoint" => %{"checkpoint_ref" => "checkpoint-1"},
-      "diff" => %{"changed_before_lines" => 1, "changed_after_lines" => 1}
-    }
-
-    request = session_request("request-1")
-    state = active_state(State.new(:session, {80, 24}), request)
-
-    {state, []} =
-      State.update(
-        state,
-        {:turn_result,
-         runtime_result(:ok, request, :next_session,
-           content: "done",
-           coding_review_candidates: [review, %{"bad" => true}]
-         )}
-      )
-
-    assert state.session == :next_session
-    assert state.activity == :idle
-    assert [projected] = state.coding_reviews
-    assert projected["path"] == "lib/value.ex"
-    assert projected["status"] == "changed"
-    assert projected["before_sha256"] == "sha256:aaaaaaaaaaaa"
-    assert projected["after_sha256"] == "sha256:aaaaaaaaaaaa"
-
+  test "keeps canonical coding review updates" do
+    projected = %{"kind" => "mutation_state", "status" => "cancelled"}
+    state = State.new(:session, {80, 24})
     {state, []} = State.update(state, {:coding_review, [projected]})
-    assert state.coding_reviews == []
+    assert [%{"kind" => "mutation_state", "status" => "cancelled"}] = state.coding_reviews
 
     {state, []} =
       State.update(state, {:coding_review, [%{"kind" => "mutation_state", "status" => "cancelled"}]})
@@ -730,54 +458,38 @@ defmodule Jido.Console.Tui.StateTest do
     %{state | activity: {:active, request, turn, :streaming}}
   end
 
-  defp runtime_result(status, request, session, attrs) do
-    request_id = if is_map(request), do: Map.get(request, :request_id, "request"), else: "request"
+  defp apply_semantic(state, type, fields) do
+    session_id = state.semantic_session_id || "session"
+    sequence = state.semantic_sequence + 1
 
-    case status do
-      :ok ->
-        Result.ok(request_id, session, request, Keyword.fetch!(attrs, :content),
-          coding_review_candidates: Keyword.get(attrs, :coding_review_candidates, []),
-          approval: Keyword.get(attrs, :approval)
-        )
+    attrs =
+      Map.merge(
+        %{
+          type: type,
+          id: "event-#{sequence}",
+          session_id: session_id,
+          sequence: sequence,
+          durability: "process",
+          sensitivity: "public",
+          origin: %{kind: "session", actor_id: session_id},
+          trust: %{evidence: "test", policy: "session-owner"},
+          identities: [
+            %{"kind" => "session", "id" => session_id, "session_id" => session_id},
+            %{"kind" => "jidoka_request", "id" => "request-1", "session_id" => session_id}
+          ],
+          run_id: "run-1"
+        },
+        fields
+      )
 
-      :pending_review ->
-        Result.pending_review(
-          request_id,
-          session,
-          request,
-          Keyword.fetch!(attrs, :pending_reviews),
-          snapshot: Keyword.get(attrs, :snapshot),
-          approval: Keyword.get(attrs, :approval)
-        )
+    attrs =
+      if type in ["run_completed", "run_failed", "session_failed"],
+        do: Map.put(attrs, :outcome_id, "outcome-1"),
+        else: attrs
 
-      :hibernated ->
-        Result.hibernated(request_id, session, request,
-          snapshot: Keyword.get(attrs, :snapshot),
-          reason: Keyword.get(attrs, :reason),
-          approval: Keyword.get(attrs, :approval)
-        )
-
-      :cancelled ->
-        Result.cancelled(request_id, session, request, Keyword.fetch!(attrs, :cancellation),
-          approval: Keyword.get(attrs, :approval)
-        )
-
-      :error ->
-        Result.error(request_id, session, request, Keyword.fetch!(attrs, :error),
-          approval: Keyword.get(attrs, :approval)
-        )
-    end
-  end
-
-  defp review(id, operation, arguments) do
-    %{
-      interrupt_id: id,
-      operation: operation,
-      arguments: arguments,
-      reason: :manual,
-      created_at_ms: 0,
-      expires_at_ms: 30_000
-    }
+    {:ok, event} = SessionEvent.classify(attrs)
+    {:ok, state} = State.apply_session_event(%{state | semantic_session_id: session_id}, event)
+    state
   end
 
   defp session_request(request_id) do

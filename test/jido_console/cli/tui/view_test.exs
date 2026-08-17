@@ -1,8 +1,7 @@
 defmodule Jido.Console.Tui.ViewTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Tui.{EventProjection, State, Turn, View}
-  alias Jidoka.Event
+  alias Jido.Console.Tui.{SemanticProjection, State, Turn, View}
 
   test "renders a useful warning when the terminal is too small" do
     frame = State.new(:session, {10, 4}) |> View.render()
@@ -123,16 +122,14 @@ defmodule Jido.Console.Tui.ViewTest do
     turn = Turn.new(0, "run tools") |> Turn.put_request(%{request_id: "request-1"})
 
     events = [
-      tool_event(:effect_planned, 0, "planned", "read_file"),
-      tool_event(:capability_call_started, 1, "running", "search"),
-      tool_event(:capability_call_completed, 2, "completed", "git_diff"),
-      tool_event(:effect_failed, 3, "failed", "shell", error: "boom"),
-      tool_event(:effect_replayed, 4, "retried", "write_file")
+      tool_projection(:tool_started, 0, "running", "search", :running),
+      tool_projection(:tool_completed, 1, "completed", "git_diff", :completed),
+      tool_projection(:tool_failed, 2, "failed", "shell", :failed, error: "boom"),
+      tool_projection(:tool_completed, 3, "retried", "write_file", :retried)
     ]
 
     turn =
-      Enum.reduce(events, turn, fn event, turn ->
-        {:ok, projection} = EventProjection.project(event)
+      Enum.reduce(events, turn, fn projection, turn ->
         {:ok, turn} = Turn.apply_event(turn, projection)
         turn
       end)
@@ -148,7 +145,7 @@ defmodule Jido.Console.Tui.ViewTest do
     state = %{State.new(:session, {80, 30}) | activity: {:review, :request, turn, :result, :awaiting}}
     text = state |> View.render() |> Map.fetch!(:rows) |> Enum.join("\n")
 
-    for marker <- ["[planned]", "[running]", "[done]", "[failed]", "[retried]"] do
+    for marker <- ["[running]", "[done]", "[failed]", "[retried]"] do
       assert text =~ marker
     end
 
@@ -353,20 +350,21 @@ defmodule Jido.Console.Tui.ViewTest do
     end
   end
 
-  defp tool_event(event, seq, effect_id, operation, attrs \\ []) do
-    Event.build(
-      event,
-      [],
-      Keyword.merge(
-        [
-          request_id: "request-1",
-          seq: seq,
-          effect_id: effect_id,
-          effect_kind: :operation,
-          operation: operation
-        ],
-        attrs
-      )
-    )
+  defp tool_projection(event, seq, effect_id, operation, status, attrs \\ []) do
+    %SemanticProjection{
+      id: "event-#{effect_id}-#{seq}",
+      request_id: "request-1",
+      seq: seq,
+      event: event,
+      kind: :tool,
+      data: %{
+        id: effect_id,
+        operation: operation,
+        status: status,
+        summary: nil,
+        error: Keyword.get(attrs, :error),
+        loop_index: nil
+      }
+    }
   end
 end

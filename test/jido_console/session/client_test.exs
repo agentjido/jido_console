@@ -33,10 +33,9 @@ defmodule Jido.Console.Session.ClientTest do
     assert Enum.map(batch["payload"]["events"], & &1["type"]) == ["command_effected"]
   end
 
-  test "the adapter bypass allowlist is fixed to one TUI migration path" do
-    assert Boundary.legacy_allowlist() == ["lib/jido_console/cli/tui.ex"]
-
+  test "all production client adapters pass the syntax boundary" do
     adapters = [
+      "lib/jido_console/cli/tui.ex",
       "lib/jido_console/session/client/automation.ex",
       "lib/jido_console/session/client/json.ex",
       "lib/jido_console/session/client/text.ex",
