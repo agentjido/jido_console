@@ -2,6 +2,7 @@
   "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-m2e32",
+    "jido_console-xou",
     "jido_console-zs5"
   ],
   "blocks": [
@@ -25,5 +26,5 @@
   "status": "in_progress",
   "title": "M2-E36: Requalify the v0.2 Production Candidate After Closeout",
   "type": "epic",
-  "updated_at": "2026-08-17T17:17:07Z"
+  "updated_at": "2026-08-17T17:28:34Z"
 }

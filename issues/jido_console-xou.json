@@ -1,7 +1,9 @@
 {
   "assignee": "",
   "blocked_by": [],
-  "blocks": [],
+  "blocks": [
+    "jido_console-m2e36"
+  ],
   "created": "2026-08-17T17:28:33Z",
   "description": "Roadmap source: roadmap/milestones/02-ship-supervised-session-plane/epics/m2-e39-restore-paint-first-packaged-tui-startup.md\\nRoadmap version: 1.3.3\\nTarget release: v0.2\\nDelivery unit: one_pull_request\\n\\nMake the packaged TUI paint before slow application and model-catalog startup, keep session supervisors available before attach and registration, preserve probe and input behavior, and stop cleanup from hiding the original startup error. Restore the declared first-frame and readiness limits.",
   "id": "jido_console-xou",
@@ -17,5 +19,5 @@
   "status": "open",
   "title": "M2-E39: Restore Paint-First Packaged TUI Startup",
   "type": "epic",
-  "updated_at": "2026-08-17T17:28:33Z"
+  "updated_at": "2026-08-17T17:28:34Z"
 }
