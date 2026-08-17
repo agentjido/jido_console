@@ -24,7 +24,7 @@ The epic files define scope, epic dependencies, acceptance checks, and proof. Be
 | [M2-E14 Supervised model and tool workers](m2-e14-run-model-and-tool-work-in-workers.md) | `jido_console-m2e14` | Model and tool work runs outside the session owner and returns identity-bound results. | M2-E06, M2-E13 |
 | [M2-E15 Process-lifetime input admission](m2-e15-admit-process-lifetime-input.md) | `jido_console-m2e15` | Input is admitted once before an advisory, coalescing wake-up while the application stays alive. | M2-E07, M2-E13 |
 | [M2-E16 Steering and follow-up queues](m2-e16-separate-steering-and-follow-up.md) | `jido_console-m2e16` | Active-run steering and next-run input use separate operations and queues. | M2-E13, M2-E15 |
-| [M2-E17 Bounded client delivery](m2-e17-bound-client-delivery.md) | `jido_console-m2e17` | A slow or stopped client cannot cause unlimited delivery or mailbox growth. | M2-E07, M2-E13 |
+| [M2-E17 Bounded client delivery](m2-e17-bound-client-delivery.md) | `jido_console-m2e17` | A slow or stopped client cannot cause unlimited delivery or mailbox growth. | M2-E07, M2-E09, M2-E13 |
 | [M2-E18 Client gap recovery](m2-e18-recover-clients-from-gaps.md) | `jido_console-m2e18` | A client sees an explicit gap and recovers from a current snapshot. | M2-E11, M2-E17 |
 | [M2-E19 Exact worker drain](m2-e19-add-exact-worker-drain.md) | `jido_console-m2e19` | Shutdown and tests wait for one exact queued-and-active worker drain condition. | M2-E14 |
 | [M2-E20 Two-stage cancellation](m2-e20-add-two-stage-cancellation.md) | `jido_console-m2e20` | Graceful cancellation has a bound and force kill stops the complete owned worker tree. | M2-E14, M2-E19 |
@@ -40,13 +40,17 @@ The epic files define scope, epic dependencies, acceptance checks, and proof. Be
 | [M2-E30 JSON client migration](m2-e30-migrate-json-session-client.md) | `jido_console-m2e30` | JSON output becomes a bounded, versioned semantic client projection. | M2-E26 |
 | [M2-E31 Current-client parity](m2-e31-prove-current-client-parity.md) | `jido_console-m2e31` | TUI, automation, text, and JSON pass one contract suite and observe the same ordered outcomes. | M2-E27, M2-E28, M2-E29, M2-E30 |
 | [M2-E32 Old TUI path removal](m2-e32-remove-old-tui-session-path.md) | `jido_console-m2e32` | The TUI-owned session and turn path is deleted after parity passes. | M2-E31 |
-| [M2-E33 v0.2 production candidate](m2-e33-prove-v0-2-production-candidate.md) | `jido_console-m2e33` | The exact production candidate passes the session-plane workflow and all common release checks. | M2-E32 |
-| [M2-E34 v0.2 release audit](m2-e34-audit-v0-2-release.md) | `jido_console-m2e34` | One evidence-only audit records the v0.2 release decision. | M2-E01 through M2-E33 |
-| [M2-E35 skipped v0.2 publication](m2-e35-publish-v0-2-release.md) | `jido_console-m2e35` | The roadmap records the maintainer decision to skip v0.2 publication. | M2-E34 |
+| [M2-E33 historical v0.2 production candidate](m2-e33-prove-v0-2-production-candidate.md) | `jido_console-m2e33` | Closed evidence for the pre-closeout production candidate. | M2-E32 (historical) |
+| [M2-E34 historical v0.2 release audit](m2-e34-audit-v0-2-release.md) | `jido_console-m2e34` | Closed evidence for the pre-closeout v0.2 audit. | M2-E01 through M2-E33 (historical) |
+| [M2-E35 historical skipped v0.2 publication](m2-e35-publish-v0-2-release.md) | `jido_console-m2e35` | Closed record of the pre-closeout no-publication decision. | M2-E34 (historical) |
+| [M2-E36 post-closeout v0.2 candidate](m2-e36-requalify-v0-2-after-closeout.md) | `jido_console-m2e36` | The exact post-closeout candidate passes the session-plane workflow and all common release checks. | M2-E32 |
+| [M2-E37 final post-closeout v0.2 audit](m2-e37-reaudit-v0-2-after-closeout.md) | `jido_console-m2e37` | One evidence-only audit records the final v0.2 decision and Milestone 3 baseline. | M2-E36 |
 
 ## Dependency Diagram
 
-Solid arrows show implementation dependencies. Dashed arrows show that the final release audit directly depends on each prior epic.
+Solid arrows show the current implementation dependencies. Dashed arrows and
+gray nodes show closed historical evidence for the pre-closeout source.
+M2-E37 is the final Milestone 2 audit.
 
 ```mermaid
 flowchart TB
@@ -82,9 +86,14 @@ flowchart TB
     E30["M2-E30<br/>JSON client"]
     E31["M2-E31<br/>Client parity"]
     E32["M2-E32<br/>Remove old path"]
-    E33["M2-E33<br/>Production candidate"]
-    E34["M2-E34<br/>Release audit"]
-    E35["M2-E35<br/>Skip publication"]
+    subgraph historical["Closed historical evidence for the pre-closeout source"]
+        direction LR
+        E33["M2-E33<br/>Production candidate"]
+        E34["M2-E34<br/>Release audit"]
+        E35["M2-E35<br/>Skip publication"]
+    end
+    E36["M2-E36<br/>Post-closeout candidate"]
+    E37["M2-E37<br/>Final post-closeout audit"]
 
     E01 --> E02
     E01 --> E05
@@ -114,6 +123,7 @@ flowchart TB
     E13 --> E16
     E15 --> E16
     E07 --> E17
+    E09 --> E17
     E13 --> E17
     E11 --> E18
     E17 --> E18
@@ -149,7 +159,9 @@ flowchart TB
     E29 --> E31
     E30 --> E31
     E31 --> E32
-    E32 --> E33
+    E32 -.-> E33
+    E32 --> E36
+    E36 --> E37
 
     E01 -.-> E34
     E02 -.-> E34
@@ -184,7 +196,10 @@ flowchart TB
     E31 -.-> E34
     E32 -.-> E34
     E33 -.-> E34
-    E34 --> E35
+    E34 -.-> E35
+
+    classDef historicalEvidence fill:#f2f2f2,stroke:#888,stroke-dasharray:5 5,color:#555
+    class E33,E34,E35 historicalEvidence
 ```
 
 ## Merge Plan
@@ -198,15 +213,19 @@ flowchart TB
 6. Run M2-E11 and M2-E12 when their semantic inputs pass.
 7. Run M2-E13 and M2-E22 when ready.
 8. Run M2-E14, M2-E15, and M2-E24 when their direct dependencies pass.
-9. Run M2-E16, M2-E17, M2-E19, M2-E23, and M2-E25 when ready.
+9. Run M2-E16, M2-E19, M2-E23, and M2-E25 when ready. Run M2-E17 only
+   after M2-E09, M2-E07, and M2-E13 pass.
 10. Run M2-E18 and M2-E20 after delivery and worker control are complete.
 11. Run M2-E26 after the queue, delivery, control, registry, result, permission, and hook contracts join.
 12. Run M2-E27, M2-E28, M2-E29, and M2-E30 in parallel.
 13. Run M2-E31, then remove the old path in M2-E32.
-14. Prove the exact production candidate in M2-E33.
-15. Merge the evidence-only M2-E34 audit after every candidate proof passes.
-16. Record M2-E35 as intentionally not published after M2-E34. Do not invoke
-    the release workflow.
+14. Preserve M2-E33, M2-E34, and M2-E35 as closed historical evidence for
+    the pre-closeout source. Do not reopen or reuse them for the new source.
+15. Prove the exact post-closeout production candidate in M2-E36 after
+    M2-E32 passes.
+16. Merge the evidence-only M2-E37 audit after M2-E36 passes. M2-E37 names
+    the final Milestone 2 source baseline for Milestone 3 and reaffirms that
+    publication remains skipped. Do not invoke the release workflow.
 
 ## Pull Request Rule
 

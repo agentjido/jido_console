@@ -1,6 +1,6 @@
 # Jido Console Roadmap
 
-Roadmap version: **1.1.0**
+Roadmap version: **1.2.0**
 
 Roadmap status: **proposed**
 
@@ -80,9 +80,10 @@ The `milestone.md` file is the roadmap milestone item. It owns the goal, outcome
 3. Rename the product and establish Jido home, provider, model, credential, and release contracts.
 4. Make restricted execution the default and pass the production-artifact golden coding task.
 5. Add the semantic protocol, one supervised session owner, and current-client migration as one v0.2 quality target.
-6. Close v0.2 only after every production client consumes canonical Console updates, a stopped receiver has a measured mailbox bound, and snapshot and gap recovery pass without a raw runtime-event bypass.
-7. Before Milestone 3 epic generation, freeze the durable-record inventory, acknowledgement rule, recovery topology, session-generation fence, storage evaluation, commit-reconciliation state machine, and crash matrix.
-8. Add restart-safe input, the shared Console-to-Jidoka watermark, and exact recovery.
+6. Complete the Milestone 2 closeout chain: canonical projection, bounded delivery, gap recovery, the final client contract, TUI migration, production-path parity, and legacy deletion.
+7. Requalify one exact post-closeout v0.2 artifact and complete the final evidence-only audit. Milestone 3 cannot start from the historical pre-closeout candidate or audit.
+8. Before Milestone 3 epic generation, freeze the durable-record inventory, acknowledgement rule, recovery topology, session-generation fence, storage evaluation, commit-reconciliation state machine, and crash matrix.
+9. Add restart-safe input, the shared Console-to-Jidoka watermark, and exact recovery.
 
 ## Common Milestone Release Gate
 

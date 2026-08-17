@@ -4,6 +4,34 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-08-16
+
+### Added
+
+- Add detailed delivery plans, preconditions, invariants, ordered steps, test
+  matrices, and handoffs for the seven open Milestone 2 closeout epics.
+- Add M2-E36 to build and prove one exact post-closeout v0.2 production
+  candidate.
+- Add M2-E37 to audit the post-closeout candidate, reaffirm skipped
+  publication, and declare the exact Milestone 3 baseline.
+- Add a Milestone 2 proof index that preserves the old records as historical
+  evidence and points to the new closeout candidate and audit records.
+
+### Changed
+
+- Make M2-E17 depend directly on M2-E09 so bounded client delivery starts only
+  after canonical Jidoka-to-Console projection is complete.
+- Separate ownership for canonical projection, bounded delivery, recovery,
+  client API, TUI cutover, parity proof, and legacy deletion across M2-E09,
+  M2-E17, M2-E18, M2-E26, M2-E27, M2-E31, and M2-E32.
+- Define the bounded caller-owned projection cursor, the additive v1 delivery
+  family, deprecated gap-event compatibility, and recovery-overflow token
+  invalidation.
+- Keep M2-E33 and M2-E34 as historical evidence for the earlier source. Require
+  M2-E36 and M2-E37 before Milestone 2 closes or Milestone 3 planning starts.
+- Increase the Milestone 2 generated epic count from 35 to 37 and synchronize
+  the roadmap and Beadwork delivery graphs.
+
 ## [1.1.0] - 2026-08-16
 
 ### Added

@@ -6,7 +6,7 @@ status: proposed
 depends_on: [milestone-1]
 release: v0.2
 introduced_in: 0.1.0
-last_updated_in: 1.1.0
+last_updated_in: 1.2.0
 ---
 
 # Milestone 2: Ship the Semantic and Supervised Session Plane
@@ -30,13 +30,16 @@ work.
 ## Delivery Policy
 
 Milestone 2 is a source-quality milestone. Production-candidate proof and the
-evidence audit are required. Publication is intentionally skipped. M2-E35
-records this decision and does not create a tag, package, archive, or public
-release.
+evidence audit are required. M2-E33 through M2-E35 are closed historical
+evidence for the source before this closeout work. M2-E36 requalifies the
+post-closeout candidate, and M2-E37 is the final audit and Milestone 3
+baseline gate. Publication remains intentionally skipped. No epic creates a
+tag, package, archive, or public release. The [proof index](proof/README.md)
+separates the historical records from the final closeout evidence.
 
 ## Generated Epics
 
-The [Milestone 2 epic index](epics/README.md) splits this milestone into 35 epics. Each epic is the scope for exactly one pull request.
+The [Milestone 2 epic index](epics/README.md) splits this milestone into 37 epics. Each epic is the scope for exactly one pull request.
 
 ## Work
 
@@ -62,6 +65,38 @@ The [Milestone 2 epic index](epics/README.md) splits this milestone into 35 epic
 - Make the production TUI, automation, text, and JSON paths use the same `Session.Client` contract without an adapter-specific runtime-event path.
 - Generate protocol types and validators from one canonical schema and preserve bounded unknown data without granting authority.
 - Delete the old TUI-owned session and turn path after parity passes.
+- Requalify the exact production candidate after the closeout changes and make
+  a new final evidence-only audit before Milestone 3 starts.
+
+## Closeout Sequence
+
+The remaining work has one ordered ownership chain. M2-E28, M2-E29, and
+M2-E30 are already complete, but their production paths remain inputs to the
+M2-E31 parity proof.
+
+| Epic | Owned result | Must not take |
+| --- | --- | --- |
+| M2-E09 | Pure Jidoka-to-Console event projection | Client cutover or legacy deletion |
+| M2-E17 | Bounded per-attachment delivery and acknowledgement | Snapshot or recovery policy |
+| M2-E18 | Attach snapshot and gap-recovery transaction | Public client API or restart recovery |
+| M2-E26 | Renderer-neutral client API, behavior, and reusable suite | Production adapter migration |
+| M2-E27 | Production TUI cutover and active raw-route removal | Other clients or broad legacy deletion |
+| M2-E31 | Production-entry parity proof for all current clients | Product behavior fixes |
+| M2-E32 | Isolated legacy deletion and no-return guard | Replacement behavior |
+| M2-E36 | Exact post-closeout candidate and artifact proof | Product fixes or publication |
+| M2-E37 | Final evidence audit and Milestone 3 baseline | Candidate changes or Milestone 3 planning |
+
+```mermaid
+flowchart LR
+    E09["M2-E09<br/>Canonical projection"] --> E17["M2-E17<br/>Bounded delivery"]
+    E17 --> E18["M2-E18<br/>Gap recovery"]
+    E18 --> E26["M2-E26<br/>Client contract"]
+    E26 --> E27["M2-E27<br/>TUI cutover"]
+    E27 --> E31["M2-E31<br/>Client parity"]
+    E31 --> E32["M2-E32<br/>Legacy deletion"]
+    E32 --> E36["M2-E36<br/>Candidate proof"]
+    E36 --> E37["M2-E37<br/>Final audit"]
+```
 
 ## Out of Scope
 
@@ -88,10 +123,12 @@ The [Milestone 2 epic index](epics/README.md) splits this milestone into 35 epic
 - A client or tool-worker failure does not corrupt or cancel the session unless policy requires it.
 - An authority hook fails closed, and an information-only hook failure is visible.
 - The milestone states clearly that accepted input can be lost on an application crash before Milestone 3.
+- M2-E36 proves the exact post-closeout production candidate, and M2-E37
+  audits its exact source, payload, and evidence as the Milestone 3 baseline.
 - The common milestone release gate in [the roadmap index](../../README.md#common-milestone-release-gate) passes.
 
 ## Release Effect
 
 Record a quality-approved v0.2 source milestone with the canonical supervised
-session plane and current-client migration complete. Do not publish a tag or
-package.
+session plane and current-client migration complete. M2-E37 names the exact
+audited source baseline for Milestone 3. Do not publish a tag or package.
