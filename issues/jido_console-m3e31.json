@@ -1,0 +1,35 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e17",
+    "jido_console-m3e19",
+    "jido_console-m3e20",
+    "jido_console-m3e24",
+    "jido_console-m3e25",
+    "jido_console-m3e26",
+    "jido_console-m3e28",
+    "jido_console-m3e29",
+    "jido_console-m3e30"
+  ],
+  "blocks": [
+    "jido_console-m3e33",
+    "jido_console-m3e35"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e31-add-cli-automation-continuity-operations.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E31: Add CLI, Text, JSON, and Automation Continuity Operations\n\n## Goal\n\nExpose durable session discovery and continuity operations without breaking published automation contracts.\n\n## Scope\n\n- Add versioned CLI text, CLI JSON, and automation operations for session list,\n  status, open, exact resume, transcript-only resume, retry, fork, semantic\n  repair, abandon, backup, restore, physical repair, archive, and removal.\n- Add secret-free credential-profile list, show, create-version, disable, and\n  status operations that accept metadata and references only.\n- Route every operation through Session.Client or the owned administrative facade.\n- Return one typed result that states whether the operation can call a model or tool.\n- Preserve automation command schemas, JSONL writer ownership, artifacts, exit status, and one fresh session per evaluation cell.\n- Add explicit idempotency keys to mutating automation operations.\n- Expose recovery phases, limits, uncertainty, storage capacity, and repair choices as bounded data.\n- Keep all durable store files and evidence under the selected isolated Jido home.\n\n## Out of Scope\n\n- TUI rendering\n- Remote API or transport\n- Breaking automation schema changes\n- A second JSONL writer\n- Automatic retry, repair, or transcript fallback\n\n## Dependencies\n\nThis epic depends on M3-E17, M3-E19, M3-E20, M3-E24, M3-E25, M3-E26, M3-E28, M3-E29, M3-E30. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E24 through M3-E26 supply repair, retry, and fork operations.\n- M3-E28 supplies restart attach and continuity status.\n- M3-E17, M3-E19, and M3-E20 supply backup, restore, and physical-repair operations.\n- M3-E29 and M3-E30 supply archive, retention, and explicit removal behavior.\n- The M2 automation compatibility fixtures are frozen.\n\n### Decisions and invariants\n\n- CLI command names and results map the renderer-neutral operations that their\n  functional epics already define. This epic does not own a new shared registry\n  or Session.Client operation.\n- Read-only operations cannot wake execution. Mutating operations state their model and tool policy before they run.\n- Automation JSONL and artifacts remain under their existing owner.\n- Automation can create a fresh durable session for a cell, but cells never share state unless an explicit future contract says so.\n- A failed exact resume cannot select transcript-only automatically.\n\n### Delivery steps\n\n1. Map the existing operation and result declarations into CLI text, CLI JSON, and automation adapters.\n2. Add session discovery, credential-profile metadata, and bounded status output.\n3. Add exact, transcript-only, retry, fork, repair, abandon, and maintenance operations.\n4. Route mutating operations through durable receipts and idempotency keys.\n5. Preserve automation schemas, JSONL, artifacts, and exit codes.\n6. Add provider-free CLI text, CLI JSON, and automation fixtures for success, blocked, capacity, crash, and restart cases.\n7. Add source guards against direct store, server, or Jidoka access.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Read-only commands | No provider, tool, or wake call | Bounded output |\n| Mutating command repeat | Same key returns same result | No duplicate session or receipt |\n| Exact unavailable | Typed choices return | No transcript fallback |\n| Text, JSON, and automation compatibility | Frozen output, JSONL, artifact, and exit-status fixtures pass | One fresh session per cell |\n| Boundary | Only public client or administration facade used | No raw store or runtime access |\n\n### Completion boundary and handoff\n\nM3-E33 runs the applicable semantic and administrative corpora through CLI\ntext, CLI JSON, and automation. M3-E36 later reruns them through the installed\nartifact.\n\n### Risks and controls\n\n- A proof epic can hide a product defect. Stop and return each defect to its owning implementation epic.\n- Evidence can mix two source or payload identities. Freeze one manifest and reject mixed results.\n- A development checkout can give a false artifact result. Record the exact installed executable and file paths.\n\n## Acceptance Checks\n\n- CLI text, CLI JSON, and automation expose each planned continuity and\n  maintenance operation and the secret-free credential-profile workflow.\n- Each result states whether it can call a model or tool.\n- Mutating operations are durable and idempotent.\n- Exact and transcript-only modes remain explicit.\n- Automation schemas, JSONL ownership, artifacts, exit statuses, and cell isolation remain compatible.\n- Recovery, capacity, uncertainty, and repair data is bounded and JSON-compatible.\n- Provider-free restart workflows pass.\n- No direct Session.Server, storage writer, SQLite, or raw Jidoka path is added.\n\n## Proof Artifacts\n\n- CLI text, CLI JSON, automation, and typed-result matrix\n- Operation model/tool policy table\n- Automation compatibility result\n- Idempotent command fixtures\n- Provider-free restart workflow\n- Source-boundary scan\n\n## Milestone Traceability\n\nThis epic makes durable continuity usable from every current non-TUI production\nentry point while preserving published automation behavior.\n",
+  "id": "jido_console-m3e31",
+  "labels": [
+    "effort:large",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E31: Add CLI, Text, JSON, and Automation Continuity Operations",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

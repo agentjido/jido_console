@@ -1,0 +1,30 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e15",
+    "jido_console-m3e22",
+    "jido_console-m3e23",
+    "jido_console-m3e24"
+  ],
+  "blocks": [
+    "jido_console-m3e31",
+    "jido_console-m3e32"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e25-add-explicit-retry.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E25: Add Explicit Retry\n\n## Goal\n\nCreate new work from a failed, uncertain, or transcript-only boundary without reusing old execution authority.\n\n## Scope\n\n- Define the renderer-neutral Session.Client retry request and result contract\n  before any client adapter uses it.\n\n- Add a typed retry operation with a required idempotency key and source boundary.\n- Create a new request, receipt, result identity, effect reservation namespace, and generation-bound operation.\n- State whether the retry can call a model, tool, or both before execution.\n- Require the recorded safety, consent, permission, workspace, model, and credential checks.\n- Link the new request to the failed or uncertain source without changing the old record.\n- Reject automatic retry, identity reuse, stale authority, and ambiguous unsafe effects.\n- Make exact repeated retry requests return the same new request.\n\n## Out of Scope\n\n- Automatic backoff or provider retry policy\n- Repairing the source record\n- Forking a session\n- Client or TUI integration\n- Remote job retry\n\n## Dependencies\n\nThis epic depends on M3-E15, M3-E22, M3-E23, M3-E24. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E15 provides the effect safety and uncertainty policy.\n- M3-E22 and M3-E23 define the exact and transcript-only source states.\n- M3-E24 defines repaired and abandoned state rules.\n- M3-E11 provides restart-safe request admission.\n\n### Decisions and invariants\n\n- A retry is a new request, not replay of the old receipt.\n- The old event, effect, result, approval, and generation identities never become current in the retry.\n- Unsafe or ambiguous work needs explicit reconciliation or consent before retry.\n- The result states in advance whether execution can call a model or tool.\n- Retry admission commits before any wake-up.\n\n### Delivery steps\n\n1. Add retry request, source, policy, and result schemas.\n2. Validate source state, safety, consent, model, workspace, and credential references.\n3. Allocate and commit the new receipt, request, and identity set.\n4. Link retry provenance to the unchanged source record.\n5. Route permitted retry through normal durable admission and effect reservation.\n6. Add exact-repeat, conflict, unsafe, stale, abandoned, and crash tests.\n7. Record the operation safety matrix.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Exact repeat | Same retry key returns same new request | No second receipt |\n| Unsafe source | Consent or reconciliation required | No external call before approval |\n| Transcript source | New request has no inherited live authority | Explicit model/tool policy |\n| Old identity reuse | Rejected | Source records unchanged |\n| Crash after admission | Recovered request wakes once | New generation and operation identity |\n\n### Completion boundary and handoff\n\nM3-E31 and M3-E32 expose retry through supported clients. M3-E33 proves that all clients observe the same new request and outcomes.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can grant old or undeclared authority. Check identity and mode before each mutation.\n- A recovery test can hide a model or tool call. Use provider and tool probes that fail on any unexpected call.\n\n## Acceptance Checks\n\n- Retry always creates or returns one new request identity.\n- It never reuses an old receipt, result, approval, effect reservation, lease, or generation.\n- The result states whether a model or tool call is permitted.\n- Unsafe or ambiguous work cannot retry without the required explicit decision.\n- Retry admission is durable before wake-up.\n- The source history stays unchanged and gains a bounded provenance link.\n- Repeated retry is idempotent and a conflicting payload fails.\n- Crash recovery runs the new request at most once.\n\n## Proof Artifacts\n\n- Retry schema and safety matrix\n- New-identity and provenance result\n- Unsafe-consent denial fixtures\n- Exact-repeat and conflict result\n- Retry crash-recovery trace\n\n## Milestone Traceability\n\nThis epic defines retry as a distinct safe operation instead of a hidden form of resume or replay.\n",
+  "id": "jido_console-m3e25",
+  "labels": [
+    "effort:medium",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E25: Add Explicit Retry",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

@@ -1,0 +1,37 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e09",
+    "jido_console-m3e11",
+    "jido_console-m3e12",
+    "jido_console-m3e13",
+    "jido_console-m3e14",
+    "jido_console-m3e15",
+    "jido_console-m3e16",
+    "jido_console-m3e18",
+    "jido_console-m3e20"
+  ],
+  "blocks": [
+    "jido_console-m3e22",
+    "jido_console-m3e23",
+    "jido_console-m3e24",
+    "jido_console-m3e27"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e21-recover-sessions-behind-readiness-gate.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E21: Classify Sessions Behind a Recovery Gate\n\n## Goal\n\nLoad, validate, reconcile, rebuild, and classify a session before a continuity\nmode can start its owner.\n\n## Scope\n\n- Add the recovery supervisor, session catalog, and bounded per-session recovery coordinator.\n- Observe the completed store-wide migration gate, then run generation claim,\n  history verification, Jidoka validation, reconciliation, rebuild, and\n  classification in the frozen order.\n- Return `exact_candidate`, `transcript_candidate`, `repair_required`, or\n  `unavailable` with bounded diagnostics.\n- Run at most four coordinators, queue at most 124 sessions, reserve four readers, and enforce the frozen read, diagnostic, payload, and time limits.\n- Return one generation-fenced, bounded classification plan. Do not start\n  Session.Server, restore runtime authority, return a ready result, or wake work.\n- Identify committed accepted work in the exact candidate without waking it.\n- Keep model, tool, client delivery, and normal attachment stopped.\n- Prevent attach from creating a new empty session when durable load fails.\n\n## Out of Scope\n\n- Exact Jidoka continuation\n- Transcript-only public behavior\n- Client restart attachment\n- Retry, fork, or abandon commands\n- Archive or removal\n\n## Dependencies\n\nThis epic depends on M3-E09, M3-E11, M3-E12, M3-E13, M3-E14, M3-E15, M3-E16, M3-E18, M3-E20. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- All durable record, generation, event, receipt, queue, manifest, effect, watermark, and store-maintenance dependencies pass.\n- M2 session supervision and `Session.Client` ownership are the only live paths.\n\n### Decisions and invariants\n\n- Recovery work runs outside `Session.Server` and is bounded by count, bytes, time, and concurrency.\n- One coordinator can load at most one 1 MiB snapshot, 1,000 suffix events or 8 MiB, and one 128 MiB Jidoka value. Other reads use bounded pages.\n- One result has at most 32 diagnostics, 2 KiB each and 64 KiB total. Normal recovery stops at 30 seconds.\n- A durable session has explicit create, open, recover, and attach operations. Attach never creates missing state.\n- Only M3-E22 or M3-E23 can consume a complete classification plan and start\n  the applicable session owner.\n- `exact_candidate` requires a verified watermark and compatible Jidoka state.\n  `transcript_candidate` is a classified possibility, not an implicit choice.\n- Accepted unstarted work remains descriptive until M3-E22 returns `ready_exact`.\n- M3-E18 completes one store-wide migration before the session catalog starts.\n  A session coordinator only verifies the current schema.\n\n### Delivery steps\n\n1. Add the durable session catalog and bounded discovery queries.\n2. Add the four-worker recovery pool, 124-item queue, reserved readers, and phase state.\n3. Add current-schema verification, generation, history, Jidoka, watermark, and rebuild steps.\n4. Add bounded exact-candidate and transcript-candidate plans without a server start.\n5. Split create, open, recover, and attach lookup behavior.\n6. Add accepted-unstarted-work classification without wake-up.\n7. Add phase failure, owner crash, writer crash, missing store, corrupt store, and early-attach tests.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Phase order | Store gate and session phases run once in order | No per-session migration, owner, or wake |\n| Exact candidate | History, watermark, Jidoka, manifest, and fence agree | One bounded classification plan |\n| Degraded or blocked | Typed mode and reason returned | No implicit fallback |\n| Recovery crash | Supervisor restarts from durable phase inputs | Old generation fenced |\n| Attach during recovery | Typed recovering or blocked result | No empty session |\n| Bounds | Recovery stops or queues at each declared limit | 4 active, 124 queued, 64 KiB diagnostics, 30 seconds |\n\n### Completion boundary and handoff\n\nM3-E22 and M3-E23 consume the two explicit candidate plans, start their\ndifferent owners, and return the ready results. M3-E27 uses the bounded history\nsource.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can bypass the durable owner. Add structural and runtime boundary checks.\n- A crash test can miss the critical window. Use deterministic barriers and record each acknowledged operation ID.\n\n## Acceptance Checks\n\n- Recovery follows the declared phase order and stays within its bounds.\n- Recovery concurrency, queued sessions, reader use, loaded payload, diagnostics, and wall-clock time stay within their exact limits.\n- A classified session cannot report ready, attach normally, start\n  Session.Server, or wake execution.\n- A load, current-schema, integrity, Jidoka, watermark, or repair failure cannot create empty replacement state.\n- The store migration runs once before catalog recovery; no session coordinator\n  owns or repeats it.\n- Accepted unstarted input is identified once but is not woken in this epic.\n- Recovery process failure does not corrupt durable state or grant authority.\n- Exact-candidate, transcript-candidate, repair-required, and unavailable results are explicit.\n- No client adapter or model continuation is implemented.\n\n## Proof Artifacts\n\n- Recovery topology and phase state machine\n- Startup-order trace\n- Candidate-plan schemas\n- Early-attach and early-wake denial results\n- Recovery-process crash result\n- Missing, corrupt, and incompatible store results\n\n## Milestone Traceability\n\nThis epic provides the recovery startup and readiness gate required by the Milestone 3 architecture.\n",
+  "id": "jido_console-m3e21",
+  "labels": [
+    "effort:large",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E21: Classify Sessions Behind a Recovery Gate",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

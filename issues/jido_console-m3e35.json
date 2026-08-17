@@ -1,0 +1,34 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e05",
+    "jido_console-m3e17",
+    "jido_console-m3e18",
+    "jido_console-m3e19",
+    "jido_console-m3e27",
+    "jido_console-m3e28",
+    "jido_console-m3e31",
+    "jido_console-m3e33"
+  ],
+  "blocks": [
+    "jido_console-m3e36"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e35-prove-v0-2-v0-3-compatibility.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E35: Prove v0.2-to-v0.3 Compatibility\n\n## Goal\n\nProve the exact compatibility boundary from the approved v0.2 baseline to the first durable v0.3 store and clients.\n\n## Scope\n\n- Freeze the M2-E37 source, protocol, semantic replay, client, automation, and artifact fixture digests.\n- Prove that a clean v0.2 Jido home upgrades without inventing durable sessions.\n- Prove current and supported older v0.3 storage schemas, migration, backup, restore, and interrupted migration.\n- Prove that a future or corrupt schema fails without a write or empty replacement.\n- Prove the exact Jidoka pin, session schema, snapshot schema, and store-adapter compatibility.\n- Preserve automation schemas, JSONL ownership, artifacts, and exit statuses.\n- Prove bounded additive protocol handling and no raw runtime path.\n\n## Out of Scope\n\n- Product compatibility fixes\n- Support for an unlisted schema or platform\n- Downgrade in place\n- Candidate packaging\n- Publication\n\n## Dependencies\n\nThis epic depends on M3-E05, M3-E17, M3-E18, M3-E19, M3-E27, M3-E28, M3-E31, M3-E33. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M2-E37 names one exact approved baseline.\n- M3-E05 pins the qualified Jidoka source.\n- M3-E17 through M3-E19 supply separate backup, migration, and restore fixtures.\n- M3-E33 proves the current functional workflow.\n\n### Decisions and invariants\n\n- A v0.2 home has no durable-session database unless one was created by v0.3. Upgrade does not infer sessions from process-local history.\n- Migration is one-way. Downgrade in place is not supported.\n- Exact resume is unavailable when Jidoka or storage compatibility cannot be proved.\n- Unknown additive protocol data remains bounded and non-authoritative.\n- This is compatibility proof only; defects return to their owning epic.\n\n### Delivery steps\n\n1. Create the immutable compatibility-input manifest.\n2. Add clean v0.2 home and frozen protocol/client/automation fixtures.\n3. Add current, earlier, future, interrupted, corrupt, backup, and restore store fixtures.\n4. Add exact Jidoka schema, codec, checkpoint, and adapter fixtures.\n5. Run all client and automation compatibility cases.\n6. Run raw-path, unknown-data, and no-empty-replacement guards.\n7. Record the compatibility decision matrix.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Clean v0.2 home | v0.3 starts with no invented session | Existing retained data preserved |\n| Storage revisions | Supported versions migrate to same digest | Future version makes no write |\n| Jidoka | Exact pin and schemas restore known fixtures | Mismatch blocks exact resume |\n| Clients and automation | Frozen contracts pass | JSONL and exit status unchanged |\n| Unknown or corrupt data | Bounded preserve or typed rejection | No authority or empty replacement |\n\n### Completion boundary and handoff\n\nM3-E36 builds one candidate only after this compatibility proof and M3-E34 crash proof both pass.\n\n### Risks and controls\n\n- A proof epic can hide a product defect. Stop and return each defect to its owning implementation epic.\n- Evidence can mix two source or payload identities. Freeze one manifest and reject mixed results.\n- A development checkout can give a false artifact result. Record the exact installed executable and file paths.\n\n## Acceptance Checks\n\n- Every compatibility input is identified by digest.\n- A clean v0.2 home upgrades without invented durable sessions or lost retained data.\n- Every supported v0.3 schema migrates to the same verified result.\n- Future and corrupt schemas fail before mutation.\n- Interrupted migration preserves one valid store.\n- The exact Jidoka pin, session, snapshot, checkpoint, and adapter fixtures pass.\n- M2 protocol, client, automation, JSONL, artifact, and exit-status contracts remain compatible.\n- Exact resume is not claimed when compatibility is missing.\n- No product behavior is changed.\n\n## Proof Artifacts\n\n- Compatibility-input manifest\n- Clean v0.2 home result\n- Storage migration and future-schema matrix\n- Backup and restore digest comparison\n- Jidoka compatibility result\n- M2 client and automation fixture results\n- Raw-path and unknown-data guards\n\n## Milestone Traceability\n\nThis epic protects the approved Milestone 2 baseline while introducing the first durable store.\n",
+  "id": "jido_console-m3e35",
+  "labels": [
+    "effort:large",
+    "evidence",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E35: Prove v0.2-to-v0.3 Compatibility",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

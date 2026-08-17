@@ -1,0 +1,28 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e11"
+  ],
+  "blocks": [
+    "jido_console-m3e14",
+    "jido_console-m3e15",
+    "jido_console-m3e21"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e12-persist-queues-interactions-permissions.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E12: Persist Queues, Interactions, and Permissions\n\n## Goal\n\nRestore exact steering, follow-up, interaction, permission, control, and cancellation state after restart.\n\n## Scope\n\n- Persist steering and follow-up queue additions, order, removal, consumption, and terminal state.\n- Persist pending interactions and their exact request and response identities.\n- Persist permission request, principal, scope, effect, expiry, response, cancellation, and consumption state.\n- Persist cancellation request and terminal result without reviving cancelled authority.\n- Make every mutation idempotent and generation-fenced.\n- Rebuild the M2 queue, permission, and control projections from authoritative records.\n- Record expiry decisions with an injected durable clock value.\n\n## Out of Scope\n\n- Effect execution or result persistence\n- Exact resume orchestration\n- Client rendering\n- Remote or multi-user authority\n- Automatic approval after restart\n\n## Dependencies\n\nThis epic depends on M3-E11. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E11 supplies durable operation receipts and ordered canonical events.\n- M2 queue, permission, cancellation, and typed-effect contracts are frozen.\n- M3-E09 generation fencing applies to all mutations.\n\n### Decisions and invariants\n\n- Queue order is durable data. A recovered owner does not recalculate it from arrival time.\n- A pending permission restores as pending only when identity, scope, expiry, and Jidoka review state later agree.\n- An expired, cancelled, rejected, consumed, stale-generation, or abandoned permission never becomes current authority.\n- Queue consumption commits before execution wake-up so recovery cannot consume one item twice.\n- Clock input is explicit and recorded; system time alone is not a replay oracle.\n\n### Delivery steps\n\n1. Add queue mutation and position records.\n2. Add interaction and permission lifecycle records.\n3. Add cancellation and control lifecycle records.\n4. Integrate idempotent mutations with Session.Client operations.\n5. Add projection rebuild for queues, interactions, permissions, and controls.\n6. Add injected-clock expiry and stale-generation checks.\n7. Add crash tests around add, remove, consume, decide, expire, and cancel commits.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Queue order | Restart restores exact order and identities | No duplicate consumption |\n| Permission pending | Identity, scope, principal, and expiry restore | No automatic decision |\n| Permission terminal | Expired, cancelled, rejected, or consumed stays terminal | Cannot grant authority |\n| Cancellation | One terminal cancellation result | No revived worker authority |\n| Crash | Mutation is old or new, never partial | Receipt and event agree |\n\n### Completion boundary and handoff\n\nM3-E14 uses the restored queue and permission identities in durable turn manifests. M3-E15 binds effect reservations to exact permission records.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can bypass the durable owner. Add structural and runtime boundary checks.\n- A crash test can miss the critical window. Use deterministic barriers and record each acknowledged operation ID.\n\n## Acceptance Checks\n\n- Steering and follow-up queues restore exact order and identities.\n- Add, remove, consume, approve, reject, expire, cancel, and control operations are idempotent.\n- Pending interactions and permissions restore only with their complete authority data.\n- Expired, cancelled, rejected, consumed, and old-generation authority cannot return.\n- Queue consumption and execution wake-up cannot cause duplicate work.\n- Rebuilt projections equal the pre-restart semantic state.\n- Every crash point produces one old or new valid state.\n- No model, tool, or automatic approval runs during restore.\n\n## Proof Artifacts\n\n- Queue record and ordering schema\n- Interaction and permission lifecycle matrix\n- Cancellation recovery results\n- Projection rebuild equivalence\n- Expiry and stale-authority fixtures\n- Mutation crash traces\n\n## Milestone Traceability\n\nThis epic preserves the live control state required by the exact-resume exit gate.\n",
+  "id": "jido_console-m3e12",
+  "labels": [
+    "effort:large",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E12: Persist Queues, Interactions, and Permissions",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

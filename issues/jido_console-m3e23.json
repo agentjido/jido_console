@@ -1,0 +1,29 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e21"
+  ],
+  "blocks": [
+    "jido_console-m3e24",
+    "jido_console-m3e25",
+    "jido_console-m3e26",
+    "jido_console-m3e28"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e23-add-transcript-only-resume.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E23: Add Transcript-Only Resume\n\n## Goal\n\nRestore immutable Console history for inspection without claiming or granting runtime continuity.\n\n## Scope\n\n- Add explicit transcript-only continuity mode and result values.\n- Load and validate canonical Console history, semantic snapshots, outcomes, audit data, and unresolved-state markers.\n- Do not restore a Jidoka session, worker lease, pending approval authority, executable queue, or active run.\n- Mark the session read-only and state why exact resume is unavailable.\n- Start one generation-fenced read-only session owner from the transcript candidate.\n- Report the last verified watermark, uncertain effects, pending records, and allowed next operations.\n- Keep transcript-only restore provider-free and tool-free.\n- Prevent exact attach from selecting this mode without an explicit caller choice.\n\n## Out of Scope\n\n- Exact resume\n- Automatic fallback\n- Retry or fork execution\n- Physical store repair\n- Client or renderer integration\n\n## Dependencies\n\nThis epic depends on M3-E21. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E21 can return a `transcript_candidate` plan or a reason that no safe mode\n  is available. It has not started Session.Server.\n- Canonical Console history and chain validation pass.\n\n### Decisions and invariants\n\n- Transcript-only mode is a durable, visible continuity state and not a hidden fallback.\n- It restores views, not runtime authority.\n- Pending permission, queue, active run, lease, and client attachment data are descriptive only in this mode.\n- No model or tool call is permitted until a later explicit retry or fork creates new authority.\n- A failure to validate canonical history is repair-required, not transcript-only success.\n\n### Delivery steps\n\n1. Add transcript-only state and result schemas.\n2. Build the read-only transcript and outcome projection from canonical history and start one read-only owner.\n3. Add explicit unresolved and last-watermark summaries.\n4. Disable execution, permission, queue consumption, control, and live approval operations in this mode.\n5. Add exact-mode no-fallback guards.\n6. Add missing Jidoka, incompatible checkpoint, uncertain effect, and valid-history fixtures.\n7. Add zero-provider and zero-tool assertions.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Valid history, no Jidoka | Transcript and outcomes restore | Mode is transcript-only |\n| Pending approval | Shown as historical or unresolved | Cannot approve or reject |\n| Queued input | Shown but not executable | No wake-up |\n| Exact attach request | Typed exact-unavailable result | No silent downgrade |\n| Bad Console history | Repair-required result | No partial transcript authority |\n\n### Completion boundary and handoff\n\nM3-E24 adds explicit reconciliation and abandon choices. M3-E25 can create a new retry request. M3-E28 exposes the selected mode to clients.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can grant old or undeclared authority. Check identity and mode before each mutation.\n- A recovery test can hide a model or tool call. Use provider and tool probes that fail on any unexpected call.\n\n## Acceptance Checks\n\n- Transcript-only restore is explicit and visibly different from exact resume.\n- It restores validated immutable history and safe derived views.\n- It does not restore a Jidoka session, lease, active worker, live approval, executable queue, or client authority.\n- Exactly one read-only owner starts from the transcript candidate and returns\n  `ready_transcript_only` without runtime authority.\n- It makes zero model and tool calls.\n- Exact mode cannot fall back to it silently.\n- It reports the last verified boundary and why exact resume is unavailable.\n- Invalid canonical history returns repair-required instead of a successful partial view.\n- Allowed next operations are bounded typed data.\n\n## Proof Artifacts\n\n- Transcript-only state and result contract\n- Transcript equivalence fixtures\n- Authority-denial matrix\n- Exact-no-fallback result\n- Zero-provider and zero-tool trace\n- Invalid-history result\n\n## Milestone Traceability\n\nThis epic delivers the clearly named transcript-only outcome required by the Milestone 3 goal.\n",
+  "id": "jido_console-m3e23",
+  "labels": [
+    "effort:medium",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E23: Add Transcript-Only Resume",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

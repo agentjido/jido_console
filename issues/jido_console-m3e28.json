@@ -1,0 +1,32 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e09",
+    "jido_console-m3e22",
+    "jido_console-m3e23",
+    "jido_console-m3e27"
+  ],
+  "blocks": [
+    "jido_console-m3e31",
+    "jido_console-m3e32",
+    "jido_console-m3e33",
+    "jido_console-m3e35"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e28-attach-session-client-after-restart.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E28: Attach Session.Client After Restart\n\n## Goal\n\nAttach every client to a recovered session through the same renderer-neutral Session.Client boundary.\n\n## Scope\n\n- Add explicit exact and transcript-only continuity options to attach.\n- Return typed recovering, exact-unavailable, transcript-only, repair-required, unavailable, and ready results.\n- Create a new generation-bound client and attachment identity after restart.\n- Return the bounded current-state snapshot and continuity metadata.\n- Start delivery after the snapshot sequence and use M2 gap recovery for later live gaps.\n- Reject every old-generation handle, acknowledgement, recovery token, and client operation.\n- Prevent attach from creating a missing or failed durable session.\n\n## Out of Scope\n\n- CLI, automation, or TUI workflow changes\n- A second durable client API\n- Raw Jidoka or runtime subscriptions\n- Remote transport\n- Automatic execution on attach\n\n## Dependencies\n\nThis epic depends on M3-E09, M3-E22, M3-E23, M3-E27. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E22 and M3-E23 supply explicit ready continuity modes.\n- M3-E27 supplies bounded snapshot and history access.\n- M3-E09 supplies generation fencing.\n- The complete M2 Session.Client contract and bypass guards pass.\n\n### Decisions and invariants\n\n- Exact attach never falls back. Transcript-only attach is an explicit caller choice.\n- Every restart attachment gets a new client and attachment identity in the current generation.\n- Process-local delivery acknowledgement and gap tokens do not survive restart.\n- Attach performs no model or tool call and sends no execution wake-up.\n- All semantic data continues through canonical Console protocol values.\n\n### Delivery steps\n\n1. Extend attach request, result, capabilities, and continuity metadata.\n2. Connect attach to recovery readiness lookup without implicit session creation.\n3. Create generation-bound client and attachment records.\n4. Return the bounded snapshot and establish the live delivery baseline.\n5. Connect history access and existing live gap recovery.\n6. Add stale-handle and old-token rejection to every client operation.\n7. Run the reusable client suite across restart, recovery phase, exact, transcript-only, and failure cases.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Exact ready | New attachment and exact snapshot return | Next live sequence is correct |\n| Transcript-only | New read-only attachment returns | Mode is explicit |\n| Recovering or blocked | Typed result with bounded phase data | No attachment or empty session |\n| Old handle | All operations fail stale generation | Current state unchanged |\n| Attach side effects | Zero provider, tool, or wake calls | Canonical client path only |\n\n### Completion boundary and handoff\n\nM3-E31 adds CLI text, CLI JSON, and automation operations. M3-E32 adds TUI\nworkflows. M3-E33 proves all production clients against the applicable-client\nmatrix.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can grant old or undeclared authority. Check identity and mode before each mutation.\n- A recovery test can hide a model or tool call. Use provider and tool probes that fail on any unexpected call.\n\n## Acceptance Checks\n\n- A client attaches after restart through Session.Client only.\n- Exact and transcript-only attach choices are explicit and never interchangeable.\n- A restart creates new client and attachment identities in the current generation.\n- The snapshot and history path stay bounded.\n- Live delivery resumes at the exact next sequence.\n- Old handles, acknowledgements, gaps, recovery tokens, and operations cannot affect current state.\n- Recovering, repair-required, unavailable, missing, and incompatible sessions do not become empty sessions.\n- Attach makes no model or tool call and introduces no raw runtime path.\n\n## Proof Artifacts\n\n- Restart attach API and continuity schema\n- Reusable client contract result\n- Exact and transcript-only attach traces\n- Recovery-phase and missing-session results\n- Old-handle and token denial matrix\n- No-raw-path and zero-call results\n\n## Milestone Traceability\n\nThis epic connects durable restart recovery to the renderer-neutral client architecture from Milestone 2.\n",
+  "id": "jido_console-m3e28",
+  "labels": [
+    "effort:large",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E28: Attach Session.Client After Restart",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

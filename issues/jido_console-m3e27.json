@@ -1,0 +1,28 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e10",
+    "jido_console-m3e21"
+  ],
+  "blocks": [
+    "jido_console-m3e28",
+    "jido_console-m3e35"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e27-add-bounded-durable-history-access.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E27: Add Bounded Durable History Access\n\n## Goal\n\nLet large recovered sessions attach and inspect history without sending an unbounded full transcript.\n\n## Scope\n\n- Define a versioned bounded current-state snapshot that excludes complete history.\n- Define ordered history-page and suffix requests with session, generation, range, schema, and digest identities.\n- Keep attach and explicit recovery snapshots at or below the M2 protocol limit.\n- Return bounded pages by item count and encoded bytes.\n- Limit each page to 128 records and 1 MiB including a page token of at most 4 KiB.\n- Validate stale, future, overlapping, missing, cross-session, malformed, and oversized ranges.\n- Preserve old additive protocol input rules and normal incremental live output.\n- Add history paging to the reusable Session.Client contract suite without migrating clients.\n\n## Out of Scope\n\n- Session.Client restart attachment\n- TUI scroll behavior\n- Search or analytics\n- Remote transport\n- Canonical event deletion\n\n## Dependencies\n\nThis epic depends on M3-E10, M3-E21. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E10 supplies immutable event ranges and bounded semantic snapshots.\n- M3-E21 supplies the recovered generation and exact or transcript candidate\n  classification. History paging itself does not require a ready session owner.\n- M2 client gap recovery and protocol bounds remain frozen compatibility inputs.\n\n### Decisions and invariants\n\n- Attach returns current semantic state, continuity metadata, and a sequence baseline. It does not return complete history.\n- Older transcript history uses pull-based bounded pages.\n- A page token is bound to session, generation, source range, schema, and digest.\n- Live delivery starts after the attach snapshot sequence and remains incremental.\n- History paging grants no execution or permission authority.\n\n### Delivery steps\n\n1. Add current-state snapshot and history-page protocol values.\n2. Add bounded store queries and page tokens.\n3. Add range, digest, identity, version, and size validation.\n4. Extend the local Session.Client behavior and contract suite.\n5. Add large-session, stale-token, cross-session, overlap, gap, and malformed fixtures.\n6. Prove old supported input and additive field behavior.\n7. Measure page bytes, snapshot bytes, calls, and replay equivalence.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Large attach | Current snapshot fits the protocol bound | No full history payload |\n| History page | Ordered records match canonical range | Count and byte bounds |\n| Stale token | Typed stale-generation result | No data from new generation |\n| Cross-session token | Denied | No data leakage |\n| Live output | Begins at next sequence and stays incremental | No repeated snapshot |\n\n### Completion boundary and handoff\n\nM3-E28 uses this contract for restart attachment. M3-E31 and M3-E32 consume it through Session.Client.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can grant old or undeclared authority. Check identity and mode before each mutation.\n- A recovery test can hide a model or tool call. Use provider and tool probes that fail on any unexpected call.\n\n## Acceptance Checks\n\n- A supported large session can attach without a full-history snapshot.\n- Current-state snapshots stay within 1 MiB.\n- History pages stay within count and byte limits and preserve canonical order.\n- A history page contains at most 128 records and 1 MiB, and its token stays at or below 4 KiB.\n- Tokens are bound to exact session, generation, schema, range, and digest.\n- Invalid, stale, future, malformed, and cross-session requests fail without state change.\n- Normal live output remains incremental.\n- Paged replay produces the same transcript as canonical history.\n- No production client is migrated in this epic.\n\n## Proof Artifacts\n\n- Current-state snapshot schema\n- History-page and token contract\n- Large-session attach result\n- Invalid-range and token fixtures\n- Paged replay equivalence\n- Snapshot and page size measurements\n\n## Milestone Traceability\n\nThis epic closes the large-history gap between bounded M2 client snapshots and durable M3 sessions.\n",
+  "id": "jido_console-m3e27",
+  "labels": [
+    "effort:medium",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E27: Add Bounded Durable History Access",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

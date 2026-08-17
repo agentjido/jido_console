@@ -1,0 +1,33 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e14",
+    "jido_console-m3e16",
+    "jido_console-m3e22",
+    "jido_console-m3e23",
+    "jido_console-m3e24"
+  ],
+  "blocks": [
+    "jido_console-m3e29",
+    "jido_console-m3e30",
+    "jido_console-m3e31",
+    "jido_console-m3e32"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e26-add-durable-session-fork.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E26: Add Durable Session Fork\n\n## Goal\n\nCreate a new session at one durable boundary without transferring live authority.\n\n## Scope\n\n- Define the renderer-neutral Session.Client fork request and result contract\n  before any client adapter uses it.\n\n- Add idempotent child-session reservation and hidden partial-child state.\n- Support exact fork from a verified forkable Jidoka snapshot.\n- Support transcript-only fork from a validated Console history boundary.\n- Create new Console session, Jidoka session when applicable, generation, audit root, and lineage identities.\n- Preserve parent, root, source event, source checkpoint, workspace, and manifest provenance.\n- Transfer only declared immutable history and completed safe effect evidence.\n- Complete or abandon partial cross-namespace forks deterministically.\n\n## Out of Scope\n\n- Multi-agent child sessions\n- Worktree creation or file custody\n- Active effect, approval, lease, attachment, queue, or client transfer\n- Arbitrary history editing\n- Remote fork\n\n## Dependencies\n\nThis epic depends on M3-E14, M3-E16, M3-E22, M3-E23, M3-E24. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E14 provides exact durable turn and workspace identity.\n- M3-E16 provides verified watermark boundaries.\n- M3-E22 and M3-E23 define the two source continuity modes.\n- M3-E24 classifies repaired, uncertain, and abandoned sources.\n- The Jidoka fork contract passes through M3-E05.\n\n### Decisions and invariants\n\n- A fork source is immutable and remains unchanged.\n- Exact fork needs a verified watermark and Jidoka forkable snapshot. Transcript-only fork does not claim Jidoka continuity.\n- The child is hidden until its Console and Jidoka records both verify.\n- Client attachments, delivery acknowledgements, workers, leases, approvals, unsafe effects, timers, and executable queued input never transfer.\n- Repeated fork with the same key returns the same child identity.\n\n### Delivery steps\n\n1. Add fork request, reservation, lineage, child-genesis, and completion schemas.\n2. Validate exact and transcript-only source boundaries.\n3. Reserve final child identities before cross-namespace work.\n4. Create the Jidoka fork when exact mode applies.\n5. Create Console lineage, genesis, and initial watermark or transcript boundary.\n6. Verify the child and make it attachable.\n7. Add partial-failure, repeat, stale, authority-transfer, and parent-unchanged tests.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Exact fork | New child has verified Jidoka and Console boundary | Source unchanged |\n| Transcript fork | New read-only Console child | No Jidoka continuity claim |\n| Exact repeat | Same key returns same child | No second lineage |\n| Partial failure | Same reservation completes or abandons | Child stays hidden |\n| Authority transfer | All live authority is absent | New generation and attachments required |\n\n### Completion boundary and handoff\n\nM3-E29 uses fork lineage to protect retained ancestry. M3-E31 and M3-E32 expose the two fork modes without adding multi-agent behavior.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can grant old or undeclared authority. Check identity and mode before each mutation.\n- A recovery test can hide a model or tool call. Use provider and tool probes that fail on any unexpected call.\n\n## Acceptance Checks\n\n- Each fork has a new Console session identity, generation, audit root, and lineage.\n- An exact fork also has a new Jidoka session identity at one verified safe snapshot.\n- A transcript-only fork makes no execution-continuity claim.\n- The source remains unchanged.\n- No active unsafe effect, live approval, client attachment, lease, timer, worker, or executable queue transfers.\n- A partial child is not attachable and has deterministic completion or abandonment.\n- Repeated fork returns the same child identity.\n- Fork lineage is retained for audit and later retention decisions.\n\n## Proof Artifacts\n\n- Fork reservation and lineage schemas\n- Exact and transcript-only fork results\n- Parent-unchanged result\n- Authority-transfer denial matrix\n- Partial-failure recovery result\n- Idempotent repeat result\n\n## Milestone Traceability\n\nThis epic delivers durable fork while keeping Milestone 4 multi-agent work out of scope.\n",
+  "id": "jido_console-m3e26",
+  "labels": [
+    "effort:large",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E26: Add Durable Session Fork",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

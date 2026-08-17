@@ -1,0 +1,32 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e16",
+    "jido_console-m3e20",
+    "jido_console-m3e21",
+    "jido_console-m3e23"
+  ],
+  "blocks": [
+    "jido_console-m3e25",
+    "jido_console-m3e26",
+    "jido_console-m3e31",
+    "jido_console-m3e32"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e24-add-session-repair-abandon-operations.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E24: Add Session Repair and Abandon Operations\n\n## Goal\n\nResolve only supported session faults, or abandon unsafe work while preserving its audit record.\n\n## Scope\n\n- Define the renderer-neutral Session.Client request and result contracts for\n  semantic repair, reconciliation, and abandon before any client adapter uses them.\n\n- Define a dry-run session repair plan for supported watermark, derived-state, projection, and metadata faults.\n- Use M3-E20 physical repair only through its verified staged interface.\n- Append semantic reconciliation and repair decisions without rewriting canonical history.\n- Require explicit confirmation for any repair that changes authoritative session status.\n- Add abandon for uncertain, blocked, or unrecoverable work.\n- Prevent abandoned work from waking, resuming, approving, retrying automatically, or acquiring execution authority.\n- Record operator intent, affected identities, old and new status, and evidence digest.\n\n## Out of Scope\n\n- Fabricating a Jidoka checkpoint or result\n- Automatic repair of authoritative corruption\n- Retry or fork\n- Client user interface\n- Database migration or backup mechanics\n\n## Dependencies\n\nThis epic depends on M3-E16, M3-E20, M3-E21, M3-E23. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E16 classifies both orphan cases and exact watermark faults.\n- M3-E20 provides verified physical inspection and repair primitives.\n- M3-E21 provides explicit repair-required and unavailable states.\n- M3-E23 provides read-only transcript access for degraded sessions.\n\n### Decisions and invariants\n\n- Repair is allowed only for a listed deterministic case with a complete precondition check.\n- Canonical records remain immutable. A repair appends a decision and new derived or link data.\n- Physical corruption repair and semantic session repair are separate operations with one coordinated result.\n- Abandon preserves audit and blocks future automatic execution.\n- An uncertain unsafe effect cannot be marked completed without external reconciliation evidence.\n\n### Delivery steps\n\n1. Add repair-plan, repair-result, confirmation, and abandon schemas.\n2. Map supported recovery faults to deterministic actions.\n3. Integrate physical repair through the stopped-writer staged interface.\n4. Append semantic repair and abandonment events.\n5. Fence each action by generation, operation ID, current status, and confirmation.\n6. Add repeated, stale, cross-session, unsupported, partial, and crash tests.\n7. Add post-repair and post-abandon restart verification.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Dry run | Plan lists exact reads, writes, files, and consequences | No mutation |\n| Supported repair | New state verifies and audit event commits | Original evidence retained |\n| Unsupported fault | Typed denial | No best-effort mutation |\n| Abandon | Session becomes non-executable and inspectable | Audit history retained |\n| Crash or repeat | Old or new complete result; exact retry is idempotent | No duplicate decision |\n\n### Completion boundary and handoff\n\nM3-E25 can create new retry work only after these states permit it. M3-E26 uses repair and abandonment status when it validates a fork source.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can grant old or undeclared authority. Check identity and mode before each mutation.\n- A recovery test can hide a model or tool call. Use provider and tool probes that fail on any unexpected call.\n\n## Acceptance Checks\n\n- Each supported repair has a deterministic dry-run plan and exact preconditions.\n- Unsupported or authoritative corruption is not repaired automatically.\n- Repair appends evidence and does not rewrite canonical history.\n- Physical replacement preserves the prior store until verification.\n- Abandon makes the session non-executable while preserving transcript and audit data.\n- An uncertain unsafe effect cannot become completed without valid reconciliation evidence.\n- Repair and abandon are generation-fenced, idempotent, and crash-safe.\n- Post-operation restart reaches the documented stable state.\n\n## Proof Artifacts\n\n- Session repair operation matrix\n- Dry-run plans\n- Physical and semantic repair results\n- Unsupported-fault denial fixtures\n- Abandon authority-denial result\n- Repair and abandon crash traces\n\n## Milestone Traceability\n\nThis epic supplies the explicit repair and abandon behavior named in the Milestone 3 operation matrix.\n",
+  "id": "jido_console-m3e24",
+  "labels": [
+    "effort:large",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E24: Add Session Repair and Abandon Operations",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

@@ -1,0 +1,33 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e05",
+    "jido_console-m3e10",
+    "jido_console-m3e11",
+    "jido_console-m3e15"
+  ],
+  "blocks": [
+    "jido_console-m3e17",
+    "jido_console-m3e20",
+    "jido_console-m3e21",
+    "jido_console-m3e24",
+    "jido_console-m3e26"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e16-verify-console-jidoka-watermarks.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E16: Verify Console-to-Jidoka Watermarks\n\n## Goal\n\nCreate the one verified durable boundary that joins Console session truth to Jidoka execution truth.\n\n## Scope\n\n- Persist reserved, Jidoka-committed, Console-committed, verified, repair-required, and abandoned watermark states.\n- Link Console session, generation, sequence, event, and chain digest to Jidoka session, revision, request, lease, snapshot, and value digest.\n- Consume the committed Jidoka transition receipt formed by the Console-owned SQLite store callback after commit.\n- Verify both sides from committed storage before advancing the watermark.\n- Recreate a missing Console projection only from the qualified deterministic Jidoka source data.\n- Classify a Console execution projection without a matching Jidoka checkpoint as exact-resume unavailable.\n- Keep valid Console-only records after the watermark, such as accepted unstarted input and audit decisions.\n- Make every repair transition idempotent and append-only.\n\n## Out of Scope\n\n- Startup recovery orchestration\n- Exact or transcript-only resume API\n- Physical database repair\n- Client attachment\n- Effect retry\n\n## Dependencies\n\nThis epic depends on M3-E05, M3-E10, M3-E11, M3-E15. These dependencies supply the approved contracts and implementation boundaries required by this pull request.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. The pull request delivers only the goal and scope above. It must not absorb a downstream client, proof, candidate, audit, or publication task.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E05 supplies stable public Jidoka identity and store data.\n- M3-E10 supplies immutable Console events and chain heads.\n- M3-E11 supplies durable accepted input state.\n- M3-E15 supplies effect reservation and uncertainty state.\n\n### Decisions and invariants\n\n- A verified watermark commits last and is immutable.\n- Exact resume reads only a verified watermark. Reserved or one-sided state cannot authorize execution.\n- A Jidoka checkpoint without Console projection can be repaired only by deterministic projection with the original identities.\n- A Console execution result without matching Jidoka truth is never promoted. Reconciliation appends a decision.\n- Console sequence can be later than the watermark only for declared Console-only records.\n- Do not use `:on_durable_checkpoint` or reconstruct a cleared terminal lease from a terminal session value.\n\n### Delivery steps\n\n1. Add watermark records, indexes, and state transitions.\n2. Add exact cross-table identity and digest verification.\n3. Join the committed SQLite store-transition receipt with the Console projection commit identity.\n4. Add idempotent projection repair for the checkpoint-only case.\n5. Add exact-resume denial and repair-required state for the Console-only execution case.\n6. Add mismatch, duplicate, late, stale-generation, and valid-tail tests.\n7. Inject crashes between each state transition and final verification.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Both sides match | One verified watermark commits | Exact identities and digests |\n| Jidoka only | Deterministic projection fills the gap or repair is required | No model or tool call |\n| Console execution only | Exact resume remains unavailable | Original event retained |\n| Mismatch | Repair-required result | No watermark advance |\n| Valid Console tail | Accepted unstarted and audit records remain | Last verified execution boundary unchanged |\n\n### Completion boundary and handoff\n\nM3-E17 backs up these records, M3-E20 verifies physical repair, and M3-E21 uses only verified watermarks during startup.\n\n### Risks and controls\n\n- A dependency can expose an incomplete contract. Stop and return the defect to its owning epic.\n- A convenience path can bypass the durable owner. Add structural and runtime boundary checks.\n- A crash test can miss the critical window. Use deterministic barriers and record each acknowledged operation ID.\n\n## Acceptance Checks\n\n- One verified watermark identifies the exact Console and Jidoka boundary.\n- A one-sided or mismatched state cannot become verified.\n- Jidoka-only projection repair is deterministic, idempotent, and provider-free.\n- A Console execution projection without Jidoka truth cannot authorize exact resume.\n- Both orphan cases have a typed stop, repair, rollback, or transcript-only result.\n- Valid Console-only records can exist after the watermark without creating a false execution claim.\n- Watermark transitions are generation-fenced and append-only.\n- Watermark code uses no undocumented checkpoint hook or private Jidoka execution module.\n- Crash injection at every transition loses no acknowledged record.\n\n## Proof Artifacts\n\n- Watermark schema and state machine\n- Cross-store identity and digest verification\n- Jidoka-only repair result\n- Console-only denial result\n- Mismatch and stale-generation fixtures\n- Commit-point crash traces\n\n## Milestone Traceability\n\nThis epic implements the shared durable watermark and both orphan-record rules in the Milestone 3 goal.\n",
+  "id": "jido_console-m3e16",
+  "labels": [
+    "effort:large",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E16: Verify Console-to-Jidoka Watermarks",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}

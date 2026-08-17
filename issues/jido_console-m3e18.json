@@ -1,0 +1,30 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [
+    "jido_console-m3e03",
+    "jido_console-m3e08",
+    "jido_console-m3e17"
+  ],
+  "blocks": [
+    "jido_console-m3e19",
+    "jido_console-m3e21",
+    "jido_console-m3e35"
+  ],
+  "created": "",
+  "description": "Roadmap source: `roadmap/milestones/03-add-durable-resume/epics/m3-e18-migrate-durable-store.md`\nRoadmap version: `1.3.1`\nTarget release: `v0.3`\nDelivery unit: `one_pull_request`\n\n# M3-E18: Migrate the Durable Store\n\n## Goal\n\nMove each supported old store to one verified current schema without changing an unknown or unprotected source.\n\n## Scope\n\n- Inspect store format, schema, migration ledger, checksums, and integrity before a write.\n- Reject an unknown future version before mutation.\n- Require a verified M3-E17 pre-migration backup before the first migration write.\n- Run ordered, checksummed, idempotent migrations under the writer and quota barrier.\n- Verify schema, ledger, record counts, chain heads, watermarks, indexes, limits, and modes after each migration plan.\n- Resume or stop an interrupted migration from its durable ledger state.\n- Enforce the 120-second migration guard and typed blocked result.\n\n## Out of Scope\n\n- General backup creation\n- Restore or live-store replacement\n- Physical corruption repair\n- Semantic session repair\n- Client or session recovery behavior\n\n## Dependencies\n\nThis epic depends on M3-E03, M3-E08, M3-E17. These dependencies supply deterministic migration definitions, high-water quota reservations, and a verified pre-migration backup.\n\n## Pull Request Boundary\n\nDeliver this epic in exactly one pull request. It delivers only schema inspection, migration planning, execution, verification, and interrupted-migration handling. It must not add restore, repair, session recovery, client, proof, candidate, audit, or publication work.\n\n## Detailed Delivery Plan\n\n### Preconditions\n\n- M3-E03 defines every supported source, target, checksum, and transformation.\n- M3-E17 can create and identify one verified backup.\n- M3-E08 can reserve the migration high-water size.\n\n### Decisions and invariants\n\n- A future or unknown schema fails before any write.\n- No migration starts without a verified backup of the exact source store.\n- Each migration has one source, target, checksum, precondition, transaction, and postcondition.\n- A second successful run makes no change.\n- A timeout is a typed migration state. It does not create an empty store or report readiness.\n\n### Delivery steps\n\n1. Add startup schema inspection and a deterministic migration plan.\n2. Bind the plan to the exact source store and verified backup identities.\n3. Add quota and temporary-work reservations.\n4. Run ordered migrations and commit ledger entries under the writer.\n5. Verify the complete target after each plan.\n6. Add interrupted-ledger resume and explicit blocked states.\n7. Add old, current, future, checksum, timeout, disk-full, crash, and second-run tests.\n\n### Test and evidence matrix\n\n| Case | Required oracle | Required bound or identity |\n| --- | --- | --- |\n| Supported old store | One current verified target opens | Exact migration checksums |\n| Future schema | Typed incompatible result before write | Source digest unchanged |\n| No backup | Migration does not start | Exact source remains valid |\n| Crash | Old or migrated state is identified by ledger | No partial ready state |\n| Second run | No schema or data change | Same target digest |\n\n### Completion boundary and handoff\n\nM3-E19 can restore a verified source and then use this migration contract. The\nstore-wide startup gate runs M3-E18 once before M3-E21 starts catalog recovery.\n\n### Risks and controls\n\n- A migration can change unknown data. Fail on unknown fields and versions.\n- An interrupted migration can look current. Verify ledger and postconditions together.\n- Maintenance can exceed disk limits. Reserve the worst-case work pool before start.\n\n## Acceptance Checks\n\n- Every supported migration is ordered, checksummed, idempotent, and transaction safe.\n- A verified backup of the exact source exists before the first migration write.\n- Unknown future schema or checksum mismatch fails before mutation.\n- Interrupted migration has one durable resume or blocked result.\n- Post-migration verification covers schema, ledger, heads, watermarks, counts, indexes, limits, and modes.\n- Migration temporary work stays below `JIDO_HOME` and within the shared work pool.\n- Migration stops at its 120-second runtime guard without a false ready result.\n- No restore, repair, session recovery, or client behavior is added.\n\n## Proof Artifacts\n\n- Migration compatibility and order matrix\n- Source-to-backup identity link\n- Migration ledger and checksum report\n- Interrupted migration matrix\n- Future-schema and second-run results\n- Temporary-file and high-water inventory\n\n## Milestone Traceability\n\nThis epic supplies the explicit version-change gate required before durable sessions recover.\n",
+  "id": "jido_console-m3e18",
+  "labels": [
+    "effort:large",
+    "milestone-3",
+    "one-pr",
+    "policy:no-publication",
+    "roadmap",
+    "v0.3"
+  ],
+  "parent": "jido_console-m3",
+  "priority": 1,
+  "status": "open",
+  "title": "M3-E18: Migrate the Durable Store",
+  "type": "epic",
+  "updated_at": "2026-08-17T01:55:08Z"
+}
