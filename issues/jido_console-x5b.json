@@ -4,6 +4,8 @@
     "jido_console-m2e37"
   ],
   "blocks": [],
+  "closed_at": "2026-08-17T19:13:36Z",
+  "close_reason": "Approved M2-E37 baseline and Milestone 3 graph validated; evidence merged in 8241817 via PR #10.",
   "created": "2026-08-16T19:22:28Z",
   "description": "Validate the preloaded canonical Milestone 3 delivery plan against the exact baseline approved by M2-E37. The roadmap is `roadmap/milestones/03-add-durable-resume/milestone.md`. The Beadwork hierarchy already contains parent `jido_console-m3` and child epics `jido_console-m3e01` through `jido_console-m3e37`; do not import replacement records.\n\nAfter M2-E37 closes, compare the approved Milestone 2 source, Jidoka revision, roadmap version, and production candidate with the preloaded plan. Correct any roadmap or Beadwork drift. Verify all 37 identifiers, parent-child relations, owners, priorities, effort labels, one-pull-request boundaries, and 110 direct blocker relations. Verify that the graph is acyclic and that M3-E01 is the only ready Milestone 3 implementation epic. Close this task only after that comparison passes.\n\nThis is planning and readiness work only. Do not implement durable storage or recovery. Plan source-quality milestones only. Do not create publication epics or tag, package, or release tasks. Keep candidate proof and the evidence-only quality audit as separate final epics.\n\nPrerequisite: start only after M2-E37 approves one exact post-closeout Milestone 2 source and roadmap version as the Milestone 3 baseline. Do not use the historical M2-E33 or M2-E34 evidence as that baseline.\n",
   "id": "jido_console-x5b",
@@ -23,7 +25,7 @@
     }
   ],
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Validate the Milestone 3 durable-resume delivery graph",
   "type": "task",
   "updated_at": "2026-08-17T19:13:36Z"
