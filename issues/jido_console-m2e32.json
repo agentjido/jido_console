@@ -21,8 +21,8 @@
     "v0.2"
   ],
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "M2-E32: Remove the Old TUI-Owned Session Path",
   "type": "epic",
-  "updated_at": "2026-08-16T23:48:32Z"
+  "updated_at": "2026-08-17T16:11:28Z"
 }
