@@ -4,6 +4,20 @@ All important roadmap changes are in this file.
 
 The roadmap uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.3] - 2026-08-17
+
+### Added
+
+- Add M2-E39 to restore paint-first startup for the packaged TUI after the
+  repaired acceptance gate exposed eager startup and missing-supervisor
+  failures.
+
+### Changed
+
+- Make M2-E39 depend on M2-E38 and block M2-E36.
+- Increase the Milestone 2 epic count from 38 to 39 and add the TUI startup
+  repair to the final closeout chain.
+
 ## [1.3.2] - 2026-08-17
 
 ### Added

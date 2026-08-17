@@ -6,7 +6,7 @@ status: proposed
 depends_on: [milestone-1]
 release: v0.2
 introduced_in: 0.1.0
-last_updated_in: 1.3.2
+last_updated_in: 1.3.3
 ---
 
 # Milestone 2: Ship the Semantic and Supervised Session Plane
@@ -39,7 +39,7 @@ separates the historical records from the final closeout evidence.
 
 ## Generated Epics
 
-The [Milestone 2 epic index](epics/README.md) splits this milestone into 38 epics. Each epic is the scope for exactly one pull request.
+The [Milestone 2 epic index](epics/README.md) splits this milestone into 39 epics. Each epic is the scope for exactly one pull request.
 
 ## Work
 
@@ -63,6 +63,9 @@ The [Milestone 2 epic index](epics/README.md) splits this milestone into 38 epic
 - Define the complete permission request and response life cycle.
 - Define a small host-independent extension descriptor and one failure rule for each hook type. Do not load extensions in this milestone.
 - Make the production TUI, automation, text, and JSON paths use the same `Session.Client` contract without an adapter-specific runtime-event path.
+- Keep the packaged TUI first paint before application and model-catalog
+  startup. Start the application supervisors before session attach and process
+  registration.
 - Generate protocol types and validators from one canonical schema and preserve bounded unknown data without granting authority.
 - Delete the old TUI-owned session and turn path after parity passes.
 - Requalify the exact production candidate after the closeout changes and make
@@ -84,6 +87,7 @@ M2-E31 parity proof.
 | M2-E31 | Production-entry parity proof for all current clients | Product behavior fixes |
 | M2-E32 | Isolated legacy deletion and no-return guard | Replacement behavior |
 | M2-E38 | Private acceptance home in the clean artifact environment | Product home changes or candidate proof |
+| M2-E39 | Paint-first packaged TUI startup with supervised attach | Candidate proof or release publication |
 | M2-E36 | Exact post-closeout candidate and artifact proof | Product fixes or publication |
 | M2-E37 | Final evidence audit and Milestone 3 baseline | Candidate changes or Milestone 3 planning |
 
@@ -96,7 +100,8 @@ flowchart LR
     E27 --> E31["M2-E31<br/>Client parity"]
     E31 --> E32["M2-E32<br/>Legacy deletion"]
     E32 --> E38["M2-E38<br/>Acceptance home"]
-    E38 --> E36["M2-E36<br/>Candidate proof"]
+    E38 --> E39["M2-E39<br/>Paint-first TUI"]
+    E39 --> E36["M2-E36<br/>Candidate proof"]
     E36 --> E37["M2-E37<br/>Final audit"]
 ```
 
@@ -119,6 +124,8 @@ flowchart LR
 - The production TUI, automation, text, and JSON paths pass one contract suite and observe the same ordered outcomes.
 - Automation schemas, artifacts, output, and exit status stay backward-compatible.
 - The old TUI-owned session path is deleted.
+- The packaged TUI paints within 500 ms before slow startup work and reaches
+  runtime readiness within 1,250 ms on the declared warm-run profile.
 - A stale, repeated, or cross-session result cannot resolve current work.
 - A slow or stopped receiving process stays within the declared mailbox and payload-memory bound, and it can recover after a gap.
 - Every client-bound live message uses the bounded delivery path. Ordinary updates do not send repeated full snapshots.

@@ -46,55 +46,154 @@ defmodule Jido.Console.Tui do
   end
 
   defp run_terminal_loop(terminal, runtime, agent, opts) do
-    with {:ok, %{handle: session_client, snapshot: attach_snapshot}} <- attach_session_client(opts) do
-      runtime_info =
-        case Client.runtime_info(session_client) do
-          {:ok, info} -> info
-          {:error, _reason} -> %{}
-        end
+    state =
+      State.new(
+        nil,
+        terminal.size,
+        [
+          prepare_prompt: true,
+          activity: {:starting, {:runtime, :empty}},
+          model: Keyword.get(opts, :model),
+          coding_profile: Keyword.get(opts, :coding_profile)
+        ] ++ Keyword.take(opts, [:catalog_entries])
+      )
+
+    with {:ok, state} <- draw_now(state, terminal) do
+      start_terminal(terminal, runtime, agent, state, opts)
+    end
+  end
+
+  defp start_terminal(terminal, runtime, agent, state, opts) do
+    with :ok <- safe_start_application(opts),
+         {:ok, %{handle: session_client, snapshot: attach_snapshot}} <- attach_session_client(opts) do
+      runtime_info = runtime_info(session_client)
 
       state =
-        State.new(
-          nil,
-          terminal.size,
-          [
-            prepare_prompt: true,
-            activity: {:starting, {:runtime, :empty}},
-            model: Keyword.get(opts, :model),
-            coding_profile: Keyword.get(opts, :coding_profile),
-            session_client: session_client,
-            session_snapshot: attach_snapshot,
-            session_request: Map.get(runtime_info, :active_request)
-          ] ++ Keyword.take(opts, [:catalog_entries])
-        )
+        state
+        |> Map.put(:session_client, session_client)
+        |> State.restore_snapshot(attach_snapshot, Map.get(runtime_info, :active_request))
 
-      run_attached_terminal(terminal, runtime, agent, session_client, state, opts)
+      case register_interactive_process(opts) do
+        {:ok, _record} ->
+          run_attached_terminal(terminal, runtime, agent, session_client, state, opts)
+
+        {:error, reason} ->
+          detach_session_client(session_client)
+          run_startup_failure(state, terminal, reason)
+      end
+    else
+      {:error, reason} -> run_startup_failure(state, terminal, reason)
+    end
+  end
+
+  defp runtime_info(session_client) do
+    case Client.runtime_info(session_client) do
+      {:ok, info} -> info
+      {:error, _reason} -> %{}
     end
   end
 
   defp run_attached_terminal(terminal, runtime, agent, session_client, state, opts) do
-    with :ok <- Terminal.draw(terminal, View.render(state)) do
-      {state, []} = State.update(state, :rendered)
-      owner = self()
-
-      {startup_pid, startup_ref} =
-        spawn_monitor(fn -> runtime_owner(owner, runtime, agent, session_client, opts) end)
-
-      try do
-        _ = Jido.Console.Process.register(:interactive, self(), process_opts(opts))
-
-        {result, state, workers} =
-          loop(state, terminal, runtime, opts, %{pid: startup_pid, ref: startup_ref}, %{})
-
-        Shutdown.run(state, workers, runtime, opts)
-        result
-      after
-        detach_session_client(session_client)
-        _ = Jido.Console.Process.stop("interactive", process_opts(opts))
-        stop_runtime_owner(startup_pid, startup_ref, shutdown_timeout(opts))
+    try do
+      with {:ok, state} <- draw_now(state, terminal) do
+        run_runtime_loop(terminal, runtime, agent, session_client, state, opts)
       end
+    after
+      detach_session_client(session_client)
+      stop_interactive_process(opts)
     end
   end
+
+  defp run_runtime_loop(terminal, runtime, agent, session_client, state, opts) do
+    owner = self()
+
+    {startup_pid, startup_ref} =
+      spawn_monitor(fn -> runtime_owner(owner, runtime, agent, session_client, opts) end)
+
+    try do
+      {result, state, workers} =
+        loop(state, terminal, runtime, opts, %{pid: startup_pid, ref: startup_ref}, %{})
+
+      Shutdown.run(state, workers, runtime, opts)
+      result
+    after
+      stop_runtime_owner(startup_pid, startup_ref, shutdown_timeout(opts))
+    end
+  end
+
+  defp safe_start_application(opts) do
+    startup = Keyword.get(opts, :application_startup, fn -> :ok end)
+
+    if is_function(startup, 0) do
+      startup.()
+    else
+      {:error, :invalid_application_startup}
+    end
+  rescue
+    exception -> {:error, exception}
+  catch
+    kind, reason -> {:error, {kind, reason}}
+  end
+
+  defp register_interactive_process(opts) do
+    register = Keyword.get(opts, :process_register, &Jido.Console.Process.register/3)
+
+    case register.(:interactive, self(), process_opts(opts)) do
+      {:ok, _record} = result -> result
+      {:error, reason} -> {:error, {:process_register_failed, reason}}
+      other -> {:error, {:process_register_failed, other}}
+    end
+  rescue
+    exception -> {:error, {:process_register_failed, exception}}
+  catch
+    kind, reason -> {:error, {:process_register_failed, {kind, reason}}}
+  end
+
+  defp stop_interactive_process(opts) do
+    stop = Keyword.get(opts, :process_stop, &Jido.Console.Process.stop/2)
+    _result = stop.("interactive", process_opts(opts))
+    :ok
+  rescue
+    _exception -> :ok
+  catch
+    _kind, _reason -> :ok
+  end
+
+  defp run_startup_failure(state, terminal, reason) do
+    {state, []} = State.update(state, {:runtime_failed, reason})
+
+    with {:ok, state} <- draw_now(state, terminal) do
+      startup_failure_loop(state, terminal, reason)
+    end
+  end
+
+  defp startup_failure_loop(state, terminal, reason) do
+    receive do
+      {:jido_terminal, ref, event} when ref == terminal.ref ->
+        {state, effects} = State.update(state, {:terminal, event})
+
+        if :exit in effects do
+          {:error, reason}
+        else
+          case draw_now(state, terminal) do
+            {:ok, state} -> startup_failure_loop(state, terminal, reason)
+            {:error, draw_reason} -> {:error, draw_reason}
+          end
+        end
+
+      _message ->
+        startup_failure_loop(state, terminal, reason)
+    end
+  end
+
+  defp draw_now(%State{dirty?: true} = state, terminal) do
+    with :ok <- Terminal.draw(terminal, View.render(state)) do
+      {state, []} = State.update(state, :rendered)
+      {:ok, state}
+    end
+  end
+
+  defp draw_now(state, _terminal), do: {:ok, state}
 
   defp runtime_owner(owner, runtime, agent, session_client, opts) do
     owner_monitor = Process.monitor(owner)

@@ -44,7 +44,8 @@ The epic files define scope, epic dependencies, acceptance checks, and proof. Be
 | [M2-E34 historical v0.2 release audit](m2-e34-audit-v0-2-release.md) | `jido_console-m2e34` | Closed evidence for the pre-closeout v0.2 audit. | M2-E01 through M2-E33 (historical) |
 | [M2-E35 historical skipped v0.2 publication](m2-e35-publish-v0-2-release.md) | `jido_console-m2e35` | Closed record of the pre-closeout no-publication decision. | M2-E34 (historical) |
 | [M2-E38 isolated release acceptance home](m2-e38-isolate-release-acceptance-home.md) | `jido_console-zs5` | Installed-artifact acceptance uses one private product home in its clean environment. | M2-E32 |
-| [M2-E36 post-closeout v0.2 candidate](m2-e36-requalify-v0-2-after-closeout.md) | `jido_console-m2e36` | The exact post-closeout candidate passes the session-plane workflow and all common release checks. | M2-E32, M2-E38 |
+| [M2-E39 paint-first packaged TUI startup](m2-e39-restore-paint-first-packaged-tui-startup.md) | `jido_console-xou` | The packaged TUI paints before slow startup and attaches only after application supervision is ready. | M2-E38 |
+| [M2-E36 post-closeout v0.2 candidate](m2-e36-requalify-v0-2-after-closeout.md) | `jido_console-m2e36` | The exact post-closeout candidate passes the session-plane workflow and all common release checks. | M2-E32, M2-E38, M2-E39 |
 | [M2-E37 final post-closeout v0.2 audit](m2-e37-reaudit-v0-2-after-closeout.md) | `jido_console-m2e37` | One evidence-only audit records the final v0.2 decision and Milestone 3 baseline. | M2-E36 |
 
 ## Dependency Diagram
@@ -96,6 +97,7 @@ flowchart TB
     E36["M2-E36<br/>Post-closeout candidate"]
     E37["M2-E37<br/>Final post-closeout audit"]
     E38["M2-E38<br/>Acceptance home"]
+    E39["M2-E39<br/>Paint-first TUI"]
 
     E01 --> E02
     E01 --> E05
@@ -163,7 +165,8 @@ flowchart TB
     E31 --> E32
     E32 -.-> E33
     E32 --> E38
-    E38 --> E36
+    E38 --> E39
+    E39 --> E36
     E36 --> E37
 
     E01 -.-> E34
@@ -225,9 +228,11 @@ flowchart TB
 14. Preserve M2-E33, M2-E34, and M2-E35 as closed historical evidence for
     the pre-closeout source. Do not reopen or reuse them for the new source.
 15. Repair the clean installed-artifact home in M2-E38 after M2-E32 passes.
-16. Prove the exact post-closeout production candidate in M2-E36 after
-    M2-E32 and M2-E38 pass.
-17. Merge the evidence-only M2-E37 audit after M2-E36 passes. M2-E37 names
+16. Restore paint-first supervised packaged TUI startup in M2-E39 after
+    M2-E38 passes.
+17. Prove the exact post-closeout production candidate in M2-E36 after
+    M2-E32, M2-E38, and M2-E39 pass.
+18. Merge the evidence-only M2-E37 audit after M2-E36 passes. M2-E37 names
     the final Milestone 2 source baseline for Milestone 3 and reaffirms that
     publication remains skipped. Do not invoke the release workflow.
 

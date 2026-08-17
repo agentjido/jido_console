@@ -737,6 +737,13 @@ defmodule Jido.Console.TuiTest do
       Task.async(fn ->
         Tui.run(
           runtime: FakeRuntime,
+          application_startup: fn ->
+            send(test_pid, {:application_starting, self()})
+
+            receive do
+              :release_application -> :ok
+            end
+          end,
           runtime_startup: fn ->
             send(test_pid, {:runtime_starting, self()})
 
@@ -754,11 +761,15 @@ defmodule Jido.Console.TuiTest do
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, first_frame}
     assert first_frame =~ "starting runtime · Enter queues"
-    assert_receive {:runtime_starting, startup_pid}
-    refute_receive :session_started, 50
+    assert_receive {:application_starting, ^owner}
 
     send(owner, {:jido_terminal, ref, {:text, "hello"}})
     send(owner, {:jido_terminal, ref, {:key, :enter}})
+    send(owner, :release_application)
+
+    assert_receive {:runtime_starting, startup_pid}
+    refute_receive :session_started, 50
+
     assert_frame_contains("starting runtime · prompt queued")
     refute_receive :turn_started, 50
 
@@ -771,6 +782,59 @@ defmodule Jido.Console.TuiTest do
 
     send(owner, {:jido_terminal, ref, {:key, :escape}})
     assert :ok = Task.await(task)
+    assert_receive :terminal_closed
+  end
+
+  test "shows an application startup failure after the first frame" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          application_startup: fn -> {:error, :application_boot_failed} end,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, first_frame}
+    assert first_frame =~ "starting runtime"
+    assert_frame_contains("startup failed · Esc exits")
+
+    send(owner, {:jido_terminal, ref, {:key, :escape}})
+    assert {:error, :application_boot_failed} = Task.await(task)
+    assert_receive :terminal_closed
+  end
+
+  test "does not hide a process registration failure during cleanup" do
+    test_pid = self()
+
+    task =
+      Task.async(fn ->
+        Tui.run(
+          runtime: FakeRuntime,
+          process_register: fn :interactive, _owner, _opts ->
+            exit(:missing_process_supervisor)
+          end,
+          process_stop: fn _name, _opts -> send(test_pid, :unexpected_process_stop) end,
+          terminal_adapter: FakeAdapter,
+          terminal_adapter_opts: [test_pid: test_pid],
+          session_opts: [test_pid: test_pid]
+        )
+      end)
+
+    assert_receive {:terminal_opened, owner, ref}
+    assert_receive {:frame, _first_frame}
+    assert_frame_contains("startup failed · Esc exits")
+
+    send(owner, {:jido_terminal, ref, {:key, :escape}})
+
+    assert {:error, {:process_register_failed, {:exit, :missing_process_supervisor}}} =
+             Task.await(task)
+
+    refute_receive :unexpected_process_stop
+    refute_receive :session_started
     assert_receive :terminal_closed
   end
 
@@ -1060,7 +1124,7 @@ defmodule Jido.Console.TuiTest do
         Tui.run(
           runtime: FakeRuntime,
           terminal_adapter: FakeAdapter,
-          terminal_adapter_opts: [test_pid: test_pid, fail_after: 1],
+          terminal_adapter_opts: [test_pid: test_pid, fail_after: 2],
           session_opts: [test_pid: test_pid]
         )
       end)

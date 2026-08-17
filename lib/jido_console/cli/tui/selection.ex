@@ -4,10 +4,10 @@ defmodule Jido.Console.Tui.Selection do
   """
 
   alias Jido.Console.Coding.Profile
-  alias Jido.Console.Models
   alias Jido.Console.Models.Commands
 
   @profiles [Profile.restricted_id(), Profile.trusted_id()]
+  @model_tiers [:supported, :beta, :available, :unsupported]
 
   @type t :: %{
           catalog_entries: [map()],
@@ -68,11 +68,39 @@ defmodule Jido.Console.Tui.Selection do
   def profiles, do: @profiles
 
   defp catalog_entries(opts) do
-    case Models.list(opts) do
-      {:ok, entries} -> entries
-      {:error, _reason} -> []
+    opts
+    |> Keyword.get(:model_policy, Application.get_env(:jido_console, :model_policy, []))
+    |> policy_entries()
+  end
+
+  defp policy_entries(policies) when is_list(policies) do
+    policies
+    |> Enum.reduce_while([], fn policy, entries ->
+      case policy_entry(policy) do
+        {:ok, entry} -> {:cont, [entry | entries]}
+        :error -> {:halt, []}
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp policy_entries(_policies), do: []
+
+  defp policy_entry(policy) when is_map(policy) do
+    identity = Map.get(policy, :identity, Map.get(policy, "identity"))
+    tier = Map.get(policy, :tier, Map.get(policy, "tier"))
+
+    with true <- is_binary(identity),
+         true <- tier in @model_tiers,
+         [provider, model] when provider != "" and model != "" <-
+           String.split(identity, ":", parts: 2) do
+      {:ok, %{identity: identity, provider: provider, model: model, tier: tier}}
+    else
+      _other -> :error
     end
   end
+
+  defp policy_entry(_policy), do: :error
 
   defp initial_model(nil, entries) do
     case Enum.find(entries, &(&1.tier == :supported)) do

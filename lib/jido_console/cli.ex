@@ -69,21 +69,15 @@ defmodule Jido.Console.CLI do
   defp dispatch_fast(_args), do: :continue
 
   defp start_probe_or_run(args) do
-    case Jido.Console.Bootstrap.start_applications() do
-      :ok ->
-        if Jido.Console.Release.Probe.configured?() do
-          System.halt(Jido.Console.Release.Probe.run(args, cli_run: &run/2))
-        else
-          start_and_run(args)
-        end
-
-      {:error, reason} ->
-        fail("could not start: #{inspect(reason)}")
-        System.halt(1)
+    if Jido.Console.Release.Probe.configured?() do
+      System.halt(Jido.Console.Release.Probe.run(args, cli_run: &run/2))
+    else
+      start_and_run(args)
     end
   end
 
-  defp start_and_run([command | _rest] = args) when command in ["run", "eval"] do
+  defp start_and_run([command | _rest] = args)
+       when command in ["run", "eval", "status", "stop", "auth", "doctor", "models"] do
     case start_runtime() do
       :ok ->
         handle_run_result(run(args))
@@ -95,7 +89,7 @@ defmodule Jido.Console.CLI do
   end
 
   defp start_and_run(args) do
-    handle_run_result(run(args, runtime_startup: &start_runtime/0))
+    handle_run_result(run(args, application_startup: &start_runtime/0))
   end
 
   defp start_runtime do
@@ -457,6 +451,7 @@ defmodule Jido.Console.CLI do
   defp start_tui(options, opts) do
     tui = Keyword.get(opts, :tui, Jido.Console.Tui)
     interactive = options |> Map.to_list() |> normalize_interactive_options()
+    opts = Keyword.put_new(opts, :application_startup, &start_runtime/0)
 
     case tui.run(Keyword.merge(opts, interactive)) do
       :ok -> :ok

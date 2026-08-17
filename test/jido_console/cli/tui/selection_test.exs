@@ -20,6 +20,25 @@ defmodule Jido.Console.Tui.SelectionTest do
     assert profiles =~ "coding.trusted-workspace"
   end
 
+  test "builds the startup selection without resolving model metadata" do
+    selection =
+      Selection.init(
+        model_policy: [
+          %{identity: "openai:gpt-4.1-mini", tier: :supported},
+          %{identity: "ollama:llama3.2", tier: :beta}
+        ],
+        model_resolver: fn _identity -> raise "startup must not load model metadata" end
+      )
+
+    assert selection.model == "openai:gpt-4.1-mini"
+    assert selection.model_tier == :supported
+
+    assert Enum.map(selection.catalog_entries, & &1.identity) == [
+             "openai:gpt-4.1-mini",
+             "ollama:llama3.2"
+           ]
+  end
+
   test "selects a model and trusted profile without applying silently" do
     selection = Selection.init(catalog_entries: @entries)
     assert {:command, next, notice} = Selection.handle("/model openai:gpt-4.1-mini", selection)

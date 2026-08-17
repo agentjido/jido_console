@@ -23,8 +23,7 @@ prove the home repair only. They do not pass the release performance limits.
 The diagnostic acceptance run passed checksum, metadata, file inventory,
 private runtime, notices, startup with diagnostic limits, and packaged-command
 checks. It then exposed a separate eager-start and process-supervisor defect.
-That defect is not part of this epic and blocks M2-E36 through a separate
-repair epic.
+That defect is not part of this epic. M2-E39 owns the repair and blocks M2-E36.
 
 ## Checks
 
