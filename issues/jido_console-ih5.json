@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "Mike Hostetler",
   "blocked_by": [
     "jido_console-xou"
   ],
@@ -18,7 +18,7 @@
     "v0.2"
   ],
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "M2-E40: Preserve the Native Root in the npm Launcher",
   "type": "epic",
   "updated_at": "2026-08-17T18:06:19Z"
