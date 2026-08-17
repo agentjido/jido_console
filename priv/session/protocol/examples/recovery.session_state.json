@@ -1,0 +1,13 @@
+{
+  "protocol": "jido.session",
+  "version": "1",
+  "family": "recovery",
+  "type": "session_state",
+  "id": "rec_fixture",
+  "session_id": "ses_fixture",
+  "payload": {
+    "generation": 4,
+    "state": "exact_candidate",
+    "diagnostics": []
+  }
+}

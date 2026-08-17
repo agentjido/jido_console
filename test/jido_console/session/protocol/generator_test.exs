@@ -21,11 +21,17 @@ defmodule Jido.Console.Session.Protocol.GeneratorTest do
 
     assert typescript_source =~ "export const protocolDigest = #{inspect(digest)}"
     assert typescript_source =~ "export type ProtocolEnvelope ="
+    assert typescript_source =~ "export const protocolSensitiveValues ="
     assert typescript_source =~ ~s("sequence": unknown;)
     assert typescript_source =~ ~s("input_id"?: unknown;)
 
     catalog = Generator.catalog(schema, digest)
     assert catalog["protocol"] == "jido.session"
     assert catalog["families"]["event"]["types"]["input_admitted"]["locality"] == "shared"
+
+    assert catalog["families"]["operation"]["types"]["exact_resume"]["field_values"]["mode"] ==
+             ["exact"]
+
+    assert "credential_value" in catalog["sensitive_values"]["forbidden_field_names"]
   end
 end

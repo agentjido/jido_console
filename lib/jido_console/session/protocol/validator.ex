@@ -21,7 +21,9 @@ defmodule Jido.Console.Session.Protocol.Validator do
     with :ok <- require_envelope(value),
          :ok <- compatible_version(value, catalog),
          {:ok, contract} <- type_contract(value, catalog),
+         :ok <- json_compatible(value),
          :ok <- reject_client_local_payload(value, contract, catalog),
+         :ok <- reject_sensitive_payload(value["payload"] || %{}, catalog),
          {:ok, payload} <- validate_payload(value, contract, catalog) do
       {:ok, Map.put(value, "payload", payload)}
     end
@@ -37,6 +39,20 @@ defmodule Jido.Console.Session.Protocol.Validator do
       {:error, reason} -> {:error, {:invalid_protocol_json, reason}}
     end
   end
+
+  @doc "Validates a final provider or tool value and blocks a materialized credential value."
+  @spec validate_final_boundary(map(), [String.t()], keyword()) :: result()
+  def validate_final_boundary(value, materialized_values, opts \\ [])
+
+  def validate_final_boundary(value, materialized_values, opts)
+      when is_map(value) and is_list(materialized_values) do
+    with {:ok, validated} <- validate(value, opts),
+         :ok <- reject_materialized_values(validated, materialized_values) do
+      {:ok, validated}
+    end
+  end
+
+  def validate_final_boundary(_value, _materialized_values, _opts), do: {:error, :invalid_protocol_shape}
 
   defp require_envelope(value) do
     required = ~w(protocol version family type id)
@@ -94,7 +110,8 @@ defmodule Jido.Console.Session.Protocol.Validator do
     payload = value["payload"] || %{}
 
     with :ok <- require_payload_fields(payload, family, type, contract),
-         :ok <- reject_sibling_fields(payload, family, type, contract, catalog) do
+         :ok <- reject_sibling_fields(payload, family, type, contract, catalog),
+         :ok <- validate_field_values(payload, family, type, contract) do
       bound_payload(payload, contract, catalog)
     end
   end
@@ -128,6 +145,18 @@ defmodule Jido.Console.Session.Protocol.Validator do
     end
   end
 
+  defp validate_field_values(payload, family, type, contract) do
+    contract
+    |> Map.get("field_values", %{})
+    |> Enum.reduce_while(:ok, fn {field, allowed}, :ok ->
+      if Map.has_key?(payload, field) and payload[field] not in allowed do
+        {:halt, {:error, {:invalid_protocol_field_value, family, type, field}}}
+      else
+        {:cont, :ok}
+      end
+    end)
+  end
+
   defp bound_payload(payload, contract, catalog) when is_map(payload) do
     bounds = catalog["bounds"]
     authority = catalog["authority"]
@@ -148,6 +177,10 @@ defmodule Jido.Console.Session.Protocol.Validator do
 
         encoded_size(unknown) > unknown_limit ->
           {:error, :unknown_data_overflow}
+
+        is_integer(contract["max_encoded_bytes"]) and
+            encoded_size(payload) > contract["max_encoded_bytes"] ->
+          {:error, :oversized_protocol_payload}
 
         true ->
           {:ok, payload}
@@ -192,6 +225,171 @@ defmodule Jido.Console.Session.Protocol.Validator do
   end
 
   defp bound_value(_value, _bounds), do: :ok
+
+  defp json_compatible(value) when is_binary(value) or is_integer(value) or is_float(value), do: :ok
+  defp json_compatible(value) when is_boolean(value) or is_nil(value), do: :ok
+
+  defp json_compatible(value) when is_list(value) do
+    Enum.reduce_while(value, :ok, fn item, :ok ->
+      case json_compatible(item) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp json_compatible(value) when is_map(value) and not is_struct(value) do
+    Enum.reduce_while(value, :ok, fn
+      {key, item}, :ok when is_binary(key) ->
+        case json_compatible(item) do
+          :ok -> {:cont, :ok}
+          error -> {:halt, error}
+        end
+
+      {_key, _item}, :ok ->
+        {:halt, {:error, :non_string_protocol_key}}
+    end)
+  end
+
+  defp json_compatible(value) when is_pid(value), do: {:error, {:forbidden_runtime_value, :pid}}
+  defp json_compatible(value) when is_reference(value), do: {:error, {:forbidden_runtime_value, :reference}}
+  defp json_compatible(value) when is_port(value), do: {:error, {:forbidden_runtime_value, :port}}
+  defp json_compatible(value) when is_function(value), do: {:error, {:forbidden_runtime_value, :function}}
+  defp json_compatible(value) when is_struct(value), do: {:error, {:forbidden_runtime_value, :struct}}
+  defp json_compatible(_value), do: {:error, :non_json_protocol_value}
+
+  defp reject_sensitive_payload(payload, catalog) do
+    policy = catalog["sensitive_values"] || %{}
+
+    case sensitive_violation(payload, [], nil, policy) do
+      nil ->
+        :ok
+
+      %{field: field, reason: reason, surface: surface} ->
+        {:error,
+         {:sensitive_value_rejected, surface,
+          %{"field" => field, "reason" => Atom.to_string(reason), "redacted" => true}}}
+    end
+  end
+
+  defp sensitive_violation(value, path, _parent, policy) when is_map(value) do
+    Enum.find_value(value, fn {key, item} ->
+      normalized = normalize_field(key)
+
+      if forbidden_field?(normalized, policy) do
+        %{field: normalized, reason: :forbidden_field, surface: surface(path, key)}
+      else
+        sensitive_violation(item, path ++ [key], key, policy)
+      end
+    end)
+  end
+
+  defp sensitive_violation(value, path, parent, policy) when is_list(value) do
+    structural? = normalize_field(parent) in List.wrap(policy["structural_string_fields"])
+
+    Enum.find_value(value, fn item ->
+      if structural? and is_binary(item) and forbidden_shell_argument?(item, policy) do
+        %{field: normalize_field(parent), reason: :credential_argument, surface: surface(path, parent)}
+      else
+        sensitive_violation(item, path, parent, policy)
+      end
+    end)
+  end
+
+  defp sensitive_violation(value, path, parent, policy) when is_binary(value) do
+    field = normalize_field(parent)
+    structural? = field in List.wrap(policy["structural_string_fields"])
+    uri? = field in List.wrap(policy["uri_fields"])
+
+    cond do
+      uri? and URI.parse(value).userinfo not in [nil, ""] ->
+        %{field: field, reason: :uri_userinfo, surface: surface(path, parent)}
+
+      structural? and forbidden_shell_argument?(value, policy) ->
+        %{field: field, reason: :credential_argument, surface: surface(path, parent)}
+
+      structural? and credential_interpolation?(value) ->
+        %{field: field, reason: :credential_interpolation, surface: surface(path, parent)}
+
+      true ->
+        nil
+    end
+  end
+
+  defp sensitive_violation(_value, _path, _parent, _policy), do: nil
+
+  defp forbidden_field?(field, policy) do
+    allowed = List.wrap(policy["allowed_reference_fields"])
+    forbidden = List.wrap(policy["forbidden_field_names"])
+
+    fragments =
+      ~w(api_key access_token auth_token bearer_token credential_value password private_key refresh_token secret_value session_cookie)
+
+    field not in allowed and
+      (field in forbidden or Enum.any?(fragments, &String.contains?(field, &1)))
+  end
+
+  defp forbidden_shell_argument?(value, policy) do
+    value = String.downcase(value)
+
+    Enum.any?(List.wrap(policy["forbidden_shell_flags"]), fn flag ->
+      value == flag or String.starts_with?(value, flag <> "=") or String.contains?(value, " " <> flag <> " ")
+    end)
+  end
+
+  defp credential_interpolation?(value) do
+    Regex.match?(~r/\$\{[^}]*(api[_-]?key|password|secret|token|credential)[^}]*\}/i, value)
+  end
+
+  defp surface(path, field) do
+    path
+    |> List.first()
+    |> case do
+      nil -> normalize_field(field)
+      first -> normalize_field(first)
+    end
+  end
+
+  defp normalize_field(value) when is_binary(value) do
+    value
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/, "_")
+    |> String.trim("_")
+  end
+
+  defp normalize_field(_value), do: "unknown"
+
+  defp reject_materialized_values(value, materialized_values) do
+    secrets = Enum.filter(materialized_values, &(is_binary(&1) and &1 != ""))
+
+    case materialized_value_path(value, [], secrets) do
+      nil ->
+        :ok
+
+      path ->
+        {:error,
+         {:sensitive_result_blocked, :final_boundary,
+          %{"path" => Enum.join(path, "."), "reason" => "materialized_value", "redacted" => true}}}
+    end
+  end
+
+  defp materialized_value_path(value, path, secrets) when is_binary(value) do
+    if Enum.any?(secrets, &String.contains?(value, &1)), do: path, else: nil
+  end
+
+  defp materialized_value_path(value, path, secrets) when is_list(value) do
+    value
+    |> Enum.with_index()
+    |> Enum.find_value(fn {item, index} ->
+      materialized_value_path(item, path ++ [Integer.to_string(index)], secrets)
+    end)
+  end
+
+  defp materialized_value_path(value, path, secrets) when is_map(value) do
+    Enum.find_value(value, fn {key, item} -> materialized_value_path(item, path ++ [to_string(key)], secrets) end)
+  end
+
+  defp materialized_value_path(_value, _path, _secrets), do: nil
 
   defp reject_unknown_authority(payload, known, authority) do
     forbidden = MapSet.new(authority_fields(authority))

@@ -87,6 +87,7 @@ defmodule Jido.Console.MixProject do
         "README.md",
         "ROADMAP.md",
         "guides/extensions.md",
+        "guides/durable-continuity.md",
         "guides/multi-turn-coding.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md",

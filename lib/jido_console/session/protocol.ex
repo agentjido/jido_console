@@ -13,7 +13,23 @@ defmodule Jido.Console.Session.Protocol do
   @schema_source Path.expand("../../../priv/session/protocol/#{@schema_name}", __DIR__)
   @external_resource @schema_source
   @schema_contents File.read!(@schema_source)
-  @families ~w(command delivery event interaction response outcome snapshot replay control)
+  @families ~w(
+    command
+    delivery
+    event
+    interaction
+    response
+    outcome
+    snapshot
+    replay
+    control
+    receipt
+    generation
+    watermark
+    recovery
+    operation
+    rejection
+  )
   @required_type_keys ~w(locality fields)
   @shared "shared"
   @client_local "client_local"
@@ -136,6 +152,11 @@ defmodule Jido.Console.Session.Protocol do
   def authority(%{"authority" => authority}) when is_map(authority), do: {:ok, authority}
   def authority(_schema), do: {:error, :protocol_authority_missing}
 
+  @doc "Returns the structural sensitive-value policy."
+  @spec sensitive_values(schema()) :: {:ok, map()} | {:error, term()}
+  def sensitive_values(%{"sensitive_values" => policy}) when is_map(policy), do: {:ok, policy}
+  def sensitive_values(_schema), do: {:error, :protocol_sensitive_values_missing}
+
   @doc "Returns true when a field name can grant authority."
   @spec authority_field?(schema(), String.t()) :: boolean()
   def authority_field?(schema, field) when is_binary(field) do
@@ -202,6 +223,7 @@ defmodule Jido.Console.Session.Protocol do
       |> review_families(schema)
       |> review_bounds(schema)
       |> review_authority(schema)
+      |> review_sensitive_values(schema)
 
     if defects == [], do: :ok, else: {:error, Enum.reverse(defects)}
   end
@@ -310,6 +332,25 @@ defmodule Jido.Console.Session.Protocol do
         denied = List.wrap(authority["never_grant_from"])
         missing = required_denials -- denied
         if missing == [], do: defects, else: [{:authority_denial_incomplete, missing} | defects]
+
+      {:error, reason} ->
+        [reason | defects]
+    end
+  end
+
+  defp review_sensitive_values(defects, schema) do
+    required = ~w(
+      allowed_reference_fields
+      forbidden_field_names
+      forbidden_shell_flags
+      structural_string_fields
+      rejection_types
+    )
+
+    case sensitive_values(schema) do
+      {:ok, policy} ->
+        missing = Enum.reject(required, &Map.has_key?(policy, &1))
+        if missing == [], do: defects, else: [{:sensitive_values_incomplete, missing} | defects]
 
       {:error, reason} ->
         [reason | defects]

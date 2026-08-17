@@ -72,6 +72,7 @@ defmodule Jido.Console.Session.Protocol.Generator do
       "families" => families,
       "bounds" => bounds,
       "authority" => authority,
+      "sensitive_values" => schema["sensitive_values"],
       "client_local_fields" => Protocol.client_local_fields(schema)
     }
   end
@@ -93,6 +94,8 @@ defmodule Jido.Console.Session.Protocol.Generator do
     }
     |> maybe_put("deprecated", declaration["deprecated"])
     |> maybe_put("emission", declaration["emission"])
+    |> maybe_put("field_values", declaration["field_values"])
+    |> maybe_put("max_encoded_bytes", declaration["max_encoded_bytes"])
   end
 
   defp unique_fields(fields) do
@@ -203,6 +206,7 @@ defmodule Jido.Console.Session.Protocol.Generator do
     export const protocolVersion = #{inspect(catalog["version"])};
     export const protocolBounds = #{Jason.encode!(catalog["bounds"])} as const;
     export const protocolAuthority = #{Jason.encode!(catalog["authority"])} as const;
+    export const protocolSensitiveValues = #{Jason.encode!(catalog["sensitive_values"])} as const;
     export const clientLocalFields = #{Jason.encode!(catalog["client_local_fields"])} as const;
     export const protocolFamilies = #{Jason.encode!(catalog["families"])} as const;
 

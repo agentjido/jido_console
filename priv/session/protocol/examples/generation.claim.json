@@ -1,0 +1,15 @@
+{
+  "protocol": "jido.session",
+  "version": "1",
+  "family": "generation",
+  "type": "claim",
+  "id": "gen_claim_fixture",
+  "session_id": "ses_fixture",
+  "payload": {
+    "generation": 4,
+    "owner_instance_id": "own_fixture_4",
+    "prior_generation": 3,
+    "operation_id": "op_generation_fixture",
+    "status": "claimed"
+  }
+}

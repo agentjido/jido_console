@@ -94,6 +94,13 @@ defmodule Jido.Console.Session.ProtocolTest do
 
     assert {:error, {:authority_from_forbidden, "transport"}} =
              Protocol.envelope(schema, "command", "invoke_command", %{"authority_from" => "transport"})
+
+    assert {:ok, sensitive_values} = Protocol.sensitive_values(schema)
+    assert "api_key" in sensitive_values["forbidden_field_names"]
+    assert "credential_profile_id" in sensitive_values["allowed_reference_fields"]
+
+    assert Enum.sort(sensitive_values["rejection_types"]) ==
+             ~w(sensitive_result_blocked sensitive_value_rejected)
   end
 
   test "schema and JSON failures have stable results" do
@@ -134,6 +141,7 @@ defmodule Jido.Console.Session.ProtocolTest do
     assert Protocol.client_local_fields(%{}) == []
     assert {:error, :protocol_bounds_missing} = Protocol.bounds(%{})
     assert {:error, :protocol_authority_missing} = Protocol.authority(%{})
+    assert {:error, :protocol_sensitive_values_missing} = Protocol.sensitive_values(%{})
     refute Protocol.authority_field?(%{}, "permission")
     assert Protocol.never_grant_from(%{}) == []
 
@@ -144,6 +152,7 @@ defmodule Jido.Console.Session.ProtocolTest do
     assert :protocol_identity_missing in defects
     assert :protocol_bounds_missing in defects
     assert :protocol_authority_missing in defects
+    assert :protocol_sensitive_values_missing in defects
     assert {:unknown_protocol_family, "command"} in defects
 
     malformed =
@@ -157,6 +166,7 @@ defmodule Jido.Console.Session.ProtocolTest do
       |> put_in(["families", "event"], %{})
       |> put_in(["bounds"], %{})
       |> put_in(["authority"], %{"never_grant_from" => ["renderer"]})
+      |> put_in(["sensitive_values"], %{})
 
     assert {:error, defects} = Protocol.review(malformed)
     assert {:family_version_missing, "command"} in defects
@@ -168,6 +178,9 @@ defmodule Jido.Console.Session.ProtocolTest do
 
     assert {:authority_denial_incomplete, _missing} =
              Enum.find(defects, &match?({:authority_denial_incomplete, _}, &1))
+
+    assert {:sensitive_values_incomplete, _missing} =
+             Enum.find(defects, &match?({:sensitive_values_incomplete, _}, &1))
   end
 
   defp sibling(name) do
