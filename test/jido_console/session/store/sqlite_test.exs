@@ -67,7 +67,20 @@ defmodule Jido.Console.Session.Store.SQLiteTest do
              SQLite.append(pid, first, operation_id: "append-duplicate")
 
     second = record(1, digest)
+
+    assert {:error, {:constraint_conflict, reason}} =
+             SQLite.append(pid, second, operation_id: "append-0")
+
+    assert reason =~ "UNIQUE constraint failed"
+
     assert {:ok, %{sequence: 1}} = SQLite.append(pid, second, operation_id: "append-1")
+
+    assert {:error, {:record_head_conflict, "session-fixture", 1, 2, _rows}} =
+             SQLite.append(pid, record(2, @digest), operation_id: "append-wrong-head")
+
+    assert {:error, {:record_sequence_conflict, "session-fixture", 1, 0}} =
+             SQLite.append(pid, record(0, @digest), operation_id: "append-wrong-genesis")
+
     assert {:ok, [first_result]} = SQLite.range(pid, "session-fixture", limit: 1)
     assert first_result.record["record_id"] == "record-0"
 
@@ -89,6 +102,14 @@ defmodule Jido.Console.Session.Store.SQLiteTest do
     request = Turn.Request.new!(input: "Persist", request_id: "request-one")
 
     assert {:ok, ^source} = Store.put_session(store, source)
+
+    assert {:error, _reason} =
+             Store.claim_resume(store, source.session_id,
+               clock: fn -> 90 end,
+               lease_ttl_ms: 50,
+               owner_id: "resume-worker",
+               id_generator: fn "lease" -> "resume-lease" end
+             )
 
     sensitive_request =
       Turn.Request.new!(
@@ -173,7 +194,17 @@ defmodule Jido.Console.Session.Store.SQLiteTest do
              )
 
     assert {:ok, [%Data{session_id: "sqlite-session"}]} = Store.list_sessions(restarted_store)
+    assert {:ok, []} = Store.list_sessions({SQLite, pid: restarted, max_bytes: 1})
     assert {:ok, %{integrity: :ok}} = SQLite.inspect_store(restarted)
+
+    GenServer.stop(restarted)
+    assert {:ok, conn} = Sqlite3.open(path)
+    assert :ok = Sqlite3.execute(conn, "UPDATE jidoka_sessions SET value_digest='sha256:bad'")
+    assert :ok = Sqlite3.close(conn)
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {:jidoka_integrity_failed, "sqlite-session"}} =
+             SQLite.start_link(path: path, integrity_on_open: true)
   end
 
   test "detects row corruption and incompatible metadata", %{path: path} do
@@ -186,6 +217,7 @@ defmodule Jido.Console.Session.Store.SQLiteTest do
     :ok = Sqlite3.close(conn)
 
     {:ok, corrupted} = SQLite.start_link(path: path)
+    assert {:error, :record_digest_mismatch} = SQLite.range(corrupted, "session-fixture")
     assert {:error, {:record_integrity_failed, "record-0"}} = SQLite.inspect_store(corrupted)
     GenServer.stop(corrupted)
 
@@ -209,6 +241,12 @@ defmodule Jido.Console.Session.Store.SQLiteTest do
     File.chmod!(unsafe, 0o644)
 
     assert {:error, {:unsafe_permissions, ^unsafe, _mode}} = SQLite.start_link(path: unsafe)
+
+    unsafe_type = Path.join(root, "unsafe-type.sqlite3")
+    File.mkdir!(unsafe_type)
+
+    assert {:error, {:unsafe_store_file, ^unsafe_type, :directory}} =
+             SQLite.start_link(path: unsafe_type)
   end
 
   defp record(sequence, prior) do

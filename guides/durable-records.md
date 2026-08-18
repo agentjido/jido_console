@@ -22,6 +22,31 @@ mutation commits its operation receipt in the same transaction. A caller can
 look up that receipt after an unknown timeout result. Store inspection checks
 SQLite integrity, metadata, pragmas, and every stored record digest.
 
+## Durable Storage Owner
+
+The application starts storage before session supervision with rest-for-one
+ordering. The storage tree owns, in order, one home lock, one maintenance
+manifest, one admission counter, and one SQLite writer. A lock or integrity
+failure prevents the session tree from starting. A writer failure makes public
+storage calls unavailable until its supervised restart finishes.
+
+The public write path reserves copied bytes before it sends to the writer. It
+has 112 normal slots, 16 control slots, one shared 16 MiB small-payload pool,
+one 136 MiB normal large lane, and one 136 MiB control large lane. The SQLite
+process serializes all work, so only one transaction or reader runs at a time.
+This is stricter than the declared maximum reader pool and prevents a retained
+reader from holding the WAL open.
+
+SQLite waits at most 250 ms for a busy database. Public calls wait at most one
+second. A mutation timeout returns `timeout_unknown` with its operation ID, and
+the caller can query the receipt. WAL auto-checkpoint work starts at 64 MiB;
+page-adding admission stops if a blocked WAL reaches 384 MiB.
+
+Stopped-store maintenance first terminates the writer. It then writes one
+canonical manifest of at most 64 KiB by syncing a private temporary file,
+renaming it, and syncing the parent directory. Startup reconciles an incomplete
+manifest before it opens SQLite again.
+
 ## Console Records
 
 The durable catalog defines 16 authoritative Console record types. Each type

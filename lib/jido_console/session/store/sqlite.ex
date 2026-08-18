@@ -35,6 +35,9 @@ defmodule Jido.Console.Session.Store.SQLite do
   @reader_limit 16
   @reserved_readers 4
   @reader_age_ms 1_000
+  @wal_soft_bytes 64 * 1_024 * 1_024
+  @wal_hard_bytes 384 * 1_024 * 1_024
+  @wal_autocheckpoint_pages div(@wal_soft_bytes, @page_size)
   @exqlite_license "MIT"
 
   @schema """
@@ -186,6 +189,10 @@ defmodule Jido.Console.Session.Store.SQLite do
   @spec page_accounting(GenServer.server(), keyword()) :: {:ok, map()} | {:error, term()}
   def page_accounting(server, opts \\ []), do: call(server, :pages, opts)
 
+  @doc "Runs the bounded WAL checkpoint state machine and returns measured WAL bytes."
+  @spec checkpoint(GenServer.server(), keyword()) :: {:ok, map()} | {:error, term()}
+  def checkpoint(server, opts \\ []), do: call(server, :checkpoint, opts)
+
   @impl true
   def init(opts) do
     with {:ok, path} <- store_path(opts),
@@ -194,8 +201,9 @@ defmodule Jido.Console.Session.Store.SQLite do
          :ok <- configure(conn),
          :ok <- bootstrap(conn),
          :ok <- File.chmod(path, Home.file_mode()),
-         :ok <- Home.check_private(path) do
-      {:ok, %{conn: conn, path: path}}
+         :ok <- protect_owned_files(path),
+         :ok <- maybe_integrity_gate(conn, opts) do
+      {:ok, %{conn: conn, path: path, admission: Keyword.get(opts, :admission)}}
     else
       {:error, reason} -> {:stop, reason}
     end
@@ -257,7 +265,12 @@ defmodule Jido.Console.Session.Store.SQLite do
 
   @impl true
   def handle_call({:append, operation_id, encoded}, _from, state) do
-    result = transaction(state.conn, fn -> append_record(state.conn, operation_id, encoded) end)
+    result =
+      with {:ok, value} <- transaction(state.conn, fn -> append_record(state.conn, operation_id, encoded) end),
+           :ok <- protect_owned_files(state.path) do
+        {:ok, value}
+      end
+
     {:reply, result, state}
   end
 
@@ -309,10 +322,15 @@ defmodule Jido.Console.Session.Store.SQLite do
         end
       end)
 
+    result = with {:ok, value} <- result, :ok <- protect_owned_files(state.path), do: {:ok, value}
     {:reply, result, state}
   end
 
   def handle_call(:pages, _from, state), do: {:reply, page_accounting_conn(state.conn), state}
+
+  def handle_call(:checkpoint, _from, state) do
+    {:reply, checkpoint_wal(state.conn, state.path), state}
+  end
 
   def handle_call(:inspect, _from, state) do
     result =
@@ -511,7 +529,7 @@ defmodule Jido.Console.Session.Store.SQLite do
   end
 
   defp configure(conn) do
-    with :ok <- Sqlite3.set_busy_timeout(conn, 5_000),
+    with :ok <- Sqlite3.set_busy_timeout(conn, 250),
          :ok <- Sqlite3.execute(conn, "PRAGMA journal_mode=WAL"),
          :ok <- Sqlite3.execute(conn, "PRAGMA synchronous=FULL"),
          :ok <- Sqlite3.execute(conn, "PRAGMA foreign_keys=ON"),
@@ -519,7 +537,9 @@ defmodule Jido.Console.Session.Store.SQLite do
          :ok <- Sqlite3.execute(conn, "PRAGMA temp_store=MEMORY"),
          :ok <- Sqlite3.execute(conn, "PRAGMA page_size=#{@page_size}"),
          :ok <- Sqlite3.execute(conn, "PRAGMA max_page_count=#{@max_pages}"),
-         :ok <- Sqlite3.execute(conn, "PRAGMA cache_size=-32768") do
+         :ok <- Sqlite3.execute(conn, "PRAGMA cache_size=-32768"),
+         :ok <- Sqlite3.execute(conn, "PRAGMA wal_autocheckpoint=#{@wal_autocheckpoint_pages}"),
+         :ok <- Sqlite3.execute(conn, "PRAGMA journal_size_limit=#{@wal_hard_bytes}") do
       verify_pragmas(conn)
     end
   end
@@ -532,7 +552,9 @@ defmodule Jido.Console.Session.Store.SQLite do
       {"trusted_schema", 0},
       {"temp_store", 2},
       {"page_size", @page_size},
-      {"max_page_count", @max_pages}
+      {"max_page_count", @max_pages},
+      {"wal_autocheckpoint", @wal_autocheckpoint_pages},
+      {"journal_size_limit", @wal_hard_bytes}
     ]
 
     Enum.reduce_while(checks, :ok, fn {name, expected}, :ok ->
@@ -736,10 +758,106 @@ defmodule Jido.Console.Session.Store.SQLite do
     with :ok <- File.mkdir_p(Path.dirname(path)),
          :ok <- File.chmod(Path.dirname(path), Home.directory_mode()) do
       case File.lstat(path) do
-        {:ok, _stat} -> Home.check_private(path)
+        {:ok, %{type: :regular}} -> Home.check_private(path)
+        {:ok, %{type: type}} -> {:error, {:unsafe_store_file, path, type}}
         {:error, :enoent} -> :ok
         {:error, reason} -> {:error, {:store_path_unavailable, path, reason}}
       end
+    end
+  end
+
+  defp protect_owned_files(path) do
+    [path, path <> "-wal", path <> "-shm"]
+    |> Enum.reduce_while(:ok, fn owned_path, :ok ->
+      case protect_owned_file(owned_path) do
+        :ok -> {:cont, :ok}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp protect_owned_file(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :regular}} ->
+        with :ok <- chmod_store_file(path) do
+          Home.check_private(path)
+        end
+
+      {:ok, %{type: type}} ->
+        {:error, {:unsafe_store_file, path, type}}
+
+      {:error, :enoent} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, {:store_path_unavailable, path, reason}}
+    end
+  end
+
+  defp chmod_store_file(path) do
+    case File.chmod(path, Home.file_mode()) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:store_file_permission_failed, path, reason}}
+    end
+  end
+
+  defp maybe_integrity_gate(conn, opts) do
+    if Keyword.get(opts, :integrity_on_open, false) do
+      with {:ok, [["ok"]]} <- query(conn, "PRAGMA integrity_check", []),
+           :ok <- verify_record_digests(conn),
+           :ok <- verify_jidoka_digests(conn) do
+        :ok
+      else
+        {:ok, rows} -> {:error, {:sqlite_integrity_failed, rows}}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp checkpoint_wal(conn, path) do
+    initial_bytes = file_size(path <> "-wal")
+
+    if initial_bytes >= @wal_soft_bytes do
+      with {:ok, [[busy, log_pages, checkpointed_pages]]} <- query(conn, "PRAGMA wal_checkpoint(TRUNCATE)", []) do
+        bytes = file_size(path <> "-wal")
+        checkpoint = checkpoint_state(busy, bytes)
+
+        {:ok,
+         %{
+           bytes: bytes,
+           checkpoint: checkpoint,
+           busy_readers: busy,
+           log_pages: log_pages,
+           checkpointed_pages: checkpointed_pages,
+           soft_limit_bytes: @wal_soft_bytes,
+           hard_limit_bytes: @wal_hard_bytes
+         }}
+      end
+    else
+      {:ok,
+       %{
+         bytes: initial_bytes,
+         checkpoint: :ready,
+         busy_readers: 0,
+         log_pages: 0,
+         checkpointed_pages: 0,
+         soft_limit_bytes: @wal_soft_bytes,
+         hard_limit_bytes: @wal_hard_bytes
+       }}
+    end
+  end
+
+  defp checkpoint_state(0, _bytes), do: :ready
+  defp checkpoint_state(_busy, bytes) when bytes >= @wal_hard_bytes, do: :blocked
+  defp checkpoint_state(_busy, _bytes), do: :busy
+
+  defp file_size(path) do
+    case File.stat(path) do
+      {:ok, %{size: size}} -> size
+      {:error, :enoent} -> 0
+      {:error, _reason} -> @wal_hard_bytes
     end
   end
 
