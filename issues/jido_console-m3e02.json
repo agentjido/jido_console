@@ -26,11 +26,15 @@
     {
       "text": "Skipped by roadmap 1.3.5. No implementation PR. M3-E06 now owns the minimum direct Exqlite package, pragma, commit, reopen, crash, private-path, and integrity checks. M3-E17 uses SQLite VACUUM INTO under the writer barrier instead of requiring the unavailable adapter backup C API.",
       "timestamp": "2026-08-17T23:20:13Z"
+    },
+    {
+      "text": "Ticket refinement: this closed record has delivery:none and no one-pr label. It is excluded from implementation, pull-request, readiness, and completion counts.",
+      "timestamp": "2026-08-18T05:18:24Z"
     }
   ],
   "priority": 1,
   "status": "closed",
   "title": "M3-E02: Qualify SQLite for the Local Store",
   "type": "epic",
-  "updated_at": "2026-08-18T05:18:23Z"
+  "updated_at": "2026-08-18T05:18:24Z"
 }
