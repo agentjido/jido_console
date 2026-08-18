@@ -11,9 +11,11 @@ defmodule Jido.Console.Application do
 
   @impl true
   def start(_type, _args) do
+    storage_options = Application.get_env(:jido_console, :storage_options, [])
+
     children = [
       {Jido.Console.Process.Supervisor, name: Jido.Console.Process.Supervisor},
-      {Jido.Console.Storage.Supervisor, name: Jido.Console.Storage.Supervisor},
+      {Jido.Console.Storage.Supervisor, Keyword.put(storage_options, :name, Jido.Console.Storage.Supervisor)},
       {Jido.Console.Session.Supervisor, name: Jido.Console.Session.Supervisor}
     ]
 
