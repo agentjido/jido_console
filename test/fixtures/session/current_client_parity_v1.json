@@ -21,7 +21,7 @@
     "permission_decided",
     "run_completed"
   ],
-  "expected_fingerprint": "sha256:755ef9cc2b9824fc83fc98dc5eb02ee230f8e183f5c9e2692edd39c0662ad276",
+  "expected_fingerprint": "sha256:1e2351935a2f8fd53fcc711e6dc3bf0220861854e989b30354eccc0cb3532c52",
   "automation": {
     "agent": "release/fixtures/offline/agent.yml",
     "scenario": "release/fixtures/offline/scenario.yml",

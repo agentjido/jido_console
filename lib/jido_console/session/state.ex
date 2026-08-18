@@ -18,6 +18,9 @@ defmodule Jido.Console.Session.State do
           sequence: non_neg_integer(),
           history: [map()],
           queues: %{steering: [map()], follow_up: [map()]},
+          pending_interactions: %{String.t() => map()},
+          permissions: %{String.t() => map()},
+          control_state: %{String.t() => map()},
           active_run: map() | nil
         }
 
@@ -35,6 +38,9 @@ defmodule Jido.Console.Session.State do
       sequence: 0,
       history: [],
       queues: %{steering: [], follow_up: []},
+      pending_interactions: %{},
+      permissions: %{},
+      control_state: %{},
       active_run: nil
     }
   end
@@ -59,6 +65,9 @@ defmodule Jido.Console.Session.State do
         "steering" => state.queues.steering,
         "follow_up" => state.queues.follow_up
       },
+      "pending_interactions" => state.pending_interactions,
+      "permissions" => state.permissions,
+      "control_state" => state.control_state,
       "active_run" => state.active_run
     }
   end

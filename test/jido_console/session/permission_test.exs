@@ -106,4 +106,31 @@ defmodule Jido.Console.Session.PermissionTest do
     assert empty.pending == %{}
     assert {:error, :stale_result} = Permission.expire(empty, "approval")
   end
+
+  test "expiry uses an injected wall clock" do
+    attrs = %{
+      id: "approval-clock",
+      principal: "user",
+      rule: "write",
+      control: "control",
+      effect: "effect",
+      session_id: "session",
+      generation: 1,
+      owner_instance_id: "owner-1",
+      run_id: "run",
+      request_id: "request",
+      scope: "workspace",
+      expires_at_ms: 500
+    }
+
+    assert {:ok, table, _request} = Permission.request(Permission.new(), attrs)
+    assert {:error, :permission_not_expired} = Permission.expire_due(table, attrs.id, fn -> 499 end)
+    assert {:ok, expired} = Permission.expire_due(table, attrs.id, fn -> 500 end)
+    assert expired.pending == %{}
+    assert {:error, :invalid_durable_clock} = Permission.expire_due(table, attrs.id, fn -> -1 end)
+    assert {:error, :stale_result} = Permission.expire_due(table, "missing", fn -> 500 end)
+
+    assert {:ok, no_expiry, _request} = Permission.request(Permission.new(), Map.delete(attrs, :expires_at_ms))
+    assert {:error, :expiry_not_configured} = Permission.expire_due(no_expiry, attrs.id, fn -> 500 end)
+  end
 end

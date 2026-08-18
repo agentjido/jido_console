@@ -204,6 +204,51 @@ defmodule Jido.Console.Session.Client.TUITest do
     assert receipt_id == receipt["id"]
   end
 
+  test "queued input restores and consumption commits before it returns" do
+    suffix = System.unique_integer([:positive])
+
+    opts = [
+      name: :"restart-queue-#{suffix}",
+      registry: :"restart-queue-reg-#{suffix}",
+      sessions: :"restart-queue-dyn-#{suffix}"
+    ]
+
+    {:ok, supervisor} = Supervisor.start_link(opts)
+    on_exit(fn -> if Process.alive?(supervisor), do: Process.exit(supervisor, :shutdown) end)
+    session = Identity.new!(:session)
+    attach_opts = [registry: opts[:registry], supervisor: opts[:sessions], client_id: "queue-client"]
+
+    assert {:ok, first} = TUI.attach(session.id, attach_opts)
+    assert {:ok, input} = Client.steer(first.handle, "change course", idempotency_key: "queue-add")
+    assert {:ok, server} = Registry.lookup(session.id, opts[:registry])
+    monitor = Process.monitor(server)
+    Process.exit(server, :kill)
+    assert_receive {:DOWN, ^monitor, :process, ^server, :killed}
+
+    assert {:ok, restarted} = TUI.attach(session.id, attach_opts)
+    assert {:ok, snapshot} = Client.snapshot(restarted.handle)
+    assert [%{"input_id" => input_id}] = snapshot["payload"]["state"]["queues"]["steering"]
+    assert input_id == input.identity.id
+    assert {:ok, replacement} = Registry.lookup(session.id, opts[:registry])
+
+    assert {:error, :not_attached} =
+             Server.consume_queued(replacement, "missing", :steering, input_id, "missing-client")
+
+    assert {:error, {:unknown_queue, :other}} =
+             Server.consume_queued(replacement, restarted.handle.client.id, :other, input_id, "bad-queue")
+
+    assert {:ok, %{item: %{"input_id" => ^input_id}, duplicate: false, receipt: receipt}} =
+             Server.consume_queued(replacement, restarted.handle.client.id, :steering, input_id, "queue-consume")
+
+    assert Server.state(replacement).queues.steering == []
+
+    assert {:ok, %{input_id: ^input_id, duplicate: true, receipt: ^receipt}} =
+             Server.consume_queued(replacement, restarted.handle.client.id, :steering, input_id, "queue-consume")
+
+    assert {:error, :queue_empty} =
+             Server.consume_queued(replacement, restarted.handle.client.id, :steering, input_id, "queue-empty")
+  end
+
   test "the TUI acknowledges only after a complete canonical batch applies" do
     suffix = System.unique_integer([:positive])
     opts = [name: :"batch-tui-#{suffix}", registry: :"batch-tui-reg-#{suffix}", sessions: :"batch-tui-dyn-#{suffix}"]

@@ -222,7 +222,7 @@
       "description": "Ordered semantic session events allocated by the session owner.",
       "required": ["sequence", "durability", "sensitivity", "origin", "trust", "identities"],
       "types": {
-        "input_admitted": {"locality": "shared", "fields": ["input_id", "client_id"]},
+        "input_admitted": {"locality": "shared", "fields": ["input_id", "client_id", "queue", "items"]},
         "input_started": {"locality": "shared", "fields": ["input_id", "run_id"]},
         "input_completed": {"locality": "shared", "fields": ["input_id", "run_id"]},
         "input_rejected": {"locality": "shared", "fields": ["input_id", "reason"]},
@@ -239,7 +239,7 @@
         "tool_started": {"locality": "shared", "fields": ["run_id", "step_id", "operation"]},
         "tool_completed": {"locality": "shared", "fields": ["run_id", "step_id", "content"]},
         "tool_failed": {"locality": "shared", "fields": ["run_id", "step_id", "reason"]},
-        "permission_requested": {"locality": "shared", "fields": ["approval_id", "principal", "scope"]},
+        "permission_requested": {"locality": "shared", "fields": ["approval_id", "principal", "scope", "effect", "expires_at_ms", "review"]},
         "permission_decided": {"locality": "shared", "fields": ["approval_id", "decision"]},
         "command_effected": {"locality": "shared", "fields": ["command_id", "effect"]},
         "queue_changed": {"locality": "shared", "fields": ["queue", "items"]},

@@ -12,6 +12,9 @@ defmodule Jido.Console.Session.Durable.SemanticSnapshotTest do
       | sequence: 7,
         history: [%{"id" => "event-secret-history"}],
         queues: %{steering: [%{"id" => "input-one"}], follow_up: []},
+        pending_interactions: %{"approval-one" => %{"status" => "pending"}},
+        permissions: %{"approval-one" => %{"status" => "pending"}},
+        control_state: %{"cancel-one" => %{"status" => "terminal"}},
         active_run: %{"run_id" => "run-one"}
     }
 
@@ -27,8 +30,20 @@ defmodule Jido.Console.Session.Durable.SemanticSnapshotTest do
     assert restored.session_id == state.session_id
     assert restored.sequence == state.sequence
     assert restored.queues == state.queues
+    assert restored.pending_interactions == state.pending_interactions
+    assert restored.permissions == state.permissions
+    assert restored.control_state == state.control_state
     assert restored.active_run == state.active_run
     assert restored.history == []
+
+    legacy_value =
+      update_in(encoded.value, ["state"], &Map.drop(&1, ~w(pending_interactions permissions control_state)))
+
+    assert {:ok, legacy} = SemanticSnapshot.encode(legacy_value)
+    assert {:ok, legacy_restored} = SemanticSnapshot.restore(legacy)
+    assert legacy_restored.pending_interactions == %{}
+    assert legacy_restored.permissions == %{}
+    assert legacy_restored.control_state == %{}
   end
 
   test "rejects changed digests, unknown fields, invalid reasons, and oversized state" do

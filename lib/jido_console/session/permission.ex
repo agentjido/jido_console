@@ -5,6 +5,8 @@ defmodule Jido.Console.Session.Permission do
 
   @decisions [:approved, :denied, :expired, :cancelled, :invalid]
 
+  alias Jido.Console.Session.DurableClock
+
   @type request :: map()
   @type t :: %{pending: %{String.t() => request()}}
 
@@ -63,6 +65,27 @@ defmodule Jido.Console.Session.Permission do
     case table.pending[id] do
       nil -> {:error, :stale_result}
       _request -> {:ok, %{table | pending: Map.delete(table.pending, id)}}
+    end
+  end
+
+  @doc "Expires one request only after its injected durable deadline."
+  @spec expire_due(t(), String.t(), DurableClock.clock()) :: {:ok, t()} | {:error, term()}
+  def expire_due(table, id, clock \\ DurableClock) do
+    case table.pending[id] do
+      nil ->
+        {:error, :stale_result}
+
+      %{expires_at_ms: expires_at} when is_integer(expires_at) ->
+        with {:ok, now} <- DurableClock.now_ms(clock),
+             true <- now >= expires_at do
+          {:ok, %{table | pending: Map.delete(table.pending, id)}}
+        else
+          false -> {:error, :permission_not_expired}
+          {:error, reason} -> {:error, reason}
+        end
+
+      _request ->
+        {:error, :expiry_not_configured}
     end
   end
 

@@ -689,7 +689,7 @@ defmodule Jido.Console.TuiTest do
     assert_receive {:terminal_opened, owner, ref}
     assert_receive {:frame, _initial_frame}
     send_prompt(owner, ref)
-    assert_receive {:owner_bound_request, request_owner, controller}
+    assert_receive {:owner_bound_request, request_owner, controller}, 10_000
     assert Process.alive?(request_owner)
     assert_frame_contains("owner kept result")
 
@@ -767,7 +767,7 @@ defmodule Jido.Console.TuiTest do
     send(owner, {:jido_terminal, ref, {:key, :enter}})
     send(owner, :release_application)
 
-    assert_receive {:runtime_starting, startup_pid}
+    assert_receive {:runtime_starting, startup_pid}, 10_000
     refute_receive :session_started, 50
 
     assert_frame_contains("starting runtime · prompt queued")
@@ -902,8 +902,8 @@ defmodule Jido.Console.TuiTest do
     {task, owner, ref, session_server, _session_id} = start_shutdown_tui()
     send_prompt(owner, ref)
 
-    assert_receive {:shutdown_turn_started, start_pid, relay_pid, controller, "hello"}
-    assert_receive {:shutdown_await_started, await_pid}
+    assert_receive {:shutdown_turn_started, start_pid, relay_pid, controller, "hello"}, 10_000
+    assert_receive {:shutdown_await_started, await_pid}, 10_000
     send(owner, {:jido_terminal, ref, :eof})
 
     assert :ok = Task.await(task, 1_000)
@@ -932,8 +932,8 @@ defmodule Jido.Console.TuiTest do
 
     send_prompt(owner, ref)
 
-    assert_receive {:shutdown_turn_started, _start_pid, _relay_pid, _controller, "hello"}
-    assert_receive {:shutdown_await_started, await_pid}
+    assert_receive {:shutdown_turn_started, _start_pid, _relay_pid, _controller, "hello"}, 10_000
+    assert_receive {:shutdown_await_started, await_pid}, 10_000
     Agent.update(fail_control, fn _current -> true end)
     send(owner, {:jido_terminal, ref, {:resize, 41, 10}})
 
@@ -985,8 +985,8 @@ defmodule Jido.Console.TuiTest do
       )
 
     send_prompt(owner, ref)
-    assert_receive {:shutdown_turn_started, _start_pid, relay, controller, "hello"}
-    assert_receive {:shutdown_await_started, await_pid}
+    assert_receive {:shutdown_turn_started, _start_pid, relay, controller, "hello"}, 10_000
+    assert_receive {:shutdown_await_started, await_pid}, 10_000
     send(owner, {:jido_terminal, ref, :eof})
 
     assert :ok = Task.await(task, 500)

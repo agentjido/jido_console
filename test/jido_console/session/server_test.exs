@@ -516,9 +516,18 @@ defmodule Jido.Console.Session.ServerTest do
     assert_receive {:await_waiting, await_worker}
     assert {:error, :session_cancel_timeout} = Server.cancel_request_wait(server, client.id, request, [], 0)
     assert_receive {:cancel_waiting, cancel_worker}
+
+    assert Enum.any?(Server.state(server).control_state, fn {_id, control} ->
+             control["control"] == "cancel" and control["status"] == "requested"
+           end)
+
     send(cancel_worker, :finish_cancel)
     send(await_worker, :finish_wait)
     assert :finished = Server.await_request(server, request, 1_000)
+
+    assert Enum.any?(Server.state(server).control_state, fn {_id, control} ->
+             control["control"] == "cancel" and control["status"] == "terminal"
+           end)
 
     no_cancel_spec = [
       start: fn _owner -> {:ok, %{request_id: "no-cancel"}} end,
@@ -539,6 +548,49 @@ defmodule Jido.Console.Session.ServerTest do
 
     send(no_cancel_worker, :finish_wait)
     assert :finished = Server.await_request(server, no_cancel_request, 1_000)
+  end
+
+  test "permission expiry commits from an injected clock and does not restore authority", %{
+    server: server,
+    session: session
+  } do
+    client = identity(:client, session)
+    assert {:ok, _snapshot} = attach_bounded(server, client)
+    test_pid = self()
+
+    spec = [
+      start: fn _owner -> {:ok, %{request_id: "expiring-request"}} end,
+      await: fn raw_request ->
+        RuntimeResult.pending_review("expiring-request", :runtime_session, raw_request, [
+          %{id: "expiring-review", expires_at_ms: 500}
+        ])
+      end,
+      respond_review: fn _decision, _pending, _review, _opts, _owner ->
+        send(test_pid, :expired_authority_used)
+        :unexpected
+      end
+    ]
+
+    assert {:ok, request} = Server.start_operation(server, client.id, spec)
+    assert %RuntimeResult{} = Server.await_request(server, request, 1_000)
+
+    assert {:error, :stale_result} =
+             Server.expire_permission(server, "missing-review", fn -> 500 end)
+
+    assert {:error, :invalid_durable_clock} =
+             Server.expire_permission(server, "expiring-review", String)
+
+    assert {:error, :permission_not_expired} =
+             Server.expire_permission(server, "expiring-review", fn -> 499 end)
+
+    assert {:ok, :expired} = Server.expire_permission(server, "expiring-review", fn -> 500 end)
+    assert {:ok, :expired} = Server.expire_permission(server, "expiring-review", fn -> 900 end)
+
+    assert {:error, :review_not_pending} =
+             Server.respond_review(server, client.id, :approve, request, %{id: "expiring-review"}, [])
+
+    refute_receive :expired_authority_used, 20
+    assert Server.state(server).permissions["expiring-review"]["decision"] == "expired"
   end
 
   defp attach_bounded(server, client) do
