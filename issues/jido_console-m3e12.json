@@ -20,9 +20,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Delivered by PR #20. Source commit f735a83 was squash-merged to milestone-3 as 331d120. Verification: mix test --cover passed with 808 tests and 90.1% coverage; mix precommit passed; mix docs passed with existing reference warnings; protocol generation is synchronized; CI passed 14 required checks across Elixir 1.18, 1.19, and 1.20. Exact CI failure seeds 747345 and 420291 each passed locally with 797 tests, one expected skip, and 11 exclusions.",
+      "timestamp": "2026-08-18T07:45:59Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E12: Persist Queues, Interactions, and Permissions",
   "type": "epic",
-  "updated_at": "2026-08-18T06:39:28Z"
+  "updated_at": "2026-08-18T07:45:59Z"
 }
