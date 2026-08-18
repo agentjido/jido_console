@@ -17,9 +17,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Audit refinement: require exact skip evidence for M3-E02, but do not require an E02 implementation commit, pull request, or proof artifact.",
+      "timestamp": "2026-08-18T05:18:24Z"
+    }
+  ],
   "priority": 1,
   "status": "open",
   "title": "M3-E37: Audit the v0.3 Source Milestone",
   "type": "epic",
-  "updated_at": "2026-08-18T05:18:23Z"
+  "updated_at": "2026-08-18T05:18:24Z"
 }
