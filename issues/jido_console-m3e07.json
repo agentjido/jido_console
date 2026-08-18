@@ -19,9 +19,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Completed in PR #15 and squash-merged to milestone-3 as 47ac9e3915ae4342b006f8e824922750a6d15a85. Evidence: focused storage and SQLite tests passed (23 tests); exact CI exclusion coverage passed at 90.2% with 744 passed, 1 skipped, and 11 excluded; mix precommit passed with no Credo, Dialyzer, documentation, format, compile, or xref defects; production escript and private 0600 database, WAL, SHM, lock, and journal paths were verified. CI run 32090403210 passed Elixir 1.18, 1.19, 1.20, Dialyzer, docs, quality, and summary jobs.",
+      "timestamp": "2026-08-18T02:10:21Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E07: Own the Durable Home and Bound Storage Writes",
   "type": "epic",
-  "updated_at": "2026-08-18T01:07:38Z"
+  "updated_at": "2026-08-18T02:10:21Z"
 }
