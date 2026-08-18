@@ -108,7 +108,8 @@ defmodule Jido.Console.Tui.WorkersTest do
 
     stopped = spawn(fn -> :ok end)
     stopped_ref = Process.monitor(stopped)
-    assert_receive {:DOWN, ^stopped_ref, :process, ^stopped, :normal}
+    assert_receive {:DOWN, ^stopped_ref, :process, ^stopped, stopped_reason}
+    assert stopped_reason in [:normal, :noproc]
     assert :ok = Workers.reap(stopped, 0)
 
     running = spawn(fn -> Process.sleep(:infinity) end)
@@ -122,7 +123,8 @@ defmodule Jido.Console.Tui.WorkersTest do
 
     stale_pid = spawn(fn -> :ok end)
     stale_monitor = Process.monitor(stale_pid)
-    assert_receive {:DOWN, ^stale_monitor, :process, ^stale_pid, :normal}
+    assert_receive {:DOWN, ^stale_monitor, :process, ^stale_pid, stale_reason}
+    assert stale_reason in [:normal, :noproc]
     stale_ref = make_ref()
     stale = %{stale_pid => %Workers.Worker{pid: stale_pid, ref: stale_ref, kind: :stale}}
     send(self(), {:DOWN, make_ref(), :process, stale_pid, :normal})

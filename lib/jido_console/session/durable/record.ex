@@ -2,7 +2,15 @@ defmodule Jido.Console.Session.Durable.Record do
   @moduledoc "Strict canonical Console record codec and digest-chain validation."
 
   alias Jido.Console.Digest
-  alias Jido.Console.Session.Durable.{CanonicalJSON, Catalog, CredentialProfile, TurnManifest, Value}
+
+  alias Jido.Console.Session.Durable.{
+    CanonicalJSON,
+    Catalog,
+    CredentialProfile,
+    EffectRecord,
+    TurnManifest,
+    Value
+  }
 
   @record_schema "jido.console.record"
   @record_schema_version 1
@@ -201,6 +209,12 @@ defmodule Jido.Console.Session.Durable.Record do
     do: CredentialProfile.validate(payload)
 
   defp validate_specialized_payload("turn_manifest", payload), do: TurnManifest.validate(payload)
+
+  defp validate_specialized_payload("effect_reservation", payload),
+    do: EffectRecord.validate_reservation(payload)
+
+  defp validate_specialized_payload("effect_resolution", payload),
+    do: EffectRecord.validate_resolution(payload)
 
   defp validate_specialized_payload(_record_type, _payload), do: :ok
 

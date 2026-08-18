@@ -524,12 +524,27 @@ defmodule Jido.Console.Session.Store.SQLite do
   def renew_session(session_id, lease_id, opts) when is_binary(session_id) and is_binary(lease_id),
     do: transition_call(opts, :renew, session_id, &Transitions.renew(&1, lease_id, opts))
 
+  defp append_fence_scope(%{
+         "record_type" => type,
+         "payload" => %{"session_id" => session_id}
+       })
+       when type in ["effect_reservation", "effect_resolution"],
+       do: session_id
+
+  defp append_fence_scope(record), do: record["scope_id"]
+
   @impl true
   def handle_call({:append, operation_id, fence, encoded}, _from, state) do
     result =
       with {:ok, value} <-
              transaction(state.conn, fn ->
-               with :ok <- verify_generation_fence(state.conn, encoded.record["scope_id"], fence, operation_id) do
+               with :ok <-
+                      verify_generation_fence(
+                        state.conn,
+                        append_fence_scope(encoded.record),
+                        fence,
+                        operation_id
+                      ) do
                  append_record(state.conn, operation_id, encoded)
                end
              end),
