@@ -3,7 +3,7 @@ defmodule Jido.Console.StorageTest do
 
   alias Jido.Console.Session.Durable.Record
   alias Jido.Console.Storage
-  alias Jido.Console.Storage.{Admission, HomeLock, Maintenance}
+  alias Jido.Console.Storage.{Admission, HomeLock, Maintenance, Quota}
 
   @digest "sha256:" <> String.duplicate("a", 64)
 
@@ -68,6 +68,7 @@ defmodule Jido.Console.StorageTest do
       name: unique(:supervisor),
       lock: unique(:lock),
       maintenance: unique(:maintenance),
+      quota: unique(:quota),
       admission: unique(:admission),
       writer: unique(:writer),
       jido_home: root
@@ -83,12 +84,14 @@ defmodule Jido.Console.StorageTest do
     assert [
              {Jido.Console.Session.Store.SQLite, writer, :worker, _},
              {Admission, admission, :worker, _},
+             {Quota, quota, :worker, _},
              {Maintenance, maintenance, :worker, _},
              {HomeLock, lock, :worker, _}
            ] = Supervisor.which_children(supervisor)
 
     assert writer == Process.whereis(names[:writer])
     assert admission == Process.whereis(names[:admission])
+    assert quota == Process.whereis(names[:quota])
     assert maintenance == Process.whereis(names[:maintenance])
     assert lock == Process.whereis(names[:lock])
 
@@ -363,7 +366,13 @@ defmodule Jido.Console.StorageTest do
 
   test "public writes reserve before the private writer mailbox and remain resolvable", %{names: names} do
     assert {:ok, supervisor} = Jido.Console.Storage.Supervisor.start_link(names)
-    opts = [admission: names[:admission], writer: names[:writer], operation_id: "append-zero"]
+
+    opts = [
+      quota: names[:quota],
+      admission: names[:admission],
+      writer: names[:writer],
+      operation_id: "append-zero"
+    ]
 
     assert {:ok, %{record_id: "record-0", sequence: 0}} = Storage.append(record(), opts)
 
@@ -385,7 +394,12 @@ defmodule Jido.Console.StorageTest do
 
     assert wal_bytes < 67_108_864
 
-    assert {:ok, %{admission: %{normal_operations: 0}, writer: :available}} = Storage.status(opts)
+    assert {:ok,
+            %{
+              admission: %{normal_operations: 0},
+              quota: %{reservations: 0},
+              writer: :available
+            }} = Storage.status(opts)
 
     directory = Path.join(names[:jido_home], "state/sessions/v1")
 
@@ -445,6 +459,7 @@ defmodule Jido.Console.StorageTest do
   end
 
   test "returns typed unavailable and timeout-unknown results without leaking admission", %{names: names} do
+    assert {:ok, _quota} = Quota.start_link(name: names[:quota], jido_home: names[:jido_home])
     assert {:ok, _admission} = Admission.start_link(name: names[:admission])
 
     assert {:error, :operation_id_required} =
@@ -453,12 +468,27 @@ defmodule Jido.Console.StorageTest do
     assert {:error, :storage_unavailable} =
              Storage.append(record(),
                admission: names[:admission],
+               quota: names[:quota],
                writer: names[:writer],
                operation_id: "unavailable"
              )
 
+    assert {:ok, %{reservations: 0}} = Quota.status(names[:quota])
+
+    missing_admission = unique(:missing_admission)
+
     assert {:error, :storage_unavailable} =
-             Storage.status(admission: names[:admission], writer: names[:writer])
+             Storage.append(record(),
+               admission: missing_admission,
+               quota: names[:quota],
+               writer: names[:writer],
+               operation_id: "admission-unavailable"
+             )
+
+    assert {:ok, %{reservations: 0}} = Quota.status(names[:quota])
+
+    assert {:error, :storage_unavailable} =
+             Storage.status(quota: names[:quota], admission: names[:admission], writer: names[:writer])
 
     assert {:error, :storage_unavailable} = Storage.range("missing", writer: names[:writer])
     assert {:error, :storage_unavailable} = Storage.inspect_store(writer: names[:writer])
@@ -468,10 +498,17 @@ defmodule Jido.Console.StorageTest do
     assert {:error, {:timeout_unknown, "slow-operation"}} =
              Storage.append(record(),
                admission: names[:admission],
+               quota: names[:quota],
                writer: names[:writer],
                operation_id: "slow-operation",
                deadline: 10
              )
+
+    assert {:ok, %{reservations: 1, reserved: %{active_database: database, wal: wal}}} =
+             Quota.status(names[:quota])
+
+    assert database > 0
+    assert wal > 0
 
     assert {:error, :storage_reader_timeout} =
              Storage.range("storage-fixture",
@@ -490,12 +527,14 @@ defmodule Jido.Console.StorageTest do
   end
 
   test "handles writer failure and writer death after admission", %{names: names} do
+    assert {:ok, _quota} = Quota.start_link(name: names[:quota], jido_home: names[:jido_home])
     assert {:ok, admission} = Admission.start_link(name: names[:admission])
     assert {:ok, failing} = FailingWriter.start_link(names[:writer])
 
     assert {:error, :injected_writer_failure} =
              Storage.append(record(),
                admission: admission,
+               quota: names[:quota],
                writer: names[:writer],
                operation_id: "failed-write"
              )
@@ -509,12 +548,14 @@ defmodule Jido.Console.StorageTest do
     assert {:error, :storage_unavailable} =
              Storage.append(record(),
                admission: names[:admission],
+               quota: names[:quota],
                writer: names[:writer],
                operation_id: "writer-died"
              )
   end
 
   test "maps writer exits to typed public results", %{names: names} do
+    assert {:ok, _quota} = Quota.start_link(name: names[:quota], jido_home: names[:jido_home])
     assert {:ok, admission} = Admission.start_link(name: names[:admission])
 
     for operation <- [:append, :range, :inspect, :status] do
@@ -526,6 +567,7 @@ defmodule Jido.Console.StorageTest do
           :append ->
             Storage.append(record(),
               admission: admission,
+              quota: names[:quota],
               writer: names[:writer],
               operation_id: "exit-write"
             )
@@ -537,7 +579,7 @@ defmodule Jido.Console.StorageTest do
             Storage.inspect_store(writer: names[:writer])
 
           :status ->
-            Storage.status(admission: admission, writer: names[:writer])
+            Storage.status(quota: names[:quota], admission: admission, writer: names[:writer])
         end
 
       assert {:error, :storage_unavailable} = result
@@ -550,6 +592,7 @@ defmodule Jido.Console.StorageTest do
     assert {:ok, %{record_id: "record-0", sequence: 0}} =
              Storage.append(record(),
                admission: admission,
+               quota: names[:quota],
                writer: names[:writer],
                operation_id: "checkpoint-exit"
              )

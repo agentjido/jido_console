@@ -17,6 +17,39 @@ It keeps 160 MiB for control work and stops normal admission at 864 MiB. All
 range reads require count and byte bounds. The file and its directories use
 private modes.
 
+The supervised quota owner measures every file below
+`JIDO_HOME/state/sessions/v1` by the larger of logical size and allocated
+blocks. Seven fixed budgets total 4 GiB: 1,024 MiB for the active database,
+384 MiB for WAL, 16 MiB for control files, 1,024 MiB for backups, 512 MiB for
+archives, 1,024 MiB for shared work, and 112 MiB for structural safety. Normal
+work stops at 3.5 GiB. Only the closed control-operation set can use the last
+512 MiB.
+
+| Quota class | Hard bytes |
+| --- | ---: |
+| Active database | 1,073,741,824 |
+| WAL | 402,653,184 |
+| Control files | 16,777,216 |
+| Verified backups | 1,073,741,824 |
+| Verified archives | 536,870,912 |
+| Shared staging, quarantine, repair, and temporary work | 1,073,741,824 |
+| Structural safety | 117,440,512 |
+
+The quota owner accepts control reservations only for cancellation, safe
+completion, checkpoint finalization, recovery, bounded audit-export metadata,
+confirmed session removal, confirmed whole-backup retirement, confirmed
+whole-quarantine retirement, and shutdown. A confirmed removal or retirement
+can add at most 1 MiB of database pages, 256 MiB of WAL, and 8 MiB of control
+files. It must start below 64 MiB of measured WAL.
+
+Each reservation has one operation identity and separate source and destination
+high-water values. The owner serializes concurrent reservations, includes
+measured free disk space, and writes a bounded private reservation journal
+before work starts. It reconciles committed, rolled-back, cleaned-up, expired,
+and restarted work against the current file tree while it keeps the same
+operation identity. Application temporary work is limited to 16 MiB per file
+and 64 MiB in total.
+
 Console records and authoritative Jidoka values use different tables. Each
 mutation commits its operation receipt in the same transaction. A caller can
 look up that receipt after an unknown timeout result. Store inspection checks
