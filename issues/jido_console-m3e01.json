@@ -4,7 +4,6 @@
     "jido_console-m2e37"
   ],
   "blocks": [
-    "jido_console-m3e02",
     "jido_console-m3e03",
     "jido_console-m3e04"
   ],
@@ -33,5 +32,5 @@
   "status": "closed",
   "title": "M3-E01: Freeze the Durable Continuity Contract",
   "type": "epic",
-  "updated_at": "2026-08-17T19:43:15Z"
+  "updated_at": "2026-08-18T05:17:44Z"
 }

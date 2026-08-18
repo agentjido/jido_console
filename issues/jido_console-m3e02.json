@@ -1,8 +1,6 @@
 {
   "assignee": "Mike Hostetler",
-  "blocked_by": [
-    "jido_console-m3e01"
-  ],
+  "blocked_by": [],
   "blocks": [],
   "closed_at": "2026-08-17T23:20:14Z",
   "close_reason": "skipped",
@@ -34,5 +32,5 @@
   "status": "closed",
   "title": "M3-E02: Qualify SQLite for the Local Store",
   "type": "epic",
-  "updated_at": "2026-08-17T23:21:04Z"
+  "updated_at": "2026-08-18T05:17:44Z"
 }
