@@ -24,9 +24,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Completed in PR #22. Source commit: 34fc91b. milestone-3 integration commit: cbdd669c384dadaf113f01de090aabb9eafd2a98. Verified 836 tests passed with 1 expected skip and 90.2% coverage; precommit, docs, Dialyzer, and supported Elixir 1.18/1.19/1.20 CI passed. Evidence covers restart-safe manifests, workspace drift, exact credential compatibility, bounded context equivalence, portable audit tamper detection, and canary/forbidden-value rejection.",
+      "timestamp": "2026-08-18T09:02:13Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E14: Persist Turn Manifests and Audit-Safe Context",
   "type": "epic",
-  "updated_at": "2026-08-18T08:31:53Z"
+  "updated_at": "2026-08-18T09:02:13Z"
 }
