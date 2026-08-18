@@ -25,9 +25,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Implemented in source commit 6701277 and squash-merged by PR #16 as milestone-3 commit 224c003. Added exact seven-budget state-tree accounting, pre-writer database/WAL/tree/disk/temp reservations, a private crash-safe operation journal, closed bounded maintenance controls, and typed capacity results. Verification: 38 focused tests passed; full suite 776 passed and 1 skipped at 90.2% coverage; mix precommit passed; mix docs completed; CI run 32093263878 passed compile, Elixir 1.18/1.19/1.20 tests, audit, Credo, format, docs, unused dependencies, and Dialyzer.",
+      "timestamp": "2026-08-18T02:58:03Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E08: Add Early Store Quota Primitives",
   "type": "epic",
-  "updated_at": "2026-08-18T02:10:37Z"
+  "updated_at": "2026-08-18T02:58:03Z"
 }
