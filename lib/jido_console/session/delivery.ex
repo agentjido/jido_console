@@ -28,6 +28,8 @@ defmodule Jido.Console.Session.Delivery do
           session_id: String.t(),
           client_id: String.t(),
           attachment_id: String.t(),
+          generation: pos_integer(),
+          owner_instance_id: String.t(),
           queue: [map()],
           queued_bytes: non_neg_integer(),
           advisory_outstanding: boolean(),
@@ -53,12 +55,16 @@ defmodule Jido.Console.Session.Delivery do
     session_id = Keyword.fetch!(opts, :session_id)
     client_id = Keyword.fetch!(opts, :client_id)
     attachment_id = Keyword.fetch!(opts, :attachment_id)
+    generation = Keyword.fetch!(opts, :generation)
+    owner_instance_id = Keyword.fetch!(opts, :owner_instance_id)
 
     %{
       status: :open,
       session_id: session_id,
       client_id: client_id,
       attachment_id: attachment_id,
+      generation: generation,
+      owner_instance_id: owner_instance_id,
       queue: [],
       queued_bytes: 0,
       advisory_outstanding: false,
@@ -182,6 +188,8 @@ defmodule Jido.Console.Session.Delivery do
       "session_id" => state.session_id,
       "client_id" => state.client_id,
       "attachment_id" => state.attachment_id,
+      "generation" => state.generation,
+      "owner_instance_id" => state.owner_instance_id,
       "batch_id" => inflight.batch_id,
       "through_sequence" => inflight.through_sequence,
       "process_lifetime" => true
@@ -262,6 +270,8 @@ defmodule Jido.Console.Session.Delivery do
       "session_id" => state.session_id,
       "client_id" => state.client_id,
       "attachment_id" => state.attachment_id,
+      "generation" => state.generation,
+      "owner_instance_id" => state.owner_instance_id,
       "batch_id" => batch_id,
       "first_sequence" => first,
       "through_sequence" => through,
@@ -298,6 +308,8 @@ defmodule Jido.Console.Session.Delivery do
       "session_id" => state.session_id,
       "client_id" => state.client_id,
       "attachment_id" => state.attachment_id,
+      "generation" => state.generation,
+      "owner_instance_id" => state.owner_instance_id,
       "gap_id" => gap_id,
       "last_acknowledged_sequence" => state.last_acked,
       "current_owner_sequence" => max(current_sequence, state.last_acked),
@@ -387,6 +399,8 @@ defmodule Jido.Console.Session.Delivery do
       get(identity, :session_id) != state.session_id -> {:error, :delivery_identity_mismatch}
       get(identity, :client_id) != state.client_id -> {:error, :delivery_identity_mismatch}
       get(identity, :attachment_id) != state.attachment_id -> {:error, :delivery_identity_mismatch}
+      get(identity, :generation) != state.generation -> {:error, :stale_generation}
+      get(identity, :owner_instance_id) != state.owner_instance_id -> {:error, :stale_generation}
       true -> :ok
     end
   end
@@ -403,7 +417,15 @@ defmodule Jido.Console.Session.Delivery do
 
   defp token(state, purpose, parts) do
     data =
-      [purpose, state.session_id, state.client_id, state.attachment_id | Enum.map(parts, &to_string/1)]
+      [
+        purpose,
+        state.session_id,
+        state.generation,
+        state.owner_instance_id,
+        state.client_id,
+        state.attachment_id
+        | Enum.map(parts, &to_string/1)
+      ]
       |> Enum.join(<<0>>)
 
     digest = :crypto.mac(:hmac, :sha256, state.secret, data)

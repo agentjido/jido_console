@@ -6,7 +6,15 @@ defmodule Jido.Console.Tui.ActivityTest do
   alias Jido.Console.Tui.{Activity, Turn}
 
   test "projects and replaces every activity shape" do
-    request = %Request{id: "id", request_id: "request", run_id: "run", session_id: "session"}
+    request = %Request{
+      id: "id",
+      request_id: "request",
+      run_id: "run",
+      session_id: "session",
+      generation: 1,
+      owner_instance_id: "process"
+    }
+
     turn = %{Turn.new(1, "prompt") | assistant: "stream"}
     replacement = Turn.new(2, "replacement")
     result = Result.error("request", :session, :handle, :failed)

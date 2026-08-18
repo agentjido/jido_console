@@ -514,6 +514,9 @@ defmodule Jido.Console.Storage.Quota do
 
   defp decode_member(_value, _allowed), do: {:error, :invalid_quota_journal_member}
 
+  # The quota owner starts before Storage can intern this operation kind.
+  defp existing_atom("normal_write"), do: {:ok, :normal_write}
+
   defp existing_atom(value) when is_binary(value) do
     {:ok, String.to_existing_atom(value)}
   rescue

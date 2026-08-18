@@ -13,7 +13,9 @@ defmodule Jido.Console.Session.Request do
               id: Zoi.string(),
               request_id: Zoi.string(),
               run_id: Zoi.string(),
-              session_id: Zoi.string()
+              session_id: Zoi.string(),
+              generation: Zoi.integer() |> Zoi.positive(),
+              owner_instance_id: Zoi.string()
             },
             unrecognized_keys: :error
           )
@@ -25,6 +27,8 @@ defmodule Jido.Console.Session.Request do
           id: String.t(),
           request_id: String.t(),
           run_id: String.t(),
-          session_id: String.t()
+          session_id: String.t(),
+          generation: pos_integer(),
+          owner_instance_id: String.t()
         }
 end

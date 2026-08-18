@@ -237,7 +237,12 @@ defmodule Jido.Console.Session.Client do
   defp admit(handle, operation, text) when is_binary(text) do
     identity = Handle.identity(handle)
 
-    with {:ok, input} <- Input.admit(text, session_id: identity.session_id) do
+    with {:ok, input} <-
+           Input.admit(text,
+             session_id: identity.session_id,
+             generation: identity.generation,
+             owner_instance_id: identity.owner_instance_id
+           ) do
       input = Map.put(input, :client_id, identity.client_id)
       driver(handle).input(handle, operation, input)
     end

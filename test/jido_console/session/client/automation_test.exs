@@ -18,6 +18,17 @@ defmodule Jido.Console.Session.Client.AutomationTest do
     first_identity = Handle.identity(first)
     second_identity = Handle.identity(second)
 
+    assert Handle.session(first) == first.session
+    assert Handle.client(first) == first.client
+    assert Handle.attachment(first) == first.attachment
+    assert Handle.protocol(first) == first.protocol
+    assert Handle.capabilities(first) == first.capabilities
+    assert Handle.descriptor(first) == first.descriptor
+    assert Handle.private(first) == first.private
+    assert Handle.registry(first) == first.private.registry
+    assert Handle.catalog(first) == first.private.catalog
+    assert Handle.driver(first) == first.private.driver
+
     refute first_identity.attachment_id == second_identity.attachment_id
     refute first_identity.session_id == second_identity.session_id
   end

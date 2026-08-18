@@ -19,7 +19,11 @@ defmodule Jido.Console.Session.Input do
   @doc "Accepts input and assigns an identity before any wake-up is sent."
   @spec admit(String.t(), keyword()) :: {:ok, t()} | {:error, term()}
   def admit(text, opts) when is_binary(text) do
-    with {:ok, identity} <- Identity.new(:input, Keyword.take(opts, [:session_id, :id, :generation])) do
+    with {:ok, identity} <-
+           Identity.new(
+             :input,
+             Keyword.take(opts, [:session_id, :id, :generation, :owner_instance_id])
+           ) do
       {:ok, %{identity: identity, text: text, status: :accepted, wakeups: 0}}
     end
   end

@@ -497,7 +497,9 @@ defmodule Jido.Console.Tui.StateTest do
       id: "session-#{request_id}",
       request_id: request_id,
       run_id: "run-#{request_id}",
-      session_id: "session"
+      session_id: "session",
+      generation: 1,
+      owner_instance_id: "process"
     }
   end
 end

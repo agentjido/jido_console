@@ -186,33 +186,33 @@
       "types": {
         "output_batch": {
           "locality": "shared",
-          "required": ["client_id", "attachment_id", "batch_id", "first_sequence", "through_sequence", "acknowledgement_token", "events"],
-          "fields": ["client_id", "attachment_id", "batch_id", "first_sequence", "through_sequence", "acknowledgement_token", "events"]
+          "required": ["client_id", "attachment_id", "generation", "owner_instance_id", "batch_id", "first_sequence", "through_sequence", "acknowledgement_token", "events"],
+          "fields": ["client_id", "attachment_id", "generation", "owner_instance_id", "batch_id", "first_sequence", "through_sequence", "acknowledgement_token", "events"]
         },
         "gap": {
           "locality": "shared",
-          "required": ["client_id", "attachment_id", "gap_id", "last_acknowledged_sequence", "current_owner_sequence", "reason"],
-          "fields": ["client_id", "attachment_id", "gap_id", "last_acknowledged_sequence", "current_owner_sequence", "reason"]
+          "required": ["client_id", "attachment_id", "generation", "owner_instance_id", "gap_id", "last_acknowledged_sequence", "current_owner_sequence", "reason"],
+          "fields": ["client_id", "attachment_id", "generation", "owner_instance_id", "gap_id", "last_acknowledged_sequence", "current_owner_sequence", "reason"]
         },
         "attach_snapshot": {
           "locality": "shared",
-          "required": ["client_id", "attachment_id", "snapshot_sequence", "snapshot"],
-          "fields": ["client_id", "attachment_id", "snapshot_sequence", "snapshot"]
+          "required": ["client_id", "attachment_id", "generation", "owner_instance_id", "snapshot_sequence", "snapshot"],
+          "fields": ["client_id", "attachment_id", "generation", "owner_instance_id", "snapshot_sequence", "snapshot"]
         },
         "recovery_snapshot": {
           "locality": "shared",
-          "required": ["client_id", "attachment_id", "gap_id", "recovery_id", "snapshot_sequence", "recovery_token", "snapshot"],
-          "fields": ["client_id", "attachment_id", "gap_id", "recovery_id", "snapshot_sequence", "recovery_token", "snapshot"]
+          "required": ["client_id", "attachment_id", "generation", "owner_instance_id", "gap_id", "recovery_id", "snapshot_sequence", "recovery_token", "snapshot"],
+          "fields": ["client_id", "attachment_id", "generation", "owner_instance_id", "gap_id", "recovery_id", "snapshot_sequence", "recovery_token", "snapshot"]
         },
         "recovery_suffix": {
           "locality": "shared",
-          "required": ["client_id", "attachment_id", "gap_id", "recovery_id", "after_sequence", "through_sequence", "recovery_token", "completion_token", "events"],
-          "fields": ["client_id", "attachment_id", "gap_id", "recovery_id", "after_sequence", "through_sequence", "recovery_token", "completion_token", "events"]
+          "required": ["client_id", "attachment_id", "generation", "owner_instance_id", "gap_id", "recovery_id", "after_sequence", "through_sequence", "recovery_token", "completion_token", "events"],
+          "fields": ["client_id", "attachment_id", "generation", "owner_instance_id", "gap_id", "recovery_id", "after_sequence", "through_sequence", "recovery_token", "completion_token", "events"]
         },
         "recovery_receipt": {
           "locality": "shared",
-          "required": ["client_id", "attachment_id", "recovery_id", "through_sequence", "process_lifetime"],
-          "fields": ["client_id", "attachment_id", "recovery_id", "through_sequence", "process_lifetime"]
+          "required": ["client_id", "attachment_id", "generation", "owner_instance_id", "recovery_id", "through_sequence", "process_lifetime"],
+          "fields": ["client_id", "attachment_id", "generation", "owner_instance_id", "recovery_id", "through_sequence", "process_lifetime"]
         }
       }
     },

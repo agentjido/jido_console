@@ -14,6 +14,8 @@ defmodule Jido.Console.Storage do
   @public_deadline 1_000
   @sqlite_page_bytes 4_096
   @sqlite_write_overhead_pages 8
+  @generation_payload_bytes 1_024
+  @generation_high_water (@sqlite_write_overhead_pages + 1) * @sqlite_page_bytes
 
   @doc "Appends one record through the bounded normal write lane."
   @spec append(map(), keyword()) :: {:ok, map()} | {:error, term()}
@@ -29,6 +31,59 @@ defmodule Jido.Console.Storage do
            }) do
       append_admitted(record, encoded, high_water, operation_id, quota_token, opts)
     end
+  end
+
+  @doc "Returns the current durable session generation."
+  @spec generation(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def generation(session_id, opts \\ []) when is_binary(session_id) do
+    with :ok <- writer_available(opts) do
+      SQLite.generation(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end
+  catch
+    :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Claims one exact next durable session generation through the normal write lane."
+  @spec claim_generation(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def claim_generation(session_id, opts \\ []) when is_binary(session_id) do
+    with {:ok, operation_id} <- operation_id(opts),
+         :ok <- writer_available(opts) do
+      generation_mutation(:normal, :normal_write, operation_id, opts, fn ->
+        SQLite.claim_generation(writer(opts), session_id,
+          expected_generation: Keyword.get(opts, :expected_generation),
+          owner_instance_id: Keyword.get(opts, :owner_instance_id),
+          jidoka_lease_id: Keyword.get(opts, :jidoka_lease_id),
+          operation_id: operation_id,
+          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+        )
+      end)
+    end
+  end
+
+  @doc "Releases one exact durable session generation through the control lane."
+  @spec release_generation(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def release_generation(fence, opts \\ []) when is_map(fence) do
+    with {:ok, operation_id} <- operation_id(opts),
+         :ok <- writer_available(opts) do
+      generation_mutation(:control, :safe_completion, operation_id, opts, fn ->
+        SQLite.release_generation(writer(opts), fence,
+          operation_id: operation_id,
+          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+        )
+      end)
+    end
+  end
+
+  @doc "Returns immutable generation transitions for one session."
+  @spec generation_audit(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def generation_audit(session_id, opts \\ []) when is_binary(session_id) do
+    with :ok <- writer_available(opts) do
+      SQLite.generation_audit(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end
+  catch
+    :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
+    :exit, _reason -> {:error, :storage_unavailable}
   end
 
   @doc "Looks up one durable operation result."
@@ -126,6 +181,7 @@ defmodule Jido.Console.Storage do
       result =
         SQLite.append(writer(opts), record,
           operation_id: operation_id,
+          fence: Keyword.get(opts, :fence),
           call_timeout: Keyword.get(opts, :deadline, @public_deadline)
         )
 
@@ -164,5 +220,43 @@ defmodule Jido.Console.Storage do
     end
   catch
     :exit, _reason -> :ok
+  end
+
+  defp generation_mutation(lane, kind, operation_id, opts, fun) do
+    with {:ok, quota_token} <-
+           Quota.reserve(quota(opts), operation_id, kind, lane, %{
+             active_database: @generation_high_water,
+             wal: @generation_high_water
+           }) do
+      generation_admitted(lane, operation_id, quota_token, opts, fun)
+    end
+  end
+
+  defp generation_admitted(lane, operation_id, quota_token, opts, fun) do
+    case Admission.reserve(admission(opts), lane, @generation_payload_bytes,
+           page_bytes: @generation_high_water,
+           wal_bytes: @generation_high_water
+         ) do
+      {:ok, admission_token} ->
+        result = call_generation(fun, operation_id, admission_token, opts)
+        finish_quota(result, quota_token, operation_id, opts)
+
+      {:error, _reason} = error ->
+        _result = Quota.finish(quota(opts), quota_token, :rolled_back)
+        error
+    end
+  end
+
+  defp call_generation(fun, operation_id, admission_token, opts) do
+    try do
+      result = fun.()
+      refresh_wal(opts)
+      result
+    catch
+      :exit, {:timeout, _call} -> {:error, {:timeout_unknown, operation_id}}
+      :exit, _reason -> {:error, :storage_unavailable}
+    after
+      Admission.release(admission(opts), admission_token)
+    end
   end
 end

@@ -31,7 +31,9 @@ defmodule Jido.Console.Session.ProjectionTest do
       id: "req_console",
       request_id: "req_jidoka",
       run_id: "run_console",
-      session_id: session.id
+      session_id: session.id,
+      generation: session.generation,
+      owner_instance_id: session.owner_instance_id
     }
 
     event =

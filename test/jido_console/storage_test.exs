@@ -41,7 +41,7 @@ defmodule Jido.Console.StorageTest do
     def start(name), do: GenServer.start(__MODULE__, :ok, name: name)
     def init(:ok), do: {:ok, %{}}
 
-    def handle_call({:append, _operation_id, _encoded}, _from, state),
+    def handle_call({:append, _operation_id, _fence, _encoded}, _from, state),
       do: {:reply, {:ok, %{record_id: "record-0", sequence: 0}}, state}
 
     def handle_call(:checkpoint, _from, state), do: {:stop, :shutdown, state}
