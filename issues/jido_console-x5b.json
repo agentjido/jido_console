@@ -22,11 +22,15 @@
     {
       "text": "Passed readiness validation. Baseline: Console e7ee26e70c571c9af50ba9840d17f3524ba5e7e0, roadmap 1.3.4, Jidoka 29246d0a762fe1b17f4250e4f5c98c9f3f6d8419, payload 65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35. Verified 37 epic IDs, 37 parent relations, 110 direct blocker relations, DAG, owners, P1 priorities, effort labels, one-PR boundaries, and E01 as the only ready implementation epic. Evidence: milestone-3 commit 8241817, PR #10.",
       "timestamp": "2026-08-17T19:13:36Z"
+    },
+    {
+      "text": "Later roadmap refinement 1.3.5 changed M3-E02 to a skipped historical record. The milestone keeps 37 identifiers, but only 36 are implementation epics. E02 has no one-PR boundary and no dependency edge to ready work.",
+      "timestamp": "2026-08-18T05:18:24Z"
     }
   ],
   "priority": 1,
   "status": "closed",
   "title": "Validate the Milestone 3 durable-resume delivery graph",
   "type": "task",
-  "updated_at": "2026-08-17T19:13:36Z"
+  "updated_at": "2026-08-18T05:18:24Z"
 }
