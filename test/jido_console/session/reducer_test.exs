@@ -57,6 +57,36 @@ defmodule Jido.Console.Session.ReducerTest do
              Reducer.apply_event(state, Map.delete(classified(session, "run_completed", 2), "session_id"))
   end
 
+  test "replay restores pending permissions and terminal cancellation without authority" do
+    session = Identity.new!(:session)
+
+    events = [
+      classified(session, "permission_requested", 1, %{
+        "approval_id" => "approval-one",
+        "principal" => "user",
+        "scope" => "workspace",
+        "effect" => "file-write",
+        "expires_at_ms" => 1_000,
+        "review" => %{"request_id" => "review-one"}
+      }),
+      classified(session, "control_requested", 2, %{
+        "control_id" => "cancel-one",
+        "control" => "cancel"
+      }),
+      classified(session, "control_completed", 3, %{
+        "control_id" => "cancel-one",
+        "result" => "cancelled"
+      })
+    ]
+
+    assert {:ok, restored} = Reducer.replay(events, State.new(session))
+    assert restored.pending_interactions["approval-one"]["status"] == "pending"
+    assert restored.permissions["approval-one"]["effect"] == "file-write"
+    assert restored.control_state["cancel-one"]["status"] == "terminal"
+    assert restored.control_state["cancel-one"]["result"] == "cancelled"
+    refute Map.has_key?(restored, :runtime)
+  end
+
   test "raw events with missing, mixed, or foreign identities cannot enter history" do
     session = Identity.new!(:session)
     state = State.new(session)

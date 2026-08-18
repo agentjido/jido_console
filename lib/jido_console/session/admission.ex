@@ -8,7 +8,7 @@ defmodule Jido.Console.Session.Admission do
 
   @idempotency_key_bytes 128
   @admission_schema "1"
-  @operation_kinds ~w(send steer queue remove invoke start_turn)
+  @operation_kinds ~w(send steer queue remove consume_queued invoke start_turn)
 
   @type prepared :: %{
           receipt_id: String.t(),
@@ -172,7 +172,7 @@ defmodule Jido.Console.Session.Admission do
   def limits, do: %{idempotency_key_bytes: @idempotency_key_bytes, operation_kinds: @operation_kinds}
 
   defp receipt_record(kind, normalized, operation_id, key, _digest, target_id, principal_id)
-       when kind in ~w(remove invoke) do
+       when kind in ~w(remove consume_queued invoke) do
     command_id = normalized["command_id"] || kind
 
     {"command_receipt",

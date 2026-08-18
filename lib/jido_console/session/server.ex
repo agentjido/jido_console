@@ -15,6 +15,7 @@ defmodule Jido.Console.Session.Server do
   alias Jido.Console.Session.{
     Admission,
     Delivery,
+    DurableClock,
     DynamicSupervisor,
     Effect,
     Event,
@@ -119,6 +120,19 @@ defmodule Jido.Console.Session.Server do
   @doc "Returns the exact durable generation fence for this owner."
   @spec generation(name()) :: {:ok, Generation.t()} | {:error, term()}
   def generation(server), do: GenServer.call(server, :generation)
+
+  @doc "Consumes one exact queued input after its durable removal commits."
+  @spec consume_queued(name(), String.t(), atom(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def consume_queued(server, client_id, queue, input_id, idempotency_key) do
+    GenServer.call(server, {:consume_queued, client_id, queue, input_id, idempotency_key})
+  end
+
+  @doc "Expires one pending permission with an injected durable wall clock."
+  @spec expire_permission(name(), String.t(), DurableClock.clock()) :: {:ok, :expired} | {:error, term()}
+  def expire_permission(server, approval_id, clock \\ DurableClock) do
+    GenServer.call(server, {:expire_permission, approval_id, clock})
+  end
 
   @doc "Configures a runtime that will be owned by this session."
   @spec configure_runtime(name(), String.t(), module(), term(), keyword()) :: :ok | {:error, term()}
@@ -259,24 +273,33 @@ defmodule Jido.Console.Session.Server do
             owner_instance_id: fence.owner_instance_id
           )
 
-        {:ok,
-         %{
-           session: session,
-           fence: fence,
-           generation_options: generation_options(opts),
-           state: State.new(session),
-           clients: %{},
-           admissions: %{},
-           results: [],
-           inputs: [],
-           reserved: 0,
-           runtime: nil,
-           active: nil,
-           completed: %{},
-           completed_order: [],
-           tasks: %{},
-           task_supervisor: Keyword.get(opts, :tasks, Jido.Console.Session.TaskSupervisor)
-         }}
+        case History.rebuild(session_id, generation_options(opts)) do
+          {:ok, recovered} ->
+            semantic = recovered.state
+
+            {:ok,
+             %{
+               session: session,
+               fence: fence,
+               generation_options: generation_options(opts),
+               state: semantic,
+               clients: %{},
+               admissions: %{},
+               results: [],
+               inputs: [],
+               reserved: semantic.sequence,
+               runtime: nil,
+               active: nil,
+               completed: %{},
+               completed_order: [],
+               tasks: %{},
+               task_supervisor: Keyword.get(opts, :tasks, Jido.Console.Session.TaskSupervisor)
+             }}
+
+          {:error, reason} ->
+            _ = Generation.release(fence, generation_options(opts))
+            {:stop, reason}
+        end
 
       {:error, reason} ->
         {:stop, reason}
@@ -312,6 +335,20 @@ defmodule Jido.Console.Session.Server do
 
   def handle_call(:state, _from, state), do: {:reply, state.state, state}
   def handle_call(:generation, _from, state), do: {:reply, {:ok, state.fence}, state}
+
+  def handle_call({:consume_queued, client_id, queue, input_id, idempotency_key}, _from, state) do
+    case consume_durable_queue(state, client_id, queue, input_id, idempotency_key) do
+      {:ok, result, state} -> {:reply, {:ok, result}, state}
+      {:error, reason, state} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:expire_permission, approval_id, clock}, _from, state) do
+    case expire_durable_permission(state, approval_id, clock) do
+      {:ok, state} -> {:reply, {:ok, :expired}, state}
+      {:error, reason, state} -> {:reply, {:error, reason}, state}
+    end
+  end
 
   def handle_call({:client_operation, identity, operation}, from, state) do
     case fetch_exact_client(state, identity) do
@@ -419,35 +456,7 @@ defmodule Jido.Console.Session.Server do
         _from,
         state
       ) do
-    with :ok <- require_attached(state, client_id),
-         true <- decision in [:approve, :deny],
-         {:ok, active} <- matching_active(state, request),
-         pending when not is_nil(pending) <- active.pending_result,
-         respond when is_function(respond, 5) <- active.respond_review do
-      owner = active.relay
-
-      review = matching_pending_review(pending, review)
-
-      task =
-        start_task(state, fn ->
-          safe_call(fn -> respond.(decision, pending, review, opts, owner) end)
-        end)
-
-      tasks =
-        put_task(
-          state.tasks,
-          task,
-          {:review, request.id, decision, review_id(review)},
-          fence_token(state)
-        )
-
-      active = %{active | pending_result: nil}
-      {:reply, {:ok, :requested}, %{state | active: active, tasks: tasks}}
-    else
-      false -> {:reply, {:error, :invalid_review_decision}, state}
-      nil -> {:reply, {:error, :review_not_pending}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
+    respond_to_review(state, client_id, decision, request, review, opts)
   end
 
   def handle_call(:next_sequence, _from, state) do
@@ -725,13 +734,13 @@ defmodule Jido.Console.Session.Server do
   defp start_cancel(state, client_id, request, opts, waiter) do
     with :ok <- require_attached(state, client_id),
          {:ok, active} <- matching_active(state, request),
-         cancel when is_function(cancel, 2) <- active.cancel do
+         cancel when is_function(cancel, 2) <- active.cancel,
+         {:ok, state} <-
+           admit_owner_event_result(state, "control_requested", request, %{"control" => "cancel"}) do
       task = start_task(state, fn -> safe_call(fn -> cancel.(active.raw_request, opts) end) end)
 
       tasks =
         put_task(state.tasks, task, {:cancel, request.id, List.wrap(waiter)}, fence_token(state))
-
-      state = admit_control(state, "control_requested", request, "cancel")
 
       if waiter do
         {:noreply, %{state | tasks: tasks}}
@@ -895,11 +904,9 @@ defmodule Jido.Console.Session.Server do
       else: state
   end
 
-  defp complete_task(state, {:review, request_id, decision, approval_id}, outcome) do
+  defp complete_task(state, {:review, request_id, _decision, _approval_id}, outcome) do
     if active_request?(state, request_id) do
-      state
-      |> admit_permission_decision(decision, approval_id)
-      |> complete_runtime_result(unwrap_task(outcome))
+      complete_runtime_result(state, unwrap_task(outcome))
     else
       state
     end
@@ -1036,6 +1043,8 @@ defmodule Jido.Console.Session.Server do
       "approval_id" => review_id(review) || "approval_#{state.active.request.id}",
       "principal" => "user",
       "scope" => review_field(review, :operation) || "session",
+      "effect" => review_field(review, :operation) || "review",
+      "expires_at_ms" => review_field(review, :expires_at_ms),
       "review" => portable_record(review)
     }
 
@@ -1044,13 +1053,13 @@ defmodule Jido.Console.Session.Server do
 
   defp admit_pending_review(state, _result), do: state
 
-  defp admit_permission_decision(state, decision, approval_id) do
+  defp admit_permission_decision_result(state, decision, approval_id) do
     attrs = %{
       "approval_id" => approval_id || "approval_#{state.active.request.id}",
       "decision" => if(decision == :approve, do: "approved", else: "denied")
     }
 
-    admit_owner_event(state, "permission_decided", state.active.request, attrs)
+    admit_owner_event_result(state, "permission_decided", state.active.request, attrs)
   end
 
   defp matching_pending_review(
@@ -1257,6 +1266,13 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp admit_owner_event(state, type, request, extra) do
+    case admit_owner_event_result(state, type, request, extra) do
+      {:ok, state} -> state
+      {:error, _reason} -> state
+    end
+  end
+
+  defp admit_owner_event_result(state, type, request, extra) do
     sequence = state.state.sequence + 1
 
     attrs =
@@ -1283,15 +1299,8 @@ defmodule Jido.Console.Session.Server do
       |> Map.merge(owner_event_fields(type, request, extra))
 
     with {:ok, event} <- Event.classify(attrs),
-         {:ok, state} <- admit_event_state(state, event) do
-      state
-    else
-      _error -> state
-    end
+         do: admit_event_state(state, event)
   end
-
-  defp admit_control(state, type, request, control),
-    do: admit_owner_event(state, type, request, %{"control" => control})
 
   defp owner_event_fields("run_started", request, extra) do
     Map.merge(extra, %{"run_id" => request.run_id, "turn_id" => request.request_id})
@@ -1323,6 +1332,8 @@ defmodule Jido.Console.Session.Server do
       "approval_id" => extra["approval_id"],
       "principal" => extra["principal"],
       "scope" => extra["scope"],
+      "effect" => extra["effect"],
+      "expires_at_ms" => extra["expires_at_ms"],
       "review" => extra["review"]
     }
   end
@@ -1672,7 +1683,10 @@ defmodule Jido.Console.Session.Server do
          true <- decision in [:approve, :deny],
          {:ok, active} <- matching_active(state, request),
          pending when not is_nil(pending) <- active.pending_result,
-         respond when is_function(respond, 5) <- active.respond_review do
+         respond when is_function(respond, 5) <- active.respond_review,
+         approval_id = review_id(matching_pending_review(pending, review)),
+         :ok <- pending_permission(state, approval_id),
+         {:ok, state} <- admit_permission_decision_result(state, decision, approval_id) do
       owner = active.relay
 
       review = matching_pending_review(pending, review)
@@ -1697,6 +1711,12 @@ defmodule Jido.Console.Session.Server do
       nil -> {:reply, {:error, :review_not_pending}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
+  end
+
+  defp pending_permission(state, approval_id) do
+    if Map.has_key?(state.state.pending_interactions, approval_id),
+      do: :ok,
+      else: {:error, :review_not_pending}
   end
 
   defp execute_start_turn(state, client, prompt, opts) do
@@ -1861,9 +1881,10 @@ defmodule Jido.Console.Session.Server do
     queue = if operation == :steer, do: :steering, else: :follow_up
 
     payload = input_payload(input, client, operation)
-    fields = %{"input_id" => input.identity.id, "client_id" => client.identity.id}
+    item = input_queue_item(input, client)
 
     with :ok <- validate_client_input(state, client, input),
+         {:ok, queues} <- Queue.add(state.state.queues, queue, item),
          {:ok, admission, state} <-
            admit_durable_client_event(
              state,
@@ -1872,19 +1893,19 @@ defmodule Jido.Console.Session.Server do
              input.idempotency_key,
              payload,
              "input_admitted",
-             fields
+             %{
+               "input_id" => input.identity.id,
+               "client_id" => client.identity.id,
+               "queue" => Atom.to_string(queue),
+               "items" => queues[queue]
+             }
            ) do
       input = Map.put(input, :receipt, admission.receipt)
 
       if admission.duplicate do
         {:ok, input, state}
       else
-        item = input_queue_item(input, client)
-
-        with {:ok, queues} <- Queue.add(state.state.queues, queue, item),
-             {:ok, state} <- admit_queue_event(state, client, queue, queues[queue]) do
-          {:ok, input, %{state | inputs: bounded_append(state.inputs, input)}}
-        end
+        {:ok, input, %{state | inputs: bounded_append(state.inputs, input)}}
       end
     end
   end
@@ -1964,10 +1985,96 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp admit_queue_event(state, client, queue, items) do
-    admit_client_event(state, client, "queue_changed", %{
-      "queue" => Atom.to_string(queue),
-      "items" => items
+  defp consume_durable_queue(state, client_id, queue, input_id, idempotency_key) do
+    with {:ok, client} <- Map.fetch(state.clients, client_id),
+         true <- queue in [:steering, :follow_up],
+         payload = %{
+           "command_id" => "consume_queued",
+           "queue" => Atom.to_string(queue),
+           "input_id" => input_id
+         },
+         {:ok, prepared} <-
+           Admission.prepare(:consume_queued, payload,
+             session_id: state.session.id,
+             principal_id: client.identity.id,
+             idempotency_key: idempotency_key,
+             generation: state.session.generation,
+             sequence: state.state.sequence + 1
+           ) do
+      case existing_admission(prepared, state) do
+        {:ok, receipt} ->
+          {:ok, %{input_id: input_id, receipt: receipt, duplicate: true}, state}
+
+        :missing ->
+          with {:ok, item, queues} <- Queue.consume(state.state.queues, queue),
+               true <- (item["input_id"] || item[:input_id]) == input_id,
+               {:ok, admission, state} <-
+                 commit_prepared_client_event(state, client, prepared, "queue_changed", %{
+                   "queue" => Atom.to_string(queue),
+                   "items" => queues[queue]
+                 }) do
+            {:ok, %{item: item, receipt: admission.receipt, duplicate: false}, state}
+          else
+            false -> {:error, :queued_input_mismatch, state}
+            {:error, reason} -> {:error, reason, state}
+            {:error, reason, current} -> {:error, reason, current}
+          end
+
+        {:error, reason} ->
+          {:error, reason, state}
+      end
+    else
+      :error -> {:error, :not_attached, state}
+      false -> {:error, {:unknown_queue, queue}, state}
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  defp expire_durable_permission(state, approval_id, clock) do
+    case state.state.pending_interactions[approval_id] do
+      %{"expires_at_ms" => expires_at} = pending when is_integer(expires_at) ->
+        with {:ok, now} <- DurableClock.now_ms(clock),
+             true <- now >= expires_at,
+             {:ok, event} <- permission_expired_event(state, pending),
+             {:ok, state} <- admit_event_state(state, event) do
+          state =
+            if state.active,
+              do: %{state | active: %{state.active | pending_result: nil}},
+              else: state
+
+          {:ok, state}
+        else
+          false -> {:error, :permission_not_expired, state}
+          {:error, reason} -> {:error, reason, state}
+          {:error, reason, current} -> {:error, reason, current}
+        end
+
+      nil ->
+        case state.state.permissions[approval_id] do
+          %{"decision" => "expired"} -> {:ok, state}
+          _other -> {:error, :stale_result, state}
+        end
+
+      _pending ->
+        {:error, :expiry_not_configured, state}
+    end
+  end
+
+  defp permission_expired_event(state, pending) do
+    sequence = state.state.sequence + 1
+
+    Event.classify(%{
+      type: "permission_decided",
+      id: "plt_permission_expired_#{pending["approval_id"]}_#{sequence}",
+      session_id: state.session.id,
+      sequence: sequence,
+      approval_id: pending["approval_id"],
+      decision: "expired",
+      durability: "process",
+      sensitivity: "public",
+      origin: %{kind: "system", actor_id: state.session.id},
+      trust: %{evidence: "durable-clock", policy: "session-owner"},
+      identities: [Identity.to_protocol(state.session)]
     })
   end
 
@@ -2083,31 +2190,6 @@ defmodule Jido.Console.Session.Server do
       "client_id" => client.identity.id,
       "text" => input.text
     }
-  end
-
-  defp admit_client_event(state, client, type, fields) do
-    sequence = state.state.sequence + 1
-
-    attrs =
-      Map.merge(fields, %{
-        "type" => type,
-        "id" => "plt_client_#{client.identity.id}_#{sequence}",
-        "session_id" => state.session.id,
-        "sequence" => sequence,
-        "durability" => "process",
-        "sensitivity" => "public",
-        "origin" => %{"kind" => "client", "actor_id" => client.identity.id},
-        "trust" => %{"evidence" => "session-client", "policy" => "session-owner"},
-        "identities" => [
-          Identity.to_protocol(state.session),
-          Identity.to_protocol(client.identity),
-          Identity.to_protocol(client.attachment)
-        ]
-      })
-
-    with {:ok, event} <- Event.classify(attrs) do
-      admit_event_state(state, event)
-    end
   end
 
   defp input_queue_item(input, client) do

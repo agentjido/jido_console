@@ -19,7 +19,8 @@ defmodule Jido.Console.Session.Protocol.ValidatorTest do
     input_admitted = get_in(Generated.catalog(), ["families", "event", "types", "input_admitted"])
 
     assert input_admitted == %{
-             "known_fields" => ~w(client_id durability identities input_id origin sensitivity sequence trust),
+             "known_fields" =>
+               ~w(client_id durability identities input_id items origin queue sensitivity sequence trust),
              "locality" => "shared",
              "required_fields" => ~w(durability identities origin sensitivity sequence trust)
            }

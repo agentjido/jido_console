@@ -9,7 +9,8 @@ defmodule Jido.Console.Session.Durable.SemanticSnapshot do
   @version 1
   @max_bytes 1_048_576
   @fields ~w(schema version snapshot_id session_id generation source_sequence source_chain_digest reason state)
-  @state_fields ~w(session_id sequence queues active_run)
+  @state_fields_v1 ~w(session_id sequence queues active_run)
+  @state_fields @state_fields_v1 ++ ~w(pending_interactions permissions control_state)
   @reasons ~w(interval suffix_bytes terminal approval_wait hibernation fork archive manual)
 
   @type encoded :: %{
@@ -77,6 +78,9 @@ defmodule Jido.Console.Session.Durable.SemanticSnapshot do
         steering: get_in(state, ["queues", "steering"]),
         follow_up: get_in(state, ["queues", "follow_up"])
       },
+      pending_interactions: state["pending_interactions"] || %{},
+      permissions: state["permissions"] || %{},
+      control_state: state["control_state"] || %{},
       active_run: state["active_run"]
     }
 
@@ -97,6 +101,9 @@ defmodule Jido.Console.Session.Durable.SemanticSnapshot do
         "steering" => state.queues.steering,
         "follow_up" => state.queues.follow_up
       },
+      "pending_interactions" => Map.get(state, :pending_interactions, %{}),
+      "permissions" => Map.get(state, :permissions, %{}),
+      "control_state" => Map.get(state, :control_state, %{}),
       "active_run" => state.active_run
     }
   end
@@ -145,7 +152,8 @@ defmodule Jido.Console.Session.Durable.SemanticSnapshot do
     state = value["state"]
 
     cond do
-      not is_map(state) or Enum.sort(Map.keys(state)) != Enum.sort(@state_fields) ->
+      not is_map(state) or
+          Enum.sort(Map.keys(state)) not in [Enum.sort(@state_fields_v1), Enum.sort(@state_fields)] ->
         {:error, :invalid_semantic_snapshot_state}
 
       state["session_id"] != value["session_id"] or state["sequence"] != value["source_sequence"] ->

@@ -84,5 +84,52 @@ defmodule Jido.Console.Session.Reducer do
     %{state | queues: Map.put(state.queues, queue, items)}
   end
 
+  defp put_semantic(state, %{"type" => "input_admitted", "payload" => %{"queue" => queue} = payload}) do
+    queue = if queue == "steering", do: :steering, else: :follow_up
+    %{state | queues: Map.put(state.queues, queue, payload["items"] || [])}
+  end
+
+  defp put_semantic(state, %{"type" => "permission_requested", "payload" => payload}) do
+    id = payload["approval_id"]
+    request = Map.put(payload, "status", "pending")
+
+    %{
+      state
+      | pending_interactions: Map.put(state.pending_interactions, id, request),
+        permissions: Map.put(state.permissions, id, request)
+    }
+  end
+
+  defp put_semantic(state, %{"type" => "permission_decided", "payload" => payload}) do
+    id = payload["approval_id"]
+
+    permissions =
+      Map.update(state.permissions, id, Map.put(payload, "status", "decided"), fn request ->
+        request
+        |> Map.put("decision", payload["decision"])
+        |> Map.put("status", "decided")
+      end)
+
+    %{state | pending_interactions: Map.delete(state.pending_interactions, id), permissions: permissions}
+  end
+
+  defp put_semantic(state, %{"type" => "control_requested", "payload" => payload}) do
+    control = Map.put(payload, "status", "requested")
+    %{state | control_state: Map.put(state.control_state, payload["control_id"], control)}
+  end
+
+  defp put_semantic(state, %{"type" => "control_completed", "payload" => payload}) do
+    id = payload["control_id"]
+
+    controls =
+      Map.update(state.control_state, id, Map.put(payload, "status", "terminal"), fn control ->
+        control
+        |> Map.put("result", payload["result"])
+        |> Map.put("status", "terminal")
+      end)
+
+    %{state | control_state: controls}
+  end
+
   defp put_semantic(state, _event), do: state
 end
