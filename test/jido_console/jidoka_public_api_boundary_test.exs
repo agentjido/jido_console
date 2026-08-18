@@ -24,14 +24,33 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
       "Jidoka.Replay",
       "Jidoka.Review",
       "Jidoka.Runtime.Limits",
-      "Jidoka.Session.Data",
-      "Jidoka.Session.Environment",
-      "Jidoka.Session.Sequence",
-      "Jidoka.Session.Store",
-      "Jidoka.Snapshot",
       "Jidoka.Stream",
       "Jidoka.Turn"
     ]
+
+    @public_contract_modules [
+      "Jidoka.Session.Data",
+      "Jidoka.Session.Environment",
+      "Jidoka.Session.Lease",
+      "Jidoka.Session.Lineage",
+      "Jidoka.Session.Replay",
+      "Jidoka.Session.Sequence",
+      "Jidoka.Session.Sequence.Request",
+      "Jidoka.Session.Store",
+      "Jidoka.Session.Transitions",
+      "Jidoka.Snapshot"
+    ]
+
+    @transition_functions ~w(put claim resume recover checkpoint commit renew recoverable?)a
+    @private_store_helpers ~w(
+      put_transition
+      claim_transition
+      resume_transition
+      recover_transition
+      checkpoint_transition
+      commit_transition
+      renew_transition
+    )a
 
     @approved_support_prefixes [
       "Jidoka.Config",
@@ -85,6 +104,26 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
     end
 
     defp inspect_node(
+           {{:., meta, [{:__aliases__, _, [:Task]}, :shutdown]}, _, _} = node,
+           violations
+         ) do
+      {node, [violation(nil, meta[:line], "Task.shutdown/2 cannot own Jidoka requests") | violations]}
+    end
+
+    defp inspect_node(
+           {{:., meta, [{:__aliases__, _, parts}, function]}, _, _arguments} = node,
+           violations
+         )
+         when is_atom(function) do
+      module = jidoka_module(parts)
+
+      case function_violation(module, function) do
+        nil -> {node, violations}
+        reason -> {node, [violation(nil, meta[:line], reason) | violations]}
+      end
+    end
+
+    defp inspect_node(
            {:%, meta,
             [
               {:__aliases__, _, [:Jidoka, :Chat, :Request]},
@@ -101,13 +140,6 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
       else
         {node, violations}
       end
-    end
-
-    defp inspect_node(
-           {{:., meta, [{:__aliases__, _, [:Task]}, :shutdown]}, _, _} = node,
-           violations
-         ) do
-      {node, [violation(nil, meta[:line], "Task.shutdown/2 cannot own Jidoka requests") | violations]}
     end
 
     defp inspect_node(node, violations), do: {node, violations}
@@ -143,9 +175,19 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
 
     defp approved_module?(module) do
       module in @public_facades or
+        module in @public_contract_modules or
         Enum.any?(@public_contract_prefixes, &module_in_prefix?(module, &1)) or
         Enum.any?(@approved_support_prefixes, &module_in_prefix?(module, &1))
     end
+
+    defp function_violation("Jidoka.Session.Transitions", function)
+         when function not in @transition_functions,
+         do: "Jidoka.Session.Transitions function is not approved: #{function}"
+
+    defp function_violation("Jidoka.Session.Store", function) when function in @private_store_helpers,
+      do: "private Jidoka.Session.Store transition helper: #{function}"
+
+    defp function_violation(_module, _function), do: nil
 
     defp module_in_prefix?(module, prefix) do
       module == prefix or String.starts_with?(module, prefix <> ".")
@@ -210,6 +252,33 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
       BoundaryScanner.audit_source("alias Jidoka.Session.Execution")
 
     assert violation.reason =~ "forbidden Jidoka execution module"
+  end
+
+  test "rejects private durability modules and helper functions" do
+    violations =
+      BoundaryScanner.audit_source("""
+      defmodule PrivateDurabilityViolation do
+        def decode(value), do: Jidoka.Snapshot.Codec.deserialize(value)
+        def claim(session, request, opts), do: Jidoka.Session.Store.claim_transition(session, request, opts)
+        def unknown(session), do: Jidoka.Session.Transitions.undocumented(session)
+      end
+      """)
+
+    assert Enum.any?(violations, &String.contains?(&1.reason, "Jidoka.Snapshot.Codec"))
+    assert Enum.any?(violations, &String.contains?(&1.reason, "private Jidoka.Session.Store"))
+    assert Enum.any?(violations, &String.contains?(&1.reason, "function is not approved"))
+  end
+
+  test "production source has no undocumented durable checkpoint hook" do
+    matches =
+      "lib/jido_console/**/*.ex"
+      |> Path.wildcard()
+      |> Enum.filter(fn path ->
+        source = File.read!(path)
+        source =~ ":on_durable_checkpoint" or source =~ "on_durable_checkpoint:"
+      end)
+
+    assert matches == []
   end
 
   test "reports malformed source without crashing" do

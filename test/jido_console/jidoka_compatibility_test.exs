@@ -7,7 +7,7 @@ defmodule Jido.Console.JidokaCompatibilityTest do
   alias Jidoka.ExecutionEnvironment.RestrictedContract
   alias Jidoka.Policy.Decision
 
-  @jidoka_ref "29246d0a762fe1b17f4250e4f5c98c9f3f6d8419"
+  @jidoka_ref "caef68851df6812bf97c1ff2d815da610ab78c62"
 
   test "production uses the immutable pin and the compatibility gate uses its explicit checkout" do
     assert Identity.jidoka_ref() == @jidoka_ref
@@ -66,5 +66,17 @@ defmodule Jido.Console.JidokaCompatibilityTest do
     assert Enum.map(projected, & &1.request_id) == ["compat-1", "compat-1"]
     assert List.last(projected).terminal?
     assert {:ok, _} = Jason.encode(projected)
+  end
+
+  test "the immutable pin exposes the qualified durable contract" do
+    assert SessionJidoka.durable_contract() == %{
+             jidoka_ref: @jidoka_ref,
+             jidoka_version: "0.9.1",
+             session_schema_version: 3,
+             supported_session_schema_versions: [1, 2, 3],
+             snapshot_schema_version: 2,
+             supported_snapshot_schema_versions: [1, 2],
+             snapshot_serialization_prefix: "jidoka:snapshot:v1:"
+           }
   end
 end
