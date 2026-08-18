@@ -26,11 +26,15 @@
     {
       "text": "Accepted in PR #11: https://github.com/agentjido/jido_console/pull/11. Source commit b15e724; milestone integration commit 1b102d0. Verified: mix precommit passed; full suite 701 passed and 1 skipped; focused suite 30 passed; coverage 90.2%; docs and idempotent protocol generation passed; 23 of 23 frozen M2 digests matched; diff check passed. The local mix jido.check cross-repo stage used an unrelated old clean Jidoka sibling commit ea849f7 and failed for missing approved APIs. The approved pin 29246d0 contains the APIs, and all Console tests pass against it. Epic acceptance is complete with no storage, recovery, Jidoka, or client implementation.",
       "timestamp": "2026-08-17T19:43:14Z"
+    },
+    {
+      "text": "Graph refinement: removed the historical M3-E01 to M3-E02 dependency edge. M3-E02 stays closed with reason skipped and cannot block ready work.",
+      "timestamp": "2026-08-18T05:17:45Z"
     }
   ],
   "priority": 1,
   "status": "closed",
   "title": "M3-E01: Freeze the Durable Continuity Contract",
   "type": "epic",
-  "updated_at": "2026-08-18T05:17:44Z"
+  "updated_at": "2026-08-18T05:17:45Z"
 }
