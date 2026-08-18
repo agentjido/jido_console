@@ -21,9 +21,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Completed in PR https://github.com/agentjido/jido_console/pull/13. Source commit: 1fb7e15aa08cac808d22b5084aa5e0f1b99d867c. Immutable milestone-3 merge commit: 126114156a9a5394d372382a5bdde50be11c0f25. Verification: focused E05 and cross-repo tests 20 passed; full suite 733 passed and 1 skipped; mix precommit passed, including Dialyzer with zero errors and Doctor at 100 percent; exact pinned Jidoka checkout passed the cross-repo gate in both clean-checkout and locked-dependency modes; GitHub CI passed Elixir 1.18, 1.19, and 1.20 after one unrelated automation timeout rerun.",
+      "timestamp": "2026-08-18T00:28:39Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E05: Pin and Prove the Durable Jidoka Boundary",
   "type": "epic",
-  "updated_at": "2026-08-17T23:45:29Z"
+  "updated_at": "2026-08-18T00:28:39Z"
 }
