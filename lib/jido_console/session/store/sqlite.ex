@@ -13,8 +13,10 @@ defmodule Jido.Console.Session.Store.SQLite do
   @behaviour Jidoka.Session.Store
 
   alias Exqlite.Sqlite3
+  alias Jido.Console.Digest
   alias Jido.Console.Home
-  alias Jido.Console.Session.Durable.{Catalog, JidokaValue, Record}
+  alias Jido.Console.Session.Durable.{CanonicalJSON, Catalog, JidokaValue, Record, SemanticSnapshot}
+  alias Jido.Console.Session.Event
   alias Jidoka.Session.{Data, Transitions}
   alias Jidoka.Snapshot
   alias Jidoka.Turn
@@ -58,6 +60,15 @@ defmodule Jido.Console.Session.Store.SQLite do
     record_digest TEXT NOT NULL,
     PRIMARY KEY (scope_id, generation)
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS history_heads (
+    scope_id TEXT PRIMARY KEY,
+    generation INTEGER NOT NULL,
+    sequence INTEGER NOT NULL,
+    record_id TEXT NOT NULL,
+    chain_digest TEXT NOT NULL,
+    suffix_events INTEGER NOT NULL,
+    suffix_bytes INTEGER NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS records (
     record_id TEXT PRIMARY KEY,
     scope_id TEXT NOT NULL,
@@ -72,6 +83,41 @@ defmodule Jido.Console.Session.Store.SQLite do
   ) STRICT;
   CREATE INDEX IF NOT EXISTS records_scope_order
     ON records(scope_id, generation, sequence);
+  CREATE TABLE IF NOT EXISTS canonical_event_index (
+    event_id TEXT PRIMARY KEY,
+    scope_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    record_id TEXT NOT NULL UNIQUE,
+    event_digest TEXT NOT NULL,
+    UNIQUE (scope_id, sequence)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS canonical_event_scope_order
+    ON canonical_event_index(scope_id, sequence);
+  CREATE TRIGGER IF NOT EXISTS canonical_event_index_no_update
+    BEFORE UPDATE ON canonical_event_index BEGIN SELECT RAISE(ABORT, 'canonical event index is immutable'); END;
+  CREATE TRIGGER IF NOT EXISTS canonical_event_index_no_delete
+    BEFORE DELETE ON canonical_event_index BEGIN SELECT RAISE(ABORT, 'canonical event index is immutable'); END;
+  CREATE TRIGGER IF NOT EXISTS canonical_event_record_no_update
+    BEFORE UPDATE ON records WHEN OLD.record_type='canonical_console_event'
+    BEGIN SELECT RAISE(ABORT, 'canonical event record is immutable'); END;
+  CREATE TRIGGER IF NOT EXISTS canonical_event_record_no_delete
+    BEFORE DELETE ON records WHEN OLD.record_type='canonical_console_event'
+    BEGIN SELECT RAISE(ABORT, 'canonical event record is immutable'); END;
+  CREATE TABLE IF NOT EXISTS semantic_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    scope_id TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    source_sequence INTEGER NOT NULL,
+    source_chain_digest TEXT NOT NULL,
+    snapshot_digest TEXT NOT NULL,
+    encoded_bytes INTEGER NOT NULL,
+    snapshot BLOB NOT NULL,
+    reason TEXT NOT NULL,
+    referenced INTEGER NOT NULL DEFAULT 0 CHECK (referenced IN (0, 1)),
+    created_at_ms INTEGER NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS semantic_snapshots_scope_order
+    ON semantic_snapshots(scope_id, source_sequence DESC, created_at_ms DESC);
   CREATE TABLE IF NOT EXISTS snapshots (
     snapshot_id TEXT PRIMARY KEY,
     scope_id TEXT NOT NULL,
@@ -190,6 +236,46 @@ defmodule Jido.Console.Session.Store.SQLite do
     with {:ok, encoded} <- Record.encode(record),
          {:ok, operation_id} <- operation_id(opts) do
       call(server, {:append, operation_id, Keyword.get(opts, :fence), encoded}, opts)
+    end
+  end
+
+  @doc "Appends one canonical Console event and advances its session chain atomically."
+  @spec append_event(GenServer.server(), map(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def append_event(server, event, position, opts \\ [])
+      when is_map(event) and is_map(position) and is_list(opts) do
+    with {:ok, event} <- Event.validate(event),
+         :ok <- validate_event_state(event["session_id"], get_in(event, ["payload", "sequence"]), position),
+         {:ok, operation_id} <- operation_id(opts) do
+      call(server, {:append_event, operation_id, Keyword.get(opts, :fence), event, position}, opts)
+    end
+  end
+
+  @doc "Returns the durable canonical event head for one session."
+  @spec history_head(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def history_head(server, session_id, opts \\ []) when is_binary(session_id) do
+    call(server, {:history_head, session_id}, opts)
+  end
+
+  @doc "Stores one verified derived semantic snapshot and resets suffix counters."
+  @spec put_semantic_snapshot(GenServer.server(), SemanticSnapshot.encoded(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def put_semantic_snapshot(server, encoded, opts \\ []) when is_map(encoded) and is_list(opts) do
+    with {:ok, operation_id} <- operation_id(opts) do
+      call(server, {:put_semantic_snapshot, operation_id, Keyword.get(opts, :fence), encoded}, opts)
+    end
+  end
+
+  @doc "Returns at most the latest three retained semantic snapshot candidates."
+  @spec semantic_snapshots(GenServer.server(), String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def semantic_snapshots(server, session_id, opts \\ []) when is_binary(session_id) do
+    call(server, {:semantic_snapshots, session_id}, opts)
+  end
+
+  @doc "Returns one verified and bounded canonical event suffix."
+  @spec history_suffix(GenServer.server(), String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def history_suffix(server, session_id, opts \\ []) when is_binary(session_id) do
+    with {:ok, bounds} <- history_bounds(opts) do
+      call(server, {:history_suffix, session_id, bounds}, opts)
     end
   end
 
@@ -338,6 +424,52 @@ defmodule Jido.Console.Session.Store.SQLite do
       end
 
     {:reply, result, state}
+  end
+
+  def handle_call({:append_event, operation_id, fence, event, semantic}, _from, state) do
+    session_id = event["session_id"]
+
+    result =
+      with {:ok, value} <-
+             transaction(state.conn, fn ->
+               with :ok <- verify_generation_fence(state.conn, session_id, fence, operation_id) do
+                 append_event_conn(state.conn, operation_id, event, semantic)
+               end
+             end),
+           :ok <- protect_owned_files(state.path) do
+        {:ok, value}
+      end
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:history_head, session_id}, _from, state) do
+    {:reply, load_history_head(state.conn, session_id), state}
+  end
+
+  def handle_call({:put_semantic_snapshot, operation_id, fence, encoded}, _from, state) do
+    session_id = get_in(encoded, [:value, "session_id"])
+
+    result =
+      with {:ok, value} <-
+             transaction(state.conn, fn ->
+               with :ok <- verify_generation_fence(state.conn, session_id, fence, operation_id) do
+                 put_semantic_snapshot_conn(state.conn, operation_id, encoded)
+               end
+             end),
+           :ok <- protect_owned_files(state.path) do
+        {:ok, value}
+      end
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:semantic_snapshots, session_id}, _from, state) do
+    {:reply, read_semantic_snapshots(state.conn, session_id), state}
+  end
+
+  def handle_call({:history_suffix, session_id, bounds}, _from, state) do
+    {:reply, read_history_suffix(state.conn, session_id, bounds), state}
   end
 
   def handle_call({:range, scope_id, bounds}, _from, state) do
@@ -733,6 +865,374 @@ defmodule Jido.Console.Session.Store.SQLite do
       released_at_ms: released_at_ms
     }
   end
+
+  defp append_event_conn(conn, operation_id, event, semantic) do
+    session_id = event["session_id"]
+    event_id = event["id"]
+    sequence = get_in(event, ["payload", "sequence"])
+
+    with :ok <- validate_event_state(session_id, sequence, semantic),
+         {:ok, event_bytes} <- CanonicalJSON.encode(event),
+         event_digest = Digest.portable(event_bytes),
+         {:ok, duplicate} <- lookup_canonical_event(conn, event_id) do
+      append_or_return_event(conn, duplicate, event, event_digest, operation_id, session_id, sequence)
+    end
+  end
+
+  defp append_or_return_event(_conn, %{event_digest: digest} = existing, _event, digest, _operation, _session, _seq) do
+    {:ok, Map.put(existing, :duplicate, true)}
+  end
+
+  defp append_or_return_event(_conn, %{event_id: event_id}, _event, _digest, _operation, _session, _seq),
+    do: {:error, {:canonical_event_conflict, event_id}}
+
+  defp append_or_return_event(conn, nil, event, event_digest, operation_id, session_id, sequence) do
+    with {:ok, head} <- load_optional_history_head(conn, session_id),
+         :ok <- expect_history_sequence(session_id, head, sequence),
+         prior = if(head, do: head.chain_digest, else: "genesis"),
+         generation = event_generation(event),
+         {:ok, record} <- canonical_event_record(event, generation, sequence, prior),
+         {:ok, encoded} <- Record.encode(record),
+         :ok <- admit_normal_write(conn, encoded.encoded_bytes),
+         :ok <- admit_record_scope(conn, session_id, "canonical_console_event", encoded.encoded_bytes),
+         :ok <- insert_record(conn, encoded),
+         :ok <-
+           execute(
+             conn,
+             "INSERT INTO canonical_event_index(event_id,scope_id,sequence,record_id,event_digest) VALUES(?,?,?,?,?)",
+             [event["id"], session_id, sequence, record["record_id"], event_digest]
+           ),
+         suffix_events = if(head, do: head.suffix_events + 1, else: 1),
+         suffix_bytes = if(head, do: head.suffix_bytes + encoded.encoded_bytes, else: encoded.encoded_bytes),
+         :ok <-
+           put_history_head(
+             conn,
+             session_id,
+             generation,
+             sequence,
+             record["record_id"],
+             encoded.digest,
+             suffix_events,
+             suffix_bytes
+           ),
+         :ok <- put_receipt(conn, operation_id, "canonical_event", event["id"], encoded.digest) do
+      {:ok,
+       %{
+         event_id: event["id"],
+         record_id: record["record_id"],
+         sequence: sequence,
+         generation: generation,
+         chain_digest: encoded.digest,
+         encoded_bytes: encoded.encoded_bytes,
+         suffix_events: suffix_events,
+         suffix_bytes: suffix_bytes,
+         duplicate: false
+       }}
+    end
+  end
+
+  defp canonical_event_record(event, generation, sequence, prior) do
+    payload = event["payload"]
+
+    with {:ok, origin} <- CanonicalJSON.encode(payload["origin"]),
+         {:ok, trust} <- CanonicalJSON.encode(payload["trust"]) do
+      {:ok,
+       Record.new(
+         "canonical_console_event",
+         %{
+           "event_id" => event["id"],
+           "sequence" => sequence,
+           "event_class" => event["type"],
+           "origin" => origin,
+           "trust" => trust,
+           "sensitivity" => payload["sensitivity"],
+           "event" => event
+         },
+         record_id: event["id"],
+         scope_id: event["session_id"],
+         generation: generation,
+         sequence: sequence,
+         prior_record_digest: prior
+       )}
+    end
+  end
+
+  defp event_generation(event) do
+    event
+    |> get_in(["payload", "identities"])
+    |> List.wrap()
+    |> Enum.find_value(1, fn identity ->
+      if identity["kind"] == "session", do: identity["generation"] || 1
+    end)
+  end
+
+  defp validate_event_state(session_id, sequence, semantic) do
+    cond do
+      semantic.session_id != session_id -> {:error, :cross_session_history}
+      semantic.sequence != sequence -> {:error, :semantic_history_sequence_mismatch}
+      true -> :ok
+    end
+  end
+
+  defp lookup_canonical_event(conn, event_id) do
+    sql =
+      "SELECT i.scope_id,i.sequence,i.record_id,i.event_digest,r.digest,r.encoded_bytes,r.generation FROM canonical_event_index i JOIN records r ON r.record_id=i.record_id WHERE i.event_id=?"
+
+    case query(conn, sql, [event_id]) do
+      {:ok, [[scope, sequence, record_id, event_digest, chain_digest, bytes, generation]]} ->
+        {:ok,
+         %{
+           event_id: event_id,
+           session_id: scope,
+           sequence: sequence,
+           record_id: record_id,
+           event_digest: event_digest,
+           chain_digest: chain_digest,
+           encoded_bytes: bytes,
+           generation: generation
+         }}
+
+      {:ok, []} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp load_history_head(conn, session_id) do
+    case load_optional_history_head(conn, session_id) do
+      {:ok, nil} -> {:error, {:history_not_found, session_id}}
+      {:ok, head} -> {:ok, head}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp load_optional_history_head(conn, session_id) do
+    sql =
+      "SELECT generation,sequence,record_id,chain_digest,suffix_events,suffix_bytes FROM history_heads WHERE scope_id=?"
+
+    case query(conn, sql, [session_id]) do
+      {:ok, [[generation, sequence, record_id, digest, suffix_events, suffix_bytes]]} ->
+        {:ok,
+         %{
+           session_id: session_id,
+           generation: generation,
+           sequence: sequence,
+           record_id: record_id,
+           chain_digest: digest,
+           suffix_events: suffix_events,
+           suffix_bytes: suffix_bytes
+         }}
+
+      {:ok, []} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp expect_history_sequence(_session_id, nil, 1), do: :ok
+
+  defp expect_history_sequence(session_id, nil, sequence),
+    do: {:error, {:canonical_event_sequence_conflict, session_id, 1, sequence}}
+
+  defp expect_history_sequence(_session_id, %{sequence: prior}, sequence) when sequence == prior + 1,
+    do: :ok
+
+  defp expect_history_sequence(session_id, %{sequence: prior}, sequence),
+    do: {:error, {:canonical_event_sequence_conflict, session_id, prior + 1, sequence}}
+
+  defp insert_record(conn, encoded) do
+    record = encoded.record
+
+    execute(
+      conn,
+      "INSERT INTO records(record_id,scope_id,generation,sequence,record_type,prior_digest,digest,encoded_bytes,json) VALUES(?,?,?,?,?,?,?,?,?)",
+      [
+        record["record_id"],
+        record["scope_id"],
+        record["generation"],
+        record["sequence"],
+        record["record_type"],
+        record["prior_record_digest"],
+        encoded.digest,
+        encoded.encoded_bytes,
+        {:blob, encoded.bytes}
+      ]
+    )
+  end
+
+  defp put_history_head(conn, session_id, generation, sequence, record_id, digest, suffix_events, suffix_bytes) do
+    execute(
+      conn,
+      "INSERT INTO history_heads(scope_id,generation,sequence,record_id,chain_digest,suffix_events,suffix_bytes) VALUES(?,?,?,?,?,?,?) ON CONFLICT(scope_id) DO UPDATE SET generation=excluded.generation,sequence=excluded.sequence,record_id=excluded.record_id,chain_digest=excluded.chain_digest,suffix_events=excluded.suffix_events,suffix_bytes=excluded.suffix_bytes",
+      [session_id, generation, sequence, record_id, digest, suffix_events, suffix_bytes]
+    )
+  end
+
+  defp put_semantic_snapshot_conn(conn, operation_id, encoded) do
+    with {:ok, verified} <- SemanticSnapshot.decode(encoded.bytes, encoded.digest),
+         value = verified.value,
+         {:ok, head} <- load_history_head(conn, value["session_id"]),
+         :ok <- exact_snapshot_source(head, value),
+         {:ok, existing} <- lookup_semantic_snapshot(conn, value["snapshot_id"]) do
+      put_or_return_semantic_snapshot(conn, existing, verified, operation_id)
+    end
+  end
+
+  defp put_or_return_semantic_snapshot(_conn, %{digest: digest} = existing, %{digest: digest}, _operation),
+    do: {:ok, Map.put(existing, :duplicate, true)}
+
+  defp put_or_return_semantic_snapshot(_conn, %{snapshot_id: snapshot_id}, _encoded, _operation),
+    do: {:error, {:semantic_snapshot_conflict, snapshot_id}}
+
+  defp put_or_return_semantic_snapshot(conn, nil, encoded, operation_id) do
+    value = encoded.value
+
+    with :ok <- admit_normal_write(conn, encoded.encoded_bytes),
+         :ok <-
+           execute(
+             conn,
+             "INSERT INTO semantic_snapshots(snapshot_id,scope_id,generation,source_sequence,source_chain_digest,snapshot_digest,encoded_bytes,snapshot,reason,created_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?)",
+             [
+               value["snapshot_id"],
+               value["session_id"],
+               value["generation"],
+               value["source_sequence"],
+               value["source_chain_digest"],
+               encoded.digest,
+               encoded.encoded_bytes,
+               {:blob, encoded.bytes},
+               value["reason"],
+               now_ms()
+             ]
+           ),
+         :ok <-
+           execute(conn, "UPDATE history_heads SET suffix_events=0,suffix_bytes=0 WHERE scope_id=?", [
+             value["session_id"]
+           ]),
+         :ok <- retain_semantic_snapshots(conn, value["session_id"]),
+         :ok <- put_receipt(conn, operation_id, "semantic_snapshot", value["snapshot_id"], encoded.digest) do
+      {:ok,
+       %{
+         snapshot_id: value["snapshot_id"],
+         source_sequence: value["source_sequence"],
+         source_chain_digest: value["source_chain_digest"],
+         digest: encoded.digest,
+         encoded_bytes: encoded.encoded_bytes,
+         reason: value["reason"],
+         duplicate: false
+       }}
+    end
+  end
+
+  defp exact_snapshot_source(head, value) do
+    if head.sequence == value["source_sequence"] and head.chain_digest == value["source_chain_digest"] do
+      :ok
+    else
+      {:error, :semantic_snapshot_head_mismatch}
+    end
+  end
+
+  defp lookup_semantic_snapshot(conn, snapshot_id) do
+    sql =
+      "SELECT source_sequence,source_chain_digest,snapshot_digest,encoded_bytes,reason FROM semantic_snapshots WHERE snapshot_id=?"
+
+    case query(conn, sql, [snapshot_id]) do
+      {:ok, [[sequence, chain, digest, bytes, reason]]} ->
+        {:ok,
+         %{
+           snapshot_id: snapshot_id,
+           source_sequence: sequence,
+           source_chain_digest: chain,
+           digest: digest,
+           encoded_bytes: bytes,
+           reason: reason
+         }}
+
+      {:ok, []} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp retain_semantic_snapshots(conn, session_id) do
+    execute(
+      conn,
+      "DELETE FROM semantic_snapshots WHERE scope_id=? AND referenced=0 AND snapshot_id NOT IN (SELECT snapshot_id FROM semantic_snapshots WHERE scope_id=? ORDER BY source_sequence DESC,created_at_ms DESC LIMIT 3)",
+      [session_id, session_id]
+    )
+  end
+
+  defp read_semantic_snapshots(conn, session_id) do
+    sql =
+      "SELECT snapshot_id,generation,source_sequence,source_chain_digest,snapshot_digest,encoded_bytes,snapshot,reason FROM semantic_snapshots WHERE scope_id=? ORDER BY source_sequence DESC,created_at_ms DESC LIMIT 3"
+
+    with {:ok, rows} <- query(conn, sql, [session_id]) do
+      {:ok,
+       Enum.map(rows, fn [snapshot_id, generation, sequence, chain, digest, bytes, snapshot, reason] ->
+         %{
+           snapshot_id: snapshot_id,
+           session_id: session_id,
+           generation: generation,
+           source_sequence: sequence,
+           source_chain_digest: chain,
+           digest: digest,
+           encoded_bytes: bytes,
+           bytes: snapshot,
+           reason: reason
+         }
+       end)}
+    end
+  end
+
+  defp read_history_suffix(conn, session_id, bounds) do
+    sql =
+      "WITH candidates AS (SELECT i.event_id,i.event_digest,i.sequence,i.record_id,r.digest,r.prior_digest,r.encoded_bytes,SUM(r.encoded_bytes) OVER (ORDER BY i.sequence) AS cumulative_bytes FROM canonical_event_index i JOIN records r ON r.record_id=i.record_id WHERE i.scope_id=? AND i.sequence>? ORDER BY i.sequence LIMIT ?) SELECT r.json,c.digest,c.prior_digest,c.encoded_bytes,c.event_id,c.event_digest,c.sequence FROM candidates c JOIN records r ON r.record_id=c.record_id WHERE c.cumulative_bytes<=? ORDER BY c.sequence"
+
+    with {:ok, rows} <- query(conn, sql, [session_id, bounds.after, bounds.limit + 1, bounds.bytes]),
+         true <- length(rows) <= bounds.limit,
+         {:ok, records} <- decode_history_rows(rows, bounds.bytes, []) do
+      {:ok, records}
+    else
+      false -> {:error, :history_suffix_limit}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp decode_history_rows([], _remaining, records), do: {:ok, Enum.reverse(records)}
+
+  defp decode_history_rows([[bytes, digest, prior, size, event_id, event_digest, sequence] | rows], remaining, acc)
+       when size <= remaining do
+    with {:ok, encoded} <- Record.decode(bytes),
+         true <- encoded.digest == digest,
+         %{"record_type" => "canonical_console_event", "payload" => payload} <- encoded.record,
+         event when is_map(event) <- payload["event"],
+         true <- payload["event_id"] == event_id and payload["sequence"] == sequence,
+         {:ok, event_bytes} <- CanonicalJSON.encode(event),
+         true <- Digest.portable(event_bytes) == event_digest do
+      record = %{
+        event: event,
+        event_id: event_id,
+        sequence: sequence,
+        prior_digest: prior,
+        record_digest: digest,
+        encoded_bytes: size,
+        encoded: encoded
+      }
+
+      decode_history_rows(rows, remaining - size, [record | acc])
+    else
+      false -> {:error, :canonical_history_digest_mismatch}
+      _invalid -> {:error, :invalid_canonical_history_record}
+    end
+  end
+
+  defp decode_history_rows([_row | _rows], _remaining, _records), do: {:error, :history_suffix_limit}
 
   defp append_record(conn, operation_id, encoded) do
     record = encoded.record
@@ -1280,6 +1780,19 @@ defmodule Jido.Console.Session.Store.SQLite do
       {:ok, %{limit: limit, bytes: bytes, after: after_sequence}}
     else
       {:error, :invalid_query_bounds}
+    end
+  end
+
+  defp history_bounds(opts) do
+    limit = Keyword.get(opts, :limit, @max_limit)
+    bytes = Keyword.get(opts, :max_bytes, @default_bytes)
+    after_sequence = Keyword.get(opts, :after_sequence, 0)
+
+    if is_integer(limit) and limit > 0 and limit <= @max_limit and is_integer(bytes) and bytes > 0 and
+         bytes <= @default_bytes and is_integer(after_sequence) and after_sequence >= 0 do
+      {:ok, %{limit: limit, bytes: bytes, after: after_sequence}}
+    else
+      {:error, :invalid_history_bounds}
     end
   end
 

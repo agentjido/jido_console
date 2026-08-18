@@ -323,14 +323,25 @@ defmodule Jido.Console.TestSupport.CurrentClientParity do
   defp attach!(surface, fixture, extra_opts \\ []) do
     suffix = System.unique_integer([:positive, :monotonic])
     names = names("parity-#{surface}", suffix)
+    storage_opts = Keyword.put(names, :name, names[:storage])
+    {:ok, storage} = Jido.Console.Storage.Supervisor.start_link(storage_opts)
     {:ok, supervisor} = Supervisor.start_link(names)
 
     ExUnit.Callbacks.on_exit(fn ->
       if Process.alive?(supervisor), do: Process.exit(supervisor, :shutdown)
+      if Process.alive?(storage), do: Process.exit(storage, :shutdown)
     end)
 
     opts =
-      [registry: names[:registry], supervisor: names[:sessions], client_id: "parity-#{surface}-v1"] ++
+      [
+        registry: names[:registry],
+        supervisor: names[:sessions],
+        tasks: names[:tasks],
+        writer: names[:writer],
+        quota: names[:quota],
+        admission: names[:admission],
+        client_id: "parity-#{surface}-v1"
+      ] ++
         extra_opts
 
     case surface do
@@ -570,9 +581,16 @@ defmodule Jido.Console.TestSupport.CurrentClientParity do
   defp names(prefix, suffix) do
     [
       name: :"#{prefix}-sup-#{suffix}",
+      storage: :"#{prefix}-storage-#{suffix}",
       registry: :"#{prefix}-reg-#{suffix}",
       tasks: :"#{prefix}-tasks-#{suffix}",
-      sessions: :"#{prefix}-sessions-#{suffix}"
+      sessions: :"#{prefix}-sessions-#{suffix}",
+      lock: :"#{prefix}-lock-#{suffix}",
+      maintenance: :"#{prefix}-maintenance-#{suffix}",
+      quota: :"#{prefix}-quota-#{suffix}",
+      admission: :"#{prefix}-admission-#{suffix}",
+      writer: :"#{prefix}-writer-#{suffix}",
+      jido_home: Path.join(System.tmp_dir!(), "jido-console-#{System.pid()}-#{prefix}-#{suffix}")
     ]
   end
 

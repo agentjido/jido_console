@@ -7,7 +7,7 @@ defmodule Jido.Console.Storage do
   unknown result with the operation identity; it does not claim a rollback.
   """
 
-  alias Jido.Console.Session.Durable.Record
+  alias Jido.Console.Session.Durable.{Record, SemanticSnapshot}
   alias Jido.Console.Session.Store.SQLite
   alias Jido.Console.Storage.{Admission, Quota}
 
@@ -31,6 +31,92 @@ defmodule Jido.Console.Storage do
            }) do
       append_admitted(record, encoded, high_water, operation_id, quota_token, opts)
     end
+  end
+
+  @doc "Appends one canonical event through the bounded normal write lane."
+  @spec append_event(map(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def append_event(event, semantic, opts \\ []) when is_map(event) and is_map(semantic) do
+    with {:ok, operation_id} <- operation_id(opts),
+         :ok <- writer_available(opts),
+         {:ok, position} <- semantic_position(semantic) do
+      payload_bytes = :erlang.external_size({event, position}) + @sqlite_page_bytes
+
+      result =
+        normal_mutation(payload_bytes, payload_bytes, operation_id, opts, fn ->
+          SQLite.append_event(writer(opts), event, position,
+            operation_id: operation_id,
+            fence: Keyword.get(opts, :fence),
+            call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+          )
+        end)
+
+      retry_completed_operation(result, payload_bytes, operation_id, opts, fn ->
+        SQLite.append_event(writer(opts), event, position,
+          operation_id: operation_id,
+          fence: Keyword.get(opts, :fence),
+          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+        )
+      end)
+    end
+  end
+
+  @doc "Returns the durable canonical event head for one session."
+  @spec history_head(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def history_head(session_id, opts \\ []) when is_binary(session_id) do
+    bounded_read(opts, fn ->
+      SQLite.history_head(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end)
+  end
+
+  @doc "Stores one verified semantic snapshot through the bounded normal write lane."
+  @spec put_semantic_snapshot(SemanticSnapshot.encoded(), keyword()) :: {:ok, map()} | {:error, term()}
+  def put_semantic_snapshot(encoded, opts \\ []) when is_map(encoded) do
+    with {:ok, operation_id} <- operation_id(opts),
+         :ok <- writer_available(opts) do
+      result =
+        normal_mutation(
+          encoded.encoded_bytes,
+          encoded.encoded_bytes + SemanticSnapshot.max_bytes(),
+          operation_id,
+          opts,
+          fn ->
+            SQLite.put_semantic_snapshot(writer(opts), encoded,
+              operation_id: operation_id,
+              fence: Keyword.get(opts, :fence),
+              call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+            )
+          end
+        )
+
+      retry_completed_operation(result, encoded.encoded_bytes, operation_id, opts, fn ->
+        SQLite.put_semantic_snapshot(writer(opts), encoded,
+          operation_id: operation_id,
+          fence: Keyword.get(opts, :fence),
+          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+        )
+      end)
+    end
+  end
+
+  @doc "Returns the retained semantic snapshot candidates for one session."
+  @spec semantic_snapshots(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def semantic_snapshots(session_id, opts \\ []) when is_binary(session_id) do
+    bounded_read(opts, fn ->
+      SQLite.semantic_snapshots(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end)
+  end
+
+  @doc "Returns one bounded canonical event suffix for semantic rebuild."
+  @spec history_suffix(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def history_suffix(session_id, opts \\ []) when is_binary(session_id) do
+    bounded_read(opts, fn ->
+      SQLite.history_suffix(writer(opts), session_id,
+        after_sequence: Keyword.get(opts, :after_sequence, 0),
+        limit: Keyword.get(opts, :limit, 1_000),
+        max_bytes: Keyword.get(opts, :max_bytes, 8 * 1_024 * 1_024),
+        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+      )
+    end)
   end
 
   @doc "Returns the current durable session generation."
@@ -145,6 +231,12 @@ defmodule Jido.Console.Storage do
     end
   end
 
+  defp semantic_position(%{session_id: session_id, sequence: sequence})
+       when is_binary(session_id) and session_id != "" and is_integer(sequence) and sequence > 0,
+       do: {:ok, %{session_id: session_id, sequence: sequence}}
+
+  defp semantic_position(_semantic), do: {:error, :invalid_semantic_history_position}
+
   defp writer_available(opts) do
     case GenServer.whereis(writer(opts)) do
       pid when is_pid(pid) -> :ok
@@ -229,6 +321,76 @@ defmodule Jido.Console.Storage do
              wal: @generation_high_water
            }) do
       generation_admitted(lane, operation_id, quota_token, opts, fun)
+    end
+  end
+
+  defp normal_mutation(payload_bytes, storage_bytes, operation_id, opts, fun) do
+    high_water = write_high_water(storage_bytes)
+
+    with {:ok, quota_token} <-
+           Quota.reserve(quota(opts), operation_id, :normal_write, :normal, %{
+             active_database: high_water,
+             wal: high_water
+           }) do
+      normal_admitted(payload_bytes, high_water, operation_id, quota_token, opts, fun)
+    end
+  end
+
+  defp normal_admitted(payload_bytes, high_water, operation_id, quota_token, opts, fun) do
+    case Admission.reserve(admission(opts), :normal, payload_bytes,
+           page_bytes: high_water,
+           wal_bytes: high_water
+         ) do
+      {:ok, admission_token} ->
+        result = call_generation(fun, operation_id, admission_token, opts)
+        finish_quota(result, quota_token, operation_id, opts)
+
+      {:error, _reason} = error ->
+        _result = Quota.finish(quota(opts), quota_token, :rolled_back)
+        error
+    end
+  end
+
+  defp bounded_read(opts, fun) do
+    with :ok <- writer_available(opts), do: fun.()
+  catch
+    :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  defp retry_completed_operation(
+         {:error, {:quota_operation_exists, operation_id}},
+         payload_bytes,
+         operation_id,
+         opts,
+         fun
+       ) do
+    case Quota.operation(quota(opts), operation_id) do
+      {:ok, %{outcome: :committed}} ->
+        retry_committed_operation(payload_bytes, operation_id, opts, fun)
+
+      {:ok, %{outcome: :reserved}} ->
+        {:error, {:timeout_unknown, operation_id}}
+
+      {:ok, %{outcome: outcome}} ->
+        {:error, {:quota_operation_exists, operation_id, outcome}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp retry_completed_operation(result, _payload_bytes, _operation_id, _opts, _fun), do: result
+
+  defp retry_committed_operation(payload_bytes, operation_id, opts, fun) do
+    high_water = write_high_water(payload_bytes)
+
+    case Admission.reserve(admission(opts), :normal, payload_bytes,
+           page_bytes: high_water,
+           wal_bytes: high_water
+         ) do
+      {:ok, admission_token} -> call_generation(fun, operation_id, admission_token, opts)
+      {:error, _reason} = error -> error
     end
   end
 

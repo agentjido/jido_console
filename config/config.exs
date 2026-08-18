@@ -95,6 +95,17 @@ config :jido_console,
     }
   ]
 
+if config_env() == :test do
+  # Durable tests must not use or change the user's real Jido home.
+  test_jido_home =
+    Path.join(
+      System.tmp_dir!(),
+      "jido-console-test-#{System.pid()}-#{System.system_time(:microsecond)}"
+    )
+
+  config :jido_console, storage_options: [jido_home: test_jido_home]
+end
+
 if config_env() == :prod do
   # The escript cannot read archived dependency priv files as file-system paths.
   config :llm_db, compile_embed: true

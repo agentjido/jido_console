@@ -17,15 +17,16 @@ defmodule Jido.Console.Session.Server do
     DynamicSupervisor,
     Event,
     Generation,
+    History,
     Identity,
     Identity.Admission,
     Input,
     Projection,
+    Queue,
     Recovery,
     Reducer,
     Registry,
     Request,
-    Queue,
     State
   }
 
@@ -823,6 +824,7 @@ defmodule Jido.Console.Session.Server do
           respond_review: spec.respond_review,
           runtime?: spec.runtime?,
           waiters: [],
+          cancel_waiters: [],
           pending_result: nil,
           terminal_result: nil,
           terminal_timer: nil,
@@ -918,39 +920,53 @@ defmodule Jido.Console.Session.Server do
 
   defp complete_task(state, {:cancel, request_id, waiters}, outcome) do
     result = unwrap_task(outcome)
-    Enum.each(waiters, &GenServer.reply(&1, result))
 
-    if active_request?(state, request_id) do
-      active = state.active
+    state =
+      if active_request?(state, request_id) do
+        active = state.active
 
-      state =
-        admit_owner_event(state, "control_completed", active.request, %{
-          "control" => "cancel",
-          "result" => public_control_result(result)
-        })
+        state =
+          admit_owner_event(state, "control_completed", active.request, %{
+            "control" => "cancel",
+            "result" => public_control_result(result)
+          })
 
-      case {state.active.runtime?, result} do
-        {true, {:ok, %Jidoka.Cancellation{} = cancellation}} ->
-          cancelled =
-            RuntimeResult.cancelled(
-              active.request.request_id,
-              state.runtime.session,
-              active.raw_request,
-              cancellation,
-              raw: {:cancelled, cancellation}
-            )
+        case {state.active.runtime?, result} do
+          {true, {:ok, %Jidoka.Cancellation{} = cancellation}} ->
+            cancelled =
+              RuntimeResult.cancelled(
+                active.request.request_id,
+                state.runtime.session,
+                active.raw_request,
+                cancellation,
+                raw: {:cancelled, cancellation}
+              )
 
-          state
-          |> stop_await_task(request_id)
-          |> complete_runtime_result(cancelled)
+            state
+            |> stop_await_task(request_id)
+            |> complete_runtime_result(cancelled)
 
-        _other ->
-          state
+          _other ->
+            state
+        end
+      else
+        state
       end
+
+    if successful_cancel_still_active?(state, request_id, result) do
+      update_in(state.active.cancel_waiters, fn cancel_waiters ->
+        cancel_waiters ++ Enum.map(waiters, &{&1, result})
+      end)
     else
+      Enum.each(waiters, &GenServer.reply(&1, result))
       state
     end
   end
+
+  defp successful_cancel_still_active?(state, request_id, {:ok, %Jidoka.Cancellation{}}),
+    do: active_request?(state, request_id)
+
+  defp successful_cancel_still_active?(_state, _request_id, _result), do: false
 
   defp unwrap_task({:ok, result}), do: result
   defp unwrap_task({:error, _reason} = error), do: error
@@ -1201,6 +1217,7 @@ defmodule Jido.Console.Session.Server do
     cancel_terminal_timer(active)
     stop_generation_relay(active)
     Enum.each(active.waiters, &GenServer.reply(&1, result))
+    Enum.each(active.cancel_waiters, fn {waiter, reply} -> GenServer.reply(waiter, reply) end)
     put_completed(%{state | active: nil}, active.request.id, result)
   end
 
@@ -1331,11 +1348,18 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp admit_event_state(state, event) do
-    case Reducer.apply_event(state.state, event) do
-      {:ok, semantic} ->
-        clients = publish(state.clients, event, semantic)
-        {:ok, %{state | state: semantic, clients: clients, reserved: max(state.reserved, semantic.sequence)}}
+    with {:ok, semantic} <- Reducer.apply_event(state.state, event),
+         {:ok, _durable} <- History.append(event, semantic, state.fence, state.generation_options) do
+      clients = publish(state.clients, event, semantic)
 
+      {:ok,
+       %{
+         state
+         | state: semantic,
+           clients: clients,
+           reserved: max(state.reserved, semantic.sequence)
+       }}
+    else
       {:error, reason} ->
         {:error, reason, state}
     end
@@ -1569,6 +1593,7 @@ defmodule Jido.Console.Session.Server do
   defp execute_client_operation({:input, operation, value}, _from, state, client) do
     case apply_client_input(state, client, operation, value) do
       {:ok, result, state} -> {:reply, {:ok, result}, state}
+      {:error, reason, state} -> {:reply, {:error, reason}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
@@ -1701,12 +1726,13 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp admit_input_event(state, client, input) do
-    state = %{state | inputs: bounded_append(state.inputs, input)}
-
-    admit_client_event(state, client, "input_admitted", %{
-      "input_id" => input.identity.id,
-      "client_id" => client.identity.id
-    })
+    with {:ok, state} <-
+           admit_client_event(state, client, "input_admitted", %{
+             "input_id" => input.identity.id,
+             "client_id" => client.identity.id
+           }) do
+      {:ok, %{state | inputs: bounded_append(state.inputs, input)}}
+    end
   end
 
   defp admit_queue_event(state, client, queue, items) do

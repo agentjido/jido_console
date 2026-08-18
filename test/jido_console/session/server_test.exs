@@ -2,7 +2,7 @@ defmodule Jido.Console.Session.ServerTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Runtime.Result, as: RuntimeResult
-  alias Jido.Console.Session.{Identity, Server, Supervisor}
+  alias Jido.Console.Session.{History, Identity, Server, Supervisor}
 
   defmodule FakeRuntime do
     def start_session(agent, opts) do
@@ -170,6 +170,10 @@ defmodule Jido.Console.Session.ServerTest do
     assert attachment_id == attachment.id
     refute_receive {:jido_console_session, ^attachment_id, :output_ready}, 20
 
+    assert {:ok, durable_started} = History.rebuild(session.id)
+    assert durable_started.state.sequence == 1
+    assert Enum.map(durable_started.state.history, & &1["type"]) == ["run_started"]
+
     assert {:ok, batch} = output(server, session, client, attachment.id)
     assert batch["type"] == "output_batch"
     assert Enum.map(batch["payload"]["events"], & &1["type"]) == ["run_started"]
@@ -191,6 +195,10 @@ defmodule Jido.Console.Session.ServerTest do
 
     assert {:ok, terminal_batch} = output(server, session, client, attachment.id)
     assert Enum.map(terminal_batch["payload"]["events"], & &1["type"]) == ["run_completed"]
+
+    assert {:ok, durable_terminal} = History.rebuild(session.id)
+    assert durable_terminal.state.sequence == 2
+    assert durable_terminal.snapshot != nil
 
     assert_receive {:jido_console_session, ^attachment_id, :output_ready}, 200
     assert {:gap, gap} = output(server, session, client, attachment.id)
