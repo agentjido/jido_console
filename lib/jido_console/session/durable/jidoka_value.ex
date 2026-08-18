@@ -19,6 +19,12 @@ defmodule Jido.Console.Session.Durable.JidokaValue do
           value: Data.t()
         }
 
+  @doc "Validates one supported Jidoka value before a storage transaction starts."
+  @spec validate(term()) :: :ok | {:error, term()}
+  def validate(value) do
+    Value.validate(value, allow_struct: &portable_struct?/1, allow_local_fields: true)
+  end
+
   @doc "Encodes one Jidoka session value after structural admission checks."
   @spec encode(Data.t(), keyword()) :: {:ok, encoded()} | {:error, term()}
   def encode(session, opts \\ [])
@@ -26,7 +32,7 @@ defmodule Jido.Console.Session.Durable.JidokaValue do
   def encode(%Data{} = session, opts) do
     limit = Keyword.get_lazy(opts, :max_bytes, fn -> Catalog.limit("jidoka_value_bytes") |> elem(1) end)
 
-    with :ok <- Value.validate(session, allow_struct: &portable_struct?/1),
+    with :ok <- validate(session),
          {:ok, portable} <- portable(session),
          {:ok, value_bytes} <- CanonicalJSON.encode(portable),
          :ok <- within_limit(value_bytes, limit),

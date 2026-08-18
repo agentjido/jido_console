@@ -19,7 +19,7 @@ defmodule Jido.Console.MixProject do
         main_module: Jido.Console,
         name: "jido",
         app: nil,
-        include_priv_for: [:extractous_ex, :req_llm, :time_zone_info]
+        include_priv_for: [:exqlite, :extractous_ex, :req_llm, :time_zone_info]
       ],
       name: "Jido Console",
       description: @description,
@@ -118,6 +118,7 @@ defmodule Jido.Console.MixProject do
     [
       # Runtime dependencies
       {:dotenvy, "~> 1.1"},
+      {:exqlite, "== 0.39.0"},
       {:jason, "~> 1.4"},
       jidoka_dep(),
       {:req_llm, "~> 1.20.0"},

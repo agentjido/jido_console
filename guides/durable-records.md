@@ -1,7 +1,26 @@
 # Durable Records, Codecs, and Migrations
 
-This guide describes the version 1 durable data contract. It defines data and
-validation only. It does not open a file or database.
+This guide describes the version 1 durable data contract and its default local
+SQLite repository.
+
+## Default SQLite Repository
+
+`Jido.Console.Session.Store.SQLite` stores sessions in
+`JIDO_HOME/state/sessions/v1/console.sqlite3`. When `JIDO_HOME` is not set, the
+path starts at `~/.jido`. The repository uses Exqlite 0.39.0 directly under its
+MIT license. It does not use Ecto, a host `sqlite3` program, or a database
+service.
+
+The repository verifies WAL mode, `synchronous=FULL`, 4,096-byte pages, foreign
+keys, trusted-schema disablement, and its 1 GiB page ceiling each time it opens.
+It keeps 160 MiB for control work and stops normal admission at 864 MiB. All
+range reads require count and byte bounds. The file and its directories use
+private modes.
+
+Console records and authoritative Jidoka values use different tables. Each
+mutation commits its operation receipt in the same transaction. A caller can
+look up that receipt after an unknown timeout result. Store inspection checks
+SQLite integrity, metadata, pragmas, and every stored record digest.
 
 ## Console Records
 

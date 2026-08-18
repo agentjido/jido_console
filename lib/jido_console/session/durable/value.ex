@@ -71,7 +71,7 @@ defmodule Jido.Console.Session.Durable.Value do
         forbidden_field?(field, policy) ->
           {:halt, reject(item_path, :credential_field)}
 
-        MapSet.member?(local_fields, field) ->
+        MapSet.member?(local_fields, field) and not Keyword.get(opts, :allow_local_fields, false) ->
           {:halt, reject(item_path, :client_local_state)}
 
         field in @raw_client_fields ->
