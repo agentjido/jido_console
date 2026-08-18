@@ -41,6 +41,7 @@ defmodule Jido.Console.Session.Store.SQLite do
   @wal_hard_bytes 384 * 1_024 * 1_024
   @wal_autocheckpoint_pages div(@wal_soft_bytes, @page_size)
   @exqlite_license "MIT"
+  @admission_schema "1"
   @max_generation 9_223_372_036_854_775_807
 
   @schema """
@@ -173,6 +174,46 @@ defmodule Jido.Console.Session.Store.SQLite do
     result_digest TEXT NOT NULL,
     committed_at_ms INTEGER NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS admission_receipts (
+    receipt_id TEXT PRIMARY KEY,
+    operation_id TEXT NOT NULL UNIQUE,
+    scope_id TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    sequence INTEGER NOT NULL,
+    operation_kind TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    payload_digest TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    event_id TEXT NOT NULL UNIQUE,
+    admission_state TEXT NOT NULL CHECK (admission_state IN ('accepted', 'started', 'terminal')),
+    record_digest TEXT NOT NULL,
+    encoded_bytes INTEGER NOT NULL,
+    record BLOB NOT NULL,
+    committed_at_ms INTEGER NOT NULL,
+    UNIQUE (scope_id, operation_kind, principal_id, idempotency_key)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS admission_receipts_recovery
+    ON admission_receipts(scope_id, admission_state, sequence);
+  CREATE TRIGGER IF NOT EXISTS admission_receipts_no_update
+    BEFORE UPDATE ON admission_receipts BEGIN SELECT RAISE(ABORT, 'admission receipt is immutable'); END;
+  CREATE TRIGGER IF NOT EXISTS admission_receipts_no_delete
+    BEFORE DELETE ON admission_receipts BEGIN SELECT RAISE(ABORT, 'admission receipt is immutable'); END;
+  CREATE TABLE IF NOT EXISTS admission_transitions (
+    operation_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    transition_operation_id TEXT NOT NULL UNIQUE,
+    admission_state TEXT NOT NULL CHECK (admission_state IN ('accepted', 'started', 'terminal')),
+    committed_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (operation_id, ordinal),
+    FOREIGN KEY (operation_id) REFERENCES admission_receipts(operation_id)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS admission_transitions_latest
+    ON admission_transitions(operation_id, ordinal DESC);
+  CREATE TRIGGER IF NOT EXISTS admission_transitions_no_update
+    BEFORE UPDATE ON admission_transitions BEGIN SELECT RAISE(ABORT, 'admission transition is immutable'); END;
+  CREATE TRIGGER IF NOT EXISTS admission_transitions_no_delete
+    BEFORE DELETE ON admission_transitions BEGIN SELECT RAISE(ABORT, 'admission transition is immutable'); END;
   CREATE TABLE IF NOT EXISTS backups (
     backup_id TEXT PRIMARY KEY,
     state TEXT NOT NULL,
@@ -247,6 +288,67 @@ defmodule Jido.Console.Session.Store.SQLite do
          :ok <- validate_event_state(event["session_id"], get_in(event, ["payload", "sequence"]), position),
          {:ok, operation_id} <- operation_id(opts) do
       call(server, {:append_event, operation_id, Keyword.get(opts, :fence), event, position}, opts)
+    end
+  end
+
+  @doc "Atomically commits one durable admission receipt and canonical event."
+  @spec admit_operation(GenServer.server(), map(), map(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def admit_operation(server, prepared, event, position, opts \\ [])
+      when is_map(prepared) and is_map(event) and is_map(position) and is_list(opts) do
+    with {:ok, event} <- Event.validate(event),
+         :ok <- validate_event_state(event["session_id"], get_in(event, ["payload", "sequence"]), position),
+         {:ok, operation_id} <- operation_id(opts),
+         true <- operation_id == prepared.operation_id do
+      call(
+        server,
+        {:admit_operation, operation_id, Keyword.get(opts, :fence), prepared, event, position},
+        opts
+      )
+    else
+      false -> {:error, :admission_operation_identity_mismatch}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Returns one exact durable admission receipt."
+  @spec admission_receipt(GenServer.server(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def admission_receipt(server, operation_id, opts \\ []) when is_binary(operation_id) do
+    call(server, {:admission_receipt, operation_id}, opts)
+  end
+
+  @doc "Appends one idempotent admission lifecycle transition."
+  @spec transition_admission(GenServer.server(), String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def transition_admission(server, operation_id, state, opts \\ [])
+
+  def transition_admission(server, operation_id, state, opts)
+      when is_binary(operation_id) and state in ["started", "terminal"] do
+    with {:ok, transition_operation_id} <- operation_id(opts) do
+      call(
+        server,
+        {:transition_admission, transition_operation_id, Keyword.get(opts, :fence), operation_id, state},
+        opts
+      )
+    end
+  end
+
+  def transition_admission(_server, _operation_id, _state, _opts),
+    do: {:error, :invalid_admission_transition}
+
+  @doc "Returns bounded durable admissions for restart recovery."
+  @spec recover_admissions(GenServer.server(), String.t(), keyword()) ::
+          {:ok, [map()]} | {:error, term()}
+  def recover_admissions(server, session_id, opts \\ []) when is_binary(session_id) do
+    limit = Keyword.get(opts, :limit, 100)
+    states = Keyword.get(opts, :states, ["accepted", "started", "terminal"])
+
+    if is_integer(limit) and limit > 0 and limit <= 1_000 and is_list(states) and states != [] and
+         Enum.all?(states, &(&1 in ["accepted", "started", "terminal"])) do
+      call(server, {:recover_admissions, session_id, states, limit}, opts)
+    else
+      {:error, :invalid_admission_recovery_bounds}
     end
   end
 
@@ -443,6 +545,66 @@ defmodule Jido.Console.Session.Store.SQLite do
     {:reply, result, state}
   end
 
+  def handle_call(
+        {:admit_operation, operation_id, fence, prepared, event, semantic},
+        _from,
+        state
+      ) do
+    session_id = event["session_id"]
+
+    result =
+      with {:ok, value} <-
+             transaction(state.conn, fn ->
+               with :ok <- verify_generation_fence(state.conn, session_id, fence, operation_id) do
+                 admit_operation_conn(state.conn, prepared, event, semantic)
+               end
+             end),
+           :ok <- protect_owned_files(state.path) do
+        {:ok, value}
+      end
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:admission_receipt, operation_id}, _from, state) do
+    {:reply, load_admission_receipt(state.conn, operation_id), state}
+  end
+
+  def handle_call(
+        {:transition_admission, transition_operation_id, fence, operation_id, next_state},
+        _from,
+        state
+      ) do
+    result =
+      with {:ok, value} <-
+             transaction(state.conn, fn ->
+               with {:ok, receipt} <- load_admission_receipt(state.conn, operation_id),
+                    :ok <-
+                      verify_generation_fence(
+                        state.conn,
+                        receipt.session_id,
+                        fence,
+                        transition_operation_id
+                      ) do
+                 transition_admission_conn(
+                   state.conn,
+                   receipt,
+                   transition_operation_id,
+                   next_state
+                 )
+               end
+             end),
+           :ok <- protect_owned_files(state.path) do
+        {:ok, value}
+      end
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:recover_admissions, session_id, states, limit}, _from, state) do
+    {:reply, read_recoverable_admissions(state.conn, session_id, states, limit), state}
+  end
+
   def handle_call({:history_head, session_id}, _from, state) do
     {:reply, load_history_head(state.conn, session_id), state}
   end
@@ -573,6 +735,7 @@ defmodule Jido.Console.Session.Store.SQLite do
       with {:ok, [["ok"]]} <- query(state.conn, "PRAGMA integrity_check", []),
            :ok <- verify_pragmas(state.conn),
            :ok <- verify_record_digests(state.conn),
+           :ok <- verify_admission_receipts(state.conn),
            :ok <- verify_jidoka_digests(state.conn),
            {:ok, pages} <- page_accounting_conn(state.conn) do
         {:ok, %{path: state.path, store_format: @store_format, integrity: :ok, pages: pages}}
@@ -864,6 +1027,331 @@ defmodule Jido.Console.Session.Store.SQLite do
       claimed_at_ms: claimed_at_ms,
       released_at_ms: released_at_ms
     }
+  end
+
+  defp admit_operation_conn(conn, prepared, event, semantic) do
+    with {:ok, verified} <- verify_prepared_admission(prepared, event),
+         {:ok, existing} <- load_admission_by_key(conn, prepared) do
+      admit_or_return_operation(conn, existing, verified, prepared, event, semantic)
+    end
+  end
+
+  defp admit_or_return_operation(
+         _conn,
+         %{payload_digest: digest} = existing,
+         _verified,
+         %{payload_digest: digest},
+         _event,
+         _semantic
+       ) do
+    {:ok, Map.put(existing, :duplicate, true)}
+  end
+
+  defp admit_or_return_operation(
+         _conn,
+         %{receipt_id: receipt_id},
+         _verified,
+         _prepared,
+         _event,
+         _semantic
+       ),
+       do: {:error, {:idempotency_conflict, receipt_id}}
+
+  defp admit_or_return_operation(conn, nil, verified, prepared, event, semantic) do
+    with :ok <- admit_normal_write(conn, verified.encoded_bytes),
+         {:ok, event_result} <- append_event_conn(conn, prepared.operation_id, event, semantic),
+         :ok <- insert_admission_receipt(conn, prepared, event, verified),
+         :ok <- insert_admission_transition(conn, prepared.operation_id, 0, prepared.operation_id, "accepted"),
+         {:ok, receipt} <- load_admission_receipt(conn, prepared.operation_id) do
+      {:ok, receipt |> Map.put(:duplicate, false) |> Map.put(:event, event_result)}
+    end
+  end
+
+  defp verify_prepared_admission(prepared, event) do
+    with %{bytes: bytes, digest: digest} <- prepared.encoded,
+         {:ok, verified} <- Record.decode(bytes),
+         true <- verified.digest == digest,
+         record = verified.record,
+         payload = record["payload"],
+         true <- record["record_id"] == prepared.receipt_id,
+         true <- record["scope_id"] == event["session_id"],
+         true <- record["sequence"] == get_in(event, ["payload", "sequence"]),
+         true <- payload["operation_id"] == prepared.operation_id,
+         true <- payload["idempotency_key"] == prepared.idempotency_key,
+         true <- payload["principal_id"] == prepared.principal_id,
+         :ok <- verify_admission_record_payload(prepared, record) do
+      {:ok, verified}
+    else
+      false -> {:error, :invalid_admission_receipt}
+      {:error, reason} -> {:error, reason}
+      _other -> {:error, :invalid_admission_receipt}
+    end
+  end
+
+  defp verify_admission_record_payload(prepared, %{
+         "record_type" => "input_receipt",
+         "payload" => payload
+       }) do
+    if prepared.receipt_type == "input_receipt" and
+         payload["payload_digest"] == prepared.payload_digest and
+         payload["input_id"] == prepared.target_id and
+         payload["admission_state"] == "accepted" and valid_prepared_payload_digest?(prepared) do
+      :ok
+    else
+      {:error, :invalid_admission_receipt}
+    end
+  end
+
+  defp verify_admission_record_payload(prepared, %{
+         "record_type" => "command_receipt",
+         "payload" => payload
+       }) do
+    with true <- prepared.receipt_type == "command_receipt",
+         true <- payload["result_id"] == prepared.target_id,
+         true <- payload["effective_arguments"] == prepared.normalized_payload,
+         true <- valid_prepared_payload_digest?(prepared) do
+      :ok
+    else
+      _other -> {:error, :invalid_admission_receipt}
+    end
+  end
+
+  defp verify_admission_record_payload(_prepared, _record),
+    do: {:error, :invalid_admission_receipt}
+
+  defp valid_prepared_payload_digest?(prepared) do
+    value = %{
+      "schema" => @admission_schema,
+      "operation_kind" => prepared.operation_kind,
+      "principal_id" => prepared.principal_id,
+      "target_id" => prepared.target_id,
+      "payload" => prepared.normalized_payload
+    }
+
+    case CanonicalJSON.encode(value) do
+      {:ok, bytes} -> Digest.portable(bytes) == prepared.payload_digest
+      {:error, _reason} -> false
+    end
+  end
+
+  defp insert_admission_receipt(conn, prepared, event, verified) do
+    record = verified.record
+
+    execute(
+      conn,
+      "INSERT INTO admission_receipts(receipt_id,operation_id,scope_id,generation,sequence,operation_kind,principal_id,idempotency_key,payload_digest,target_id,event_id,admission_state,record_digest,encoded_bytes,record,committed_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      [
+        prepared.receipt_id,
+        prepared.operation_id,
+        record["scope_id"],
+        record["generation"],
+        record["sequence"],
+        prepared.operation_kind,
+        prepared.principal_id,
+        prepared.idempotency_key,
+        prepared.payload_digest,
+        prepared.target_id,
+        event["id"],
+        "accepted",
+        verified.digest,
+        verified.encoded_bytes,
+        {:blob, verified.bytes},
+        now_ms()
+      ]
+    )
+  end
+
+  defp load_admission_by_key(conn, prepared) do
+    sql =
+      "SELECT operation_id FROM admission_receipts WHERE scope_id=? AND operation_kind=? AND principal_id=? AND idempotency_key=?"
+
+    case query(conn, sql, [
+           prepared.encoded.record["scope_id"],
+           prepared.operation_kind,
+           prepared.principal_id,
+           prepared.idempotency_key
+         ]) do
+      {:ok, [[operation_id]]} -> load_admission_receipt(conn, operation_id)
+      {:ok, []} -> {:ok, nil}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp load_admission_receipt(conn, operation_id) do
+    sql =
+      "SELECT r.receipt_id,r.scope_id,r.generation,r.sequence,r.operation_kind,r.principal_id,r.idempotency_key,r.payload_digest,r.target_id,r.event_id,(SELECT t.admission_state FROM admission_transitions t WHERE t.operation_id=r.operation_id ORDER BY t.ordinal DESC LIMIT 1),r.record_digest,r.encoded_bytes,r.record,r.committed_at_ms FROM admission_receipts r WHERE r.operation_id=?"
+
+    case query(conn, sql, [operation_id]) do
+      {:ok, [row]} -> decode_admission_receipt(operation_id, row)
+      {:ok, []} -> {:error, {:admission_receipt_not_found, operation_id}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp read_recoverable_admissions(conn, session_id, states, limit) do
+    placeholders = Enum.map_join(states, ",", fn _state -> "?" end)
+
+    sql =
+      "SELECT r.operation_id,r.receipt_id,r.scope_id,r.generation,r.sequence,r.operation_kind,r.principal_id,r.idempotency_key,r.payload_digest,r.target_id,r.event_id,(SELECT t.admission_state FROM admission_transitions t WHERE t.operation_id=r.operation_id ORDER BY t.ordinal DESC LIMIT 1),r.record_digest,r.encoded_bytes,r.record,r.committed_at_ms FROM admission_receipts r WHERE r.scope_id=? AND (SELECT t.admission_state FROM admission_transitions t WHERE t.operation_id=r.operation_id ORDER BY t.ordinal DESC LIMIT 1) IN (#{placeholders}) ORDER BY r.sequence,r.operation_id LIMIT ?"
+
+    with {:ok, rows} <- query(conn, sql, [session_id | states] ++ [limit]) do
+      Enum.reduce_while(rows, {:ok, []}, fn [operation_id | row], {:ok, receipts} ->
+        case decode_admission_receipt(operation_id, row) do
+          {:ok, receipt} -> {:cont, {:ok, [receipt | receipts]}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+      |> case do
+        {:ok, receipts} -> {:ok, Enum.reverse(receipts)}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp transition_admission_conn(conn, receipt, transition_operation_id, next_state) do
+    with {:ok, existing} <- load_admission_transition(conn, transition_operation_id) do
+      transition_or_return_admission(conn, receipt, existing, transition_operation_id, next_state)
+    end
+  end
+
+  defp transition_or_return_admission(
+         _conn,
+         %{operation_id: operation_id} = receipt,
+         %{operation_id: operation_id, admission_state: state},
+         _transition_operation_id,
+         state
+       ),
+       do: {:ok, Map.put(receipt, :duplicate, true)}
+
+  defp transition_or_return_admission(
+         _conn,
+         %{operation_id: operation_id},
+         %{operation_id: existing_operation_id},
+         transition_operation_id,
+         _next_state
+       ),
+       do:
+         {:error,
+          {:admission_transition_operation_conflict, transition_operation_id, existing_operation_id, operation_id}}
+
+  defp transition_or_return_admission(
+         _conn,
+         %{admission_state: state} = receipt,
+         nil,
+         _transition_operation_id,
+         state
+       ),
+       do: {:ok, Map.put(receipt, :duplicate, true)}
+
+  defp transition_or_return_admission(conn, receipt, nil, transition_operation_id, next_state) do
+    with :ok <- valid_admission_transition(receipt.admission_state, next_state),
+         {:ok, ordinal} <- next_admission_ordinal(conn, receipt.operation_id),
+         :ok <-
+           insert_admission_transition(
+             conn,
+             receipt.operation_id,
+             ordinal,
+             transition_operation_id,
+             next_state
+           ),
+         {:ok, transitioned} <- load_admission_receipt(conn, receipt.operation_id) do
+      {:ok, Map.put(transitioned, :duplicate, false)}
+    end
+  end
+
+  defp load_admission_transition(conn, transition_operation_id) do
+    sql =
+      "SELECT operation_id,transition_operation_id,admission_state,ordinal,committed_at_ms FROM admission_transitions WHERE transition_operation_id=?"
+
+    case query(conn, sql, [transition_operation_id]) do
+      {:ok, [[operation_id, transition_id, state, ordinal, committed_at_ms]]} ->
+        {:ok,
+         %{
+           operation_id: operation_id,
+           transition_operation_id: transition_id,
+           admission_state: state,
+           ordinal: ordinal,
+           committed_at_ms: committed_at_ms
+         }}
+
+      {:ok, []} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp next_admission_ordinal(conn, operation_id) do
+    case query(conn, "SELECT COALESCE(MAX(ordinal),-1)+1 FROM admission_transitions WHERE operation_id=?", [
+           operation_id
+         ]) do
+      {:ok, [[ordinal]]} -> {:ok, ordinal}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp insert_admission_transition(conn, operation_id, ordinal, transition_operation_id, state) do
+    execute(
+      conn,
+      "INSERT INTO admission_transitions(operation_id,ordinal,transition_operation_id,admission_state,committed_at_ms) VALUES(?,?,?,?,?)",
+      [operation_id, ordinal, transition_operation_id, state, now_ms()]
+    )
+  end
+
+  defp valid_admission_transition("accepted", next_state) when next_state in ["started", "terminal"], do: :ok
+  defp valid_admission_transition("started", "terminal"), do: :ok
+
+  defp valid_admission_transition(current, next_state),
+    do: {:error, {:invalid_admission_transition, current, next_state}}
+
+  defp decode_admission_receipt(
+         operation_id,
+         [
+           receipt_id,
+           session_id,
+           generation,
+           sequence,
+           kind,
+           principal,
+           key,
+           payload_digest,
+           target_id,
+           event_id,
+           state,
+           record_digest,
+           encoded_bytes,
+           bytes,
+           committed_at_ms
+         ]
+       ) do
+    with {:ok, encoded} <- Record.decode(bytes),
+         true <- encoded.digest == record_digest,
+         true <- encoded.encoded_bytes == encoded_bytes,
+         true <- state in ["accepted", "started", "terminal"] do
+      {:ok,
+       %{
+         receipt_id: receipt_id,
+         operation_id: operation_id,
+         session_id: session_id,
+         generation: generation,
+         sequence: sequence,
+         operation_kind: kind,
+         principal_id: principal,
+         idempotency_key: key,
+         payload_digest: payload_digest,
+         target_id: target_id,
+         event_id: event_id,
+         admission_state: state,
+         record_digest: record_digest,
+         encoded_bytes: encoded_bytes,
+         record: encoded.record,
+         committed_at_ms: committed_at_ms
+       }}
+    else
+      false -> {:error, {:admission_receipt_integrity_failed, receipt_id}}
+      {:error, _reason} -> {:error, {:admission_receipt_integrity_failed, receipt_id}}
+    end
   end
 
   defp append_event_conn(conn, operation_id, event, semantic) do
@@ -1581,6 +2069,65 @@ defmodule Jido.Console.Session.Store.SQLite do
     end
   end
 
+  defp verify_admission_receipts(conn) do
+    with {:ok, rows} <-
+           query(conn, "SELECT receipt_id,record,record_digest FROM admission_receipts ORDER BY scope_id,sequence", []),
+         :ok <- verify_admission_record_rows(rows),
+         {:ok, transitions} <-
+           query(
+             conn,
+             "SELECT r.operation_id,r.admission_state,t.ordinal,t.transition_operation_id,t.admission_state FROM admission_receipts r LEFT JOIN admission_transitions t ON t.operation_id=r.operation_id ORDER BY r.operation_id,t.ordinal",
+             []
+           ) do
+      verify_admission_transition_rows(transitions)
+    end
+  end
+
+  defp verify_admission_record_rows(rows) do
+    Enum.reduce_while(rows, :ok, fn [receipt_id, bytes, digest], :ok ->
+      case Record.decode(bytes) do
+        {:ok, %{digest: ^digest}} -> {:cont, :ok}
+        _other -> {:halt, {:error, {:admission_receipt_integrity_failed, receipt_id}}}
+      end
+    end)
+  end
+
+  defp verify_admission_transition_rows(rows) do
+    rows
+    |> Enum.group_by(&hd/1)
+    |> Enum.reduce_while(:ok, fn {operation_id, operation_rows}, :ok ->
+      case valid_admission_transition_history?(operation_id, operation_rows) do
+        true -> {:cont, :ok}
+        false -> {:halt, {:error, {:admission_transition_integrity_failed, operation_id}}}
+      end
+    end)
+  end
+
+  defp valid_admission_transition_history?(operation_id, operation_rows) do
+    result =
+      Enum.reduce_while(operation_rows, {:ok, -1, nil}, fn
+        [^operation_id, "accepted", ordinal, transition_id, state], {:ok, prior_ordinal, prior_state} ->
+          valid_ordinal = ordinal == prior_ordinal + 1
+
+          valid_state =
+            case {ordinal, transition_id, prior_state, state} do
+              {0, ^operation_id, nil, "accepted"} -> true
+              {_ordinal, _transition_id, "accepted", next} when next in ["started", "terminal"] -> true
+              {_ordinal, _transition_id, "started", "terminal"} -> true
+              _other -> false
+            end
+
+          if valid_ordinal and valid_state,
+            do: {:cont, {:ok, ordinal, state}},
+            else: {:halt, :error}
+
+        _row, _state ->
+          {:halt, :error}
+      end)
+
+    match?({:ok, _ordinal, _state}, result)
+  end
+
   defp verify_jidoka_digests(conn) do
     with {:ok, rows} <- query(conn, "SELECT session_id,value,value_digest FROM jidoka_sessions ORDER BY session_id", []) do
       Enum.reduce_while(rows, :ok, fn [id, bytes, digest], :ok ->
@@ -1676,6 +2223,7 @@ defmodule Jido.Console.Session.Store.SQLite do
     if Keyword.get(opts, :integrity_on_open, false) do
       with {:ok, [["ok"]]} <- query(conn, "PRAGMA integrity_check", []),
            :ok <- verify_record_digests(conn),
+           :ok <- verify_admission_receipts(conn),
            :ok <- verify_jidoka_digests(conn) do
         :ok
       else

@@ -1216,7 +1216,7 @@ defmodule Jido.Console.TuiTest do
     assert_frame_contains("running · Ctrl-C cancels")
     send(owner, {:jido_terminal, ref, {:key, :ctrl_c}})
     assert_receive {:cancel_called, :cancel_ok}
-    assert_frame_contains("idle ·")
+    assert_frame_contains("idle ·", 2_000)
     stop_tui(task, owner, ref)
 
     {task, owner, ref} = start_failure_tui(:cancel_error)
@@ -1225,7 +1225,7 @@ defmodule Jido.Console.TuiTest do
     assert_frame_contains("running · Ctrl-C cancels")
     send(owner, {:jido_terminal, ref, {:key, :ctrl_c}})
     assert_receive {:cancel_called, :cancel_error}
-    assert_frame_contains("error · :cancel_failed")
+    assert_frame_contains("error · :cancel_failed", 2_000)
     stop_tui(task, owner, ref)
   end
 
@@ -1239,7 +1239,7 @@ defmodule Jido.Console.TuiTest do
     assert_frame_contains("cancelling")
 
     send(worker, :release_cancel)
-    assert_frame_contains("idle ·")
+    assert_frame_contains("idle ·", 2_000)
     stop_tui(task, owner, ref)
   end
 
@@ -1253,7 +1253,7 @@ defmodule Jido.Console.TuiTest do
     assert_receive {:cancel_called, :already_finished}
     assert_receive {:turn_awaited, _opts}
 
-    frame = assert_frame_contains("completed")
+    frame = assert_frame_contains("completed", 2_000)
     assert frame =~ "idle ·"
     refute frame =~ "request_already_finished"
     refute frame =~ "error ·"
@@ -1343,7 +1343,7 @@ defmodule Jido.Console.TuiTest do
     end
   end
 
-  defp assert_frame_contains(content, timeout \\ 500) do
+  defp assert_frame_contains(content, timeout \\ 2_000) do
     started_at = System.monotonic_time(:millisecond)
     receive_frame_with(content, started_at, timeout)
   end

@@ -361,14 +361,14 @@
         "input": {
           "locality": "shared",
           "required": ["operation_id", "idempotency_key", "payload_digest", "sequence", "durability", "commit_boundary", "status"],
-          "fields": ["operation_id", "idempotency_key", "payload_digest", "sequence", "durability", "commit_boundary", "status"],
-          "field_values": {"durability": ["durable"], "commit_boundary": ["sqlite_full_commit"], "status": ["committed", "timeout_unknown"]}
+          "fields": ["operation_id", "idempotency_key", "payload_digest", "sequence", "admission_state", "durability", "commit_boundary", "status"],
+          "field_values": {"admission_state": ["accepted", "started", "terminal"], "durability": ["durable"], "commit_boundary": ["sqlite_full_commit"], "status": ["committed", "timeout_unknown"]}
         },
         "command": {
           "locality": "shared",
           "required": ["operation_id", "idempotency_key", "payload_digest", "result_id", "effective_arguments", "sequence", "durability", "commit_boundary", "status"],
-          "fields": ["operation_id", "idempotency_key", "payload_digest", "result_id", "effective_arguments", "sequence", "durability", "commit_boundary", "status"],
-          "field_values": {"durability": ["durable"], "commit_boundary": ["sqlite_full_commit"], "status": ["committed", "timeout_unknown"]}
+          "fields": ["operation_id", "idempotency_key", "payload_digest", "result_id", "effective_arguments", "sequence", "admission_state", "durability", "commit_boundary", "status"],
+          "field_values": {"admission_state": ["accepted", "started", "terminal"], "durability": ["durable"], "commit_boundary": ["sqlite_full_commit"], "status": ["committed", "timeout_unknown"]}
         },
         "console_event": {
           "locality": "shared",

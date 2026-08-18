@@ -370,7 +370,11 @@ defmodule Jido.Console.Session.ServerTest do
   } do
     client = identity(:client, session)
     assert {:ok, _snapshot} = attach_bounded(server, client)
-    assert {:error, :runtime_not_configured} = Server.start_turn(server, client.id, "prompt", [])
+    assert {:error, :idempotency_key_required} = Server.start_turn(server, client.id, "prompt", [])
+
+    assert {:error, :runtime_not_configured} =
+             Server.start_turn(server, client.id, "prompt", idempotency_key: "server-turn")
+
     assert {:error, :invalid_session_operation} = Server.start_operation(server, client.id, :invalid)
     assert {:error, :invalid_session_operation} = Server.start_operation(server, client.id, start: fn _ -> :ok end)
 

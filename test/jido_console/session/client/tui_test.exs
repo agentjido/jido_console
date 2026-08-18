@@ -83,8 +83,21 @@ defmodule Jido.Console.Session.Client.TUITest do
     {:ok, server} = Registry.lookup(session.id, opts[:registry])
     on_exit(fn -> Server.stop(server) end)
     assert :ok = Client.configure_runtime(first, Runtime, :agent, test_pid: self())
-    assert {:ok, request} = Client.start_turn(first, "keep working")
+
+    assert {:ok, %{request: request, receipt: turn_receipt, duplicate: false}} =
+             Client.start_turn(first, "keep working", idempotency_key: "tui-detach-turn")
+
     assert_receive {:runtime_waiting, worker}
+
+    assert {:ok, %{request: nil, receipt: ^turn_receipt, duplicate: true}} =
+             Client.start_turn(first, "keep working", idempotency_key: "tui-detach-turn")
+
+    refute_receive {:runtime_waiting, _second_worker}, 20
+
+    assert {:error, {:idempotency_conflict, receipt_id}} =
+             Client.start_turn(first, "changed", idempotency_key: "tui-detach-turn")
+
+    assert receipt_id == turn_receipt["id"]
 
     assert :ok = TUI.detach(first)
     assert Process.alive?(server)
@@ -92,7 +105,7 @@ defmodule Jido.Console.Session.Client.TUITest do
     assert {:ok, second_attach} = TUI.attach(session.id, attach_opts)
     second = second_attach.handle
     assert {:ok, %{configured?: true, active_request: ^request}} = Client.runtime_info(second)
-    assert TUI.observe(second) == ["run_started", "model_delta"]
+    assert TUI.observe(second) == ["input_admitted", "run_started", "model_delta"]
 
     restored =
       State.new(nil, {80, 24},
@@ -109,10 +122,86 @@ defmodule Jido.Console.Session.Client.TUITest do
     assert %Result{outcome: %Result.Ok{content: "still running"}} =
              Client.await(second, request)
 
-    assert TUI.observe(second) == ["run_started", "model_delta", "run_completed"]
+    assert TUI.observe(second) == ["input_admitted", "run_started", "model_delta", "run_completed"]
 
     assert {:ok, snapshot} = Client.snapshot(second)
     assert snapshot["payload"]["state"]["outcomes"] |> List.last() |> get_in(["payload", "content"]) == "still running"
+  end
+
+  test "credential-bearing prompt metadata is rejected before runtime start" do
+    suffix = System.unique_integer([:positive])
+
+    opts = [
+      name: :"sensitive-tui-#{suffix}",
+      registry: :"sensitive-tui-reg-#{suffix}",
+      sessions: :"sensitive-tui-dyn-#{suffix}"
+    ]
+
+    {:ok, supervisor} = Supervisor.start_link(opts)
+    on_exit(fn -> if Process.alive?(supervisor), do: Process.exit(supervisor, :shutdown) end)
+    session = Identity.new!(:session)
+
+    assert {:ok, attached} =
+             TUI.attach(session.id, registry: opts[:registry], supervisor: opts[:sessions])
+
+    assert :ok = Client.configure_runtime(attached.handle, Runtime, :agent, test_pid: self())
+
+    assert {:error, {:sensitive_value_rejected, rejection}} =
+             Client.start_turn(attached.handle, "safe prompt",
+               idempotency_key: "sensitive-turn",
+               turn_opts: [context: %{authorization: "REDACTED_TEST_VALUE"}]
+             )
+
+    assert rejection["redacted"] == true
+    refute_receive {:runtime_waiting, _worker}, 20
+    assert {:ok, snapshot} = Client.snapshot(attached.handle)
+    assert snapshot["payload"]["state"]["sequence"] == 0
+  end
+
+  test "a turn retry resolves its receipt after owner restart without runtime setup" do
+    suffix = System.unique_integer([:positive])
+
+    opts = [
+      name: :"restart-turn-#{suffix}",
+      registry: :"restart-turn-reg-#{suffix}",
+      sessions: :"restart-turn-dyn-#{suffix}"
+    ]
+
+    {:ok, supervisor} = Supervisor.start_link(opts)
+    on_exit(fn -> if Process.alive?(supervisor), do: Process.exit(supervisor, :shutdown) end)
+    session = Identity.new!(:session)
+
+    attach_opts = [
+      registry: opts[:registry],
+      supervisor: opts[:sessions],
+      client_id: "restart-client"
+    ]
+
+    assert {:ok, first_attach} = TUI.attach(session.id, attach_opts)
+    assert :ok = Client.configure_runtime(first_attach.handle, Runtime, :agent, test_pid: self())
+
+    assert {:ok, %{request: _request, receipt: receipt, duplicate: false}} =
+             Client.start_turn(first_attach.handle, "restart-safe", idempotency_key: "restart-turn-key")
+
+    assert receipt["payload"]["admission_state"] == "started"
+    assert_receive {:runtime_waiting, worker}
+    assert {:ok, server} = Registry.lookup(session.id, opts[:registry])
+    monitor = Process.monitor(server)
+    Process.exit(server, :kill)
+    assert_receive {:DOWN, ^monitor, :process, ^server, :killed}
+    send(worker, :finish)
+
+    assert {:ok, restarted_attach} = TUI.attach(session.id, attach_opts)
+
+    assert {:ok, %{request: nil, receipt: ^receipt, duplicate: true}} =
+             Client.start_turn(restarted_attach.handle, "restart-safe", idempotency_key: "restart-turn-key")
+
+    refute_receive {:runtime_waiting, _second_worker}, 20
+
+    assert {:error, {:idempotency_conflict, receipt_id}} =
+             Client.start_turn(restarted_attach.handle, "changed", idempotency_key: "restart-turn-key")
+
+    assert receipt_id == receipt["id"]
   end
 
   test "the TUI acknowledges only after a complete canonical batch applies" do
@@ -126,7 +215,9 @@ defmodule Jido.Console.Session.Client.TUITest do
     assert {:ok, attached} = TUI.attach(session.id, attach_opts)
     state = State.new(nil, {80, 24}, session_client: attached.handle, session_snapshot: attached.snapshot)
 
-    assert {:ok, _input} = Client.send(attached.handle, "hello")
+    assert {:ok, _input} =
+             Client.send(attached.handle, "hello", idempotency_key: "tui-ack-input")
+
     assert_receive {:jido_console_session, attachment_id, :output_ready}
     assert attachment_id == attached.handle.attachment.id
     assert {:ok, batch} = Client.output(attached.handle)
@@ -162,8 +253,13 @@ defmodule Jido.Console.Session.Client.TUITest do
 
     assert {:ok, attached} = TUI.attach(session.id, attach_opts)
     state = State.new(nil, {80, 24}, session_client: attached.handle, session_snapshot: attached.snapshot)
-    assert {:ok, _input} = Client.send(attached.handle, "first")
-    assert {:ok, _input} = Client.send(attached.handle, "second")
+
+    assert {:ok, _input} =
+             Client.send(attached.handle, "first", idempotency_key: "tui-recovery-first")
+
+    assert {:ok, _input} =
+             Client.send(attached.handle, "second", idempotency_key: "tui-recovery-second")
+
     assert_receive {:jido_console_session, _, :output_ready}
 
     assert {:ok, recovered} = TUI.consume(attached.handle, state)

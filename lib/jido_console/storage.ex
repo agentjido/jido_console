@@ -60,6 +60,88 @@ defmodule Jido.Console.Storage do
     end
   end
 
+  @doc "Atomically commits one admission receipt and canonical event."
+  @spec admit_operation(map(), map(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def admit_operation(prepared, event, semantic, opts \\ [])
+      when is_map(prepared) and is_map(event) and is_map(semantic) do
+    with {:ok, operation_id} <- operation_id(opts),
+         true <- operation_id == prepared.operation_id,
+         :ok <- writer_available(opts),
+         {:ok, position} <- semantic_position(semantic) do
+      payload_bytes =
+        :erlang.external_size({prepared, event, position}) + @sqlite_page_bytes
+
+      storage_bytes = payload_bytes + prepared.encoded.encoded_bytes
+
+      result =
+        normal_mutation(payload_bytes, storage_bytes, operation_id, opts, fn ->
+          SQLite.admit_operation(writer(opts), prepared, event, position,
+            operation_id: operation_id,
+            fence: Keyword.get(opts, :fence),
+            call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+          )
+        end)
+
+      retry_completed_operation(result, payload_bytes, operation_id, opts, fn ->
+        SQLite.admit_operation(writer(opts), prepared, event, position,
+          operation_id: operation_id,
+          fence: Keyword.get(opts, :fence),
+          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+        )
+      end)
+    else
+      false -> {:error, :admission_operation_identity_mismatch}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Returns one exact durable admission receipt."
+  @spec admission_receipt(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def admission_receipt(operation_id, opts \\ []) when is_binary(operation_id) do
+    bounded_read(opts, fn ->
+      SQLite.admission_receipt(writer(opts), operation_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end)
+  end
+
+  @doc "Appends one durable admission lifecycle transition."
+  @spec transition_admission(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def transition_admission(admission_operation_id, state, opts \\ [])
+      when is_binary(admission_operation_id) and is_binary(state) do
+    with {:ok, operation_id} <- operation_id(opts),
+         :ok <- writer_available(opts) do
+      payload_bytes = @generation_payload_bytes
+
+      result =
+        normal_mutation(payload_bytes, payload_bytes, operation_id, opts, fn ->
+          SQLite.transition_admission(writer(opts), admission_operation_id, state,
+            operation_id: operation_id,
+            fence: Keyword.get(opts, :fence),
+            call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+          )
+        end)
+
+      retry_completed_operation(result, payload_bytes, operation_id, opts, fn ->
+        SQLite.transition_admission(writer(opts), admission_operation_id, state,
+          operation_id: operation_id,
+          fence: Keyword.get(opts, :fence),
+          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+        )
+      end)
+    end
+  end
+
+  @doc "Returns bounded durable admission receipts for restart recovery."
+  @spec recover_admissions(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def recover_admissions(session_id, opts \\ []) when is_binary(session_id) do
+    bounded_read(opts, fn ->
+      SQLite.recover_admissions(writer(opts), session_id,
+        states: Keyword.get(opts, :states, ["accepted", "started", "terminal"]),
+        limit: Keyword.get(opts, :limit, 100),
+        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+      )
+    end)
+  end
+
   @doc "Returns the durable canonical event head for one session."
   @spec history_head(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def history_head(session_id, opts \\ []) when is_binary(session_id) do

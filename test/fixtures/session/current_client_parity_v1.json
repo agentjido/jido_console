@@ -12,6 +12,7 @@
     "operation": "fixture.echo"
   },
   "expected_types": [
+    "input_admitted",
     "run_started",
     "tool_started",
     "tool_completed",
@@ -20,7 +21,7 @@
     "permission_decided",
     "run_completed"
   ],
-  "expected_fingerprint": "sha256:075e0de8df90d5e56790a2b70e0a09099f142d07a2f3a6cd367cb9803f1252d8",
+  "expected_fingerprint": "sha256:755ef9cc2b9824fc83fc98dc5eb02ee230f8e183f5c9e2692edd39c0662ad276",
   "automation": {
     "agent": "release/fixtures/offline/agent.yml",
     "scenario": "release/fixtures/offline/scenario.yml",

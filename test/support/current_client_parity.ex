@@ -143,7 +143,9 @@ defmodule Jido.Console.TestSupport.CurrentClientParity do
     %{handle: handle, snapshot: snapshot} = attach!(surface, fixture)
 
     :ok = Client.configure_runtime(handle, Runtime, :parity_agent, parity_fixture: fixture)
-    {:ok, request} = Client.start_turn(handle, fixture["prompt"])
+
+    {:ok, %{request: request}} =
+      Client.start_turn(handle, fixture["prompt"], idempotency_key: "parity-turn")
 
     state = tui_state(surface, snapshot, fixture, request)
     %Result{outcome: %Result.PendingReview{reviews: [review | _reviews]}} = Client.await(handle, request)
@@ -167,8 +169,8 @@ defmodule Jido.Console.TestSupport.CurrentClientParity do
   def lifecycle_surface!(surface, fixture) when surface in @surfaces do
     %{handle: handle} = attach!(surface, fixture, delivery_limits: %{queue_count: 1})
 
-    {:ok, _first} = Client.send(handle, "first")
-    {:ok, _second} = Client.send(handle, "second")
+    {:ok, _first} = Client.send(handle, "first", idempotency_key: "parity-first")
+    {:ok, _second} = Client.send(handle, "second", idempotency_key: "parity-second")
     {:gap, gap} = Client.output(handle)
     {:ok, snapshot} = Client.recover(handle, gap)
     {:error, :delivery_recovering} = Client.output(handle)
@@ -442,20 +444,28 @@ defmodule Jido.Console.TestSupport.CurrentClientParity do
   end
 
   defp identity_replacements(events) do
-    events
-    |> Enum.flat_map(&(get_in(&1, ["payload", "identities"]) || []))
-    |> Enum.reduce(%{}, fn identity, replacements ->
-      replacement =
-        case identity["kind"] do
-          "request" -> "$console-request"
-          "run" -> "$console-run"
-          "client" -> "$client"
-          "attachment" -> "$attachment"
-          "input" -> "$input"
-          _kind -> identity["id"]
-        end
+    identity_replacements =
+      events
+      |> Enum.flat_map(&(get_in(&1, ["payload", "identities"]) || []))
+      |> Enum.reduce(%{}, fn identity, replacements ->
+        replacement =
+          case identity["kind"] do
+            "request" -> "$console-request"
+            "run" -> "$console-run"
+            "client" -> "$client"
+            "attachment" -> "$attachment"
+            "input" -> "$input"
+            _kind -> identity["id"]
+          end
 
-      Map.put(replacements, identity["id"], replacement)
+        Map.put(replacements, identity["id"], replacement)
+      end)
+
+    Enum.reduce(events, identity_replacements, fn event, replacements ->
+      case get_in(event, ["payload", "input_id"]) do
+        input_id when is_binary(input_id) -> Map.put(replacements, input_id, "$input")
+        _missing -> replacements
+      end
     end)
   end
 
