@@ -21,8 +21,8 @@
   ],
   "parent": "jido_console-m3",
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "M3-E12: Persist Queues, Interactions, and Permissions",
   "type": "epic",
-  "updated_at": "2026-08-17T01:55:08Z"
+  "updated_at": "2026-08-18T06:39:28Z"
 }
