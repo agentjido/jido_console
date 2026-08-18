@@ -26,8 +26,8 @@
   ],
   "parent": "jido_console-m3",
   "priority": 1,
-  "status": "open",
+  "status": "in_progress",
   "title": "M3-E16: Verify Console-to-Jidoka Watermarks",
   "type": "epic",
-  "updated_at": "2026-08-17T01:55:08Z"
+  "updated_at": "2026-08-18T10:09:00Z"
 }
