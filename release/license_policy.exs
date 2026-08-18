@@ -20,6 +20,7 @@
     crontab-1.2.0
     crux-0.1.4
     crypto-5.9
+    db_connection-2.10.2
     decimal-3.1.1
     domainatrex-3.2.0
     dotenvy-1.1.1
@@ -27,6 +28,7 @@
     eex-1.20.2
     elixir-1.20.2
     ets-0.9.0
+    exqlite-0.39.0
     extractous_ex-0.2.1
     finch-0.23.0
     floki-0.38.4
