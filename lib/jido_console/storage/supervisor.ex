@@ -4,7 +4,7 @@ defmodule Jido.Console.Storage.Supervisor do
   use Supervisor
 
   alias Jido.Console.Session.Store.SQLite
-  alias Jido.Console.Storage.{Admission, HomeLock, Maintenance}
+  alias Jido.Console.Storage.{Admission, HomeLock, Maintenance, Quota}
 
   @doc "Starts the storage ownership tree."
   @spec start_link(keyword()) :: Supervisor.on_start()
@@ -43,12 +43,14 @@ defmodule Jido.Console.Storage.Supervisor do
     common = Keyword.take(opts, [:jido_home, :user_home])
     lock = Keyword.get(opts, :lock, Jido.Console.Storage.HomeLock)
     maintenance = Keyword.get(opts, :maintenance, Jido.Console.Storage.Maintenance)
+    quota = Keyword.get(opts, :quota, Jido.Console.Storage.Quota)
     admission = Keyword.get(opts, :admission, Jido.Console.Storage.Admission)
     writer = Keyword.get(opts, :writer, Jido.Console.Storage.Writer)
 
     children = [
       {HomeLock, Keyword.put(common, :name, lock)},
       {Maintenance, common |> Keyword.put(:name, maintenance) |> Keyword.put(:writer, writer)},
+      {Quota, Keyword.put(common, :name, quota)},
       {Admission, [name: admission]},
       {SQLite, Keyword.merge(common, name: writer, integrity_on_open: true, admission: admission)}
     ]
