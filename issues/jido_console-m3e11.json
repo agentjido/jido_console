@@ -21,9 +21,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Implemented and merged by PR #19 as milestone-3 commit 4621e9c. Verification: focused admission, lifecycle, crash-window, timeout-unknown, client, TUI, protocol, and parity tests passed; full mix test passed 803 with 1 expected skip; mix test --cover passed at 90.1%; mix precommit passed with zero Credo, Dialyzer, or Doctor findings; mix docs passed with existing reference warnings. mix jido.check passed Console dependencies, precommit, coverage, and current-Jidoka phases. Its old-version Jidoka 0.9.1 run failed 29 unchanged baseline compatibility tests because that old version lacks APIs already required by the approved M2 base; E11 adds no Jidoka dependency or call.",
+      "timestamp": "2026-08-18T06:38:57Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E11: Admit Restart-Safe Input and Commands",
   "type": "epic",
-  "updated_at": "2026-08-18T05:09:43Z"
+  "updated_at": "2026-08-18T06:38:57Z"
 }
