@@ -176,6 +176,9 @@ defmodule Jido.Console.Session.Durable.RecordTest do
         "effect_resolution" ->
           effect_resolution()
 
+        "verified_watermark" ->
+          verified_watermark()
+
         _other ->
           {:ok, declaration} = Catalog.record_type(type)
           Map.new(declaration["required"], &{&1, field_value(&1)})
@@ -243,6 +246,32 @@ defmodule Jido.Console.Session.Durable.RecordTest do
       "status" => "failed",
       "jidoka_intent_id" => "effect-fixture",
       "jidoka_revision" => 1
+    }
+  end
+
+  defp verified_watermark do
+    %{
+      "watermark_id" => "watermark-fixture",
+      "console_identity" => %{
+        "session_id" => "session-fixture",
+        "generation" => 1,
+        "sequence" => 1,
+        "event_id" => "event-fixture",
+        "operation_id" => "console-operation-fixture",
+        "chain_digest" => @digest
+      },
+      "console_digest" => @digest,
+      "jidoka_identity" => %{
+        "session_id" => "session-fixture",
+        "revision" => 2,
+        "request_id" => "request-fixture",
+        "lease_id" => "lease-fixture",
+        "snapshot_id" => "snapshot-fixture",
+        "operation_id" => "jidoka-operation-fixture",
+        "value_digest" => @digest
+      },
+      "jidoka_digest" => @digest,
+      "state" => "reserved"
     }
   end
 

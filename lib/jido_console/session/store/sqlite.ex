@@ -15,7 +15,16 @@ defmodule Jido.Console.Session.Store.SQLite do
   alias Exqlite.Sqlite3
   alias Jido.Console.Digest
   alias Jido.Console.Home
-  alias Jido.Console.Session.Durable.{CanonicalJSON, Catalog, JidokaValue, Record, SemanticSnapshot}
+
+  alias Jido.Console.Session.Durable.{
+    CanonicalJSON,
+    Catalog,
+    JidokaValue,
+    Record,
+    SemanticSnapshot,
+    WatermarkRecord
+  }
+
   alias Jido.Console.Session.Event
   alias Jidoka.Session.{Data, Transitions}
   alias Jidoka.Snapshot
@@ -144,6 +153,40 @@ defmodule Jido.Console.Session.Store.SQLite do
     console_generation INTEGER NOT NULL,
     console_sequence INTEGER NOT NULL,
     jidoka_revision INTEGER NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS watermark_transitions (
+    transition_id TEXT PRIMARY KEY,
+    watermark_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    operation_id TEXT NOT NULL UNIQUE,
+    scope_id TEXT NOT NULL,
+    console_generation INTEGER NOT NULL,
+    console_sequence INTEGER NOT NULL,
+    jidoka_revision INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('reserved','jidoka_committed','console_committed','verified','repair_required','abandoned')),
+    record_digest TEXT NOT NULL,
+    encoded_bytes INTEGER NOT NULL,
+    record BLOB NOT NULL,
+    committed_at_ms INTEGER NOT NULL,
+    UNIQUE (watermark_id, ordinal)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS watermark_transitions_session_order
+    ON watermark_transitions(scope_id, console_generation, console_sequence, ordinal);
+  CREATE INDEX IF NOT EXISTS watermark_transitions_state
+    ON watermark_transitions(scope_id, state, committed_at_ms);
+  CREATE TRIGGER IF NOT EXISTS watermark_transitions_no_update
+    BEFORE UPDATE ON watermark_transitions BEGIN SELECT RAISE(ABORT, 'watermark transition is immutable'); END;
+  CREATE TRIGGER IF NOT EXISTS watermark_transitions_no_delete
+    BEFORE DELETE ON watermark_transitions BEGIN SELECT RAISE(ABORT, 'watermark transition is immutable'); END;
+  CREATE TABLE IF NOT EXISTS verified_watermark_index (
+    scope_id TEXT PRIMARY KEY,
+    watermark_id TEXT NOT NULL UNIQUE,
+    transition_id TEXT NOT NULL UNIQUE,
+    console_generation INTEGER NOT NULL,
+    console_sequence INTEGER NOT NULL,
+    jidoka_revision INTEGER NOT NULL,
+    record_digest TEXT NOT NULL,
+    committed_at_ms INTEGER NOT NULL
   ) STRICT;
   CREATE TABLE IF NOT EXISTS session_generations (
     session_id TEXT PRIMARY KEY,
@@ -294,6 +337,31 @@ defmodule Jido.Console.Session.Store.SQLite do
     end
   end
 
+  @doc "Appends one generation-fenced immutable watermark transition."
+  @spec append_watermark(GenServer.server(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def append_watermark(server, record, opts \\ []) when is_map(record) and is_list(opts) do
+    with {:ok, encoded} <- Record.encode(record),
+         true <- record["record_type"] == "verified_watermark",
+         {:ok, operation_id} <- operation_id(opts) do
+      call(server, {:append_watermark, operation_id, Keyword.get(opts, :fence), encoded}, opts)
+    else
+      false -> {:error, :invalid_watermark_record}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Returns the immutable transitions for one watermark."
+  @spec watermark_history(GenServer.server(), String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def watermark_history(server, watermark_id, opts \\ []) when is_binary(watermark_id) do
+    call(server, {:watermark_history, watermark_id}, opts)
+  end
+
+  @doc "Returns the last verified watermark for one Console session."
+  @spec verified_watermark(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def verified_watermark(server, session_id, opts \\ []) when is_binary(session_id) do
+    call(server, {:verified_watermark, session_id}, opts)
+  end
+
   @doc "Atomically commits one durable admission receipt and canonical event."
   @spec admit_operation(GenServer.server(), map(), map(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -359,6 +427,12 @@ defmodule Jido.Console.Session.Store.SQLite do
   @spec history_head(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def history_head(server, session_id, opts \\ []) when is_binary(session_id) do
     call(server, {:history_head, session_id}, opts)
+  end
+
+  @doc "Returns one exact committed canonical Console event identity."
+  @spec canonical_event(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def canonical_event(server, event_id, opts \\ []) when is_binary(event_id) do
+    call(server, {:canonical_event, event_id}, opts)
   end
 
   @doc "Stores one verified derived semantic snapshot and resets suffix counters."
@@ -533,6 +607,11 @@ defmodule Jido.Console.Session.Store.SQLite do
 
   defp append_fence_scope(record), do: record["scope_id"]
 
+  defp watermark_fence_scope(%{
+         record: %{"payload" => %{"console_identity" => %{"session_id" => session_id}}}
+       }),
+       do: session_id
+
   @impl true
   def handle_call({:append, operation_id, fence, encoded}, _from, state) do
     result =
@@ -546,6 +625,27 @@ defmodule Jido.Console.Session.Store.SQLite do
                         operation_id
                       ) do
                  append_record(state.conn, operation_id, encoded)
+               end
+             end),
+           :ok <- protect_owned_files(state.path) do
+        {:ok, value}
+      end
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:append_watermark, operation_id, fence, encoded}, _from, state) do
+    result =
+      with {:ok, value} <-
+             transaction(state.conn, fn ->
+               with :ok <-
+                      verify_generation_fence(
+                        state.conn,
+                        watermark_fence_scope(encoded),
+                        fence,
+                        operation_id
+                      ) do
+                 append_watermark_conn(state.conn, operation_id, encoded)
                end
              end),
            :ok <- protect_owned_files(state.path) do
@@ -634,6 +734,25 @@ defmodule Jido.Console.Session.Store.SQLite do
 
   def handle_call({:history_head, session_id}, _from, state) do
     {:reply, load_history_head(state.conn, session_id), state}
+  end
+
+  def handle_call({:canonical_event, event_id}, _from, state) do
+    result =
+      case lookup_canonical_event(state.conn, event_id) do
+        {:ok, nil} -> {:error, {:canonical_event_not_found, event_id}}
+        {:ok, event} -> {:ok, event}
+        {:error, reason} -> {:error, reason}
+      end
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:watermark_history, watermark_id}, _from, state) do
+    {:reply, read_watermark_history(state.conn, watermark_id), state}
+  end
+
+  def handle_call({:verified_watermark, session_id}, _from, state) do
+    {:reply, read_verified_watermark(state.conn, session_id), state}
   end
 
   def handle_call({:put_semantic_snapshot, operation_id, fence, encoded}, _from, state) do
@@ -768,6 +887,7 @@ defmodule Jido.Console.Session.Store.SQLite do
            :ok <- verify_record_digests(state.conn),
            :ok <- verify_admission_receipts(state.conn),
            :ok <- verify_jidoka_digests(state.conn),
+           :ok <- verify_watermark_transitions(state.conn),
            {:ok, pages} <- page_accounting_conn(state.conn) do
         {:ok, %{path: state.path, store_format: @store_format, integrity: :ok, pages: pages}}
       else
@@ -1752,6 +1872,246 @@ defmodule Jido.Console.Session.Store.SQLite do
   end
 
   defp decode_history_rows([_row | _rows], _remaining, _records), do: {:error, :history_suffix_limit}
+
+  defp append_watermark_conn(conn, operation_id, encoded) do
+    payload = encoded.record["payload"]
+    watermark_id = payload["watermark_id"]
+
+    case load_watermark_operation(conn, operation_id) do
+      {:ok, existing} when existing.record_digest == encoded.digest ->
+        {:ok, Map.put(existing, :duplicate, true)}
+
+      {:ok, _existing} ->
+        {:error, {:watermark_operation_conflict, operation_id}}
+
+      {:error, {:watermark_operation_not_found, ^operation_id}} ->
+        append_new_watermark_transition(conn, operation_id, encoded, watermark_id)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp append_new_watermark_transition(conn, operation_id, encoded, watermark_id) do
+    record = encoded.record
+    payload = record["payload"]
+    console = payload["console_identity"]
+    jidoka = payload["jidoka_identity"]
+    ordinal = record["sequence"]
+    state = payload["state"]
+
+    with {:ok, previous} <- load_last_watermark_transition(conn, watermark_id),
+         :ok <- validate_watermark_position(previous, record, payload),
+         :ok <- WatermarkRecord.validate_transition(previous && previous.state, state),
+         {:ok, result} <- append_record(conn, operation_id, encoded),
+         :ok <- admit_normal_write(conn, encoded.encoded_bytes),
+         committed_at_ms = now_ms(),
+         :ok <-
+           execute(
+             conn,
+             "INSERT INTO watermark_transitions(transition_id,watermark_id,ordinal,operation_id,scope_id,console_generation,console_sequence,jidoka_revision,state,record_digest,encoded_bytes,record,committed_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+             [
+               record["record_id"],
+               watermark_id,
+               ordinal,
+               operation_id,
+               console["session_id"],
+               console["generation"],
+               console["sequence"],
+               jidoka["revision"],
+               state,
+               encoded.digest,
+               encoded.encoded_bytes,
+               {:blob, encoded.bytes},
+               committed_at_ms
+             ]
+           ),
+         :ok <- maybe_put_verified_watermark(conn, record, encoded.digest, committed_at_ms) do
+      {:ok,
+       result
+       |> Map.merge(%{watermark_id: watermark_id, state: state, ordinal: ordinal, duplicate: false})}
+    end
+  end
+
+  defp validate_watermark_position(nil, record, _payload) do
+    if record["sequence"] == 0 and record["prior_record_digest"] == "genesis" do
+      :ok
+    else
+      {:error, :invalid_initial_watermark_position}
+    end
+  end
+
+  defp validate_watermark_position(previous, record, payload) do
+    cond do
+      record["sequence"] != previous.ordinal + 1 ->
+        {:error, :watermark_sequence_mismatch}
+
+      record["prior_record_digest"] != previous.record_digest ->
+        {:error, :watermark_prior_digest_mismatch}
+
+      stable_watermark_payload(payload) != stable_watermark_payload(previous.record["payload"]) ->
+        {:error, :watermark_boundary_changed}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp stable_watermark_payload(payload), do: Map.delete(payload, "state")
+
+  defp maybe_put_verified_watermark(_conn, %{"payload" => %{"state" => state}}, _digest, _committed)
+       when state != "verified",
+       do: :ok
+
+  defp maybe_put_verified_watermark(conn, record, digest, committed_at_ms) do
+    payload = record["payload"]
+    console = payload["console_identity"]
+    jidoka = payload["jidoka_identity"]
+
+    with :ok <- reject_stale_verified_watermark(conn, console, jidoka),
+         :ok <-
+           execute(
+             conn,
+             "INSERT INTO verified_watermark_index(scope_id,watermark_id,transition_id,console_generation,console_sequence,jidoka_revision,record_digest,committed_at_ms) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(scope_id) DO UPDATE SET watermark_id=excluded.watermark_id,transition_id=excluded.transition_id,console_generation=excluded.console_generation,console_sequence=excluded.console_sequence,jidoka_revision=excluded.jidoka_revision,record_digest=excluded.record_digest,committed_at_ms=excluded.committed_at_ms",
+             [
+               console["session_id"],
+               payload["watermark_id"],
+               record["record_id"],
+               console["generation"],
+               console["sequence"],
+               jidoka["revision"],
+               digest,
+               committed_at_ms
+             ]
+           ) do
+      execute(
+        conn,
+        "INSERT INTO watermarks(scope_id,console_generation,console_sequence,jidoka_revision) VALUES(?,?,?,?) ON CONFLICT(scope_id) DO UPDATE SET console_generation=excluded.console_generation,console_sequence=excluded.console_sequence,jidoka_revision=excluded.jidoka_revision",
+        [console["session_id"], console["generation"], console["sequence"], jidoka["revision"]]
+      )
+    end
+  end
+
+  defp reject_stale_verified_watermark(conn, console, jidoka) do
+    case query(
+           conn,
+           "SELECT console_generation,console_sequence,jidoka_revision FROM verified_watermark_index WHERE scope_id=?",
+           [console["session_id"]]
+         ) do
+      {:ok, []} ->
+        :ok
+
+      {:ok, [[generation, sequence, revision]]} ->
+        current = {generation, sequence, revision}
+        incoming = {console["generation"], console["sequence"], jidoka["revision"]}
+
+        if incoming > current, do: :ok, else: {:error, :stale_verified_watermark}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp load_last_watermark_transition(conn, watermark_id) do
+    sql =
+      "SELECT ordinal,state,record_digest,record,operation_id,committed_at_ms FROM watermark_transitions WHERE watermark_id=? ORDER BY ordinal DESC LIMIT 1"
+
+    case query(conn, sql, [watermark_id]) do
+      {:ok, []} -> {:ok, nil}
+      {:ok, [row]} -> decode_watermark_transition(row)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp load_watermark_operation(conn, operation_id) do
+    sql =
+      "SELECT ordinal,state,record_digest,record,operation_id,committed_at_ms FROM watermark_transitions WHERE operation_id=?"
+
+    case query(conn, sql, [operation_id]) do
+      {:ok, []} -> {:error, {:watermark_operation_not_found, operation_id}}
+      {:ok, [row]} -> decode_watermark_transition(row)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp read_watermark_history(conn, watermark_id) do
+    sql =
+      "SELECT ordinal,state,record_digest,record,operation_id,committed_at_ms FROM watermark_transitions WHERE watermark_id=? ORDER BY ordinal"
+
+    with {:ok, rows} <- query(conn, sql, [watermark_id]) do
+      decode_watermark_transitions(rows, [])
+    end
+  end
+
+  defp read_verified_watermark(conn, session_id) do
+    sql =
+      "SELECT t.ordinal,t.state,t.record_digest,t.record,t.operation_id,t.committed_at_ms FROM verified_watermark_index i JOIN watermark_transitions t ON t.transition_id=i.transition_id WHERE i.scope_id=?"
+
+    case query(conn, sql, [session_id]) do
+      {:ok, []} -> {:error, {:verified_watermark_not_found, session_id}}
+      {:ok, [row]} -> decode_watermark_transition(row)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp decode_watermark_transitions([row | rows], acc) do
+    case decode_watermark_transition(row) do
+      {:ok, transition} -> decode_watermark_transitions(rows, [transition | acc])
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp decode_watermark_transitions([], acc), do: {:ok, Enum.reverse(acc)}
+
+  defp decode_watermark_transition([ordinal, state, digest, bytes, operation_id, committed_at_ms]) do
+    with {:ok, encoded} <- Record.decode(bytes),
+         true <- encoded.digest == digest,
+         true <- encoded.record["sequence"] == ordinal,
+         true <- get_in(encoded.record, ["payload", "state"]) == state do
+      {:ok,
+       %{
+         watermark_id: get_in(encoded.record, ["payload", "watermark_id"]),
+         ordinal: ordinal,
+         state: state,
+         record_digest: digest,
+         operation_id: operation_id,
+         committed_at_ms: committed_at_ms,
+         record: encoded.record,
+         encoded: encoded
+       }}
+    else
+      false -> {:error, :watermark_transition_integrity_failed}
+      {:error, _reason} -> {:error, :watermark_transition_integrity_failed}
+    end
+  end
+
+  defp verify_watermark_transitions(conn) do
+    sql =
+      "SELECT t.ordinal,t.state,t.record_digest,t.record,t.operation_id,t.committed_at_ms FROM watermark_transitions t ORDER BY t.watermark_id,t.ordinal"
+
+    with {:ok, rows} <- query(conn, sql, []),
+         {:ok, _transitions} <- decode_watermark_transitions(rows, []),
+         {:ok, [[linked]]} <-
+           query(
+             conn,
+             "SELECT COUNT(*) FROM watermark_transitions t JOIN records r ON r.record_id=t.transition_id AND r.digest=t.record_digest AND r.json=t.record",
+             []
+           ),
+         true <- linked == length(rows),
+         {:ok, [[verified]]} <-
+           query(
+             conn,
+             "SELECT COUNT(*) FROM verified_watermark_index i JOIN watermark_transitions t ON t.transition_id=i.transition_id AND t.state='verified' AND t.record_digest=i.record_digest",
+             []
+           ),
+         {:ok, [[indexed]]} <- query(conn, "SELECT COUNT(*) FROM verified_watermark_index", []),
+         true <- verified == indexed do
+      :ok
+    else
+      false -> {:error, :watermark_transition_integrity_failed}
+      {:error, _reason} -> {:error, :watermark_transition_integrity_failed}
+    end
+  end
 
   defp append_record(conn, operation_id, encoded) do
     record = encoded.record
