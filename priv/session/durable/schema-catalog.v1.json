@@ -41,8 +41,8 @@
       "fields": ["request_id", "scope", "principal_id", "decision", "consumed", "expires_at_ms"]
     },
     "turn_manifest": {
-      "required": ["request_id", "provider_id", "model_id", "settings_digest", "prompt_digest", "tool_schema_digest", "skill_schema_digest", "workspace_digest", "credential_profile_id", "credential_reference_id"],
-      "fields": ["request_id", "provider_id", "model_id", "settings_digest", "prompt_digest", "tool_schema_digest", "skill_schema_digest", "workspace_digest", "credential_profile_id", "credential_reference_id", "execution_environment_id"]
+      "required": ["request_id", "invocation_id", "provider_id", "model_id", "variant_id", "settings_digest", "agent_spec_digest", "prompt_digest", "tool_schema_digest", "skill_schema_digest", "extension_descriptor_digest", "protocol_digest", "coding_profile_id", "workspace_id", "workspace_digest", "credential_profile_id", "credential_profile_version", "credential_reference_id", "credential_source_identity", "execution_environment_id"],
+      "fields": ["request_id", "invocation_id", "provider_id", "model_id", "variant_id", "settings_digest", "agent_spec_digest", "prompt_digest", "tool_schema_digest", "skill_schema_digest", "extension_descriptor_digest", "protocol_digest", "coding_profile_id", "workspace_id", "workspace_digest", "credential_profile_id", "credential_profile_version", "credential_reference_id", "credential_source_identity", "execution_environment_id"]
     },
     "effect_reservation": {
       "required": ["result_id", "effective_arguments", "safety_class", "replay_rule", "approval_id"],
@@ -76,10 +76,12 @@
   "field_types": {
     "action": "string",
     "admission_state": "string",
+    "agent_spec_digest": "digest",
     "approval_id": "string_or_null",
     "authority_reset": "boolean",
     "child_session_id": "string",
     "command_id": "string",
+    "coding_profile_id": "string",
     "confirmation_id": "string_or_null",
     "console_digest": "digest",
     "console_identity": "map",
@@ -87,7 +89,9 @@
     "continuity_mode": "string",
     "created_at_ms": "integer",
     "credential_profile_id": "string_or_null",
+    "credential_profile_version": "integer_or_null",
     "credential_reference_id": "string_or_null",
+    "credential_source_identity": "string_or_null",
     "current_digest": "digest",
     "current_heads": "map",
     "decision": "string",
@@ -99,11 +103,13 @@
     "event_id": "string",
     "evidence_digest": "digest",
     "execution_environment_id": "string_or_null",
+    "extension_descriptor_digest": "digest",
     "expires_at_ms": "integer_or_null",
     "format": "string",
     "generation": "integer",
     "idempotency_key": "string",
     "input_id": "string",
+    "invocation_id": "string",
     "item_id": "string",
     "jidoka_digest": "digest",
     "jidoka_identity": "map",
@@ -129,6 +135,7 @@
     "profile_id": "string",
     "profile_version": "integer",
     "prompt_digest": "digest",
+    "protocol_digest": "digest",
     "provider_id": "string",
     "queue_kind": "string",
     "references": "list",
@@ -152,8 +159,10 @@
     "terminal_status": "string_or_null",
     "tool_schema_digest": "digest",
     "trust": "string",
+    "variant_id": "string",
     "watermark_id": "string",
-    "workspace_digest": "digest"
+    "workspace_digest": "digest",
+    "workspace_id": "string"
   },
   "limits": {
     "console_record_bytes": 262144,
