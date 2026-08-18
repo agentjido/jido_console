@@ -23,9 +23,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Implemented and squash-merged as PR #23. Verification: 849 tests passed with one expected skip; local coverage 90.4%; GitHub CI passed on Elixir 1.18, 1.19, and 1.20; precommit, Dialyzer, docs, and quality gates passed. Merge commit: 3eee31c8cb9aad29582f94b5fa3126481815bddf.",
+      "timestamp": "2026-08-18T10:08:44Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E15: Reserve Effects and Reconcile Uncertainty",
   "type": "epic",
-  "updated_at": "2026-08-18T09:02:21Z"
+  "updated_at": "2026-08-18T10:08:44Z"
 }
