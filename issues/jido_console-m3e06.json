@@ -23,11 +23,15 @@
     {
       "text": "Roadmap 1.3.5 refinement: M3-E02 is skipped and no longer blocks this epic. E06 directly declares Exqlite and proves the minimum production-store package, pragma, FULL commit, close/reopen, basic crash, private-path, and integrity behavior. Dependencies are M3-E03 and M3-E05.",
       "timestamp": "2026-08-17T23:20:13Z"
+    },
+    {
+      "text": "Implemented and merged as one source commit. PR: https://github.com/agentjido/jido_console/pull/14. Source commit: e81d6c645717e09f52bcb2e1b57c66d684b4b40a. Immutable milestone-3 merge commit: 8a70ef3638401896c3df39aaac2ab2f3a63bebf2. Evidence: 738 tests passed with 1 expected skip; total coverage 90.2%; compile with warnings-as-errors, Credo, Dialyzer, Doctor, release build, release reopen probe, dependency audit, and all required GitHub CI jobs passed.",
+      "timestamp": "2026-08-18T01:07:27Z"
     }
   ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E06: Build the Default SQLite Session Store",
   "type": "epic",
-  "updated_at": "2026-08-18T00:28:48Z"
+  "updated_at": "2026-08-18T01:07:27Z"
 }
