@@ -280,6 +280,18 @@ defmodule Jido.Console.Storage do
     :exit, _reason -> {:error, :storage_unavailable}
   end
 
+  @doc "Returns the latest bounded credential-profile records."
+  @spec credential_profile_records(keyword()) :: {:ok, [map()]} | {:error, term()}
+  def credential_profile_records(opts \\ []) do
+    bounded_read(opts, fn ->
+      SQLite.credential_profile_records(writer(opts),
+        limit: Keyword.get(opts, :limit, 128),
+        max_bytes: Keyword.get(opts, :max_bytes, 2 * 1_024 * 1_024),
+        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+      )
+    end)
+  end
+
   @doc "Runs the store-wide integrity inspection within the public deadline."
   @spec inspect_store(keyword()) :: {:ok, map()} | {:error, term()}
   def inspect_store(opts \\ []) do

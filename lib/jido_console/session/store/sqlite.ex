@@ -34,6 +34,9 @@ defmodule Jido.Console.Session.Store.SQLite do
   @session_bytes 64 * 1_024 * 1_024
   @event_limit 10_000
   @session_limit 128
+  @credential_profile_limit 128
+  @credential_profile_version_limit 128
+  @credential_profile_list_bytes 2 * 1_024 * 1_024
   @reader_limit 16
   @reserved_readers 4
   @reader_age_ms 1_000
@@ -389,6 +392,15 @@ defmodule Jido.Console.Session.Store.SQLite do
     end
   end
 
+  @doc "Lists the latest immutable credential-profile record for each profile."
+  @spec credential_profile_records(GenServer.server(), keyword()) ::
+          {:ok, [Record.encoded()]} | {:error, term()}
+  def credential_profile_records(server, opts \\ []) when is_list(opts) do
+    with {:ok, bounds} <- profile_bounds(opts) do
+      call(server, {:credential_profile_records, bounds}, opts)
+    end
+  end
+
   @doc "Looks up the durable result of one mutation."
   @spec receipt(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def receipt(server, operation_id, opts \\ []) when is_binary(operation_id) do
@@ -636,6 +648,10 @@ defmodule Jido.Console.Session.Store.SQLite do
 
   def handle_call({:range, scope_id, bounds}, _from, state) do
     {:reply, read_range(state.conn, scope_id, bounds), state}
+  end
+
+  def handle_call({:credential_profile_records, bounds}, _from, state) do
+    {:reply, read_credential_profile_records(state.conn, bounds), state}
   end
 
   def handle_call({:receipt, operation_id}, _from, state) do
@@ -1728,7 +1744,8 @@ defmodule Jido.Console.Session.Store.SQLite do
     generation = record["generation"]
     sequence = record["sequence"]
 
-    with :ok <- admit_normal_write(conn, encoded.encoded_bytes),
+    with :ok <- admit_credential_profile(conn, record),
+         :ok <- admit_normal_write(conn, encoded.encoded_bytes),
          :ok <- admit_record_scope(conn, scope_id, record["record_type"], encoded.encoded_bytes),
          :ok <- verify_head(conn, scope_id, generation, sequence, record["prior_record_digest"]),
          :ok <-
@@ -1758,6 +1775,37 @@ defmodule Jido.Console.Session.Store.SQLite do
       {:ok, %{record_id: record["record_id"], digest: encoded.digest, sequence: sequence}}
     end
   end
+
+  defp admit_credential_profile(
+         conn,
+         %{"record_type" => "credential_profile_reference", "scope_id" => scope_id}
+       ) do
+    with {:ok, [[profile_versions]]} <-
+           query(
+             conn,
+             "SELECT COUNT(*) FROM records WHERE scope_id=? AND record_type='credential_profile_reference'",
+             [scope_id]
+           ),
+         {:ok, [[profile_count]]} <-
+           query(
+             conn,
+             "SELECT COUNT(DISTINCT scope_id) FROM records WHERE record_type='credential_profile_reference'",
+             []
+           ) do
+      cond do
+        profile_versions >= @credential_profile_version_limit ->
+          {:error, {:credential_profile_version_limit, scope_id, @credential_profile_version_limit}}
+
+        profile_versions == 0 and profile_count >= @credential_profile_limit ->
+          {:error, {:credential_profile_limit, @credential_profile_limit}}
+
+        true ->
+          :ok
+      end
+    end
+  end
+
+  defp admit_credential_profile(_conn, _record), do: :ok
 
   defp verify_head(conn, scope_id, generation, 0, "genesis") do
     case query(conn, "SELECT 1 FROM session_heads WHERE scope_id=? AND generation=?", [scope_id, generation]) do
@@ -1798,6 +1846,15 @@ defmodule Jido.Console.Session.Store.SQLite do
       "SELECT json,digest,encoded_bytes FROM records WHERE scope_id=? AND sequence>? ORDER BY generation,sequence LIMIT ?"
 
     with {:ok, rows} <- query(conn, sql, [scope_id, after_sequence, limit]) do
+      bounded_decode(rows, max_bytes, [])
+    end
+  end
+
+  defp read_credential_profile_records(conn, %{limit: limit, bytes: max_bytes}) do
+    sql =
+      "SELECT r.json,r.digest,r.encoded_bytes FROM records r WHERE r.record_type='credential_profile_reference' AND NOT EXISTS (SELECT 1 FROM records newer WHERE newer.scope_id=r.scope_id AND newer.generation=r.generation AND newer.record_type='credential_profile_reference' AND newer.sequence>r.sequence) ORDER BY r.scope_id LIMIT ?"
+
+    with {:ok, rows} <- query(conn, sql, [limit]) do
       bounded_decode(rows, max_bytes, [])
     end
   end
@@ -2341,6 +2398,18 @@ defmodule Jido.Console.Session.Store.SQLite do
       {:ok, %{limit: limit, bytes: bytes, after: after_sequence}}
     else
       {:error, :invalid_history_bounds}
+    end
+  end
+
+  defp profile_bounds(opts) do
+    limit = Keyword.get(opts, :limit, @credential_profile_limit)
+    bytes = Keyword.get(opts, :max_bytes, @credential_profile_list_bytes)
+
+    if is_integer(limit) and limit > 0 and limit <= @credential_profile_limit and is_integer(bytes) and bytes > 0 and
+         bytes <= @credential_profile_list_bytes do
+      {:ok, %{limit: limit, bytes: bytes}}
+    else
+      {:error, :invalid_credential_profile_bounds}
     end
   end
 
