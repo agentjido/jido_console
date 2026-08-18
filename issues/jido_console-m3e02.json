@@ -8,9 +8,9 @@
   "description": "\n# M3-E02: Qualify SQLite for the Local Store\n\n## Status\n\nSkipped by roadmap decision in version 1.3.5. This epic has no implementation\npull request and does not block M3-E06.\n\n## Reason\n\nThe separate qualification gate found that the selected maintained adapter\ndoes not expose the SQLite online backup C API. That API is not required to\ncreate, commit, reopen, or read the live session store.\n\nSQLite remains the selected engine. The frozen file, transaction, privacy,\ncapacity, and integrity rules remain in force.\n\n## Handoff\n\n- M3-E06 declares the direct adapter and proves its minimum package, pragma,\n  commit, reopen, crash, path, and integrity behavior with the production\n  store.\n- M3-E17 creates a consistent snapshot with SQLite `VACUUM INTO`, under the\n  writer barrier, and verifies the result before adoption.\n- M3-E34 owns the complete production crash matrix.\n\n## Completion Record\n\nBeadwork closes `jido_console-m3e02` with reason `skipped`. M3-E02 does not\nblock M3-E06 or any later epic.",
   "id": "jido_console-m3e02",
   "labels": [
+    "delivery:none",
     "effort:large",
     "milestone-3",
-    "one-pr",
     "policy:no-publication",
     "risk:sqlite-adapter",
     "roadmap",
@@ -32,5 +32,5 @@
   "status": "closed",
   "title": "M3-E02: Qualify SQLite for the Local Store",
   "type": "epic",
-  "updated_at": "2026-08-18T05:17:44Z"
+  "updated_at": "2026-08-18T05:18:23Z"
 }
