@@ -21,6 +21,10 @@
     {
       "text": "Audit refinement: require exact skip evidence for M3-E02, but do not require an E02 implementation commit, pull request, or proof artifact.",
       "timestamp": "2026-08-18T05:18:24Z"
+    },
+    {
+      "text": "Refined the audit scope: require implementation evidence only for non-skipped epics. For E02, require only the exact skipped-decision record.",
+      "timestamp": "2026-08-18T05:54:07Z"
     }
   ],
   "priority": 1,
