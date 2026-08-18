@@ -45,12 +45,12 @@
       "fields": ["request_id", "invocation_id", "provider_id", "model_id", "variant_id", "settings_digest", "agent_spec_digest", "prompt_digest", "tool_schema_digest", "skill_schema_digest", "extension_descriptor_digest", "protocol_digest", "coding_profile_id", "workspace_id", "workspace_digest", "credential_profile_id", "credential_profile_version", "credential_reference_id", "credential_source_identity", "execution_environment_id"]
     },
     "effect_reservation": {
-      "required": ["result_id", "effective_arguments", "safety_class", "replay_rule", "approval_id"],
-      "fields": ["result_id", "effective_arguments", "safety_class", "replay_rule", "approval_id", "credential_reference_id", "workspace_digest"]
+      "required": ["session_id", "request_id", "effect_id", "attempt_id", "result_id", "effect_kind", "effective_arguments", "arguments_digest", "safety_class", "replay_rule", "required_permission", "approval_id", "turn_manifest_digest", "generation", "jidoka_intent_id", "jidoka_idempotency_key", "credential_reference_id", "workspace_digest"],
+      "fields": ["session_id", "request_id", "effect_id", "attempt_id", "result_id", "effect_kind", "effective_arguments", "arguments_digest", "safety_class", "replay_rule", "required_permission", "approval_id", "turn_manifest_digest", "generation", "jidoka_intent_id", "jidoka_idempotency_key", "credential_reference_id", "workspace_digest", "prior_attempt_id"]
     },
     "effect_resolution": {
-      "required": ["result_id", "status", "jidoka_revision"],
-      "fields": ["result_id", "status", "jidoka_revision", "result_digest", "decision_id"]
+      "required": ["session_id", "effect_id", "attempt_id", "result_id", "status", "jidoka_intent_id", "jidoka_revision"],
+      "fields": ["session_id", "effect_id", "attempt_id", "result_id", "status", "jidoka_intent_id", "jidoka_revision", "result_digest", "decision_id", "uncertainty_reason"]
     },
     "verified_watermark": {
       "required": ["watermark_id", "console_identity", "console_digest", "jidoka_identity", "jidoka_digest", "state"],
@@ -78,6 +78,8 @@
     "admission_state": "string",
     "agent_spec_digest": "digest",
     "approval_id": "string_or_null",
+    "arguments_digest": "digest",
+    "attempt_id": "string",
     "authority_reset": "boolean",
     "child_session_id": "string",
     "command_id": "string",
@@ -98,6 +100,8 @@
     "decision_id": "string",
     "disabled": "boolean",
     "effective_arguments": "json",
+    "effect_id": "string",
+    "effect_kind": "string",
     "event": "map",
     "event_class": "string",
     "event_id": "string",
@@ -113,6 +117,8 @@
     "item_id": "string",
     "jidoka_digest": "digest",
     "jidoka_identity": "map",
+    "jidoka_idempotency_key": "string",
+    "jidoka_intent_id": "string",
     "jidoka_link": "map_or_null",
     "jidoka_revision": "integer",
     "lifecycle": "string",
@@ -131,6 +137,7 @@
     "principal_id": "string",
     "prior_digest": "digest_or_genesis",
     "prior_generation": "integer",
+    "prior_attempt_id": "string_or_null",
     "product_instance_id": "string",
     "profile_id": "string",
     "profile_version": "integer",
@@ -141,6 +148,7 @@
     "references": "list",
     "replay_rule": "string",
     "request_id": "string",
+    "required_permission": "string",
     "result": "json",
     "result_digest": "digest_or_null",
     "result_id": "string",
@@ -158,7 +166,9 @@
     "status": "string",
     "terminal_status": "string_or_null",
     "tool_schema_digest": "digest",
+    "turn_manifest_digest": "digest",
     "trust": "string",
+    "uncertainty_reason": "string_or_null",
     "variant_id": "string",
     "watermark_id": "string",
     "workspace_digest": "digest",

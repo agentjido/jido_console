@@ -166,11 +166,19 @@ defmodule Jido.Console.Session.Durable.RecordTest do
 
   defp record(type, sequence, prior) do
     payload =
-      if type == "credential_profile_reference" do
-        credential_profile()
-      else
-        {:ok, declaration} = Catalog.record_type(type)
-        Map.new(declaration["required"], &{&1, field_value(&1)})
+      case type do
+        "credential_profile_reference" ->
+          credential_profile()
+
+        "effect_reservation" ->
+          effect_reservation()
+
+        "effect_resolution" ->
+          effect_resolution()
+
+        _other ->
+          {:ok, declaration} = Catalog.record_type(type)
+          Map.new(declaration["required"], &{&1, field_value(&1)})
       end
 
     Record.new(type, payload,
@@ -200,6 +208,41 @@ defmodule Jido.Console.Session.Durable.RecordTest do
           "lookup" => %{"name" => "OPENAI_API_KEY"}
         }
       ]
+    }
+  end
+
+  defp effect_reservation do
+    %{
+      "session_id" => "session-fixture",
+      "request_id" => "request-fixture",
+      "effect_id" => "effect-fixture",
+      "attempt_id" => "attempt-fixture",
+      "result_id" => "result-fixture",
+      "effect_kind" => "operation",
+      "effective_arguments" => %{},
+      "arguments_digest" => @digest,
+      "safety_class" => "safe",
+      "replay_rule" => "replay",
+      "required_permission" => "none",
+      "approval_id" => nil,
+      "turn_manifest_digest" => @digest,
+      "generation" => 1,
+      "jidoka_intent_id" => "effect-fixture",
+      "jidoka_idempotency_key" => "key-fixture",
+      "credential_reference_id" => nil,
+      "workspace_digest" => @digest
+    }
+  end
+
+  defp effect_resolution do
+    %{
+      "session_id" => "session-fixture",
+      "effect_id" => "effect-fixture",
+      "attempt_id" => "attempt-fixture",
+      "result_id" => "result-fixture",
+      "status" => "failed",
+      "jidoka_intent_id" => "effect-fixture",
+      "jidoka_revision" => 1
     }
   end
 
