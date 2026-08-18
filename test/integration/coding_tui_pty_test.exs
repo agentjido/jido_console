@@ -187,6 +187,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
           {"JIDO_RELEASE_TUI_PROBE_WORKSPACE", fixture.root},
           {"JIDO_RELEASE_TUI_PROBE_EXPECTED", @expected_file},
           {"JIDO_RELEASE_TUI_PROBE_LOG", log},
+          {"JIDO_HOME", Path.join(Path.dirname(log), "compiled-home")},
           {"LANG", "en_US.UTF-8"},
           {"LC_ALL", "en_US.UTF-8"},
           {"TERM", "xterm-256color"}
