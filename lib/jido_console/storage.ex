@@ -33,6 +33,22 @@ defmodule Jido.Console.Storage do
     end
   end
 
+  @doc "Appends one immutable watermark transition through the normal write lane."
+  @spec append_watermark(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def append_watermark(record, opts \\ []) when is_map(record) do
+    with {:ok, encoded} <- Record.encode(record),
+         {:ok, operation_id} <- operation_id(opts),
+         :ok <- writer_available(opts),
+         high_water = write_high_water(encoded.encoded_bytes * 2),
+         {:ok, quota_token} <-
+           Quota.reserve(quota(opts), operation_id, :normal_write, :normal, %{
+             active_database: high_water,
+             wal: high_water
+           }) do
+      append_watermark_admitted(record, encoded, high_water, operation_id, quota_token, opts)
+    end
+  end
+
   @doc "Appends one canonical event through the bounded normal write lane."
   @spec append_event(map(), map(), keyword()) :: {:ok, map()} | {:error, term()}
   def append_event(event, semantic, opts \\ []) when is_map(event) and is_map(semantic) do
@@ -147,6 +163,41 @@ defmodule Jido.Console.Storage do
   def history_head(session_id, opts \\ []) when is_binary(session_id) do
     bounded_read(opts, fn ->
       SQLite.history_head(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end)
+  end
+
+  @doc "Returns one exact committed canonical Console event identity."
+  @spec canonical_event(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def canonical_event(event_id, opts \\ []) when is_binary(event_id) do
+    bounded_read(opts, fn ->
+      SQLite.canonical_event(writer(opts), event_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end)
+  end
+
+  @doc "Returns all immutable transitions for one watermark."
+  @spec watermark_history(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def watermark_history(watermark_id, opts \\ []) when is_binary(watermark_id) do
+    bounded_read(opts, fn ->
+      SQLite.watermark_history(writer(opts), watermark_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end)
+  end
+
+  @doc "Returns the last verified watermark for one Console session."
+  @spec verified_watermark(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def verified_watermark(session_id, opts \\ []) when is_binary(session_id) do
+    bounded_read(opts, fn ->
+      SQLite.verified_watermark(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
+    end)
+  end
+
+  @doc "Returns one committed Jidoka session through its public store contract."
+  @spec jidoka_session(String.t(), keyword()) :: {:ok, Jidoka.Session.Data.t()} | {:error, term()}
+  def jidoka_session(session_id, opts \\ []) when is_binary(session_id) do
+    bounded_read(opts, fn ->
+      SQLite.get_session(session_id,
+        pid: writer(opts),
+        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+      )
     end)
   end
 
@@ -359,6 +410,41 @@ defmodule Jido.Console.Storage do
       {:error, _reason} = error ->
         _result = Quota.finish(quota(opts), quota_token, :rolled_back)
         error
+    end
+  end
+
+  defp append_watermark_admitted(record, encoded, high_water, operation_id, quota_token, opts) do
+    case Admission.reserve(admission(opts), :normal, encoded.encoded_bytes,
+           page_bytes: high_water,
+           wal_bytes: high_water
+         ) do
+      {:ok, token} ->
+        result = call_watermark_writer(record, operation_id, token, opts)
+        finish_quota(result, quota_token, operation_id, opts)
+
+      {:error, _reason} = error ->
+        _result = Quota.finish(quota(opts), quota_token, :rolled_back)
+        error
+    end
+  end
+
+  defp call_watermark_writer(record, operation_id, token, opts) do
+    try do
+      result =
+        SQLite.append_watermark(writer(opts), record,
+          operation_id: operation_id,
+          fence: Keyword.get(opts, :fence),
+          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
+        )
+
+      refresh_wal(opts)
+      result
+    catch
+      :exit, {:timeout, _call} -> {:error, {:timeout_unknown, operation_id}}
+      :exit, {:noproc, _call} -> {:error, :storage_unavailable}
+      :exit, {:normal, _call} -> {:error, :storage_unavailable}
+    after
+      Admission.release(admission(opts), token)
     end
   end
 

@@ -9,7 +9,8 @@ defmodule Jido.Console.Session.Durable.Record do
     CredentialProfile,
     EffectRecord,
     TurnManifest,
-    Value
+    Value,
+    WatermarkRecord
   }
 
   @record_schema "jido.console.record"
@@ -215,6 +216,9 @@ defmodule Jido.Console.Session.Durable.Record do
 
   defp validate_specialized_payload("effect_resolution", payload),
     do: EffectRecord.validate_resolution(payload)
+
+  defp validate_specialized_payload("verified_watermark", payload),
+    do: WatermarkRecord.validate(payload)
 
   defp validate_specialized_payload(_record_type, _payload), do: :ok
 
