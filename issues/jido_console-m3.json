@@ -13,6 +13,12 @@
     "roadmap",
     "v0.3"
   ],
+  "comments": [
+    {
+      "text": "Roadmap refinement: M3-E02 is skipped and has no implementation PR. M3-E06 owns minimum direct Exqlite qualification through the production store. M3-E17 uses SQLite VACUUM INTO under the writer barrier. No remaining epic depends on M3-E02.",
+      "timestamp": "2026-08-18T01:57:51Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "Milestone 3: Add Durable Resume, Fork, and Audit",
