@@ -25,9 +25,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Implemented and squash-merged as PR #24. Verification: 856 tests passed with one expected skip; local coverage 90.3%; GitHub CI passed on Elixir 1.18, 1.19, and 1.20; precommit, Dialyzer, docs, restart, crash-barrier, mismatch, tail, and orphan tests passed. Merge commit: 92c68255a5fb6da4606ed47ecf4243bacbe429b0.",
+      "timestamp": "2026-08-18T10:41:17Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E16: Verify Console-to-Jidoka Watermarks",
   "type": "epic",
-  "updated_at": "2026-08-18T10:09:00Z"
+  "updated_at": "2026-08-18T10:41:17Z"
 }
