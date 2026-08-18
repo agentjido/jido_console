@@ -30,11 +30,15 @@
     {
       "text": "Ticket refinement: this closed record has delivery:none and no one-pr label. It is excluded from implementation, pull-request, readiness, and completion counts.",
       "timestamp": "2026-08-18T05:18:24Z"
+    },
+    {
+      "text": "Skip audit complete: E02 is closed as skipped, has delivery:none, has no one-pr label, has no child tickets, and has zero dependency edges. All implementation and completion counts exclude it.",
+      "timestamp": "2026-08-18T05:54:07Z"
     }
   ],
   "priority": 1,
   "status": "closed",
   "title": "M3-E02: Qualify SQLite for the Local Store",
   "type": "epic",
-  "updated_at": "2026-08-18T05:18:24Z"
+  "updated_at": "2026-08-18T05:54:07Z"
 }
