@@ -20,9 +20,15 @@
     "v0.3"
   ],
   "parent": "jido_console-m3",
+  "comments": [
+    {
+      "text": "Delivered by PR #21. Source commit 62dfd77 was squash-merged to milestone-3 as cf29e81. Verification: 15 focused credential tests passed; local coverage reached the 90.0% gate; mix precommit and mix docs passed; CI passed all required checks across Elixir 1.18, 1.19, and 1.20. Evidence includes isolated-home restart, exact reference and rotation, private-dotenv qualification, read-only keychain injection, secret-canary scan, typed stop results, and atomic 128-profile and 128-version limits.",
+      "timestamp": "2026-08-18T08:31:29Z"
+    }
+  ],
   "priority": 1,
   "status": "in_progress",
   "title": "M3-E13: Add Secret-Free Credential Profiles",
   "type": "epic",
-  "updated_at": "2026-08-18T07:46:23Z"
+  "updated_at": "2026-08-18T08:31:29Z"
 }
