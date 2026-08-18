@@ -10,7 +10,7 @@ defmodule Jido.Console.Session.Client.Driver do
 
   @operations ~w(
     attach detach send steer queue remove invoke output status snapshot cancel
-    approve reject ack recover replay resume capabilities
+    approve reject ack receipt recover replay resume capabilities
   )
 
   @type result :: {:ok, term()} | {:error, term()} | {:gap, map()} | :empty | :ok

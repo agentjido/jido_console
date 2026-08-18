@@ -24,8 +24,15 @@ defmodule Jido.Console.Session.ClientTest do
     {:ok, catalog} = Catalog.put_command(Local.default_catalog(), command)
     opts = Keyword.put(context.client_opts, :catalog, catalog)
     assert {:ok, attached} = Client.attach(context.session.id, opts)
-    assert {:ok, effect} = Client.invoke(attached.handle, "help", data: %{"page" => 1})
+
+    assert {:ok, effect} =
+             Client.invoke(attached.handle, "help",
+               data: %{"page" => 1},
+               idempotency_key: "client-help"
+             )
+
     assert effect.command_id == "cmd_help"
+    assert effect.receipt["type"] == "command"
 
     assert_receive {:jido_console_session, attachment_id, :output_ready}
     assert attachment_id == attached.handle.attachment.id

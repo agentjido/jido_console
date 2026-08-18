@@ -3,12 +3,13 @@ defmodule Jido.Console.Session.Client do
   Public renderer-neutral contract for one supervised semantic session.
 
   All live output uses bounded pull delivery. Acknowledgement and recovery
-  receipts are process-lifetime data. They do not survive application restart.
+  for client output are process-lifetime data. Durable admission receipt lookup
+  survives application restart.
   """
 
   import Kernel, except: [send: 2]
 
-  alias Jido.Console.Session.{Catalog, Effect, Input, Request}
+  alias Jido.Console.Session.{Admission, Catalog, Effect, Input, Request}
   alias Jido.Console.Session.Client.{Driver, Handle, Local}
 
   @type t :: Handle.t()
@@ -45,26 +46,31 @@ defmodule Jido.Console.Session.Client do
   end
 
   @doc "Admits normal input as a distinct operation."
-  @spec send(t(), String.t()) :: {:ok, Input.t()} | {:error, term()}
-  def send(handle, text), do: admit(handle, :send, text)
+  @spec send(t(), String.t(), keyword()) :: {:ok, Input.t()} | {:error, term()}
+  def send(handle, text, opts \\ []), do: admit(handle, :send, text, opts)
 
   @doc "Admits immediate steering input as a distinct operation."
-  @spec steer(t(), String.t()) :: {:ok, Input.t()} | {:error, term()}
-  def steer(handle, text), do: admit(handle, :steer, text)
+  @spec steer(t(), String.t(), keyword()) :: {:ok, Input.t()} | {:error, term()}
+  def steer(handle, text, opts \\ []), do: admit(handle, :steer, text, opts)
 
   @doc "Admits follow-up input as a distinct operation."
-  @spec queue(t(), String.t()) :: {:ok, Input.t()} | {:error, term()}
-  def queue(handle, text), do: admit(handle, :queue, text)
+  @spec queue(t(), String.t(), keyword()) :: {:ok, Input.t()} | {:error, term()}
+  def queue(handle, text, opts \\ []), do: admit(handle, :queue, text, opts)
 
   @doc "Removes one exact input from a named input queue."
-  @spec remove(t(), :steering | :follow_up, String.t()) :: {:ok, map()} | {:error, term()}
-  def remove(handle, queue, input_id) do
-    driver(handle).input(handle, :remove, %{queue: queue, input_id: input_id})
+  @spec remove(t(), :steering | :follow_up, String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def remove(handle, queue, input_id, opts \\ []) do
+    driver(handle).input(handle, :remove, %{
+      queue: queue,
+      input_id: input_id,
+      idempotency_key: Keyword.get(opts, :idempotency_key)
+    })
   end
 
   @doc "Compatibility name for normal input admission."
-  @spec send_input(t(), String.t()) :: {:ok, Input.t()} | {:error, term()}
-  def send_input(handle, text), do: send(handle, text)
+  @spec send_input(t(), String.t(), keyword()) :: {:ok, Input.t()} | {:error, term()}
+  def send_input(handle, text, opts \\ []), do: send(handle, text, opts)
 
   @doc "Invokes one catalog command and emits its typed effect on normal output."
   @spec invoke(t(), String.t(), keyword()) :: {:ok, Effect.t()} | {:error, term()}
@@ -84,8 +90,14 @@ defmodule Jido.Console.Session.Client do
              reason: Keyword.get(opts, :reason),
              data: Keyword.get(opts, :data, %{})
            ) do
-      driver(handle).control(handle, {:effect, effect})
+      driver(handle).control(handle, {:effect, effect, Keyword.get(opts, :idempotency_key)})
     end
+  end
+
+  @doc "Returns one durable receipt after an unknown commit result."
+  @spec receipt(t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def receipt(handle, operation_id) when is_binary(operation_id) do
+    driver(handle).control(handle, {:admission_receipt, operation_id})
   end
 
   @doc "Pulls one bounded canonical output batch, a gap, or no output."
@@ -176,7 +188,7 @@ defmodule Jido.Console.Session.Client do
   @doc "Returns the process-lifetime durability boundary."
   @spec limitation() :: String.t()
   def limitation do
-    "Acknowledgement and recovery are process-lifetime only and do not survive application restart."
+    "Client output acknowledgement and delivery-gap recovery are process-lifetime only. Durable admission receipt lookup survives application restart."
   end
 
   @doc false
@@ -190,7 +202,8 @@ defmodule Jido.Console.Session.Client do
   def runtime_info(handle), do: Local.call(handle, :runtime_info)
 
   @doc false
-  @spec start_turn(t(), String.t(), keyword()) :: {:ok, Request.t()} | {:error, term()}
+  @spec start_turn(t(), String.t(), keyword()) ::
+          {:ok, %{request: Request.t() | nil, receipt: map(), duplicate: boolean()}} | {:error, term()}
   def start_turn(handle, prompt, opts \\ []) do
     Local.call(handle, {:start_turn, prompt, opts})
   end
@@ -234,21 +247,26 @@ defmodule Jido.Console.Session.Client do
     Local.call(handle, {:respond_review, decision, request, review, opts})
   end
 
-  defp admit(handle, operation, text) when is_binary(text) do
+  defp admit(handle, operation, text, opts) when is_binary(text) and is_list(opts) do
     identity = Handle.identity(handle)
+    idempotency_key = Keyword.get(opts, :idempotency_key)
 
-    with {:ok, input} <-
+    with {:ok, input_id} <-
+           Admission.target_id(identity.session_id, operation, identity.client_id, idempotency_key),
+         {:ok, input} <-
            Input.admit(text,
              session_id: identity.session_id,
+             id: input_id,
              generation: identity.generation,
-             owner_instance_id: identity.owner_instance_id
+             owner_instance_id: identity.owner_instance_id,
+             idempotency_key: idempotency_key
            ) do
       input = Map.put(input, :client_id, identity.client_id)
       driver(handle).input(handle, operation, input)
     end
   end
 
-  defp admit(_handle, _operation, _text), do: {:error, :invalid_input}
+  defp admit(_handle, _operation, _text, _opts), do: {:error, :invalid_input}
 
   defp driver(handle), do: Handle.driver(handle) || Local
 end

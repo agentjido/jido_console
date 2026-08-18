@@ -13,14 +13,14 @@ defmodule Jido.Console.Session.Server do
   alias Jido.Console.Runtime.Result.{Cancelled, Error, Ok, PendingReview}
 
   alias Jido.Console.Session.{
+    Admission,
     Delivery,
     DynamicSupervisor,
+    Effect,
     Event,
     Generation,
     History,
     Identity,
-    Identity.Admission,
-    Input,
     Projection,
     Queue,
     Recovery,
@@ -29,6 +29,8 @@ defmodule Jido.Console.Session.Server do
     Request,
     State
   }
+
+  alias Jido.Console.Session.Identity.Admission, as: IdentityAdmission
 
   @completed_limit 100
   @terminal_event_wait_ms 50
@@ -129,7 +131,7 @@ defmodule Jido.Console.Session.Server do
   def runtime_info(server, client_id), do: GenServer.call(server, {:runtime_info, client_id})
 
   @doc "Starts one configured runtime turn."
-  @spec start_turn(name(), String.t(), String.t(), keyword()) :: {:ok, Request.t()} | {:error, term()}
+  @spec start_turn(name(), String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def start_turn(server, client_id, prompt, opts) do
     GenServer.call(server, {:start_turn, client_id, prompt, opts}, :infinity)
   end
@@ -179,10 +181,6 @@ defmodule Jido.Console.Session.Server do
   def admit_result(server, identity, result) do
     GenServer.call(server, {:admit_result, identity, result})
   end
-
-  @doc "Admits process-lifetime input for this session."
-  @spec admit_input(name(), Input.t()) :: {:ok, Input.t()} | {:error, term()}
-  def admit_input(server, input), do: GenServer.call(server, {:admit_input, input})
 
   @doc "Pulls one bounded canonical output batch for an exact attachment."
   @spec output(name(), String.t(), String.t(), String.t()) ::
@@ -368,13 +366,9 @@ defmodule Jido.Console.Session.Server do
   end
 
   def handle_call({:start_turn, client_id, prompt, opts}, _from, state) do
-    with :ok <- require_attached(state, client_id),
-         :ok <- require_idle(state),
-         {:ok, spec} <- runtime_operation(state.runtime, prompt, opts),
-         {:ok, request, state} <- begin_operation(state, spec) do
-      {:reply, {:ok, request}, state}
-    else
-      {:error, reason} -> {:reply, {:error, reason}, state}
+    case Map.fetch(state.clients, client_id) do
+      {:ok, client} -> execute_start_turn(state, client, prompt, opts)
+      :error -> {:reply, {:error, :not_attached}, state}
     end
   end
 
@@ -459,13 +453,6 @@ defmodule Jido.Console.Session.Server do
   def handle_call(:next_sequence, _from, state) do
     next = max(state.reserved, state.state.sequence) + 1
     {:reply, next, %{state | reserved: next}}
-  end
-
-  def handle_call({:admit_input, input}, _from, state) do
-    case exact_identity_fence(state, input.identity) do
-      :ok -> {:reply, {:ok, input}, %{state | inputs: bounded_append(state.inputs, input)}}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
   end
 
   def handle_call({:output, session_id, client_id, attachment_id}, _from, state) do
@@ -565,9 +552,9 @@ defmodule Jido.Console.Session.Server do
   def handle_call({:admit_result, identity, result}, _from, state) do
     case exact_identity_fence(state, identity) do
       :ok ->
-        admission = Map.get_lazy(state.admissions, identity.id, fn -> Admission.new(identity) end)
+        admission = Map.get_lazy(state.admissions, identity.id, fn -> IdentityAdmission.new(identity) end)
 
-        case Admission.admit(admission, identity) do
+        case IdentityAdmission.admit(admission, identity) do
           {:ok, admission} ->
             {:reply, {:ok, result},
              %{
@@ -1416,15 +1403,21 @@ defmodule Jido.Console.Session.Server do
 
   defp publish(clients, event, session_state) do
     Map.new(clients, fn {id, client} ->
-      {id, deliver(client, event, session_state)}
+      {id, deliver(client, event, session_state, true)}
     end)
   end
 
-  defp deliver(client, event, _session_state) do
+  defp publish_silent(clients, event, session_state) do
+    Map.new(clients, fn {id, client} ->
+      {id, deliver(client, event, session_state, false)}
+    end)
+  end
+
+  defp deliver(client, event, _session_state, notify?) do
     case Delivery.offer(client.delivery, event) do
       {:ok, delivery, advisory?} ->
         client = put_delivery(client, delivery)
-        if advisory?, do: send_ready(client)
+        if advisory? and notify?, do: send_ready(client)
         client
 
       {:duplicate, delivery} ->
@@ -1432,10 +1425,12 @@ defmodule Jido.Console.Session.Server do
 
       {:gap, delivery, _gap, advisory?} ->
         client = client |> cancel_delivery_timer() |> put_delivery(delivery)
-        if advisory?, do: send_ready(client)
+        if advisory? and notify?, do: send_ready(client)
         client
     end
   end
+
+  defp notify_clients(clients), do: Enum.each(clients, fn {_id, client} -> send_ready(client) end)
 
   defp fetch_bounded_client(state, client_id, attachment_id) do
     case Map.fetch(state.clients, client_id) do
@@ -1549,14 +1544,8 @@ defmodule Jido.Console.Session.Server do
     configure_client_runtime(state, runtime, agent, opts)
   end
 
-  defp execute_client_operation({:start_turn, prompt, opts}, _from, state, _client) do
-    with :ok <- require_idle(state),
-         {:ok, spec} <- runtime_operation(state.runtime, prompt, opts),
-         {:ok, request, state} <- begin_operation(state, spec) do
-      {:reply, {:ok, request}, state}
-    else
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
+  defp execute_client_operation({:start_turn, prompt, opts}, _from, state, client) do
+    execute_start_turn(state, client, prompt, opts)
   end
 
   defp execute_client_operation({:start_operation, spec}, _from, state, _client) do
@@ -1598,13 +1587,35 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp execute_client_operation({:effect, effect}, _from, state, client) do
-    case admit_client_event(state, client, "command_effected", %{
-           "command_id" => effect.command_id,
-           "effect" => Jido.Console.Session.Effect.to_protocol(effect)
-         }) do
-      {:ok, state} -> {:reply, {:ok, effect}, state}
-      {:error, reason, _state} -> {:reply, {:error, reason}, state}
+  defp execute_client_operation({:effect, effect, idempotency_key}, _from, state, client) do
+    protocol_effect = Effect.to_protocol(effect)
+
+    payload = %{
+      "command_id" => effect.command_id,
+      "effect" => protocol_effect
+    }
+
+    fields = %{"command_id" => effect.command_id, "effect" => protocol_effect}
+
+    case admit_durable_client_event(state, client, :invoke, idempotency_key, payload, "command_effected", fields) do
+      {:ok, admission, state} ->
+        {:reply, {:ok, Map.put(effect, :receipt, admission.receipt)}, state}
+
+      {:error, reason, _state} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp execute_client_operation({:admission_receipt, operation_id}, _from, state, _client) do
+    case Admission.receipt(operation_id, state.generation_options) do
+      {:ok, %{"session_id" => session_id} = receipt} when session_id == state.session.id ->
+        {:reply, {:ok, receipt}, state}
+
+      {:ok, _receipt} ->
+        {:reply, {:error, :cross_session_result}, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -1688,9 +1699,160 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
+  defp execute_start_turn(state, client, prompt, opts) do
+    idempotency_key = Keyword.get(opts, :idempotency_key)
+    sequence = state.state.sequence + 1
+
+    prepared =
+      Admission.prepare(
+        :start_turn,
+        %{
+          "operation" => "start_turn",
+          "prompt" => prompt,
+          "metadata" => turn_admission_metadata(opts),
+          "input_id" =>
+            stable_admission_target(
+              state.session.id,
+              :start_turn,
+              client.identity.id,
+              idempotency_key
+            ),
+          "client_id" => client.identity.id
+        },
+        session_id: state.session.id,
+        principal_id: client.identity.id,
+        idempotency_key: idempotency_key,
+        generation: state.session.generation,
+        sequence: sequence
+      )
+
+    case prepared do
+      {:ok, prepared} -> execute_prepared_start_turn(state, client, prompt, opts, prepared)
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp execute_prepared_start_turn(state, client, prompt, opts, prepared) do
+    case existing_admission(prepared, state) do
+      {:ok, receipt} ->
+        {:reply, {:ok, %{request: nil, receipt: receipt, duplicate: true}}, state}
+
+      :missing ->
+        case runtime_operation(state.runtime, prompt, opts) do
+          {:ok, spec} -> start_new_durable_turn(state, client, prompt, spec, prepared)
+          {:error, reason} -> {:reply, {:error, reason}, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp start_new_durable_turn(state, client, _prompt, spec, prepared) do
+    fields = %{"input_id" => prepared.target_id, "client_id" => client.identity.id}
+
+    with :ok <- require_idle(state),
+         {:ok, event} <-
+           durable_client_event(
+             state,
+             client,
+             prepared.operation_id,
+             "input_admitted",
+             fields,
+             state.state.sequence + 1
+           ),
+         {:ok, semantic} <- Reducer.apply_event(state.state, event),
+         {:ok, admission} <-
+           Admission.commit(prepared, event, semantic, state.fence, state.generation_options) do
+      state = committed_admission_state(state, event, semantic, admission, false)
+
+      case Admission.transition(
+             prepared.operation_id,
+             "started",
+             state.fence,
+             state.generation_options
+           ) do
+        {:ok, started} ->
+          start_admitted_turn(state, spec, prepared, started)
+
+        {:error, reason} ->
+          notify_clients(state.clients)
+          {:reply, {:error, {:admitted_not_started, admission.receipt, reason}}, state}
+      end
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp start_admitted_turn(state, spec, prepared, started) do
+    case begin_operation(state, spec) do
+      {:ok, request, state} ->
+        notify_clients(state.clients)
+        {:reply, {:ok, %{request: request, receipt: started.receipt, duplicate: false}}, state}
+
+      {:error, reason} ->
+        terminal =
+          Admission.transition(
+            prepared.operation_id,
+            "terminal",
+            state.fence,
+            state.generation_options
+          )
+
+        receipt = transition_receipt(terminal, started.receipt)
+        notify_clients(state.clients)
+        {:reply, {:error, {:admitted_not_started, receipt, reason}}, state}
+    end
+  end
+
+  defp existing_admission(prepared, state) do
+    case Admission.receipt(prepared.operation_id, state.generation_options) do
+      {:ok, receipt} ->
+        if get_in(receipt, ["payload", "payload_digest"]) == prepared.payload_digest do
+          {:ok, receipt}
+        else
+          {:error, {:idempotency_conflict, receipt["id"]}}
+        end
+
+      {:error, {:admission_receipt_not_found, _operation_id}} ->
+        :missing
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp stable_admission_target(session_id, operation, principal_id, idempotency_key) do
+    case Admission.target_id(session_id, operation, principal_id, idempotency_key) do
+      {:ok, target_id} -> target_id
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp turn_admission_metadata(opts) do
+    case Keyword.get(opts, :turn_opts, []) do
+      value when is_list(value) -> Keyword.get(value, :context, %{})
+      value -> value
+    end
+  end
+
   defp apply_client_input(state, client, :send, input) do
+    payload = input_payload(input, client, :send)
+    fields = %{"input_id" => input.identity.id, "client_id" => client.identity.id}
+
     with :ok <- validate_client_input(state, client, input),
-         {:ok, state} <- admit_input_event(state, client, input) do
+         {:ok, admission, state} <-
+           admit_durable_client_event(
+             state,
+             client,
+             :send,
+             input.idempotency_key,
+             payload,
+             "input_admitted",
+             fields
+           ) do
+      input = Map.put(input, :receipt, admission.receipt)
+      state = if admission.duplicate, do: state, else: %{state | inputs: bounded_append(state.inputs, input)}
       {:ok, input, state}
     end
   end
@@ -1698,19 +1860,96 @@ defmodule Jido.Console.Session.Server do
   defp apply_client_input(state, client, operation, input) when operation in [:steer, :queue] do
     queue = if operation == :steer, do: :steering, else: :follow_up
 
+    payload = input_payload(input, client, operation)
+    fields = %{"input_id" => input.identity.id, "client_id" => client.identity.id}
+
     with :ok <- validate_client_input(state, client, input),
-         {:ok, state} <- admit_input_event(state, client, input),
-         item = input_queue_item(input, client),
-         {:ok, queues} <- Queue.add(state.state.queues, queue, item),
-         {:ok, state} <- admit_queue_event(state, client, queue, queues[queue]) do
-      {:ok, input, state}
+         {:ok, admission, state} <-
+           admit_durable_client_event(
+             state,
+             client,
+             operation,
+             input.idempotency_key,
+             payload,
+             "input_admitted",
+             fields
+           ) do
+      input = Map.put(input, :receipt, admission.receipt)
+
+      if admission.duplicate do
+        {:ok, input, state}
+      else
+        item = input_queue_item(input, client)
+
+        with {:ok, queues} <- Queue.add(state.state.queues, queue, item),
+             {:ok, state} <- admit_queue_event(state, client, queue, queues[queue]) do
+          {:ok, input, %{state | inputs: bounded_append(state.inputs, input)}}
+        end
+      end
     end
   end
 
-  defp apply_client_input(state, client, :remove, %{queue: queue, input_id: input_id}) do
-    with {:ok, queues} <- Queue.remove(state.state.queues, queue, input_id),
-         {:ok, state} <- admit_queue_event(state, client, queue, queues[queue]) do
-      {:ok, %{operation: :remove, queue: queue, input_id: input_id}, state}
+  defp apply_client_input(
+         state,
+         client,
+         :remove,
+         %{queue: queue, input_id: input_id, idempotency_key: idempotency_key}
+       ) do
+    payload = %{
+      "command_id" => "remove",
+      "queue" => Atom.to_string(queue),
+      "input_id" => input_id
+    }
+
+    sequence = state.state.sequence + 1
+
+    prepared =
+      Admission.prepare(:remove, payload,
+        session_id: state.session.id,
+        principal_id: client.identity.id,
+        idempotency_key: idempotency_key,
+        generation: state.session.generation,
+        sequence: sequence
+      )
+
+    case prepared do
+      {:ok, prepared} ->
+        case existing_admission(prepared, state) do
+          {:ok, receipt} ->
+            {:ok,
+             %{
+               operation: :remove,
+               queue: queue,
+               input_id: input_id,
+               receipt: receipt
+             }, state}
+
+          :missing ->
+            with {:ok, queues} <- Queue.remove(state.state.queues, queue, input_id),
+                 fields = %{"queue" => Atom.to_string(queue), "items" => queues[queue]},
+                 {:ok, admission, state} <-
+                   commit_prepared_client_event(
+                     state,
+                     client,
+                     prepared,
+                     "queue_changed",
+                     fields
+                   ) do
+              {:ok,
+               %{
+                 operation: :remove,
+                 queue: queue,
+                 input_id: input_id,
+                 receipt: admission.receipt
+               }, state}
+            end
+
+          {:error, reason} ->
+            {:error, reason, state}
+        end
+
+      {:error, reason} ->
+        {:error, reason, state}
     end
   end
 
@@ -1725,21 +1964,125 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp admit_input_event(state, client, input) do
-    with {:ok, state} <-
-           admit_client_event(state, client, "input_admitted", %{
-             "input_id" => input.identity.id,
-             "client_id" => client.identity.id
-           }) do
-      {:ok, %{state | inputs: bounded_append(state.inputs, input)}}
-    end
-  end
-
   defp admit_queue_event(state, client, queue, items) do
     admit_client_event(state, client, "queue_changed", %{
       "queue" => Atom.to_string(queue),
       "items" => items
     })
+  end
+
+  defp admit_durable_client_event(
+         state,
+         client,
+         operation,
+         idempotency_key,
+         payload,
+         type,
+         fields
+       ) do
+    sequence = state.state.sequence + 1
+
+    prepared =
+      Admission.prepare(operation, payload,
+        session_id: state.session.id,
+        principal_id: client.identity.id,
+        idempotency_key: idempotency_key,
+        generation: state.session.generation,
+        sequence: sequence
+      )
+
+    case prepared do
+      {:ok, prepared} ->
+        case existing_admission(prepared, state) do
+          {:ok, receipt} ->
+            {:ok, %{receipt: receipt, duplicate: true}, state}
+
+          :missing ->
+            commit_prepared_client_event(state, client, prepared, type, fields)
+
+          {:error, reason} ->
+            {:error, reason, state}
+        end
+
+      {:error, reason} ->
+        {:error, reason, state}
+    end
+  end
+
+  defp commit_prepared_client_event(state, client, prepared, type, fields) do
+    with {:ok, event} <-
+           durable_client_event(
+             state,
+             client,
+             prepared.operation_id,
+             type,
+             fields,
+             state.state.sequence + 1
+           ),
+         {:ok, semantic} <- Reducer.apply_event(state.state, event),
+         {:ok, admission} <-
+           Admission.commit(
+             prepared,
+             event,
+             semantic,
+             state.fence,
+             state.generation_options
+           ) do
+      {:ok, admission, committed_admission_state(state, event, semantic, admission)}
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  defp transition_receipt({:ok, %{receipt: receipt}}, _fallback), do: receipt
+  defp transition_receipt(_result, fallback), do: fallback
+
+  defp committed_admission_state(state, event, semantic, admission, notify? \\ true)
+
+  defp committed_admission_state(state, event, semantic, %{duplicate: false}, notify?) do
+    clients =
+      if notify?,
+        do: publish(state.clients, event, semantic),
+        else: publish_silent(state.clients, event, semantic)
+
+    %{
+      state
+      | state: semantic,
+        clients: clients,
+        reserved: max(state.reserved, semantic.sequence)
+    }
+  end
+
+  defp committed_admission_state(state, _event, _semantic, %{duplicate: true}, _notify?), do: state
+
+  defp durable_client_event(state, client, operation_id, type, fields, sequence) do
+    attrs =
+      Map.merge(fields, %{
+        "type" => type,
+        "id" => "evt_#{operation_id}",
+        "session_id" => state.session.id,
+        "sequence" => sequence,
+        "durability" => "process",
+        "sensitivity" => "public",
+        "origin" => %{"kind" => "client", "actor_id" => client.identity.id},
+        "trust" => %{"evidence" => "durable-admission", "policy" => "session-owner"},
+        "identities" => [
+          Identity.to_protocol(state.session),
+          Identity.to_protocol(client.identity),
+          Identity.to_protocol(client.attachment)
+        ]
+      })
+
+    Event.classify(attrs)
+  end
+
+  defp input_payload(input, client, operation) do
+    %{
+      "operation" => Atom.to_string(operation),
+      "input_id" => input.identity.id,
+      "client_id" => client.identity.id,
+      "text" => input.text
+    }
   end
 
   defp admit_client_event(state, client, type, fields) do

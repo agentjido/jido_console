@@ -94,10 +94,23 @@ defmodule Jido.Console.Tui.Effects do
 
   def complete(%Worker{kind: :session_start_turn}, outcome) do
     case outcome do
-      {:ok, {:ok, request}} -> {:event, {:turn_started, request}}
-      {:ok, {:error, reason}} -> {:event, {:turn_result, {:error, reason}}}
-      {:ok, other} -> {:event, {:turn_result, {:error, {:invalid_start_turn_result, other}}}}
-      {:crash, reason} -> {:event, {:turn_result, {:error, reason}}}
+      {:ok, {:ok, %{request: request, duplicate: false}}} ->
+        {:event, {:turn_started, request}}
+
+      {:ok, {:ok, %{request: nil, receipt: receipt, duplicate: true}}} ->
+        {:event, {:turn_result, {:error, {:turn_already_admitted, receipt}}}}
+
+      {:ok, {:ok, request}} ->
+        {:event, {:turn_started, request}}
+
+      {:ok, {:error, reason}} ->
+        {:event, {:turn_result, {:error, reason}}}
+
+      {:ok, other} ->
+        {:event, {:turn_result, {:error, {:invalid_start_turn_result, other}}}}
+
+      {:crash, reason} ->
+        {:event, {:turn_result, {:error, reason}}}
     end
   end
 
@@ -141,10 +154,22 @@ defmodule Jido.Console.Tui.Effects do
   defp start_turn(workers, session_client, client_module, opts, prompt, context) do
     turn_opts = opts |> Keyword.get(:turn_opts, []) |> Keyword.put(:context, context)
     await_opts = Keyword.get(opts, :await_opts, timeout: 30_000, cancel_on_timeout: false)
+    idempotency_key = turn_idempotency_key(opts)
 
     Workers.start(workers, :session_start_turn, fn ->
-      client_module.start_turn(session_client, prompt, turn_opts: turn_opts, await_opts: await_opts)
+      client_module.start_turn(session_client, prompt,
+        idempotency_key: idempotency_key,
+        turn_opts: turn_opts,
+        await_opts: await_opts
+      )
     end)
+  end
+
+  defp turn_idempotency_key(opts) do
+    case Keyword.get(opts, :idempotency_key_generator) do
+      fun when is_function(fun, 0) -> fun.()
+      _other -> "tui-turn-#{System.unique_integer([:positive, :monotonic])}"
+    end
   end
 
   defp prepare_prompt(coding, prompt, opts) do

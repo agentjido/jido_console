@@ -1,6 +1,39 @@
 defmodule Jido.Console.SessionClientContract do
   @moduledoc "Reusable black-box contract for renderer-neutral session drivers."
 
+  import ExUnit.Assertions
+
+  alias Jido.Console.Session.Client
+
+  @doc false
+  def assert_restart_safe_admissions(handle) do
+    assert {:ok, sent} = Client.send(handle, "hello", idempotency_key: "contract-send")
+    assert {:ok, steered} = Client.steer(handle, "now", idempotency_key: "contract-steer")
+    assert {:ok, queued} = Client.queue(handle, "later", idempotency_key: "contract-queue")
+
+    assert {:ok, removed} =
+             Client.remove(handle, :follow_up, queued.identity.id, idempotency_key: "contract-remove")
+
+    assert {:ok, removed_retry} =
+             Client.remove(handle, :follow_up, queued.identity.id, idempotency_key: "contract-remove")
+
+    assert removed_retry.receipt == removed.receipt
+    assert sent.client_id == handle.client.id
+    assert steered.client_id == handle.client.id
+    assert sent.receipt["type"] == "input"
+    assert queued.receipt["payload"]["status"] == "committed"
+    assert {:ok, duplicate} = Client.send(handle, "hello", idempotency_key: "contract-send")
+    assert duplicate.identity.id == sent.identity.id
+    assert duplicate.receipt == sent.receipt
+
+    assert {:error, {:idempotency_conflict, receipt_id}} =
+             Client.send(handle, "changed", idempotency_key: "contract-send")
+
+    assert receipt_id == sent.receipt["id"]
+    assert {:ok, looked_up} = Client.receipt(handle, sent.receipt["payload"]["operation_id"])
+    assert looked_up == sent.receipt
+  end
+
   defmacro __using__(opts) do
     driver = Keyword.fetch!(opts, :driver)
 
@@ -69,12 +102,7 @@ defmodule Jido.Console.SessionClientContract do
         assert {:ok, attached} = Client.attach(context.session.id, context.client_opts)
         handle = attached.handle
 
-        assert {:ok, sent} = Client.send(handle, "hello")
-        assert {:ok, steered} = Client.steer(handle, "now")
-        assert {:ok, queued} = Client.queue(handle, "later")
-        assert {:ok, _removed} = Client.remove(handle, :follow_up, queued.identity.id)
-        assert sent.client_id == handle.client.id
-        assert steered.client_id == handle.client.id
+        Jido.Console.SessionClientContract.assert_restart_safe_admissions(handle)
 
         assert_receive {:jido_console_session, attachment_id, :output_ready}
         assert attachment_id == handle.attachment.id
@@ -83,6 +111,7 @@ defmodule Jido.Console.SessionClientContract do
         assert {:ok, batch} = Client.output(handle)
         assert {:ok, ^batch} = Validator.validate(batch)
         assert batch["type"] == "output_batch"
+        assert Enum.count(batch["payload"]["events"], &(&1["type"] == "input_admitted")) == 3
         refute Enum.any?(batch["payload"]["events"], &(&1["type"] == "delivery_gap"))
         assert {:error, :ack_required} = Client.output(handle)
 
@@ -98,8 +127,8 @@ defmodule Jido.Console.SessionClientContract do
         assert {:ok, attached} = Client.attach(context.session.id, opts)
         handle = attached.handle
 
-        assert {:ok, _input} = Client.send(handle, "first")
-        assert {:ok, _input} = Client.send(handle, "second")
+        assert {:ok, _input} = Client.send(handle, "first", idempotency_key: "gap-first")
+        assert {:ok, _input} = Client.send(handle, "second", idempotency_key: "gap-second")
         assert_receive {:jido_console_session, attachment_id, :output_ready}
         assert attachment_id == handle.attachment.id
         assert {:gap, gap} = Client.output(handle)
