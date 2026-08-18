@@ -65,7 +65,7 @@ defmodule Jido.Console.Session.Identity.Invocation do
 
   defp identity_opts(opts) do
     opts
-    |> Keyword.take([:session_id, :id])
+    |> Keyword.take([:session_id, :id, :owner_instance_id])
     |> Keyword.put(:generation, Keyword.get(opts, :identity_generation, 1))
   end
 

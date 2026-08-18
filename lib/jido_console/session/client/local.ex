@@ -17,13 +17,20 @@ defmodule Jido.Console.Session.Client.Local do
          :ok <- require_protocol(descriptor),
          {:ok, capabilities} <- negotiate_capabilities(descriptor, opts),
          {:ok, server} <- Server.ensure_started(session_id, opts),
-         {:ok, client} <- client_identity(session_id, opts),
+         {:ok, fence} <- Server.generation(server),
+         {:ok, client} <- client_identity(session_id, fence, opts),
          {:ok, %{attachment: attachment, snapshot: snapshot}} <-
            Server.attach(server, client, attach_options(opts)),
          {:ok, snapshot} <- Validator.validate(snapshot) do
       handle =
         Handle.new(
-          session: Identity.new!(:session, id: session_id, session_id: session_id),
+          session:
+            Identity.new!(:session,
+              id: session_id,
+              session_id: session_id,
+              generation: fence.generation,
+              owner_instance_id: fence.owner_instance_id
+            ),
           client: client,
           attachment: attachment,
           protocol: @protocol,
@@ -48,19 +55,10 @@ defmodule Jido.Console.Session.Client.Local do
 
   @impl true
   def output(handle) do
-    with {:ok, server} <- server(handle) do
-      identity = Handle.identity(handle)
-
-      case Server.output(
-             server,
-             identity.session_id,
-             identity.client_id,
-             identity.attachment_id
-           ) do
-        {:ok, envelope} -> validate_delivery(envelope, "output_batch")
-        {:gap, envelope} -> validate_gap(envelope)
-        other -> other
-      end
+    case call(handle, :output) do
+      {:ok, envelope} -> validate_delivery(envelope, "output_batch")
+      {:gap, envelope} -> validate_gap(envelope)
+      other -> other
     end
   end
 
@@ -71,64 +69,25 @@ defmodule Jido.Console.Session.Client.Local do
   def control(handle, operation), do: call(handle, operation)
 
   @impl true
-  def delivery(handle, token) do
-    with {:ok, server} <- server(handle) do
-      identity = Handle.identity(handle)
-
-      Server.ack_output(
-        server,
-        identity.session_id,
-        identity.client_id,
-        identity.attachment_id,
-        token
-      )
-    end
-  end
+  def delivery(handle, token), do: call(handle, {:delivery, token})
 
   @impl true
   def recovery(handle, :recover, gap_id) do
-    with {:ok, server} <- server(handle) do
-      identity = Handle.identity(handle)
-
-      server
-      |> Server.begin_recovery(
-        identity.session_id,
-        identity.client_id,
-        identity.attachment_id,
-        gap_id
-      )
-      |> validate_recovery("recovery_snapshot")
-    end
+    handle
+    |> call({:recovery, :recover, gap_id})
+    |> validate_recovery("recovery_snapshot")
   end
 
   def recovery(handle, :replay, token) do
-    with {:ok, server} <- server(handle) do
-      identity = Handle.identity(handle)
-
-      server
-      |> Server.replay_recovery(
-        identity.session_id,
-        identity.client_id,
-        identity.attachment_id,
-        token
-      )
-      |> validate_recovery("recovery_suffix")
-    end
+    handle
+    |> call({:recovery, :replay, token})
+    |> validate_recovery("recovery_suffix")
   end
 
   def recovery(handle, :resume, token) do
-    with {:ok, server} <- server(handle) do
-      identity = Handle.identity(handle)
-
-      server
-      |> Server.complete_recovery(
-        identity.session_id,
-        identity.client_id,
-        identity.attachment_id,
-        token
-      )
-      |> validate_recovery("recovery_receipt")
-    end
+    handle
+    |> call({:recovery, :resume, token})
+    |> validate_recovery("recovery_receipt")
   end
 
   @impl true
@@ -205,11 +164,14 @@ defmodule Jido.Console.Session.Client.Local do
     end
   end
 
-  defp client_identity(session_id, opts) do
+  defp client_identity(session_id, fence, opts) do
     identity_opts =
-      [session_id: session_id]
+      [
+        session_id: session_id,
+        generation: fence.generation,
+        owner_instance_id: fence.owner_instance_id
+      ]
       |> maybe_put(:id, Keyword.get(opts, :client_id))
-      |> maybe_put(:generation, Keyword.get(opts, :client_generation))
 
     Identity.new(:client, identity_opts)
   end

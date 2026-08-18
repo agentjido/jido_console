@@ -304,6 +304,8 @@ defmodule Jido.Console.Session.Recovery do
       get(identity, :session_id) != delivery.session_id -> {:error, :recovery_identity_mismatch}
       get(identity, :client_id) != delivery.client_id -> {:error, :recovery_identity_mismatch}
       get(identity, :attachment_id) != delivery.attachment_id -> {:error, :recovery_identity_mismatch}
+      get(identity, :generation) != delivery.generation -> {:error, :stale_generation}
+      get(identity, :owner_instance_id) != delivery.owner_instance_id -> {:error, :stale_generation}
       true -> :ok
     end
   end
@@ -315,6 +317,8 @@ defmodule Jido.Console.Session.Recovery do
       envelope["session_id"] != get(identity, :session_id) -> {:error, :recovery_identity_mismatch}
       payload["client_id"] != get(identity, :client_id) -> {:error, :recovery_identity_mismatch}
       payload["attachment_id"] != get(identity, :attachment_id) -> {:error, :recovery_identity_mismatch}
+      payload["generation"] != get(identity, :generation) -> {:error, :stale_generation}
+      payload["owner_instance_id"] != get(identity, :owner_instance_id) -> {:error, :stale_generation}
       true -> :ok
     end
   end
@@ -349,7 +353,15 @@ defmodule Jido.Console.Session.Recovery do
 
   defp token(delivery, purpose, parts) do
     data =
-      [purpose, delivery.session_id, delivery.client_id, delivery.attachment_id | Enum.map(parts, &to_string/1)]
+      [
+        purpose,
+        delivery.session_id,
+        delivery.generation,
+        delivery.owner_instance_id,
+        delivery.client_id,
+        delivery.attachment_id
+        | Enum.map(parts, &to_string/1)
+      ]
       |> Enum.join(<<0>>)
 
     digest = :crypto.mac(:hmac, :sha256, delivery.secret, data)
@@ -360,7 +372,9 @@ defmodule Jido.Console.Session.Recovery do
     %{
       "session_id" => get(identity, :session_id),
       "client_id" => get(identity, :client_id),
-      "attachment_id" => get(identity, :attachment_id)
+      "attachment_id" => get(identity, :attachment_id),
+      "generation" => get(identity, :generation),
+      "owner_instance_id" => get(identity, :owner_instance_id)
     }
   end
 

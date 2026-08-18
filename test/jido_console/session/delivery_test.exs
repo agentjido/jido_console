@@ -3,7 +3,13 @@ defmodule Jido.Console.Session.DeliveryTest do
 
   alias Jido.Console.Session.{Delivery, Event, Protocol, Reducer, State}
 
-  @identity %{session_id: "ses_1", client_id: "cli_1", attachment_id: "att_1"}
+  @identity %{
+    session_id: "ses_1",
+    client_id: "cli_1",
+    attachment_id: "att_1",
+    generation: 1,
+    owner_instance_id: "owner-1"
+  }
 
   test "the first update makes one readiness advisory and later updates do not" do
     delivery = delivery()
@@ -179,6 +185,8 @@ defmodule Jido.Console.Session.DeliveryTest do
           session_id: "ses_1",
           client_id: "cli_1",
           attachment_id: "att_1",
+          generation: 1,
+          owner_instance_id: "owner-1",
           token_secret: String.duplicate("s", 32)
         ],
         opts

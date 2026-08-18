@@ -105,6 +105,14 @@ defmodule Jido.Console.Session.JidokaDurableBoundaryTest do
                lease_ttl_ms: 50
              )
 
+    console_fence = %{
+      session_id: "durable-session",
+      generation: 7,
+      owner_instance_id: "console-owner",
+      operation_id: "watermark-operation",
+      state: :active
+    }
+
     assert {:ok,
             %{
               console_session_id: "durable-session",
@@ -112,16 +120,22 @@ defmodule Jido.Console.Session.JidokaDurableBoundaryTest do
               jidoka_revision: 2,
               jidoka_request_id: "request-durable",
               jidoka_lease_id: "lease-one",
-              jidoka_snapshot_id: "snapshot-durable"
-            }} = SessionJidoka.checkpoint_identity(mapping, checkpointed, snapshot)
+              jidoka_snapshot_id: "snapshot-durable",
+              console_generation: 7,
+              console_owner_instance_id: "console-owner",
+              console_operation_id: "watermark-operation"
+            }} =
+             SessionJidoka.checkpoint_identity(mapping, checkpointed, snapshot, console_fence: console_fence)
 
     assert {:ok,
             %{
               jidoka_revision: 2,
               jidoka_request_id: "request-durable",
               jidoka_lease_id: "lease-one",
+              console_generation: 7,
               target: %{kind: :resume, snapshot_id: "snapshot-durable"}
-            }} = SessionJidoka.recovery_identity(mapping, checkpointed)
+            }} =
+             SessionJidoka.recovery_identity(mapping, checkpointed, console_fence: console_fence)
 
     assert {:ok, replay} = SessionJidoka.replay(mapping, checkpointed)
     assert [%{snapshot_id: "snapshot-durable"}] = replay.snapshots
@@ -200,8 +214,90 @@ defmodule Jido.Console.Session.JidokaDurableBoundaryTest do
               root_session_id: "source-session",
               parent_session_id: "source-session",
               source_snapshot_id: "snapshot-source",
-              depth: 1
-            }} = SessionJidoka.fork_identity(child_mapping, child)
+              depth: 1,
+              console_generation: 1,
+              console_owner_instance_id: "child-owner"
+            }} =
+             SessionJidoka.fork_identity(child_mapping, child,
+               console_fence: %{
+                 session_id: "console-child",
+                 generation: 1,
+                 owner_instance_id: "child-owner",
+                 operation_id: "child-fork",
+                 state: :active
+               }
+             )
+  end
+
+  test "rejects invalid mappings, unlinked data, and generation fences" do
+    source = session("boundary-session")
+    {:ok, mapping} = SessionJidoka.session_mapping(source.session_id)
+
+    assert {:error, :invalid_jidoka_session_mapping} =
+             SessionJidoka.session_mapping(source.session_id, kind: :unknown)
+
+    assert {:error, :invalid_jidoka_session_mapping} = SessionJidoka.session_mapping("")
+
+    oversized = String.duplicate("x", 257)
+
+    assert {:error, {:oversized_jidoka_session_identity, 257, 256}} =
+             SessionJidoka.session_mapping(oversized)
+
+    assert {:error, :invalid_jidoka_session_mapping} = SessionJidoka.validate_session(%{}, source)
+    assert {:error, :invalid_jidoka_session_mapping} = SessionJidoka.validate_session(mapping, :invalid)
+    assert {:error, :invalid_console_receipt_metadata} = SessionJidoka.request_metadata(:invalid)
+
+    assert {:ok, ^source} = SessionJidoka.put_transition(mapping, nil, source)
+
+    assert {:error, :invalid_jidoka_session_mapping} =
+             SessionJidoka.put_transition(mapping, :invalid, source)
+
+    assert {:error, {:jidoka_session_not_recoverable, "boundary-session"}} =
+             SessionJidoka.recovery_identity(mapping, source)
+
+    assert {:error, {:jidoka_session_has_no_fork_lineage, "boundary-session"}} =
+             SessionJidoka.fork_identity(mapping, source)
+
+    assert {:error, :forked_jidoka_session_mapping_required} =
+             SessionJidoka.fork(mapping, mapping)
+
+    assert {:error, :invalid_jidoka_session_mapping} = SessionJidoka.fork(%{}, mapping)
+
+    request = request("boundary-request")
+
+    {:ok, claimed} =
+      SessionJidoka.claim_transition(mapping, source, request,
+        clock: fn -> 1 end,
+        id_generator: id_generator("boundary-lease")
+      )
+
+    assert {:ok, %{target: %{kind: :restart, request_id: "boundary-request"}}} =
+             SessionJidoka.recovery_identity(mapping, claimed)
+
+    assert {:ok, renewed} =
+             SessionJidoka.renew_transition(mapping, claimed, "boundary-lease", clock: fn -> 2 end)
+
+    checkpoint = snapshot(renewed, "boundary-snapshot")
+
+    {:ok, committed} =
+      SessionJidoka.checkpoint_transition(mapping, renewed, "boundary-lease", checkpoint, clock: fn -> 3 end)
+
+    assert {:ok, identity} = SessionJidoka.checkpoint_identity(mapping, committed, checkpoint)
+    refute Map.has_key?(identity, :console_generation)
+
+    assert {:error, :invalid_generation} =
+             SessionJidoka.checkpoint_identity(mapping, committed, checkpoint, console_fence: %{})
+
+    cross_fence = %{
+      session_id: "other-session",
+      generation: 1,
+      owner_instance_id: "other-owner",
+      operation_id: "other-operation",
+      state: :active
+    }
+
+    assert {:error, :cross_session_generation_fence} =
+             SessionJidoka.checkpoint_identity(mapping, committed, checkpoint, console_fence: cross_fence)
   end
 
   defp session(session_id) do

@@ -1,10 +1,9 @@
 defmodule Jido.Console.Session.Identity do
   @moduledoc """
-  Process-lifetime identities for live session work.
+  Generation-fenced identities for live session work.
 
-  Identities are bounded protocol-safe tokens bound to one application
-  lifetime and one session. They do not survive an application restart and
-  never carry credential values.
+  Identities are bounded protocol-safe tokens bound to one durable owner
+  incarnation and one session. They never carry credential values.
   """
 
   @kinds %{
@@ -50,6 +49,7 @@ defmodule Jido.Console.Session.Identity do
           required(:id) => String.t(),
           required(:session_id) => String.t(),
           required(:generation) => pos_integer(),
+          required(:owner_instance_id) => String.t(),
           optional(:owner) => String.t()
         }
 
@@ -64,6 +64,7 @@ defmodule Jido.Console.Session.Identity do
          :ok <- reject_credentials(opts),
          {:ok, session_id} <- session_id(kind, opts),
          {:ok, generation} <- generation(opts),
+         {:ok, owner_instance_id} <- owner_instance_id(opts),
          id = Keyword.get_lazy(opts, :id, fn -> generate(kind, prefix) end),
          :ok <- validate_id(id, kind) do
       {:ok,
@@ -72,6 +73,7 @@ defmodule Jido.Console.Session.Identity do
          id: id,
          session_id: if(kind == :session, do: id, else: session_id),
          generation: generation,
+         owner_instance_id: owner_instance_id,
          owner: Keyword.get(opts, :owner, owner_for(kind))
        }}
     end
@@ -119,7 +121,7 @@ defmodule Jido.Console.Session.Identity do
   @spec same?(t(), t()) :: boolean()
   def same?(left, right) do
     left.kind == right.kind and left.id == right.id and left.session_id == right.session_id and
-      left.generation == right.generation
+      left.generation == right.generation and left.owner_instance_id == right.owner_instance_id
   end
 
   @doc "Returns true when a result identity belongs to another session."
@@ -129,7 +131,10 @@ defmodule Jido.Console.Session.Identity do
   @doc "Returns true when a result identity is from an earlier generation."
   @spec stale?(t(), t()) :: boolean()
   def stale?(live, candidate) do
-    live.session_id == candidate.session_id and candidate.generation < live.generation
+    live.session_id == candidate.session_id and
+      (candidate.generation < live.generation or
+         (candidate.generation == live.generation and
+            candidate.owner_instance_id != live.owner_instance_id))
   end
 
   @doc "Rejects host, origin, or transport as an authority source."
@@ -147,6 +152,7 @@ defmodule Jido.Console.Session.Identity do
       "id" => identity.id,
       "session_id" => identity.session_id,
       "generation" => identity.generation,
+      "owner_instance_id" => identity.owner_instance_id,
       "owner" => identity.owner
     }
   end
@@ -155,6 +161,13 @@ defmodule Jido.Console.Session.Identity do
     case Keyword.get(opts, :generation, 1) do
       value when is_integer(value) and value > 0 -> {:ok, value}
       _other -> {:error, :invalid_generation}
+    end
+  end
+
+  defp owner_instance_id(opts) do
+    case Keyword.get(opts, :owner_instance_id, "process") do
+      value when is_binary(value) and value != "" and byte_size(value) <= @max_bytes -> {:ok, value}
+      _other -> {:error, :invalid_owner_instance_id}
     end
   end
 

@@ -911,7 +911,8 @@ defmodule Jido.Console.TuiTest do
     refute_receive {:shutdown_cancel_called, _cancel_pid}, 50
     refute_receive {:shutdown_session_closed, _pid}, 50
     assert start_pid == session_server
-    assert relay_pid == session_server
+    refute relay_pid == session_server
+    assert Process.alive?(relay_pid)
     assert Process.alive?(session_server)
     assert Process.alive?(controller)
     assert Process.alive?(await_pid)
@@ -919,6 +920,7 @@ defmodule Jido.Console.TuiTest do
     Server.stop(session_server)
     assert_receive {:shutdown_controller_closed, ^controller}
     assert_receive {:shutdown_session_closed, ^session_server}
+    refute Process.alive?(relay_pid)
     refute Process.alive?(await_pid)
   end
 
@@ -990,11 +992,13 @@ defmodule Jido.Console.TuiTest do
     assert :ok = Task.await(task, 500)
     assert_receive :terminal_closed
     refute_receive {:shutdown_cancel_blocked, _cancel_pid}, 50
-    assert relay == session_server
+    refute relay == session_server
+    assert Process.alive?(relay)
     assert Process.alive?(controller)
     assert Process.alive?(await_pid)
     Server.stop(session_server)
     assert_receive {:shutdown_session_closed, ^session_server}
+    refute Process.alive?(relay)
   end
 
   test "shows bounded coding review returned by the runtime" do

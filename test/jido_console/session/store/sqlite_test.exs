@@ -95,6 +95,175 @@ defmodule Jido.Console.Session.Store.SQLiteTest do
     assert {:error, {:operation_not_found, "sensitive-record"}} = SQLite.receipt(pid, "sensitive-record")
   end
 
+  test "claims one durable generation and rejects stale storage mutations", %{path: path} do
+    {:ok, pid} = SQLite.start_link(path: path)
+
+    assert {:ok, %{generation: 0, state: :unclaimed}} =
+             SQLite.generation(pid, "session-fixture")
+
+    claims =
+      1..2
+      |> Task.async_stream(
+        fn owner ->
+          SQLite.claim_generation(pid, "session-fixture",
+            expected_generation: 0,
+            owner_instance_id: "owner-#{owner}",
+            operation_id: "claim-#{owner}",
+            jidoka_lease_id: "lease-#{owner}"
+          )
+        end,
+        ordered: false
+      )
+      |> Enum.map(fn {:ok, result} -> result end)
+
+    assert [{:ok, winner}, {:error, {:generation_conflict, "session-fixture", 0, 1}}] =
+             Enum.sort_by(claims, &match?({:error, _reason}, &1))
+
+    assert winner.generation == 1
+    assert winner.owner_instance_id in ["owner-1", "owner-2"]
+    assert winner.jidoka_lease_id in ["lease-1", "lease-2"]
+    refute winner.owner_instance_id == winner.jidoka_lease_id
+
+    stale_fence = %{
+      session_id: winner.session_id,
+      generation: winner.generation,
+      owner_instance_id: "old-owner",
+      operation_id: "stale-append"
+    }
+
+    assert {:error, {:generation_owner_conflict, "session-fixture", "old-owner", current_owner}} =
+             SQLite.append(pid, record(0, "genesis"),
+               operation_id: "stale-append",
+               fence: stale_fence
+             )
+
+    assert current_owner == winner.owner_instance_id
+    assert {:ok, []} = SQLite.range(pid, "session-fixture")
+    assert {:error, {:operation_not_found, "stale-append"}} = SQLite.receipt(pid, "stale-append")
+
+    current_fence = %{
+      session_id: winner.session_id,
+      generation: winner.generation,
+      owner_instance_id: winner.owner_instance_id,
+      operation_id: "current-append"
+    }
+
+    assert {:ok, %{sequence: 0}} =
+             SQLite.append(pid, record(0, "genesis"),
+               operation_id: "current-append",
+               fence: current_fence
+             )
+
+    assert {:error, {:generation_operation_conflict, "wrong-operation", "another-append"}} =
+             SQLite.append(pid, record(1, @digest),
+               operation_id: "another-append",
+               fence: %{current_fence | operation_id: "wrong-operation"}
+             )
+
+    release_operation = "release-one"
+    release_fence = %{current_fence | operation_id: release_operation}
+
+    assert {:ok, %{state: :released, generation: 1}} =
+             SQLite.release_generation(pid, release_fence, operation_id: release_operation)
+
+    assert {:error, {:generation_not_active, "session-fixture", 1}} =
+             SQLite.append(pid, record(1, @digest),
+               operation_id: "after-release",
+               fence: %{current_fence | operation_id: "after-release"}
+             )
+
+    assert {:ok, audit} = SQLite.generation_audit(pid, "session-fixture")
+    assert Enum.map(audit, & &1.transition) == [:claimed, :released]
+    assert Enum.map(audit, & &1.generation) == [1, 1]
+    assert Enum.all?(audit, &(&1.owner_instance_id == winner.owner_instance_id))
+
+    assert {:ok, next} =
+             SQLite.claim_generation(pid, "session-fixture",
+               expected_generation: 1,
+               owner_instance_id: "owner-next",
+               operation_id: "claim-next"
+             )
+
+    assert next.generation == 2
+    assert next.owner_instance_id == "owner-next"
+  end
+
+  test "generation overflow fails closed and audit rows are immutable", %{path: path} do
+    {:ok, pid} = SQLite.start_link(path: path)
+
+    assert {:ok, _fence} =
+             SQLite.claim_generation(pid, "overflow-session",
+               expected_generation: 0,
+               owner_instance_id: "overflow-owner",
+               operation_id: "overflow-claim"
+             )
+
+    GenServer.stop(pid)
+    {:ok, conn} = Sqlite3.open(path)
+
+    assert :ok =
+             Sqlite3.execute(
+               conn,
+               "UPDATE session_generations SET generation=9223372036854775807 WHERE session_id='overflow-session'"
+             )
+
+    assert {:error, _reason} =
+             Sqlite3.execute(conn, "UPDATE generation_audit SET transition='released'")
+
+    assert :ok = Sqlite3.close(conn)
+    {:ok, restarted} = SQLite.start_link(path: path)
+
+    assert {:error, {:generation_overflow, "overflow-session", 9_223_372_036_854_775_807}} =
+             SQLite.claim_generation(restarted, "overflow-session",
+               expected_generation: 9_223_372_036_854_775_807,
+               owner_instance_id: "never-owner",
+               operation_id: "overflow-failed"
+             )
+
+    assert {:ok, [%{transition: :claimed}]} =
+             SQLite.generation_audit(restarted, "overflow-session")
+  end
+
+  test "generation fencing applies to Jidoka store transitions", %{path: path} do
+    {:ok, pid} = SQLite.start_link(path: path)
+    source = session("fenced-jidoka")
+
+    assert {:ok, generation} =
+             SQLite.claim_generation(pid, source.session_id,
+               expected_generation: 0,
+               owner_instance_id: "console-owner",
+               operation_id: "claim-jidoka",
+               jidoka_lease_id: "jidoka-lease"
+             )
+
+    assert {:error, :generation_fence_required} =
+             Store.put_session({SQLite, pid: pid, operation_id: "put-unfenced"}, source)
+
+    stale_fence = %{
+      session_id: source.session_id,
+      generation: generation.generation,
+      owner_instance_id: "old-owner",
+      operation_id: "put-stale"
+    }
+
+    assert {:error, {:generation_owner_conflict, "fenced-jidoka", "old-owner", "console-owner"}} =
+             Store.put_session(
+               {SQLite, pid: pid, operation_id: "put-stale", console_fence: stale_fence},
+               source
+             )
+
+    current_fence = %{stale_fence | owner_instance_id: "console-owner", operation_id: "put-current"}
+
+    assert {:ok, ^source} =
+             Store.put_session(
+               {SQLite, pid: pid, operation_id: "put-current", console_fence: current_fence},
+               source
+             )
+
+    assert {:ok, %{generation: 1, jidoka_lease_id: "jidoka-lease"}} =
+             SQLite.generation(pid, source.session_id)
+  end
+
   test "persists public Jidoka transitions atomically across reopen", %{path: path} do
     {:ok, pid} = SQLite.start_link(path: path)
     store = {SQLite, pid: pid}

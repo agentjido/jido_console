@@ -15,7 +15,7 @@ defmodule Jido.Console.Session.Permission do
   @doc "Records one permission request."
   @spec request(t(), map()) :: {:ok, t(), request()} | {:error, term()}
   def request(table, attrs) do
-    required = ~w(id principal rule control effect session_id run_id request_id scope)a
+    required = ~w(id principal rule control effect session_id generation owner_instance_id run_id request_id scope)a
 
     if Enum.all?(required, &present?(attrs[&1])) do
       record = Map.new(attrs) |> Map.put(:status, :pending)
@@ -36,6 +36,12 @@ defmodule Jido.Console.Session.Permission do
 
       pending.session_id != response[:session_id] ->
         {:error, :cross_session_result}
+
+      pending.generation != response[:generation] ->
+        {:error, :stale_generation}
+
+      pending.owner_instance_id != response[:owner_instance_id] ->
+        {:error, :stale_generation}
 
       pending.principal != response[:principal] ->
         {:error, :cross_principal_result}

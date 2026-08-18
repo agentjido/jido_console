@@ -39,6 +39,7 @@ defmodule Jido.Console.Session.Store.SQLite do
   @wal_hard_bytes 384 * 1_024 * 1_024
   @wal_autocheckpoint_pages div(@wal_soft_bytes, @page_size)
   @exqlite_license "MIT"
+  @max_generation 9_223_372_036_854_775_807
 
   @schema """
   CREATE TABLE IF NOT EXISTS store_metadata (
@@ -94,6 +95,31 @@ defmodule Jido.Console.Session.Store.SQLite do
     console_sequence INTEGER NOT NULL,
     jidoka_revision INTEGER NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS session_generations (
+    session_id TEXT PRIMARY KEY,
+    generation INTEGER NOT NULL CHECK (generation > 0),
+    owner_instance_id TEXT NOT NULL,
+    claim_operation_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('active', 'released')),
+    jidoka_lease_id TEXT,
+    claimed_at_ms INTEGER NOT NULL,
+    released_at_ms INTEGER
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS generation_audit (
+    operation_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    owner_instance_id TEXT NOT NULL,
+    transition TEXT NOT NULL CHECK (transition IN ('claimed', 'released')),
+    jidoka_lease_id TEXT,
+    occurred_at_ms INTEGER NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS generation_audit_session_order
+    ON generation_audit(session_id, generation, occurred_at_ms);
+  CREATE TRIGGER IF NOT EXISTS generation_audit_no_update
+    BEFORE UPDATE ON generation_audit BEGIN SELECT RAISE(ABORT, 'generation audit is immutable'); END;
+  CREATE TRIGGER IF NOT EXISTS generation_audit_no_delete
+    BEFORE DELETE ON generation_audit BEGIN SELECT RAISE(ABORT, 'generation audit is immutable'); END;
   CREATE TABLE IF NOT EXISTS operation_receipts (
     operation_id TEXT PRIMARY KEY,
     operation_kind TEXT NOT NULL,
@@ -163,7 +189,7 @@ defmodule Jido.Console.Session.Store.SQLite do
   def append(server, record, opts \\ []) when is_map(record) and is_list(opts) do
     with {:ok, encoded} <- Record.encode(record),
          {:ok, operation_id} <- operation_id(opts) do
-      call(server, {:append, operation_id, encoded}, opts)
+      call(server, {:append, operation_id, Keyword.get(opts, :fence), encoded}, opts)
     end
   end
 
@@ -192,6 +218,41 @@ defmodule Jido.Console.Session.Store.SQLite do
   @doc "Runs the bounded WAL checkpoint state machine and returns measured WAL bytes."
   @spec checkpoint(GenServer.server(), keyword()) :: {:ok, map()} | {:error, term()}
   def checkpoint(server, opts \\ []), do: call(server, :checkpoint, opts)
+
+  @doc "Returns the current durable generation for one session."
+  @spec generation(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def generation(server, session_id, opts \\ []) when is_binary(session_id) do
+    call(server, {:generation, session_id}, opts)
+  end
+
+  @doc "Claims exactly the generation after the caller's expected generation."
+  @spec claim_generation(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def claim_generation(server, session_id, opts \\ []) when is_binary(session_id) do
+    with {:ok, expected} <- expected_generation(opts),
+         {:ok, owner_instance_id} <- owner_instance_id(opts),
+         {:ok, operation_id} <- operation_id(opts),
+         {:ok, jidoka_lease_id} <- optional_token(opts, :jidoka_lease_id) do
+      call(
+        server,
+        {:claim_generation, session_id, expected, owner_instance_id, operation_id, jidoka_lease_id},
+        opts
+      )
+    end
+  end
+
+  @doc "Releases an exact active durable generation without reusing it."
+  @spec release_generation(GenServer.server(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def release_generation(server, fence, opts \\ []) when is_map(fence) do
+    with {:ok, operation_id} <- operation_id(opts) do
+      call(server, {:release_generation, fence, operation_id}, opts)
+    end
+  end
+
+  @doc "Returns the immutable generation transition history for one session."
+  @spec generation_audit(GenServer.server(), String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def generation_audit(server, session_id, opts \\ []) when is_binary(session_id) do
+    call(server, {:generation_audit, session_id}, opts)
+  end
 
   @impl true
   def init(opts) do
@@ -264,9 +325,14 @@ defmodule Jido.Console.Session.Store.SQLite do
     do: transition_call(opts, :renew, session_id, &Transitions.renew(&1, lease_id, opts))
 
   @impl true
-  def handle_call({:append, operation_id, encoded}, _from, state) do
+  def handle_call({:append, operation_id, fence, encoded}, _from, state) do
     result =
-      with {:ok, value} <- transaction(state.conn, fn -> append_record(state.conn, operation_id, encoded) end),
+      with {:ok, value} <-
+             transaction(state.conn, fn ->
+               with :ok <- verify_generation_fence(state.conn, encoded.record["scope_id"], fence, operation_id) do
+                 append_record(state.conn, operation_id, encoded)
+               end
+             end),
            :ok <- protect_owned_files(state.path) do
         {:ok, value}
       end
@@ -309,10 +375,48 @@ defmodule Jido.Console.Session.Store.SQLite do
   def handle_call({:list_sessions, bounds}, _from, state),
     do: {:reply, list_stored_sessions(state.conn, bounds), state}
 
-  def handle_call({:jidoka_transition, operation_id, kind, session_id, preencoded, transition}, _from, state) do
+  def handle_call({:generation, session_id}, _from, state),
+    do: {:reply, load_generation(state.conn, session_id), state}
+
+  def handle_call(
+        {:claim_generation, session_id, expected, owner_instance_id, operation_id, jidoka_lease_id},
+        _from,
+        state
+      ) do
     result =
       transaction(state.conn, fn ->
-        with {:ok, current} <- load_optional_session(state.conn, session_id),
+        claim_generation_conn(
+          state.conn,
+          session_id,
+          expected,
+          owner_instance_id,
+          operation_id,
+          jidoka_lease_id
+        )
+      end)
+
+    result = with {:ok, value} <- result, :ok <- protect_owned_files(state.path), do: {:ok, value}
+    {:reply, result, state}
+  end
+
+  def handle_call({:release_generation, fence, operation_id}, _from, state) do
+    result = transaction(state.conn, fn -> release_generation_conn(state.conn, fence, operation_id) end)
+    result = with {:ok, value} <- result, :ok <- protect_owned_files(state.path), do: {:ok, value}
+    {:reply, result, state}
+  end
+
+  def handle_call({:generation_audit, session_id}, _from, state),
+    do: {:reply, read_generation_audit(state.conn, session_id), state}
+
+  def handle_call(
+        {:jidoka_transition, operation_id, kind, session_id, fence, preencoded, transition},
+        _from,
+        state
+      ) do
+    result =
+      transaction(state.conn, fn ->
+        with :ok <- verify_generation_fence(state.conn, session_id, fence, operation_id),
+             {:ok, current} <- load_optional_session(state.conn, session_id),
              {:ok, %Data{} = updated} <- transition.(current),
              {:ok, encoded} <- use_or_encode(preencoded, updated),
              :ok <- admit_normal_write(state.conn, encoded.encoded_bytes),
@@ -351,7 +455,11 @@ defmodule Jido.Console.Session.Store.SQLite do
   defp encoded_call(opts, kind, session_id, %Data{} = session, transition) do
     with {:ok, encoded} <- JidokaValue.encode(session),
          {:ok, operation_id} <- jidoka_operation_id(opts, kind, session_id, session.revision) do
-      call(fetch_server!(opts), {:jidoka_transition, operation_id, kind, session_id, encoded, transition}, opts)
+      call(
+        fetch_server!(opts),
+        {:jidoka_transition, operation_id, kind, session_id, Keyword.get(opts, :console_fence), encoded, transition},
+        opts
+      )
     end
   end
 
@@ -359,8 +467,271 @@ defmodule Jido.Console.Session.Store.SQLite do
     revision = Keyword.get(opts, :expected_revision, "current")
 
     with {:ok, operation_id} <- jidoka_operation_id(opts, kind, session_id, revision) do
-      call(fetch_server!(opts), {:jidoka_transition, operation_id, kind, session_id, nil, transition}, opts)
+      call(
+        fetch_server!(opts),
+        {:jidoka_transition, operation_id, kind, session_id, Keyword.get(opts, :console_fence), nil, transition},
+        opts
+      )
     end
+  end
+
+  defp claim_generation_conn(conn, session_id, expected, owner_instance_id, operation_id, jidoka_lease_id) do
+    with {:ok, current} <- load_generation(conn, session_id),
+         :ok <- expect_generation(session_id, expected, current.generation),
+         :ok <- reject_generation_overflow(session_id, current.generation) do
+      generation = current.generation + 1
+      claimed_at_ms = now_ms()
+
+      with :ok <-
+             execute(
+               conn,
+               "INSERT INTO session_generations(session_id,generation,owner_instance_id,claim_operation_id,state,jidoka_lease_id,claimed_at_ms,released_at_ms) VALUES(?,?,?,?,?,?,?,NULL) ON CONFLICT(session_id) DO UPDATE SET generation=excluded.generation,owner_instance_id=excluded.owner_instance_id,claim_operation_id=excluded.claim_operation_id,state='active',jidoka_lease_id=excluded.jidoka_lease_id,claimed_at_ms=excluded.claimed_at_ms,released_at_ms=NULL WHERE session_generations.generation=?",
+               [
+                 session_id,
+                 generation,
+                 owner_instance_id,
+                 operation_id,
+                 "active",
+                 jidoka_lease_id,
+                 claimed_at_ms,
+                 expected
+               ]
+             ),
+           :ok <-
+             insert_generation_audit(
+               conn,
+               operation_id,
+               session_id,
+               generation,
+               owner_instance_id,
+               "claimed",
+               jidoka_lease_id,
+               claimed_at_ms
+             ) do
+        {:ok,
+         generation_value(
+           session_id,
+           generation,
+           owner_instance_id,
+           operation_id,
+           :active,
+           jidoka_lease_id,
+           claimed_at_ms,
+           nil
+         )}
+      end
+    end
+  end
+
+  defp release_generation_conn(conn, fence, operation_id) do
+    with {:ok, session_id, generation, owner_instance_id, ^operation_id} <-
+           normalize_fence(fence, operation_id),
+         {:ok, current} <- load_generation(conn, session_id),
+         :ok <- exact_active_generation(current, generation, owner_instance_id),
+         released_at_ms = now_ms(),
+         :ok <-
+           execute(
+             conn,
+             "UPDATE session_generations SET state='released',released_at_ms=? WHERE session_id=? AND generation=? AND owner_instance_id=? AND state='active'",
+             [released_at_ms, session_id, generation, owner_instance_id]
+           ),
+         :ok <-
+           insert_generation_audit(
+             conn,
+             operation_id,
+             session_id,
+             generation,
+             owner_instance_id,
+             "released",
+             current.jidoka_lease_id,
+             released_at_ms
+           ) do
+      {:ok,
+       generation_value(
+         session_id,
+         generation,
+         owner_instance_id,
+         current.claim_operation_id,
+         :released,
+         current.jidoka_lease_id,
+         current.claimed_at_ms,
+         released_at_ms
+       )}
+    else
+      {:ok, _session_id, _generation, _owner_instance_id, other_operation_id} ->
+        {:error, {:generation_operation_conflict, other_operation_id, operation_id}}
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp load_generation(conn, session_id) do
+    sql =
+      "SELECT generation,owner_instance_id,claim_operation_id,state,jidoka_lease_id,claimed_at_ms,released_at_ms FROM session_generations WHERE session_id=?"
+
+    case query(conn, sql, [session_id]) do
+      {:ok, [[generation, owner, operation, state, lease, claimed, released]]} ->
+        {:ok,
+         generation_value(
+           session_id,
+           generation,
+           owner,
+           operation,
+           String.to_existing_atom(state),
+           lease,
+           claimed,
+           released
+         )}
+
+      {:ok, []} ->
+        {:ok,
+         %{
+           session_id: session_id,
+           generation: 0,
+           owner_instance_id: nil,
+           claim_operation_id: nil,
+           state: :unclaimed,
+           jidoka_lease_id: nil,
+           claimed_at_ms: nil,
+           released_at_ms: nil
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp read_generation_audit(conn, session_id) do
+    sql =
+      "SELECT operation_id,generation,owner_instance_id,transition,jidoka_lease_id,occurred_at_ms FROM generation_audit WHERE session_id=? ORDER BY generation,occurred_at_ms,operation_id"
+
+    with {:ok, rows} <- query(conn, sql, [session_id]) do
+      {:ok,
+       Enum.map(rows, fn [operation, generation, owner, transition, lease, occurred] ->
+         %{
+           operation_id: operation,
+           session_id: session_id,
+           generation: generation,
+           owner_instance_id: owner,
+           transition: String.to_existing_atom(transition),
+           jidoka_lease_id: lease,
+           occurred_at_ms: occurred
+         }
+       end)}
+    end
+  end
+
+  defp insert_generation_audit(
+         conn,
+         operation_id,
+         session_id,
+         generation,
+         owner_instance_id,
+         transition,
+         jidoka_lease_id,
+         occurred_at_ms
+       ) do
+    execute(
+      conn,
+      "INSERT INTO generation_audit(operation_id,session_id,generation,owner_instance_id,transition,jidoka_lease_id,occurred_at_ms) VALUES(?,?,?,?,?,?,?)",
+      [operation_id, session_id, generation, owner_instance_id, transition, jidoka_lease_id, occurred_at_ms]
+    )
+  end
+
+  defp verify_generation_fence(conn, session_id, fence, operation_id) do
+    with {:ok, current} <- load_generation(conn, session_id) do
+      case current.state do
+        :unclaimed ->
+          :ok
+
+        _state ->
+          with {:ok, fence_session_id, generation, owner_instance_id, ^operation_id} <-
+                 normalize_fence(fence, operation_id),
+               :ok <- same_fence_session(session_id, fence_session_id),
+               :ok <- exact_active_generation(current, generation, owner_instance_id) do
+            :ok
+          else
+            {:ok, _session_id, _generation, _owner_instance_id, other_operation_id} ->
+              {:error, {:generation_operation_conflict, other_operation_id, operation_id}}
+
+            {:error, _reason} = error ->
+              error
+          end
+      end
+    end
+  end
+
+  defp normalize_fence(nil, _operation_id), do: {:error, :generation_fence_required}
+
+  defp normalize_fence(fence, _operation_id) when is_map(fence) do
+    session_id = Map.get(fence, :session_id) || Map.get(fence, "session_id")
+    generation = Map.get(fence, :generation) || Map.get(fence, "generation")
+    owner = Map.get(fence, :owner_instance_id) || Map.get(fence, "owner_instance_id")
+    operation = Map.get(fence, :operation_id) || Map.get(fence, "operation_id")
+
+    if valid_token?(session_id) and is_integer(generation) and generation > 0 and valid_token?(owner) and
+         valid_token?(operation) do
+      {:ok, session_id, generation, owner, operation}
+    else
+      {:error, :invalid_generation_fence}
+    end
+  end
+
+  defp normalize_fence(_fence, _operation_id), do: {:error, :invalid_generation_fence}
+
+  defp same_fence_session(session_id, session_id), do: :ok
+
+  defp same_fence_session(session_id, candidate),
+    do: {:error, {:cross_session_generation_fence, candidate, session_id}}
+
+  defp exact_active_generation(%{state: :released, session_id: session_id, generation: generation}, _, _),
+    do: {:error, {:generation_not_active, session_id, generation}}
+
+  defp exact_active_generation(%{session_id: session_id, generation: current}, candidate, _owner)
+       when current != candidate,
+       do: {:error, {:stale_generation, session_id, candidate, current}}
+
+  defp exact_active_generation(
+         %{session_id: session_id, owner_instance_id: current_owner},
+         _generation,
+         candidate_owner
+       )
+       when current_owner != candidate_owner,
+       do: {:error, {:generation_owner_conflict, session_id, candidate_owner, current_owner}}
+
+  defp exact_active_generation(%{state: :active}, _generation, _owner), do: :ok
+
+  defp expect_generation(_session_id, expected, expected), do: :ok
+
+  defp expect_generation(session_id, expected, current),
+    do: {:error, {:generation_conflict, session_id, expected, current}}
+
+  defp reject_generation_overflow(session_id, @max_generation),
+    do: {:error, {:generation_overflow, session_id, @max_generation}}
+
+  defp reject_generation_overflow(_session_id, _generation), do: :ok
+
+  defp generation_value(
+         session_id,
+         generation,
+         owner_instance_id,
+         claim_operation_id,
+         state,
+         jidoka_lease_id,
+         claimed_at_ms,
+         released_at_ms
+       ) do
+    %{
+      session_id: session_id,
+      generation: generation,
+      owner_instance_id: owner_instance_id,
+      claim_operation_id: claim_operation_id,
+      state: state,
+      jidoka_lease_id: jidoka_lease_id,
+      claimed_at_ms: claimed_at_ms,
+      released_at_ms: released_at_ms
+    }
   end
 
   defp append_record(conn, operation_id, encoded) do
@@ -867,6 +1238,30 @@ defmodule Jido.Console.Session.Store.SQLite do
       _other -> {:error, :operation_id_required}
     end
   end
+
+  defp expected_generation(opts) do
+    case Keyword.fetch(opts, :expected_generation) do
+      {:ok, value} when is_integer(value) and value >= 0 -> {:ok, value}
+      _other -> {:error, :expected_generation_required}
+    end
+  end
+
+  defp owner_instance_id(opts) do
+    case Keyword.fetch(opts, :owner_instance_id) do
+      {:ok, value} when is_binary(value) and value != "" and byte_size(value) <= 256 -> {:ok, value}
+      _other -> {:error, :owner_instance_id_required}
+    end
+  end
+
+  defp optional_token(opts, key) do
+    case Keyword.get(opts, key) do
+      nil -> {:ok, nil}
+      value when is_binary(value) and value != "" and byte_size(value) <= 256 -> {:ok, value}
+      _other -> {:error, {:invalid_generation_token, key}}
+    end
+  end
+
+  defp valid_token?(value), do: is_binary(value) and value != "" and byte_size(value) <= 256
 
   defp jidoka_operation_id(opts, kind, session_id, revision) do
     case Keyword.get(opts, :operation_id) do

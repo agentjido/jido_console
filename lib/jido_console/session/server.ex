@@ -16,6 +16,7 @@ defmodule Jido.Console.Session.Server do
     Delivery,
     DynamicSupervisor,
     Event,
+    Generation,
     Identity,
     Identity.Admission,
     Input,
@@ -57,20 +58,43 @@ defmodule Jido.Console.Session.Server do
   @doc "Starts or returns the live server for one session ID."
   @spec ensure_started(String.t(), keyword()) :: {:ok, pid()} | {:error, term()}
   def ensure_started(session_id, opts \\ []) when is_binary(session_id) do
+    ensure_started(session_id, opts, 10)
+  end
+
+  defp ensure_started(session_id, opts, attempts) do
     registry = Keyword.get(opts, :registry, Registry)
 
     case Registry.lookup(session_id, registry) do
       {:ok, pid} ->
-        {:ok, pid}
+        if Process.alive?(pid),
+          do: {:ok, pid},
+          else: retry_start(session_id, opts, attempts)
 
-      {:error, :not_found} ->
+      _missing_or_stopping ->
         case DynamicSupervisor.start_session(__MODULE__, Keyword.put(opts, :session_id, session_id)) do
-          {:ok, pid} -> {:ok, pid}
-          {:error, {:already_started, pid}} -> {:ok, pid}
-          other -> other
+          {:ok, pid} ->
+            {:ok, pid}
+
+          {:error, {:already_started, pid}} ->
+            if Process.alive?(pid),
+              do: {:ok, pid},
+              else: retry_start(session_id, opts, attempts)
+
+          _other when attempts > 0 ->
+            retry_start(session_id, opts, attempts)
+
+          other ->
+            other
         end
     end
   end
+
+  defp retry_start(session_id, opts, attempts) when attempts > 0 do
+    Process.sleep(1)
+    ensure_started(session_id, opts, attempts - 1)
+  end
+
+  defp retry_start(_session_id, _opts, 0), do: {:error, :session_start_unavailable}
 
   @doc "Attaches a client to the session and returns its current snapshot."
   @spec attach(name(), Identity.t(), keyword()) :: {:ok, map()} | {:error, term()}
@@ -88,6 +112,10 @@ defmodule Jido.Console.Session.Server do
   @doc "Returns the current semantic state."
   @spec state(name()) :: State.t()
   def state(server), do: GenServer.call(server, :state)
+
+  @doc "Returns the exact durable generation fence for this owner."
+  @spec generation(name()) :: {:ok, Generation.t()} | {:error, term()}
+  def generation(server), do: GenServer.call(server, :generation)
 
   @doc "Configures a runtime that will be owned by this session."
   @spec configure_runtime(name(), String.t(), module(), term(), keyword()) :: :ok | {:error, term()}
@@ -222,50 +250,69 @@ defmodule Jido.Console.Session.Server do
   @impl true
   def init(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
-    session = Identity.new!(:session, id: session_id)
 
-    {:ok,
-     %{
-       session: session,
-       state: State.new(session),
-       clients: %{},
-       admissions: %{},
-       results: [],
-       inputs: [],
-       reserved: 0,
-       runtime: nil,
-       active: nil,
-       completed: %{},
-       completed_order: [],
-       tasks: %{},
-       task_supervisor: Keyword.get(opts, :tasks, Jido.Console.Session.TaskSupervisor)
-     }}
+    case Generation.claim(session_id, generation_options(opts)) do
+      {:ok, fence} ->
+        session =
+          Identity.new!(:session,
+            id: session_id,
+            generation: fence.generation,
+            owner_instance_id: fence.owner_instance_id
+          )
+
+        {:ok,
+         %{
+           session: session,
+           fence: fence,
+           generation_options: generation_options(opts),
+           state: State.new(session),
+           clients: %{},
+           admissions: %{},
+           results: [],
+           inputs: [],
+           reserved: 0,
+           runtime: nil,
+           active: nil,
+           completed: %{},
+           completed_order: [],
+           tasks: %{},
+           task_supervisor: Keyword.get(opts, :tasks, Jido.Console.Session.TaskSupervisor)
+         }}
+
+      {:error, reason} ->
+        {:stop, reason}
+    end
   end
 
   @impl true
   def handle_call({:attach, client, pid, opts}, _from, state) do
-    if client.session_id != state.session.id do
-      {:reply, {:error, :cross_session_result}, state}
+    with :ok <- exact_identity_fence(state, client),
+         {:ok, state, reply} <- attach_client(state, client, pid, opts) do
+      {:reply, {:ok, reply}, state}
     else
-      case attach_client(state, client, pid, opts) do
-        {:ok, state, reply} -> {:reply, {:ok, reply}, state}
-        {:error, reason} -> {:reply, {:error, reason}, state}
-      end
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
   def handle_call({:detach, client}, _from, state) do
-    case Map.pop(state.clients, client.id) do
-      {nil, _clients} ->
-        {:reply, {:error, :not_attached}, state}
+    case exact_identity_fence(state, client) do
+      :ok ->
+        case Map.pop(state.clients, client.id) do
+          {nil, _clients} ->
+            {:reply, {:error, :not_attached}, state}
 
-      {client, clients} ->
-        cleanup_client(client)
-        {:reply, :ok, %{state | clients: clients}}
+          {client, clients} ->
+            cleanup_client(client)
+            {:reply, :ok, %{state | clients: clients}}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
     end
   end
 
   def handle_call(:state, _from, state), do: {:reply, state.state, state}
+  def handle_call(:generation, _from, state), do: {:reply, {:ok, state.fence}, state}
 
   def handle_call({:client_operation, identity, operation}, from, state) do
     case fetch_exact_client(state, identity) do
@@ -346,6 +393,9 @@ defmodule Jido.Console.Session.Server do
       request.session_id != state.session.id ->
         {:reply, {:error, :cross_session_result}, state}
 
+      stale_request_fence?(state, request) ->
+        {:reply, {:error, :stale_generation}, state}
+
       Map.has_key?(state.completed, request.id) ->
         {:reply, Map.fetch!(state.completed, request.id), state}
 
@@ -379,7 +429,7 @@ defmodule Jido.Console.Session.Server do
          {:ok, active} <- matching_active(state, request),
          pending when not is_nil(pending) <- active.pending_result,
          respond when is_function(respond, 5) <- active.respond_review do
-      owner = self()
+      owner = active.relay
 
       review = matching_pending_review(pending, review)
 
@@ -388,7 +438,14 @@ defmodule Jido.Console.Session.Server do
           safe_call(fn -> respond.(decision, pending, review, opts, owner) end)
         end)
 
-      tasks = put_task(state.tasks, task, {:review, request.id, decision, review_id(review)})
+      tasks =
+        put_task(
+          state.tasks,
+          task,
+          {:review, request.id, decision, review_id(review)},
+          fence_token(state)
+        )
+
       active = %{active | pending_result: nil}
       {:reply, {:ok, :requested}, %{state | active: active, tasks: tasks}}
     else
@@ -404,10 +461,9 @@ defmodule Jido.Console.Session.Server do
   end
 
   def handle_call({:admit_input, input}, _from, state) do
-    if input.identity.session_id != state.session.id do
-      {:reply, {:error, :cross_session_result}, state}
-    else
-      {:reply, {:ok, input}, %{state | inputs: bounded_append(state.inputs, input)}}
+    case exact_identity_fence(state, input.identity) do
+      :ok -> {:reply, {:ok, input}, %{state | inputs: bounded_append(state.inputs, input)}}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -506,82 +562,98 @@ defmodule Jido.Console.Session.Server do
   end
 
   def handle_call({:admit_result, identity, result}, _from, state) do
-    if identity.session_id != state.session.id do
-      {:reply, {:error, :cross_session_result}, state}
-    else
-      admission = Map.get_lazy(state.admissions, identity.id, fn -> Admission.new(identity) end)
+    case exact_identity_fence(state, identity) do
+      :ok ->
+        admission = Map.get_lazy(state.admissions, identity.id, fn -> Admission.new(identity) end)
 
-      case Admission.admit(admission, identity) do
-        {:ok, admission} ->
-          {:reply, {:ok, result},
-           %{
-             state
-             | admissions: Map.put(state.admissions, identity.id, admission),
-               results: bounded_append(state.results, result)
-           }}
+        case Admission.admit(admission, identity) do
+          {:ok, admission} ->
+            {:reply, {:ok, result},
+             %{
+               state
+               | admissions: Map.put(state.admissions, identity.id, admission),
+                 results: bounded_append(state.results, result)
+             }}
 
-        {:error, _reason} = error ->
-          {:reply, error, state}
-      end
+          {:error, _reason} = error ->
+            {:reply, error, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
     end
   end
 
   @impl true
   def handle_cast({:detach, client}, state) do
-    case Map.pop(state.clients, client.id) do
-      {nil, _clients} ->
-        {:noreply, state}
+    case exact_identity_fence(state, client) do
+      :ok ->
+        case Map.pop(state.clients, client.id) do
+          {nil, _clients} ->
+            {:noreply, state}
 
-      {client, clients} ->
-        cleanup_client(client)
-        {:noreply, %{state | clients: clients}}
+          {client, clients} ->
+            cleanup_client(client)
+            {:noreply, %{state | clients: clients}}
+        end
+
+      {:error, _reason} ->
+        {:noreply, state}
     end
   end
 
   @impl true
-  def handle_info({:jidoka_turn_event, event}, %{active: active} = state) when not is_nil(active) do
-    state = project_runtime_event(state, event)
-    {:noreply, state}
-  end
-
-  def handle_info({:projection_terminal_timeout, request_id, token}, state) do
-    case state.active do
-      %{request: %{id: ^request_id}, terminal_timer: %{token: ^token}, terminal_result: result}
-      when not is_nil(result) ->
-        active = state.active
-
-        state =
-          state
-          |> admit_owner_event(terminal_type(result), active.request, result_payload(result))
-          |> conclude_runtime_result(result)
-
-        {:noreply, state}
-
-      _other ->
-        {:noreply, state}
+  def handle_info(
+        {:generation_message, fence, {:jidoka_turn_event, event}},
+        %{active: active} = state
+      )
+      when not is_nil(active) do
+    if current_fence_token?(state, fence) do
+      state = project_runtime_event(state, event)
+      {:noreply, state}
+    else
+      {:noreply, state}
     end
   end
 
-  def handle_info({:delivery_ack_timeout, attachment_id, timer_token}, state) do
-    clients =
-      Map.new(state.clients, fn {client_id, client} ->
-        {client_id, timeout_client(client, attachment_id, timer_token, state.state.sequence)}
-      end)
+  def handle_info({:projection_terminal_timeout, fence, request_id, token}, state) do
+    if current_fence_token?(state, fence) do
+      handle_projection_terminal_timeout(state, request_id, token)
+    else
+      {:noreply, state}
+    end
+  end
 
-    {:noreply, %{state | clients: clients}}
+  def handle_info({:delivery_ack_timeout, fence, attachment_id, timer_token}, state) do
+    if current_fence_token?(state, fence) do
+      clients =
+        Map.new(state.clients, fn {client_id, client} ->
+          {client_id, timeout_client(client, attachment_id, timer_token, state.state.sequence)}
+        end)
+
+      {:noreply, %{state | clients: clients}}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info({ref, outcome}, state) when is_reference(ref) and is_map_key(state.tasks, ref) do
     Process.demonitor(ref, [:flush])
-    {{kind, _pid}, tasks} = Map.pop(state.tasks, ref)
+    {{kind, _pid, fence}, tasks} = Map.pop(state.tasks, ref)
     state = %{state | tasks: tasks}
-    {:noreply, complete_task(state, kind, outcome)}
+
+    if current_fence_token?(state, fence),
+      do: {:noreply, complete_task(state, kind, outcome)},
+      else: {:noreply, state}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, state) when is_map_key(state.tasks, ref) do
-    {{kind, _pid}, tasks} = Map.pop(state.tasks, ref)
+    {{kind, _pid, fence}, tasks} = Map.pop(state.tasks, ref)
     state = %{state | tasks: tasks}
-    {:noreply, complete_task(state, kind, {:error, {:runtime_task_failed, reason}})}
+
+    if current_fence_token?(state, fence),
+      do: {:noreply, complete_task(state, kind, {:error, {:runtime_task_failed, reason}})},
+      else: {:noreply, state}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
@@ -600,15 +672,35 @@ defmodule Jido.Console.Session.Server do
 
   def handle_info(_message, state), do: {:noreply, state}
 
+  defp handle_projection_terminal_timeout(state, request_id, token) do
+    case state.active do
+      %{request: %{id: ^request_id}, terminal_timer: %{token: ^token}, terminal_result: result}
+      when not is_nil(result) ->
+        active = state.active
+
+        state =
+          state
+          |> admit_owner_event(terminal_type(result), active.request, result_payload(result))
+          |> conclude_runtime_result(result)
+
+        {:noreply, state}
+
+      _other ->
+        {:noreply, state}
+    end
+  end
+
   @impl true
   def terminate(_reason, state) do
     state.tasks
     |> Map.values()
-    |> Enum.each(fn {_kind, pid} ->
+    |> Enum.each(fn {_kind, pid, _fence} ->
       if Process.alive?(pid), do: Process.exit(pid, :kill)
     end)
 
+    stop_generation_relay(state.active)
     close_runtime(state.runtime)
+    _result = Generation.release(state.fence, state.generation_options)
     :ok
   catch
     :exit, _reason -> :ok
@@ -647,7 +739,10 @@ defmodule Jido.Console.Session.Server do
          {:ok, active} <- matching_active(state, request),
          cancel when is_function(cancel, 2) <- active.cancel do
       task = start_task(state, fn -> safe_call(fn -> cancel.(active.raw_request, opts) end) end)
-      tasks = put_task(state.tasks, task, {:cancel, request.id, List.wrap(waiter)})
+
+      tasks =
+        put_task(state.tasks, task, {:cancel, request.id, List.wrap(waiter)}, fence_token(state))
+
       state = admit_control(state, "control_requested", request, "cancel")
 
       if waiter do
@@ -713,7 +808,10 @@ defmodule Jido.Console.Session.Server do
   defp normalize_operation(_spec), do: {:error, :invalid_session_operation}
 
   defp begin_operation(state, spec) do
-    case safe_call(fn -> spec.start.(self()) end) do
+    owner = self()
+    relay = spawn(fn -> generation_relay(owner, fence_token(state)) end)
+
+    case safe_call(fn -> spec.start.(relay) end) do
       {:ok, {:ok, raw_request}} ->
         request = public_request(state, raw_request, spec)
 
@@ -728,6 +826,7 @@ defmodule Jido.Console.Session.Server do
           pending_result: nil,
           terminal_result: nil,
           terminal_timer: nil,
+          relay: relay,
           projection_cursor: projection_cursor!(request.request_id)
         }
 
@@ -739,29 +838,43 @@ defmodule Jido.Console.Session.Server do
 
         state = admit_owner_event(state, "run_started", request, started_payload)
         task = start_task(state, fn -> safe_call(fn -> spec.await.(raw_request) end) end)
-        tasks = put_task(state.tasks, task, {:await, request.id})
+        tasks = put_task(state.tasks, task, {:await, request.id}, fence_token(state))
         {:ok, request, %{state | tasks: tasks}}
 
       {:ok, {:error, reason}} ->
+        stop_generation_relay(%{relay: relay})
         {:error, reason}
 
       {:ok, other} ->
+        stop_generation_relay(%{relay: relay})
         {:error, {:invalid_runtime_request, other}}
 
       {:error, reason} ->
+        stop_generation_relay(%{relay: relay})
         {:error, reason}
     end
   end
 
   defp public_request(state, raw_request, spec) do
-    request_id = Map.get(spec, :request_id) || raw_request_id(raw_request) || Identity.new!(:request).id
-    run_id = Map.get(spec, :run_id) || Identity.new!(:run, session_id: state.session.id).id
+    identity_opts = [
+      session_id: state.session.id,
+      generation: state.session.generation,
+      owner_instance_id: state.session.owner_instance_id
+    ]
+
+    request_id =
+      Map.get(spec, :request_id) || raw_request_id(raw_request) ||
+        Identity.new!(:request, identity_opts).id
+
+    run_id = Map.get(spec, :run_id) || Identity.new!(:run, identity_opts).id
 
     %Request{
-      id: Identity.new!(:request, session_id: state.session.id).id,
+      id: Identity.new!(:request, identity_opts).id,
       request_id: request_id,
       run_id: run_id,
-      session_id: state.session.id
+      session_id: state.session.id,
+      generation: state.session.generation,
+      owner_instance_id: state.session.owner_instance_id
     }
   end
 
@@ -784,7 +897,8 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp put_task(tasks, %Task{ref: ref, pid: pid}, kind), do: Map.put(tasks, ref, {kind, pid})
+  defp put_task(tasks, %Task{ref: ref, pid: pid}, kind, fence),
+    do: Map.put(tasks, ref, {kind, pid, fence})
 
   defp complete_task(state, {:await, request_id}, outcome) do
     if active_request?(state, request_id),
@@ -981,8 +1095,8 @@ defmodule Jido.Console.Session.Server do
   defp portable_record(value), do: value
 
   defp stop_await_task(state, request_id) do
-    case Enum.find(state.tasks, fn {_ref, {kind, _pid}} -> kind == {:await, request_id} end) do
-      {ref, {_kind, pid}} ->
+    case Enum.find(state.tasks, fn {_ref, {kind, _pid, _fence}} -> kind == {:await, request_id} end) do
+      {ref, {_kind, pid, _fence}} ->
         if Process.alive?(pid), do: Process.exit(pid, :kill)
         Process.demonitor(ref, [:flush])
         %{state | tasks: Map.delete(state.tasks, ref)}
@@ -1085,6 +1199,7 @@ defmodule Jido.Console.Session.Server do
   defp conclude_runtime_result(state, result) do
     active = state.active
     cancel_terminal_timer(active)
+    stop_generation_relay(active)
     Enum.each(active.waiters, &GenServer.reply(&1, result))
     put_completed(%{state | active: nil}, active.request.id, result)
   end
@@ -1104,7 +1219,7 @@ defmodule Jido.Console.Session.Server do
       timer_ref =
         Process.send_after(
           self(),
-          {:projection_terminal_timeout, active.request.id, token},
+          {:projection_terminal_timeout, fence_token(state), active.request.id, token},
           @terminal_event_wait_ms
         )
 
@@ -1152,7 +1267,13 @@ defmodule Jido.Console.Session.Server do
         trust: %{evidence: "session-owner", policy: "session-owner"},
         identities: [
           Identity.to_protocol(state.session),
-          %{"kind" => "request", "id" => request.id, "session_id" => state.session.id}
+          %{
+            "kind" => "request",
+            "id" => request.id,
+            "session_id" => state.session.id,
+            "generation" => request.generation,
+            "owner_instance_id" => request.owner_instance_id
+          }
         ]
       }
       |> Map.merge(owner_event_fields(type, request, extra))
@@ -1235,6 +1356,7 @@ defmodule Jido.Console.Session.Server do
   defp matching_active(state, %Request{} = request) do
     cond do
       request.session_id != state.session.id -> {:error, :cross_session_result}
+      stale_request_fence?(state, request) -> {:error, :stale_generation}
       state.active == nil -> {:error, :request_already_finished}
       state.active.request.id != request.id -> {:error, :stale_request}
       true -> {:ok, state.active}
@@ -1248,6 +1370,25 @@ defmodule Jido.Console.Session.Server do
   defp require_attached(state, client_id), do: if(attached?(state, client_id), do: :ok, else: {:error, :not_attached})
   defp require_idle(%{active: nil}), do: :ok
   defp require_idle(_state), do: {:error, :session_busy}
+
+  defp stale_request_fence?(state, request) do
+    request.generation != state.session.generation or
+      request.owner_instance_id != state.session.owner_instance_id
+  end
+
+  defp exact_identity_fence(state, identity) do
+    cond do
+      identity.session_id != state.session.id ->
+        {:error, :cross_session_result}
+
+      identity.generation != state.session.generation or
+          identity.owner_instance_id != state.session.owner_instance_id ->
+        {:error, :stale_generation}
+
+      true ->
+        :ok
+    end
+  end
 
   defp publish(clients, event, session_state) do
     Map.new(clients, fn {id, client} ->
@@ -1284,11 +1425,18 @@ defmodule Jido.Console.Session.Server do
     session_id = identity[:session_id] || identity["session_id"]
     client_id = identity[:client_id] || identity["client_id"]
     attachment_id = identity[:attachment_id] || identity["attachment_id"]
+    generation = identity[:generation] || identity["generation"]
+    owner_instance_id = identity[:owner_instance_id] || identity["owner_instance_id"]
 
-    if session_id == state.session.id do
-      fetch_bounded_client(state, client_id, attachment_id)
-    else
-      {:error, :delivery_identity_mismatch}
+    cond do
+      session_id != state.session.id ->
+        {:error, :delivery_identity_mismatch}
+
+      generation != state.session.generation or owner_instance_id != state.session.owner_instance_id ->
+        {:error, :stale_generation}
+
+      true ->
+        fetch_bounded_client(state, client_id, attachment_id)
     end
   end
 
@@ -1318,6 +1466,59 @@ defmodule Jido.Console.Session.Server do
 
   defp execute_client_operation(:snapshot, _from, state, _client) do
     {:reply, {:ok, Reducer.snapshot(state.state)}, state}
+  end
+
+  defp execute_client_operation(:output, _from, state, client) do
+    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
+    handle_output_pull(state, client.identity.id, client, identity)
+  end
+
+  defp execute_client_operation({:delivery, token}, _from, state, client) do
+    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
+    handle_output_ack(state, client.identity.id, client, identity, token)
+  end
+
+  defp execute_client_operation(:delivery_measurements, _from, state, client) do
+    {:reply, {:ok, Delivery.measurements(client.delivery)}, state}
+  end
+
+  defp execute_client_operation({:recovery, :recover, gap_id}, _from, state, client) do
+    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
+
+    case Recovery.begin(state.state, client.delivery, identity, gap_id) do
+      {:ok, delivery, snapshot} ->
+        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
+        {:reply, {:ok, snapshot}, put_client(state, client.identity.id, client)}
+
+      {:error, reason, _delivery} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp execute_client_operation({:recovery, :replay, token}, _from, state, client) do
+    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
+
+    case Recovery.replay(state.state, client.delivery, identity, token) do
+      {:ok, delivery, suffix} ->
+        {:reply, {:ok, suffix}, put_client(state, client.identity.id, put_delivery(client, delivery))}
+
+      {:error, reason, _delivery} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp execute_client_operation({:recovery, :resume, token}, _from, state, client) do
+    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
+
+    case Recovery.complete(client.delivery, identity, token) do
+      {:ok, delivery, receipt, advisory?} ->
+        client = put_delivery(client, delivery)
+        if advisory?, do: send_ready(client)
+        {:reply, {:ok, receipt}, put_client(state, client.identity.id, client)}
+
+      {:error, reason, _delivery} ->
+        {:reply, {:error, reason}, state}
+    end
   end
 
   defp execute_client_operation({:configure_runtime, runtime, agent, opts}, _from, state, _client) do
@@ -1412,6 +1613,9 @@ defmodule Jido.Console.Session.Server do
       request.session_id != state.session.id ->
         {:reply, {:error, :cross_session_result}, state}
 
+      stale_request_fence?(state, request) ->
+        {:reply, {:error, :stale_generation}, state}
+
       Map.has_key?(state.completed, request.id) ->
         {:reply, Map.fetch!(state.completed, request.id), state}
 
@@ -1433,7 +1637,7 @@ defmodule Jido.Console.Session.Server do
          {:ok, active} <- matching_active(state, request),
          pending when not is_nil(pending) <- active.pending_result,
          respond when is_function(respond, 5) <- active.respond_review do
-      owner = self()
+      owner = active.relay
 
       review = matching_pending_review(pending, review)
 
@@ -1442,7 +1646,14 @@ defmodule Jido.Console.Session.Server do
           safe_call(fn -> respond.(decision, pending, review, opts, owner) end)
         end)
 
-      tasks = put_task(state.tasks, task, {:review, request.id, decision, review_id(review)})
+      tasks =
+        put_task(
+          state.tasks,
+          task,
+          {:review, request.id, decision, review_id(review)},
+          fence_token(state)
+        )
+
       active = %{active | pending_result: nil}
       {:reply, {:ok, :requested}, %{state | active: active, tasks: tasks}}
     else
@@ -1554,19 +1765,21 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp attach_client(state, client, pid, opts) do
-    attachment = attachment_identity(state.session.id, opts)
+    attachment = attachment_identity(state.session, opts)
 
     delivery =
       Delivery.new(
         client_id: client.id,
         session_id: state.session.id,
         attachment_id: attachment.id,
+        generation: state.session.generation,
+        owner_instance_id: state.session.owner_instance_id,
         baseline: state.state.sequence,
         limits: Keyword.get(opts, :delivery_limits, %{}),
         token_secret: Keyword.get(opts, :token_secret, :crypto.strong_rand_bytes(32))
       )
 
-    identity = delivery_identity(state.session.id, client.id, attachment.id)
+    identity = delivery_identity(state.session, client.id, attachment.id)
 
     with {:ok, snapshot} <- Recovery.attach_snapshot(state.state, identity) do
       record = %{
@@ -1589,7 +1802,12 @@ defmodule Jido.Console.Session.Server do
   defp handle_output_pull(state, client_id, client, identity) do
     case Delivery.pull(client.delivery, identity) do
       {:ok, delivery, batch} ->
-        client = client |> cancel_delivery_timer() |> put_delivery(delivery) |> schedule_delivery_timer()
+        client =
+          client
+          |> cancel_delivery_timer()
+          |> put_delivery(delivery)
+          |> schedule_delivery_timer()
+
         {:reply, {:ok, batch}, put_client(state, client_id, client)}
 
       {:gap, delivery, gap} ->
@@ -1630,13 +1848,28 @@ defmodule Jido.Console.Session.Server do
 
   defp timeout_client(client, _attachment_id, _timer_token, _sequence), do: client
 
+  defp delivery_identity(%{kind: :session} = session, client_id, attachment_id),
+    do: %{
+      session_id: session.id,
+      client_id: client_id,
+      attachment_id: attachment_id,
+      generation: session.generation,
+      owner_instance_id: session.owner_instance_id
+    }
+
   defp delivery_identity(session_id, client_id, attachment_id),
     do: %{session_id: session_id, client_id: client_id, attachment_id: attachment_id}
 
-  defp attachment_identity(session_id, opts) do
+  defp attachment_identity(session, opts) do
+    identity_opts = [
+      session_id: session.id,
+      generation: session.generation,
+      owner_instance_id: session.owner_instance_id
+    ]
+
     case Keyword.get(opts, :attachment_id) do
-      nil -> Identity.new!(:attachment, session_id: session_id)
-      id -> Identity.new!(:attachment, id: id, session_id: session_id)
+      nil -> Identity.new!(:attachment, identity_opts)
+      id -> Identity.new!(:attachment, Keyword.put(identity_opts, :id, id))
     end
   end
 
@@ -1656,7 +1889,7 @@ defmodule Jido.Console.Session.Server do
     timer_ref =
       Process.send_after(
         self(),
-        {:delivery_ack_timeout, client.attachment.id, inflight.timer_token},
+        {:delivery_ack_timeout, fence_token(client.identity), client.attachment.id, inflight.timer_token},
         client.delivery.limits.ack_timeout_ms
       )
 
@@ -1705,6 +1938,42 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp close_resource(_resource, _closer), do: :ok
+
+  defp fence_token(%{session: session}), do: fence_token(session)
+
+  defp fence_token(identity),
+    do: {identity.generation, identity.owner_instance_id}
+
+  defp current_fence_token?(state, token), do: fence_token(state) == token
+
+  defp generation_relay(owner, fence) do
+    receive do
+      :stop_generation_relay ->
+        :ok
+
+      message ->
+        send(owner, {:generation_message, fence, message})
+        generation_relay(owner, fence)
+    end
+  end
+
+  defp stop_generation_relay(%{relay: relay}) when is_pid(relay) do
+    send(relay, :stop_generation_relay)
+    :ok
+  end
+
+  defp stop_generation_relay(_active), do: :ok
+
+  defp generation_options(opts) do
+    opts
+    |> Keyword.take([:writer, :quota, :admission, :deadline, :jidoka_lease_id])
+    |> maybe_put_option(:expected_generation, Keyword.get(opts, :expected_generation))
+    |> maybe_put_option(:owner_instance_id, Keyword.get(opts, :owner_instance_id))
+    |> maybe_put_option(:operation_id, Keyword.get(opts, :generation_operation_id))
+  end
+
+  defp maybe_put_option(opts, _key, nil), do: opts
+  defp maybe_put_option(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp safe_call(fun) do
     {:ok, fun.()}

@@ -379,6 +379,8 @@ defmodule Jido.Console.Session.Projection do
       %Request{} = request ->
         cond do
           request.session_id != session.id -> {:error, :cross_session_result}
+          request.generation != session.generation -> {:error, :stale_generation}
+          request.owner_instance_id != session.owner_instance_id -> {:error, :stale_generation}
           request.request_id != projected.request_id -> {:error, :jidoka_request_identity_mismatch}
           true -> {:ok, %{session: session, console_request_id: request.id, run_id: request.run_id}}
         end
@@ -399,24 +401,31 @@ defmodule Jido.Console.Session.Projection do
   defp identities(projected, context, event_id) do
     base = [
       Identity.to_protocol(context.session),
-      protocol_identity("request", context.console_request_id, context.session.id),
-      protocol_identity("run", context.run_id, context.session.id),
-      protocol_identity("jidoka_request", projected.request_id, context.session.id),
-      protocol_identity("source_event", event_id, context.session.id)
+      protocol_identity("request", context.console_request_id, context.session),
+      protocol_identity("run", context.run_id, context.session),
+      protocol_identity("jidoka_request", projected.request_id, context.session),
+      protocol_identity("source_event", event_id, context.session)
     ]
 
     base
-    |> maybe_identity("turn", projected[:turn_id], context.session.id)
-    |> maybe_identity("step", projected[:effect_id], context.session.id)
+    |> maybe_identity("turn", projected[:turn_id], context.session)
+    |> maybe_identity("step", projected[:effect_id], context.session)
   end
 
-  defp protocol_identity(kind, id, session_id),
-    do: %{"kind" => kind, "id" => id, "session_id" => session_id}
+  defp protocol_identity(kind, id, session) do
+    %{
+      "kind" => kind,
+      "id" => id,
+      "session_id" => session.id,
+      "generation" => session.generation,
+      "owner_instance_id" => session.owner_instance_id
+    }
+  end
 
-  defp maybe_identity(identities, _kind, nil, _session_id), do: identities
+  defp maybe_identity(identities, _kind, nil, _session), do: identities
 
-  defp maybe_identity(identities, kind, id, session_id),
-    do: identities ++ [protocol_identity(kind, id, session_id)]
+  defp maybe_identity(identities, kind, id, session),
+    do: identities ++ [protocol_identity(kind, id, session)]
 
   defp put_terminal_event(cursor, candidate) do
     terminal = %{cursor.terminal | event: candidate}

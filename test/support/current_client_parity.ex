@@ -412,6 +412,21 @@ defmodule Jido.Console.TestSupport.CurrentClientParity do
       |> Map.take(["protocol", "version", "family", "type", "session_id", "payload"])
       |> Map.put("id", "event-#{sequence}")
       |> replace_values(replacements)
+      |> normalize_generation_identity()
+    end)
+  end
+
+  defp normalize_generation_identity(event) do
+    update_in(event, ["payload", "identities"], fn identities ->
+      Enum.map(identities || [], fn identity ->
+        identity = Map.delete(identity, "owner_instance_id")
+
+        if identity["kind"] == "session" do
+          Map.put(identity, "generation", 1)
+        else
+          Map.delete(identity, "generation")
+        end
+      end)
     end)
   end
 

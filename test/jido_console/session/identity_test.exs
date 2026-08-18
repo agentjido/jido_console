@@ -26,6 +26,11 @@ defmodule Jido.Console.Session.IdentityTest do
     stale = %{live | generation: 0}
     assert {:error, :stale_result} = Admission.admit(Admission.new(%{live | generation: 2}), stale)
 
+    replaced_owner = %{live | owner_instance_id: "old-owner"}
+    assert Identity.stale?(live, replaced_owner)
+    refute Identity.same?(live, replaced_owner)
+    assert {:error, :stale_result} = Admission.admit(Admission.new(live), replaced_owner)
+
     other = Identity.new!(:request, session_id: Identity.new!(:session).id, id: "req_other")
     assert {:error, :cross_session_result} = Admission.admit(Admission.new(live), other)
 
@@ -41,6 +46,7 @@ defmodule Jido.Console.Session.IdentityTest do
     assert {:ok, invocation} =
              Invocation.new(
                session_id: session.id,
+               owner_instance_id: session.owner_instance_id,
                provider: "openai",
                model: "gpt-4.1",
                variant: "default",
@@ -66,5 +72,17 @@ defmodule Jido.Console.Session.IdentityTest do
 
     assert {:error, :credential_in_identity} =
              Invocation.new(session_id: session.id, provider: "openai", model: "gpt-4.1", token: "sk")
+  end
+
+  test "rejects invalid kinds, fields, sizes, and missing session bindings" do
+    assert_raise ArgumentError, fn -> Identity.new!(:unknown) end
+    assert {:error, {:unknown_identity_kind, :unknown}} = Identity.new(:unknown)
+
+    assert {:error, {:identity_too_large, :session}} =
+             Identity.validate_id(String.duplicate("x", 257), :session)
+
+    assert {:error, {:identity_invalid, :session}} = Identity.validate_id(:not_an_id, :session)
+    assert {:error, :invalid_owner_instance_id} = Identity.new(:session, owner_instance_id: "")
+    assert {:error, :session_id_missing} = Identity.new(:request)
   end
 end

@@ -45,7 +45,9 @@ defmodule Jido.Console.Session.Client.Handle do
     %{
       session_id: handle.session.id,
       client_id: handle.client.id,
-      attachment_id: handle.attachment.id
+      attachment_id: handle.attachment.id,
+      generation: handle.session.generation,
+      owner_instance_id: handle.session.owner_instance_id
     }
   end
 

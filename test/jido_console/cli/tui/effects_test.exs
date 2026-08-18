@@ -13,7 +13,9 @@ defmodule Jido.Console.Tui.EffectsTest do
          id: "session-request",
          request_id: "runtime-request",
          run_id: "run",
-         session_id: "session"
+         session_id: "session",
+         generation: 1,
+         owner_instance_id: "process"
        }}
     end
 
@@ -42,7 +44,9 @@ defmodule Jido.Console.Tui.EffectsTest do
       id: "session-request",
       request_id: "runtime-request",
       run_id: "run",
-      session_id: "session"
+      session_id: "session",
+      generation: 1,
+      owner_instance_id: "process"
     }
 
     assert {:continue, workers} =

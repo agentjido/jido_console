@@ -12,6 +12,7 @@ defmodule Jido.Console.Session.Jidoka do
   """
 
   alias Jido.Console.Session.Durable.CanonicalJSON
+  alias Jido.Console.Session.Generation
   alias Jido.Console.Session.Protocol
   alias Jido.Console.Session.Protocol.Validator
   alias Jido.Console.Release.Identity
@@ -163,41 +164,45 @@ defmodule Jido.Console.Session.Jidoka do
   end
 
   @doc "Returns a stable Console checkpoint identity from committed Jidoka data."
-  @spec checkpoint_identity(session_mapping(), Data.t(), Snapshot.t()) ::
+  @spec checkpoint_identity(session_mapping(), Data.t(), Snapshot.t(), keyword()) ::
           {:ok, map()} | {:error, term()}
-  def checkpoint_identity(mapping, %Data{} = committed, %Snapshot{} = snapshot) do
+  def checkpoint_identity(mapping, %Data{} = committed, %Snapshot{} = snapshot, opts \\ []) do
     with :ok <- validate_session(mapping, committed),
-         {:ok, identity} <- Store.checkpoint_identity(committed, snapshot) do
+         {:ok, identity} <- Store.checkpoint_identity(committed, snapshot),
+         {:ok, generation} <- generation_fields(mapping, opts) do
       {:ok,
-       %{
+       Map.merge(generation, %{
          console_session_id: mapping["console_session_id"],
          jidoka_session_id: identity.session_id,
          jidoka_revision: identity.durable_revision,
          jidoka_request_id: identity.request_id,
          jidoka_lease_id: identity.lease_id,
          jidoka_snapshot_id: identity.snapshot_id
-       }}
+       })}
     end
   end
 
   @doc "Returns bounded identity for the current public Jidoka recovery target."
-  @spec recovery_identity(session_mapping(), Data.t()) :: {:ok, map()} | {:error, term()}
-  def recovery_identity(mapping, %Data{lease: %Lease{} = lease} = session) do
+  @spec recovery_identity(session_mapping(), Data.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def recovery_identity(mapping, session, opts \\ [])
+
+  def recovery_identity(mapping, %Data{lease: %Lease{} = lease} = session, opts) do
     with :ok <- validate_session(mapping, session),
-         {:ok, target} <- Data.recovery_target(session) do
+         {:ok, target} <- Data.recovery_target(session),
+         {:ok, generation} <- generation_fields(mapping, opts) do
       {:ok,
-       %{
+       Map.merge(generation, %{
          console_session_id: mapping["console_session_id"],
          jidoka_session_id: session.session_id,
          jidoka_revision: session.revision,
          jidoka_request_id: lease.request_id,
          jidoka_lease_id: lease.lease_id,
          target: recovery_target_identity(target)
-       }}
+       })}
     end
   end
 
-  def recovery_identity(mapping, %Data{} = session) do
+  def recovery_identity(mapping, %Data{} = session, _opts) do
     with :ok <- validate_session(mapping, session) do
       {:error, {:jidoka_session_not_recoverable, session.session_id}}
     end
@@ -212,22 +217,25 @@ defmodule Jido.Console.Session.Jidoka do
   end
 
   @doc "Returns explicit durable fork lineage identity."
-  @spec fork_identity(session_mapping(), Data.t()) :: {:ok, map()} | {:error, term()}
-  def fork_identity(mapping, %Data{lineage: %Lineage{} = lineage} = session) do
-    with :ok <- validate_session(mapping, session) do
+  @spec fork_identity(session_mapping(), Data.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def fork_identity(mapping, session, opts \\ [])
+
+  def fork_identity(mapping, %Data{lineage: %Lineage{} = lineage} = session, opts) do
+    with :ok <- validate_session(mapping, session),
+         {:ok, generation} <- generation_fields(mapping, opts) do
       {:ok,
-       %{
+       Map.merge(generation, %{
          console_session_id: mapping["console_session_id"],
          jidoka_session_id: session.session_id,
          root_session_id: lineage.root_session_id,
          parent_session_id: lineage.parent_session_id,
          source_snapshot_id: lineage.source_snapshot_id,
          depth: lineage.depth
-       }}
+       })}
     end
   end
 
-  def fork_identity(mapping, %Data{} = session) do
+  def fork_identity(mapping, %Data{} = session, _opts) do
     with :ok <- validate_session(mapping, session) do
       {:error, {:jidoka_session_has_no_fork_lineage, session.session_id}}
     end
@@ -360,5 +368,26 @@ defmodule Jido.Console.Session.Jidoka do
 
   defp recovery_target_identity({:restart, %Turn.Request{} = request}) do
     %{kind: :restart, request_id: request.request_id}
+  end
+
+  defp generation_fields(mapping, opts) do
+    case Keyword.get(opts, :console_fence) do
+      nil ->
+        {:ok, %{}}
+
+      fence ->
+        with :ok <- Generation.validate(fence),
+             true <- fence.session_id == mapping["console_session_id"] do
+          {:ok,
+           %{
+             console_generation: fence.generation,
+             console_owner_instance_id: fence.owner_instance_id,
+             console_operation_id: fence.operation_id
+           }}
+        else
+          false -> {:error, :cross_session_generation_fence}
+          {:error, _reason} = error -> error
+        end
+    end
   end
 end
