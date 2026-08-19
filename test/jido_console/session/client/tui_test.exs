@@ -109,7 +109,8 @@ defmodule Jido.Console.Session.Client.TUITest do
 
     restored =
       State.new(nil, {80, 24},
-        session_snapshot: second_attach.snapshot,
+        session_client: second,
+        session_events: second_attach.events,
         session_request: request
       )
 
@@ -249,7 +250,7 @@ defmodule Jido.Console.Session.Client.TUITest do
              Server.consume_queued(replacement, restarted.handle.client.id, :steering, input_id, "queue-empty")
   end
 
-  test "the TUI acknowledges only after a complete canonical batch applies" do
+  test "the TUI applies each direct event in sequence" do
     suffix = System.unique_integer([:positive])
     opts = [name: :"batch-tui-#{suffix}", registry: :"batch-tui-reg-#{suffix}", sessions: :"batch-tui-dyn-#{suffix}"]
     {:ok, supervisor} = Supervisor.start_link(opts)
@@ -258,31 +259,34 @@ defmodule Jido.Console.Session.Client.TUITest do
     session = Identity.new!(:session)
     attach_opts = [registry: opts[:registry], supervisor: opts[:sessions]]
     assert {:ok, attached} = TUI.attach(session.id, attach_opts)
-    state = State.new(nil, {80, 24}, session_client: attached.handle, session_snapshot: attached.snapshot)
+
+    state =
+      State.new(nil, {80, 24},
+        session_client: attached.handle,
+        session_events: attached.events
+      )
 
     assert {:ok, _input} =
              Client.send(attached.handle, "hello", idempotency_key: "tui-ack-input")
 
-    assert_receive {:jido_console_session, attachment_id, :output_ready}
+    assert_receive {:jido_console_session, attachment_id, {:event, event}}
     assert attachment_id == attached.handle.attachment.id
-    assert {:ok, batch} = Client.output(attached.handle)
 
-    invalid = put_in(batch, ["payload", "events", Access.at(0), "payload", "sequence"], 9)
-    assert {:error, :invalid_tui_event_order, ^state} = TUI.apply_batch(attached.handle, state, invalid)
-    assert {:error, :ack_required} = Client.output(attached.handle)
+    invalid = put_in(event, ["payload", "sequence"], 9)
+    assert {:error, :invalid_tui_event_order, ^state} = TUI.apply_event(attached.handle, state, invalid)
 
-    assert {:ok, applied} = TUI.apply_batch(attached.handle, state, batch)
+    assert {:ok, applied} = TUI.apply_event(attached.handle, state, event)
     assert applied.semantic_sequence == 1
-    assert :empty = Client.output(attached.handle)
+    assert {:ok, [^event]} = Client.events(attached.handle)
   end
 
-  test "the TUI performs snapshot suffix and resume recovery as one transaction" do
+  test "the TUI can replay the complete event history" do
     suffix = System.unique_integer([:positive])
 
     opts = [
-      name: :"recovery-tui-#{suffix}",
-      registry: :"recovery-tui-reg-#{suffix}",
-      sessions: :"recovery-tui-dyn-#{suffix}"
+      name: :"replay-tui-#{suffix}",
+      registry: :"replay-tui-reg-#{suffix}",
+      sessions: :"replay-tui-dyn-#{suffix}"
     ]
 
     {:ok, supervisor} = Supervisor.start_link(opts)
@@ -290,25 +294,28 @@ defmodule Jido.Console.Session.Client.TUITest do
 
     session = Identity.new!(:session)
 
-    attach_opts = [
-      registry: opts[:registry],
-      supervisor: opts[:sessions],
-      delivery_limits: %{queue_count: 1}
-    ]
+    attach_opts = [registry: opts[:registry], supervisor: opts[:sessions]]
 
     assert {:ok, attached} = TUI.attach(session.id, attach_opts)
-    state = State.new(nil, {80, 24}, session_client: attached.handle, session_snapshot: attached.snapshot)
+
+    state =
+      State.new(nil, {80, 24},
+        session_client: attached.handle,
+        session_events: attached.events
+      )
 
     assert {:ok, _input} =
-             Client.send(attached.handle, "first", idempotency_key: "tui-recovery-first")
+             Client.send(attached.handle, "first", idempotency_key: "tui-replay-first")
 
     assert {:ok, _input} =
-             Client.send(attached.handle, "second", idempotency_key: "tui-recovery-second")
+             Client.send(attached.handle, "second", idempotency_key: "tui-replay-second")
 
-    assert_receive {:jido_console_session, _, :output_ready}
+    assert_receive {:jido_console_session, _, {:event, _first}}
+    assert_receive {:jido_console_session, _, {:event, _second}}
 
-    assert {:ok, recovered} = TUI.consume(attached.handle, state)
-    assert recovered.semantic_sequence == 2
-    assert :empty = Client.output(attached.handle)
+    assert {:ok, replayed} = TUI.replay(attached.handle, state)
+    assert replayed.semantic_sequence == 2
+    assert {:ok, events} = Client.events(attached.handle)
+    assert Enum.map(events, & &1["payload"]["sequence"]) == [1, 2]
   end
 end

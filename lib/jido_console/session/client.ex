@@ -2,9 +2,8 @@ defmodule Jido.Console.Session.Client do
   @moduledoc """
   Public renderer-neutral contract for one supervised semantic session.
 
-  All live output uses bounded pull delivery. Acknowledgement and recovery
-  for client output are process-lifetime data. Durable admission receipt lookup
-  survives application restart.
+  Attached clients receive live events directly. A client can request the full
+  ordered event history after it attaches or restarts.
   """
 
   import Kernel, except: [send: 2]
@@ -16,20 +15,20 @@ defmodule Jido.Console.Session.Client do
   @type attach_result :: %{
           handle: t(),
           capabilities: map(),
-          snapshot: map()
+          events: [map()]
         }
 
-  @doc "Attaches one exact logical client and returns its bounded baseline."
+  @doc "Attaches one exact logical client and returns its complete event history."
   @spec attach(String.t(), keyword()) :: {:ok, attach_result()} | {:error, term()}
   def attach(session_id, opts \\ []) do
     driver = Keyword.get(opts, :driver, Local)
 
-    with {:ok, handle, snapshot} <- driver.attach(session_id, opts) do
+    with {:ok, handle, events} <- driver.attach(session_id, opts) do
       {:ok,
        %{
          handle: handle,
          capabilities: driver.capabilities(handle),
-         snapshot: snapshot
+         events: events
        }}
     end
   end
@@ -100,13 +99,9 @@ defmodule Jido.Console.Session.Client do
     driver(handle).control(handle, {:admission_receipt, operation_id})
   end
 
-  @doc "Pulls one bounded canonical output batch, a gap, or no output."
-  @spec output(t()) :: {:ok, map()} | {:gap, map()} | :empty | {:error, term()}
-  def output(handle), do: driver(handle).output(handle)
-
-  @doc "Acknowledges one exact opaque batch token."
-  @spec ack(t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def ack(handle, token), do: driver(handle).delivery(handle, token)
+  @doc "Returns the complete ordered event history."
+  @spec events(t()) :: {:ok, [map()]} | {:error, term()}
+  def events(handle), do: driver(handle).events(handle)
 
   @doc "Returns bounded renderer-neutral status for the exact attachment."
   @spec status(t()) :: {:ok, map()} | {:error, term()}
@@ -134,35 +129,6 @@ defmodule Jido.Console.Session.Client do
     driver(handle).control(handle, {:respond_review, :deny, request, review, opts})
   end
 
-  @doc "Begins recovery for the exact current delivery gap."
-  @spec recover(t(), map() | String.t()) :: {:ok, map()} | {:error, term()}
-  def recover(handle, gap) do
-    gap_id = if is_map(gap), do: get_in(gap, ["payload", "gap_id"]), else: gap
-    driver(handle).recovery(handle, :recover, gap_id)
-  end
-
-  @doc false
-  @spec recover(t()) :: {:ok, map()} | {:error, term()}
-  def recover(handle) do
-    case output(handle) do
-      {:gap, gap} -> recover(handle, gap)
-      {:error, reason} -> {:error, reason}
-      _other -> {:error, :recovery_not_required}
-    end
-  end
-
-  @doc "Returns the one bounded suffix for an active recovery transaction."
-  @spec replay(t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def replay(handle, recovery_token) do
-    driver(handle).recovery(handle, :replay, recovery_token)
-  end
-
-  @doc "Completes recovery with the exact opaque completion token."
-  @spec resume(t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def resume(handle, completion_token) do
-    driver(handle).recovery(handle, :resume, completion_token)
-  end
-
   @doc "Returns negotiated descriptive capabilities for this attachment."
   @spec capabilities(t()) :: {:ok, map()} | {:error, term()}
   def capabilities(handle) do
@@ -185,10 +151,10 @@ defmodule Jido.Console.Session.Client do
   @spec operation_capabilities() :: [String.t()]
   def operation_capabilities, do: Driver.operation_capabilities()
 
-  @doc "Returns the process-lifetime durability boundary."
+  @doc "Returns the live-notification durability boundary."
   @spec limitation() :: String.t()
   def limitation do
-    "Client output acknowledgement and delivery-gap recovery are process-lifetime only. Durable admission receipt lookup survives application restart."
+    "Live event notifications are process-lifetime only. Full event replay and admission receipts survive application restart."
   end
 
   @doc false

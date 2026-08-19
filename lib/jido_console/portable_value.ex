@@ -5,7 +5,7 @@ defmodule Jido.Console.PortableValue do
   @credential_query_fields ~w(api_key apikey authorization credential password private_key secret token)
   @local_fields ~w(draft cursor viewport terminal_size ansi dom navigation key_chord palette selection_anchor)
   @policy %{
-    "allowed_reference_fields" => ~w(credential_profile_id credential_reference_id credential_source_identity),
+    "allowed_reference_fields" => [],
     "forbidden_field_names" =>
       ~w(api_key authorization cookie credential credential_value password private_key secret secret_value token),
     "forbidden_shell_flags" => ~w(--api-key --authorization --cookie --credential --password --secret --token),

@@ -1,6 +1,6 @@
 defmodule Jido.Console.Providers.RecordedResults do
   @moduledoc """
-  Owns the recorded provider-contract result set.
+  Owns the development provider-contract result set.
 
   These rows are test observations. They are not derived from model catalog
   claims. Each row identifies the test and evidence record that produced it.

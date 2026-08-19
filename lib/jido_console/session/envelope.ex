@@ -1,9 +1,9 @@
 defmodule Jido.Console.Session.Envelope do
-  @moduledoc "Typed internal envelope for session events, deliveries, and receipts."
+  @moduledoc "Typed internal envelope for session events and receipts."
 
   alias Jido.Console.PortableValue
 
-  @families ~w(delivery event receipt)
+  @families ~w(event receipt)
   @forbidden_authority_sources ~w(renderer transport host origin unknown)
   @limits %{
     "max_identity_bytes" => 256,

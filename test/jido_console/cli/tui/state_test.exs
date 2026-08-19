@@ -63,21 +63,23 @@ defmodule Jido.Console.Tui.StateTest do
     {unchanged, []} = State.update(state, {:coding_review, [%{path: "lib/value.ex"}]})
     assert unchanged.activity == :idle
 
-    snapshot = %{
-      "payload" => %{
-        "state" => %{
-          "transcript" => [
-            %{"type" => "unknown", "payload" => %{}},
-            %{"type" => "run_started", "payload" => %{"prompt" => "hello", "request_id" => "one"}},
-            %{"type" => "model_delta", "payload" => %{"text" => "answer"}},
-            %{"type" => "run_completed", "payload" => %{}},
-            %{"type" => "run_started", "payload" => %{"prompt" => "again", "request_id" => "two"}}
-          ]
-        }
+    events = [
+      %{"session_id" => "session", "type" => "unknown", "payload" => %{"sequence" => 1}},
+      %{
+        "session_id" => "session",
+        "type" => "run_started",
+        "payload" => %{"sequence" => 2, "prompt" => "hello", "request_id" => "one"}
+      },
+      %{"session_id" => "session", "type" => "model_delta", "payload" => %{"sequence" => 3, "text" => "answer"}},
+      %{"session_id" => "session", "type" => "run_completed", "payload" => %{"sequence" => 4}},
+      %{
+        "session_id" => "session",
+        "type" => "run_started",
+        "payload" => %{"sequence" => 5, "prompt" => "again", "request_id" => "two"}
       }
-    }
+    ]
 
-    restored = State.restore_snapshot(state, snapshot)
+    restored = State.restore_events(state, events)
     assert {:starting, {:turn, %Turn{prompt: "again"}}} = restored.activity
     assert Enum.map(restored.messages, & &1.content) == ["hello", "answer", "again"]
     assert [%Turn{status: :finished}] = restored.turns

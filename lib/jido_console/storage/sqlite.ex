@@ -1,5 +1,5 @@
 defmodule Jido.Console.Storage.SQLite do
-  @moduledoc "Small SQLite owner for events, operations, and credential profiles."
+  @moduledoc "Small SQLite owner for events and operations."
 
   use GenServer
 
@@ -13,9 +13,6 @@ defmodule Jido.Console.Storage.SQLite do
   @max_pages div(@database_bytes, @page_size)
   @event_limit 10_000
   @event_bytes 256 * 1_024
-  @profile_limit 128
-  @profile_version_limit 128
-  @profile_bytes 16 * 1_024
 
   @schema """
   CREATE TABLE IF NOT EXISTS events (
@@ -48,16 +45,6 @@ defmodule Jido.Console.Storage.SQLite do
     FOREIGN KEY (session_id, sequence) REFERENCES events(session_id, sequence),
     FOREIGN KEY (event_id) REFERENCES events(event_id)
   ) STRICT;
-  CREATE TABLE IF NOT EXISTS credential_profiles (
-    profile_id TEXT NOT NULL,
-    version INTEGER NOT NULL CHECK (version > 0),
-    operation_id TEXT NOT NULL UNIQUE,
-    digest TEXT NOT NULL,
-    encoded_bytes INTEGER NOT NULL,
-    json BLOB NOT NULL,
-    committed_at_ms INTEGER NOT NULL,
-    PRIMARY KEY (profile_id, version)
-  ) STRICT;
   """
 
   @type option :: {:name, GenServer.name()} | {:path, Path.t()} | {:jido_home, Path.t()}
@@ -82,10 +69,7 @@ defmodule Jido.Console.Storage.SQLite do
     %{
       database_bytes: @database_bytes,
       event_bytes: @event_bytes,
-      session_events: @event_limit,
-      credential_profiles: @profile_limit,
-      credential_profile_versions: @profile_version_limit,
-      credential_profile_bytes: @profile_bytes
+      session_events: @event_limit
     }
   end
 
@@ -132,24 +116,6 @@ defmodule Jido.Console.Storage.SQLite do
   @spec history_head(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def history_head(server, session_id, opts \\ []) do
     GenServer.call(server, {:history_head, session_id}, timeout(opts))
-  end
-
-  @doc "Stores one credential profile version."
-  @spec put_profile(GenServer.server(), map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def put_profile(server, profile, operation_id, opts \\ []) do
-    GenServer.call(server, {:put_profile, profile, operation_id}, timeout(opts))
-  end
-
-  @doc "Returns all versions of one credential profile."
-  @spec profile_history(GenServer.server(), String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def profile_history(server, profile_id, opts \\ []) do
-    GenServer.call(server, {:profile_history, profile_id}, timeout(opts))
-  end
-
-  @doc "Returns the latest version of each credential profile."
-  @spec profiles(GenServer.server(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def profiles(server, opts \\ []) do
-    GenServer.call(server, :profiles, timeout(opts))
   end
 
   @doc "Checks SQLite and stored payload integrity."
@@ -215,25 +181,11 @@ defmodule Jido.Console.Storage.SQLite do
     {:reply, load_history_head(state.conn, session_id), state}
   end
 
-  def handle_call({:put_profile, profile, operation_id}, _from, state) do
-    result = transaction(state.conn, fn -> put_profile_conn(state.conn, profile, operation_id) end)
-    {:reply, result, state}
-  end
-
-  def handle_call({:profile_history, profile_id}, _from, state) do
-    {:reply, read_profile_history(state.conn, profile_id), state}
-  end
-
-  def handle_call(:profiles, _from, state) do
-    {:reply, read_profiles(state.conn), state}
-  end
-
   def handle_call(:inspect_store, _from, state) do
     result =
       with {:ok, [["ok"]]} <- query(state.conn, "PRAGMA integrity_check", []),
-           {:ok, _events} <- verify_all_events(state.conn),
-           {:ok, _profiles} <- verify_all_profiles(state.conn) do
-        {:ok, %{integrity: :ok, tables: 3}}
+           {:ok, _events} <- verify_all_events(state.conn) do
+        {:ok, %{integrity: :ok, tables: 2}}
       else
         {:ok, value} -> {:error, {:sqlite_integrity_failed, value}}
         {:error, reason} -> {:error, reason}
@@ -246,9 +198,8 @@ defmodule Jido.Console.Storage.SQLite do
     result =
       with {:ok, [[events]]} <- query(state.conn, "SELECT COUNT(*) FROM events", []),
            {:ok, [[operations]]} <- query(state.conn, "SELECT COUNT(*) FROM operations", []),
-           {:ok, [[profiles]]} <- query(state.conn, "SELECT COUNT(*) FROM credential_profiles", []),
            {:ok, [[pages]]} <- query(state.conn, "PRAGMA page_count", []) do
-        {:ok, %{events: events, operations: operations, profiles: profiles, database_bytes: pages * @page_size}}
+        {:ok, %{events: events, operations: operations, database_bytes: pages * @page_size}}
       end
 
     {:reply, result, state}
@@ -579,158 +530,10 @@ defmodule Jido.Console.Storage.SQLite do
 
   defp decode_operation_rows([], operations), do: {:ok, Enum.reverse(operations)}
 
-  defp put_profile_conn(conn, profile, operation_id) do
-    with {:ok, bytes} <- CanonicalJSON.encode(profile),
-         :ok <- within_limit(bytes, @profile_bytes, :credential_profile_too_large),
-         digest = Digest.portable(bytes),
-         {:ok, by_operation} <- load_profile_operation(conn, operation_id),
-         {:ok, existing} <- load_profile_row(conn, profile["profile_id"], profile["profile_version"]) do
-      put_or_return_profile(conn, by_operation || existing, profile, operation_id, bytes, digest)
-    end
-  end
-
-  defp put_or_return_profile(
-         _conn,
-         %{profile_id: id, version: version, digest: digest} = existing,
-         %{"profile_id" => id, "profile_version" => version},
-         _operation_id,
-         _bytes,
-         digest
-       ) do
-    {:ok, Map.put(existing, :duplicate, true)}
-  end
-
-  defp put_or_return_profile(_conn, %{operation_id: operation_id}, _profile, operation_id, _bytes, _digest) do
-    {:error, {:credential_operation_conflict, operation_id}}
-  end
-
-  defp put_or_return_profile(_conn, existing, profile, _operation_id, _bytes, _digest)
-       when is_map(existing) do
-    {:error, {:credential_profile_version_conflict, existing.version, profile["profile_version"]}}
-  end
-
-  defp put_or_return_profile(conn, nil, profile, operation_id, bytes, digest) do
-    profile_id = profile["profile_id"]
-    version = profile["profile_version"]
-
-    with :ok <- enforce_profile_limits(conn, profile_id, version),
-         committed_at_ms = now_ms(),
-         :ok <-
-           execute(
-             conn,
-             "INSERT INTO credential_profiles(profile_id,version,operation_id,digest,encoded_bytes,json,committed_at_ms) VALUES(?,?,?,?,?,?,?)",
-             [profile_id, version, operation_id, digest, byte_size(bytes), {:blob, bytes}, committed_at_ms]
-           ) do
-      {:ok,
-       %{
-         profile_id: profile_id,
-         version: version,
-         operation_id: operation_id,
-         digest: digest,
-         encoded_bytes: byte_size(bytes),
-         committed_at_ms: committed_at_ms,
-         profile: profile,
-         duplicate: false
-       }}
-    end
-  end
-
-  defp enforce_profile_limits(conn, profile_id, version) do
-    with {:ok, [[profiles]]} <- query(conn, "SELECT COUNT(DISTINCT profile_id) FROM credential_profiles", []),
-         {:ok, [[versions]]} <- query(conn, "SELECT COUNT(*) FROM credential_profiles WHERE profile_id=?", [profile_id]) do
-      cond do
-        versions == 0 and profiles >= @profile_limit -> {:error, :credential_profile_limit_exceeded}
-        versions >= @profile_version_limit -> {:error, :credential_profile_version_limit_exceeded}
-        version != versions + 1 -> {:error, {:credential_profile_version_conflict, versions + 1, version}}
-        true -> :ok
-      end
-    end
-  end
-
-  defp load_profile_operation(conn, operation_id) do
-    case query(
-           conn,
-           "SELECT profile_id,version,operation_id,digest,encoded_bytes,json,committed_at_ms FROM credential_profiles WHERE operation_id=?",
-           [operation_id]
-         ) do
-      {:ok, []} -> {:ok, nil}
-      {:ok, [row]} -> decode_profile_row(row)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp load_profile_row(conn, profile_id, version) do
-    case query(
-           conn,
-           "SELECT profile_id,version,operation_id,digest,encoded_bytes,json,committed_at_ms FROM credential_profiles WHERE profile_id=? AND version=?",
-           [profile_id, version]
-         ) do
-      {:ok, []} -> {:ok, nil}
-      {:ok, [row]} -> decode_profile_row(row)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp read_profile_history(conn, profile_id) do
-    with {:ok, rows} <-
-           query(
-             conn,
-             "SELECT profile_id,version,operation_id,digest,encoded_bytes,json,committed_at_ms FROM credential_profiles WHERE profile_id=? ORDER BY version",
-             [profile_id]
-           ) do
-      decode_profile_rows(rows, [])
-    end
-  end
-
-  defp read_profiles(conn) do
-    sql =
-      "SELECT p.profile_id,p.version,p.operation_id,p.digest,p.encoded_bytes,p.json,p.committed_at_ms FROM credential_profiles p JOIN (SELECT profile_id,MAX(version) AS version FROM credential_profiles GROUP BY profile_id) latest ON latest.profile_id=p.profile_id AND latest.version=p.version ORDER BY p.profile_id"
-
-    with {:ok, rows} <- query(conn, sql, []), do: decode_profile_rows(rows, [])
-  end
-
-  defp decode_profile_rows([row | rows], profiles) do
-    with {:ok, profile} <- decode_profile_row(row) do
-      decode_profile_rows(rows, [profile | profiles])
-    end
-  end
-
-  defp decode_profile_rows([], profiles), do: {:ok, Enum.reverse(profiles)}
-
-  defp decode_profile_row([profile_id, version, operation_id, digest, size, bytes, committed]) do
-    with true <- is_binary(bytes) and size == byte_size(bytes),
-         true <- Digest.portable(bytes) == digest,
-         {:ok, profile} <- CanonicalJSON.decode(bytes) do
-      {:ok,
-       %{
-         profile_id: profile_id,
-         version: version,
-         operation_id: operation_id,
-         digest: digest,
-         encoded_bytes: size,
-         committed_at_ms: committed,
-         profile: profile
-       }}
-    else
-      _other -> {:error, {:credential_profile_integrity_failed, profile_id, version}}
-    end
-  end
-
   defp verify_all_events(conn) do
     with {:ok, rows} <-
            query(conn, "SELECT sequence,digest,encoded_bytes,json FROM events ORDER BY session_id,sequence", []) do
       decode_event_rows(rows, [])
-    end
-  end
-
-  defp verify_all_profiles(conn) do
-    with {:ok, rows} <-
-           query(
-             conn,
-             "SELECT profile_id,version,operation_id,digest,encoded_bytes,json,committed_at_ms FROM credential_profiles ORDER BY profile_id,version",
-             []
-           ) do
-      decode_profile_rows(rows, [])
     end
   end
 

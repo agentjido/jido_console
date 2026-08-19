@@ -11,7 +11,6 @@ defmodule Jido.Console.CLI do
     jido doctor [--provider NAME] [--env-file FILE]
     jido models list
     jido models show PROVIDER MODEL
-    jido models test PROVIDER MODEL [--offline] [--require FEATURE]
 
   Options:
     -h, --help       Show this help
@@ -47,7 +46,7 @@ defmodule Jido.Console.CLI do
        do: print_help()
 
   defp dispatch_fast(["models", command, flag])
-       when command in ["list", "show", "test"] and flag in ["--help", "-h"],
+       when command in ["list", "show"] and flag in ["--help", "-h"],
        do: print_help()
 
   defp dispatch_fast(_args), do: :continue
@@ -239,7 +238,6 @@ defmodule Jido.Console.CLI do
 
   defp run_models(["list" | rest], opts), do: run_models_list(rest, opts)
   defp run_models(["show" | rest], opts), do: run_models_show(rest, opts)
-  defp run_models(["test" | rest], opts), do: run_models_test(rest, opts)
   defp run_models(["--help"], _opts), do: print_help()
   defp run_models(["-h"], _opts), do: print_help()
   defp run_models(_args, _opts), do: usage_error()
@@ -264,23 +262,8 @@ defmodule Jido.Console.CLI do
     |> normalize_models_result()
   end
 
-  defp run_models_test(args, opts) do
-    with :ok <- Jido.Console.Auth.reject_credential_args(args),
-         {:ok, identity, options} <- parse_models_target(args, [:offline, :require]) do
-      if Keyword.get(options, :help) do
-        print_help()
-      else
-        write_models(apply_models_test(identity, Keyword.merge(opts, options)))
-      end
-    end
-    |> normalize_models_result()
-  end
-
   defp apply_models_show({provider, model}, opts), do: Jido.Console.Models.Commands.show(provider, model, opts)
   defp apply_models_show(identity, opts), do: Jido.Console.Models.Commands.show(identity, nil, opts)
-
-  defp apply_models_test({provider, model}, opts), do: Jido.Console.Models.Commands.test(provider, model, opts)
-  defp apply_models_test(identity, opts), do: Jido.Console.Models.Commands.test(identity, nil, opts)
 
   defp write_models({:ok, output}) do
     IO.write(output)
@@ -289,23 +272,16 @@ defmodule Jido.Console.CLI do
 
   defp write_models(other), do: other
 
-  defp parse_models_target(args, extra \\ []) do
-    switches =
-      Enum.map([:help | extra], fn
-        :offline -> {:offline, :boolean}
-        :require -> {:require, :string}
-        :help -> {:help, :boolean}
-      end)
-
-    case OptionParser.parse(args, strict: switches, aliases: [h: :help]) do
+  defp parse_models_target(args) do
+    case OptionParser.parse(args, strict: [help: :boolean], aliases: [h: :help]) do
       {options, [], []} ->
         if Keyword.get(options, :help), do: {:ok, nil, [help: true]}, else: {:error, :invalid_model_identity}
 
       {options, [identity], []} ->
-        {:ok, identity, Keyword.take(options, extra)}
+        {:ok, identity, Keyword.take(options, [:help])}
 
       {options, [provider, model], []} ->
-        {:ok, {provider, model}, Keyword.take(options, extra)}
+        {:ok, {provider, model}, Keyword.take(options, [:help])}
 
       {_options, _args, _invalid} ->
         {:error, :invalid_model_options}
@@ -326,16 +302,7 @@ defmodule Jido.Console.CLI do
   defp normalize_models_result({:error, {:unknown_model, _identity} = reason}), do: config_error(reason)
   defp normalize_models_result({:error, :invalid_model_identity}), do: usage_error()
   defp normalize_models_result({:error, :invalid_model_options}), do: usage_error()
-  defp normalize_models_result({:error, :invalid_required_feature}), do: usage_error()
-  defp normalize_models_result({:error, {:offline_denied, output}}), do: write_denied(output)
-  defp normalize_models_result({:error, {:capability_denied, output}}), do: write_denied(output)
-  defp normalize_models_result({:error, {:contract_failed, output}}), do: write_denied(output)
   defp normalize_models_result({:error, reason}), do: normalize_process_result({:error, reason})
-
-  defp write_denied(output) do
-    IO.write(output)
-    {:error, 1}
-  end
 
   defp config_error(reason) do
     IO.puts(:stderr, "jido: #{format_error(reason)}")

@@ -40,7 +40,7 @@ defmodule Jido.Console.SessionClientContract do
     quote do
       use ExUnit.Case, async: true
 
-      alias Jido.Console.Session.{Client, Envelope, Identity, Supervisor}
+      alias Jido.Console.Session.{Client, Identity, Supervisor}
 
       setup do
         suffix = System.unique_integer([:positive])
@@ -65,7 +65,7 @@ defmodule Jido.Console.SessionClientContract do
         %{session: session, client_opts: client_opts}
       end
 
-      test "attach returns opaque exact identities and one valid bounded baseline", context do
+      test "attach returns exact identities and the complete event history", context do
         assert {:ok, attached} = Client.attach(context.session.id, context.client_opts)
         handle = attached.handle
 
@@ -74,8 +74,7 @@ defmodule Jido.Console.SessionClientContract do
         assert handle.attachment.session_id == context.session.id
         assert handle.protocol == "1"
         assert attached.capabilities["grants_authority"] == false
-        assert {:ok, _snapshot} = Envelope.validate(attached.snapshot)
-        assert attached.snapshot["type"] == "attach_snapshot"
+        assert attached.events == []
 
         public = Map.from_struct(handle)
         refute Map.has_key?(public, :server)
@@ -91,60 +90,34 @@ defmodule Jido.Console.SessionClientContract do
         assert {:ok, second} = Client.attach(context.session.id, opts)
 
         refute first.handle.attachment.id == second.handle.attachment.id
-        assert {:error, :delivery_identity_mismatch} = Client.status(first.handle)
-        assert {:error, :delivery_identity_mismatch} = Client.detach(first.handle)
+        assert {:error, :attachment_identity_mismatch} = Client.status(first.handle)
+        assert {:error, :attachment_identity_mismatch} = Client.detach(first.handle)
         assert {:ok, status} = Client.status(second.handle)
         assert status["attachment_id"] == second.handle.attachment.id
       end
 
-      test "input and output use one bounded canonical path with exact idempotent acknowledgement", context do
+      test "inputs send direct events and remain available for full replay", context do
         assert {:ok, attached} = Client.attach(context.session.id, context.client_opts)
         handle = attached.handle
 
         Jido.Console.SessionClientContract.assert_restart_safe_admissions(handle)
 
-        assert_receive {:jido_console_session, attachment_id, :output_ready}
-        assert attachment_id == handle.attachment.id
-        refute_receive {:jido_console_session, ^attachment_id, :output_ready}, 20
+        events =
+          for _index <- 1..4 do
+            assert_receive {:jido_console_session, attachment_id, {:event, event}}
+            assert attachment_id == handle.attachment.id
+            event
+          end
 
-        assert {:ok, batch} = Client.output(handle)
-        assert {:ok, ^batch} = Envelope.validate(batch)
-        assert batch["type"] == "output_batch"
-        assert Enum.count(batch["payload"]["events"], &(&1["type"] == "input_admitted")) == 3
-        refute Enum.any?(batch["payload"]["events"], &(&1["type"] == "delivery_gap"))
-        assert {:error, :ack_required} = Client.output(handle)
+        assert Enum.map(events, & &1["type"]) ==
+                 ["input_admitted", "input_admitted", "input_admitted", "queue_changed"]
 
-        token = batch["payload"]["acknowledgement_token"]
-        assert {:ok, receipt} = Client.ack(handle, token)
-        assert receipt["process_lifetime"]
-        assert {:ok, ^receipt} = Client.ack(handle, token)
-        assert {:error, :invalid_acknowledgement} = Client.ack(handle, "fabricated")
-      end
-
-      test "a gap stays closed through the exact three-phase recovery", context do
-        opts = Keyword.put(context.client_opts, :delivery_limits, %{queue_count: 1})
-        assert {:ok, attached} = Client.attach(context.session.id, opts)
-        handle = attached.handle
-
-        assert {:ok, _input} = Client.send(handle, "first", idempotency_key: "gap-first")
-        assert {:ok, _input} = Client.send(handle, "second", idempotency_key: "gap-second")
-        assert_receive {:jido_console_session, attachment_id, :output_ready}
-        assert attachment_id == handle.attachment.id
-        assert {:gap, gap} = Client.output(handle)
-        refute gap["family"] == "event"
-
-        assert {:ok, snapshot} = Client.recover(handle, gap)
-        assert {:error, :delivery_recovering} = Client.output(handle)
-        assert {:ok, suffix} = Client.replay(handle, snapshot["payload"]["recovery_token"])
-
-        assert {:error, :stale_completion_token} = Client.resume(handle, "stale")
-        assert {:ok, receipt} = Client.resume(handle, suffix["payload"]["completion_token"])
-        assert receipt["payload"]["process_lifetime"]
-        assert :empty = Client.output(handle)
+        assert Enum.map(events, & &1["payload"]["sequence"]) == [1, 2, 3, 4]
+        assert {:ok, ^events} = Client.events(handle)
       end
 
       test "capabilities are versioned descriptive data and cannot grant authority", context do
-        required = ~w(output recover)
+        required = ["events"]
         opts = Keyword.put(context.client_opts, :required_capabilities, required)
         assert {:ok, attached} = Client.attach(context.session.id, opts)
 
@@ -152,7 +125,7 @@ defmodule Jido.Console.SessionClientContract do
         assert capabilities["version"] == "1"
         assert capabilities["descriptive_only"]
         refute capabilities["grants_authority"]
-        assert {:ok, true} = Client.supports?(attached.handle, :output)
+        assert {:ok, true} = Client.supports?(attached.handle, :events)
         assert {:ok, false} = Client.supports?(attached.handle, "authority")
 
         missing = Keyword.put(context.client_opts, :required_capabilities, ["unknown"])

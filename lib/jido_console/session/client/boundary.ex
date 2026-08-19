@@ -9,15 +9,11 @@ defmodule Jido.Console.Session.Client.Boundary do
 
   @forbidden_module_suffixes [
     "Jido.Console.Session.Server",
-    "Jido.Console.Session.Delivery",
-    "Jido.Console.Session.Recovery",
     "Jidoka.Session",
     "Jidoka.Event",
     "Jido.Console.Runtime.Result",
     "Jido.Console.Tui.EventProjection",
     "Session.Server",
-    "Session.Delivery",
-    "Session.Recovery",
     "Runtime.Result",
     "EventProjection"
   ]
@@ -25,15 +21,12 @@ defmodule Jido.Console.Session.Client.Boundary do
   @raw_client_tags [
     :jidoka,
     :session_updated,
-    :session_gap,
     :session_runtime_event,
     :session_runtime_started,
     :session_runtime_result,
     :session_runtime_error,
     :session_control_result
   ]
-
-  @legacy_functions [:broadcast_runtime, :legacy_ack]
 
   @type violation :: %{
           required(:path) => String.t(),
@@ -57,7 +50,7 @@ defmodule Jido.Console.Session.Client.Boundary do
     scan(paths, root, &client_violation/1)
   end
 
-  @doc "Returns deleted compatibility-path syntax in owner and delivery code."
+  @doc "Returns deleted compatibility-path syntax in owner code."
   @spec legacy_path_violations([String.t()], String.t()) :: [violation()]
   def legacy_path_violations(paths, root \\ File.cwd!()) do
     scan(paths, root, &legacy_violation/1)
@@ -133,27 +126,7 @@ defmodule Jido.Console.Session.Client.Boundary do
   defp legacy_violation({:mode, :legacy}), do: violation([], :legacy_option, {:mode, :legacy})
   defp legacy_violation({:return_attachment, _value}), do: violation([], :legacy_option, :return_attachment)
 
-  defp legacy_violation({name, meta, args})
-       when name in @legacy_functions and is_list(meta) and is_list(args),
-       do: violation(meta, :legacy_function, name)
-
-  defp legacy_violation({{:., _dot_meta, [_module, name]}, meta, args})
-       when name in @legacy_functions and is_list(meta) and is_list(args),
-       do: violation(meta, :legacy_function, name)
-
-  defp legacy_violation({:def, meta, [head | _body]}) do
-    case call_signature(head) do
-      {:ack, 4} -> violation(meta, :legacy_facade, {:ack, 4})
-      {:recover, 2} -> violation(meta, :legacy_facade, {:recover, 2})
-      _signature -> nil
-    end
-  end
-
   defp legacy_violation(node), do: raw_tag_violation(node)
-
-  defp call_signature({:when, _meta, [head | _guards]}), do: call_signature(head)
-  defp call_signature({name, _meta, args}) when is_atom(name) and is_list(args), do: {name, length(args)}
-  defp call_signature(_head), do: nil
 
   defp ingress_functions(ast, path) do
     {_ast, ingresses} =

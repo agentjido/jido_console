@@ -20,8 +20,7 @@ defmodule Jido.Console.Session.Event do
   def classify(attrs) when is_map(attrs) do
     attrs = stringify(attrs)
 
-    with :ok <- reject_deprecated_emission(attrs),
-         :ok <- reject_runtime(attrs),
+    with :ok <- reject_runtime(attrs),
          {:ok, attrs} <- canonicalize_identities(attrs),
          {:ok, envelope} <-
            Envelope.new(
@@ -36,11 +35,6 @@ defmodule Jido.Console.Session.Event do
   end
 
   def classify(_attrs), do: {:error, :invalid_event}
-
-  defp reject_deprecated_emission(%{"type" => "delivery_gap"}),
-    do: {:error, :deprecated_event_emission}
-
-  defp reject_deprecated_emission(_attrs), do: :ok
 
   @doc "Validates one classified event envelope and its canonical session identity."
   @spec validate(Envelope.t() | map()) :: {:ok, t()} | {:error, term()}

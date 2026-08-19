@@ -9,7 +9,7 @@ defmodule Jido.Console.Session.ClientTest do
     assert Enum.all?(callbacks, fn {name, arity} -> function_exported?(Local, name, arity) end)
   end
 
-  test "command effects use the same canonical output path", context do
+  test "command effects use the same direct event path", context do
     command = %{
       "id" => "cmd_help",
       "version" => "1",
@@ -34,10 +34,10 @@ defmodule Jido.Console.Session.ClientTest do
     assert effect.command_id == "cmd_help"
     assert effect.receipt["type"] == "command"
 
-    assert_receive {:jido_console_session, attachment_id, :output_ready}
+    assert_receive {:jido_console_session, attachment_id, {:event, event}}
     assert attachment_id == attached.handle.attachment.id
-    assert {:ok, batch} = Client.output(attached.handle)
-    assert Enum.map(batch["payload"]["events"], & &1["type"]) == ["command_effected"]
+    assert event["type"] == "command_effected"
+    assert {:ok, [^event]} = Client.events(attached.handle)
   end
 
   test "all production client adapters pass the syntax boundary" do

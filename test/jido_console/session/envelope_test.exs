@@ -37,7 +37,7 @@ defmodule Jido.Console.Session.EnvelopeTest do
     assert Envelope.to_map(envelope) == map
   end
 
-  test "accepts only the three live envelope families" do
+  test "accepts only the two live envelope families" do
     assert {:error, :invalid_session_envelope} = Envelope.new("command", "submit_input", %{})
     assert {:error, :invalid_session_envelope} = Envelope.validate(%{})
   end
@@ -68,7 +68,7 @@ defmodule Jido.Console.Session.EnvelopeTest do
     canary = "MATERIALIZED_CANARY_VALUE"
 
     assert {:ok, envelope} =
-             Envelope.new("delivery", "output_batch", %{
+             Envelope.new("event", "model_delta", %{
                "content" => "provider returned #{canary}"
              })
 

@@ -18,9 +18,9 @@ defmodule Jido.Console.Session.Client.Local do
          {:ok, server} <- Server.ensure_started(session_id, opts),
          {:ok, fence} <- Server.generation(server),
          {:ok, client} <- client_identity(session_id, fence, opts),
-         {:ok, %{attachment: attachment, snapshot: snapshot}} <-
+         {:ok, %{attachment: attachment, events: events}} <-
            Server.attach(server, client, attach_options(opts)),
-         {:ok, snapshot} <- Envelope.validate(snapshot) do
+         {:ok, events} <- validate_events(events) do
       handle =
         Handle.new(
           session:
@@ -42,7 +42,7 @@ defmodule Jido.Console.Session.Client.Local do
           }
         )
 
-      {:ok, handle, snapshot}
+      {:ok, handle, events}
     end
   end
 
@@ -53,41 +53,13 @@ defmodule Jido.Console.Session.Client.Local do
   def input(handle, operation, value), do: call(handle, {:input, operation, value})
 
   @impl true
-  def output(handle) do
-    case call(handle, :output) do
-      {:ok, envelope} -> validate_delivery(envelope, "output_batch")
-      {:gap, envelope} -> validate_gap(envelope)
-      other -> other
-    end
-  end
+  def events(handle), do: call(handle, :events)
 
   @impl true
   def state(handle, operation), do: call(handle, operation)
 
   @impl true
   def control(handle, operation), do: call(handle, operation)
-
-  @impl true
-  def delivery(handle, token), do: call(handle, {:delivery, token})
-
-  @impl true
-  def recovery(handle, :recover, gap_id) do
-    handle
-    |> call({:recovery, :recover, gap_id})
-    |> validate_recovery("recovery_snapshot")
-  end
-
-  def recovery(handle, :replay, token) do
-    handle
-    |> call({:recovery, :replay, token})
-    |> validate_recovery("recovery_suffix")
-  end
-
-  def recovery(handle, :resume, token) do
-    handle
-    |> call({:recovery, :resume, token})
-    |> validate_recovery("recovery_receipt")
-  end
 
   @impl true
   def capabilities(handle), do: Handle.capabilities(handle)
@@ -155,8 +127,7 @@ defmodule Jido.Console.Session.Client.Local do
          "version" => @protocol,
          "operations" => negotiated,
          "descriptive_only" => true,
-         "grants_authority" => false,
-         "delivery_limits" => Jido.Console.Session.Delivery.maximums()
+         "grants_authority" => false
        }}
     else
       {:error, {:required_capability_missing, MapSet.to_list(MapSet.difference(required, available))}}
@@ -175,45 +146,23 @@ defmodule Jido.Console.Session.Client.Local do
     Identity.new(:client, identity_opts)
   end
 
-  defp attach_options(opts) do
-    [
-      delivery_limits: Keyword.get(opts, :delivery_limits, %{})
-    ]
-    |> maybe_put(:token_secret, Keyword.get(opts, :token_secret))
-  end
+  defp attach_options(opts), do: Keyword.take(opts, [:attachment_id])
 
-  defp validate_delivery(envelope, type) do
-    with {:ok, envelope} <- Envelope.validate(envelope),
-         true <- envelope["family"] == "delivery" and envelope["type"] == type,
-         false <- Enum.any?(envelope["payload"]["events"], &(&1["type"] == "delivery_gap")) do
-      {:ok, envelope}
-    else
-      false -> {:error, :invalid_client_output}
+  defp validate_events(events) when is_list(events) do
+    events
+    |> Enum.reduce_while({:ok, []}, fn event, {:ok, valid} ->
+      case Envelope.validate(event) do
+        {:ok, event} -> {:cont, {:ok, [event | valid]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, valid} -> {:ok, Enum.reverse(valid)}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp validate_gap(envelope) do
-    with {:ok, envelope} <- Envelope.validate(envelope),
-         true <- envelope["family"] == "delivery" and envelope["type"] == "gap" do
-      {:gap, envelope}
-    else
-      false -> {:error, :invalid_client_output}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp validate_recovery({:ok, envelope}, type) do
-    with {:ok, envelope} <- Envelope.validate(envelope),
-         true <- envelope["family"] == "delivery" and envelope["type"] == type do
-      {:ok, envelope}
-    else
-      false -> {:error, :invalid_client_recovery}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp validate_recovery(other, _type), do: other
+  defp validate_events(_events), do: {:error, :invalid_session_events}
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)

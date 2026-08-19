@@ -6,7 +6,7 @@ defmodule Jido.Console.Session.History do
 
   @event_limit 10_000
 
-  @doc "Appends one reduced event before live client delivery."
+  @doc "Appends one reduced event before live client notification."
   @spec append(map(), State.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
   def append(event, semantic, _owner, opts \\ []) do
     with {:ok, event} <- Event.validate(event),

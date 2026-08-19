@@ -65,13 +65,13 @@ defmodule Jido.Console.Tui do
 
   defp start_terminal(terminal, runtime, agent, state, opts) do
     with :ok <- safe_start_application(opts),
-         {:ok, %{handle: session_client, snapshot: attach_snapshot}} <- attach_session_client(opts) do
+         {:ok, %{handle: session_client, events: events}} <- attach_session_client(opts) do
       runtime_info = runtime_info(session_client)
 
       state =
         state
         |> Map.put(:session_client, session_client)
-        |> State.restore_snapshot(attach_snapshot, Map.get(runtime_info, :active_request))
+        |> State.restore_events(events, Map.get(runtime_info, :active_request))
 
       case register_interactive_process(opts) do
         {:ok, _record} ->
@@ -374,8 +374,8 @@ defmodule Jido.Console.Tui do
       {:jido_terminal, ref, event} when ref == terminal.ref ->
         continue(state, {:terminal, event}, terminal, runtime, opts, startup, workers)
 
-      {:jido_console_session, attachment_id, :output_ready} ->
-        handle_client_ready(state, attachment_id, terminal, runtime, opts, startup, workers)
+      {:jido_console_session, attachment_id, {:event, event}} ->
+        handle_session_event(state, attachment_id, event, terminal, runtime, opts, startup, workers)
 
       {:jido_tui_effect_result, worker_pid, outcome} ->
         handle_effect_result(
@@ -606,9 +606,10 @@ defmodule Jido.Console.Tui do
     end
   end
 
-  defp handle_client_ready(
+  defp handle_session_event(
          %State{session_client: handle} = state,
          attachment_id,
+         event,
          terminal,
          runtime,
          opts,
@@ -616,9 +617,8 @@ defmodule Jido.Console.Tui do
          workers
        ) do
     if Client.Handle.identity(handle).attachment_id == attachment_id do
-      case SessionTUI.consume(handle, state) do
+      case SessionTUI.apply_event(handle, state, event) do
         {:ok, state} -> loop(schedule_render(state), terminal, runtime, opts, startup, workers)
-        {:empty, state} -> loop(state, terminal, runtime, opts, startup, workers)
         {:error, _reason, state} -> loop(state, terminal, runtime, opts, startup, workers)
       end
     else
@@ -631,8 +631,7 @@ defmodule Jido.Console.Tui do
     _ = Jido.Console.Session.Supervisor.ensure_started(supervisor_opts)
     session_id = Keyword.get_lazy(opts, :session_id, fn -> Identity.new!(:session).id end)
 
-    client_opts =
-      Keyword.take(opts, [:registry, :supervisor, :tasks, :delivery_limits, :catalog, :descriptor])
+    client_opts = Keyword.take(opts, [:registry, :supervisor, :tasks, :catalog, :descriptor])
 
     case SessionTUI.attach(session_id, client_opts) do
       {:ok, attached} -> {:ok, attached}

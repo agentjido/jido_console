@@ -1,6 +1,6 @@
 defmodule Jido.Console.Providers.Harness do
   @moduledoc """
-  Deterministic provider-contract harness for catalog capabilities.
+  Development-only provider-contract harness for catalog capabilities.
 
   Default runs use recorded fixtures and never call a live provider. Live
   checks require an explicit opt-in, a timeout, and a cancellation path.

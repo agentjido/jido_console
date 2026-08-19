@@ -1,6 +1,6 @@
 defmodule Jido.Console.Providers.ContractResult do
   @moduledoc """
-  Validates one provider-contract result.
+  Validates one development provider-contract result.
 
   A result is evidence from one identified test. Catalog claims are not
   accepted as a result source.

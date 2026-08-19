@@ -9,8 +9,6 @@ defmodule Jido.Console.Session.Client.TuiBoundaryTest do
 
   @legacy_owner_paths [
     "lib/jido_console/session/server.ex",
-    "lib/jido_console/session/delivery.ex",
-    "lib/jido_console/session/recovery.ex",
     "lib/jido_console/session/client/local.ex"
   ]
 
@@ -47,7 +45,5 @@ defmodule Jido.Console.Session.Client.TuiBoundaryTest do
     assert Enum.any?(violations, &(&1.kind == :forbidden_module))
     assert Enum.any?(violations, &(&1.kind == :raw_message))
     assert Enum.any?(legacy, &(&1.kind == :legacy_option))
-    assert Enum.any?(legacy, &(&1.kind == :legacy_function))
-    assert Enum.any?(legacy, &(&1.kind == :legacy_facade))
   end
 end

@@ -69,36 +69,30 @@ defmodule Jido.Console.Tui.State do
       selection: selection
     }
 
-    restore_snapshot(
+    restore_events(
       state,
-      Keyword.get(opts, :session_snapshot),
+      Keyword.get(opts, :session_events, []),
       Keyword.get(opts, :session_request)
     )
   end
 
-  @doc "Restores renderer state from a bounded semantic session snapshot."
-  @spec restore_snapshot(t(), map() | nil, SessionRequest.t() | nil) :: t()
-  def restore_snapshot(state, snapshot, active_request \\ nil)
+  @doc "Restores renderer state from the complete ordered event history."
+  @spec restore_events(t(), [map()], SessionRequest.t() | nil) :: t()
+  def restore_events(state, events, active_request \\ nil)
 
-  def restore_snapshot(%__MODULE__{} = state, %Envelope{} = snapshot, active_request) do
-    restore_snapshot(state, Envelope.to_map(snapshot), active_request)
+  def restore_events(%__MODULE__{} = state, events, active_request) when is_list(events) do
+    events = Enum.map(events, &event_map/1)
+    session_id = replay_session_id(state, events)
+    sequence = events |> List.last() |> event_sequence()
+
+    restore_semantic_state(
+      state,
+      %{"session_id" => session_id, "sequence" => sequence, "history" => events},
+      active_request
+    )
   end
 
-  def restore_snapshot(
-        %__MODULE__{} = state,
-        %{"family" => "delivery", "payload" => %{"snapshot" => semantic}},
-        active_request
-      )
-      when is_map(semantic) do
-    restore_semantic_state(state, semantic, active_request)
-  end
-
-  def restore_snapshot(%__MODULE__{} = state, %{"payload" => %{"state" => semantic}}, active_request)
-      when is_map(semantic) do
-    restore_semantic_state(state, semantic, active_request)
-  end
-
-  def restore_snapshot(%__MODULE__{} = state, _snapshot, _active_request), do: state
+  def restore_events(%__MODULE__{} = state, _events, _active_request), do: state
 
   defp restore_semantic_state(state, semantic, active_request) do
     transcript = Map.get(semantic, "transcript", [])
@@ -109,7 +103,7 @@ defmodule Jido.Console.Tui.State do
         restore_event(acc, event)
       end)
 
-    active_turn = if restored.active, do: put_snapshot_request(restored.active, active_request), else: nil
+    active_turn = if restored.active, do: put_active_request(restored.active, active_request), else: nil
 
     activity =
       case {active_turn, active_request} do
@@ -645,6 +639,21 @@ defmodule Jido.Console.Tui.State do
 
   defp runtime_selection_changed?(_left, _right), do: false
 
+  defp event_map(%Envelope{} = event), do: Envelope.to_map(event)
+  defp event_map(event) when is_map(event), do: event
+  defp event_map(_event), do: %{}
+
+  defp replay_session_id(_state, [%{"session_id" => session_id} | _events]), do: session_id
+
+  defp replay_session_id(%{session_client: nil} = state, []), do: state.semantic_session_id
+
+  defp replay_session_id(%{session_client: handle}, []) do
+    Jido.Console.Session.Client.Handle.identity(handle).session_id
+  end
+
+  defp event_sequence(nil), do: 0
+  defp event_sequence(event), do: get_in(event, ["payload", "sequence"]) || 0
+
   defp restore_event(acc, %Envelope{} = event), do: restore_event(acc, Envelope.to_map(event))
 
   defp restore_event(acc, %{"type" => "run_started", "payload" => payload}) do
@@ -675,8 +684,8 @@ defmodule Jido.Console.Tui.State do
 
   defp restore_event(acc, _event), do: acc
 
-  defp put_snapshot_request(turn, %SessionRequest{} = request), do: Turn.put_request(turn, request)
-  defp put_snapshot_request(turn, _request), do: turn
+  defp put_active_request(turn, %SessionRequest{} = request), do: Turn.put_request(turn, request)
+  defp put_active_request(turn, _request), do: turn
 
   defp semantic_transcript(history) do
     Enum.reject(history, &(&1["type"] in ~w(control_requested control_completed queue_changed)))

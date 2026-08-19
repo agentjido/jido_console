@@ -55,8 +55,7 @@ defmodule Jido.Console.Session.ServerTest do
     opts: opts
   } do
     client = identity(:client, session)
-    assert {:ok, snapshot} = attach_bounded(server, client)
-    assert snapshot["payload"]["snapshot_sequence"] == 0
+    assert {:ok, []} = attach_client(server, client)
     assert {:ok, ^server} = Server.ensure_started(session.id, registry: opts[:registry], supervisor: opts[:sessions])
 
     first = Server.next_sequence(server)
@@ -72,13 +71,13 @@ defmodule Jido.Console.Session.ServerTest do
 
   test "clients can detach and reattach while the session stays alive", %{server: server, session: session} do
     client = identity(:client, session)
-    assert {:ok, _} = attach_bounded(server, client)
+    assert {:ok, _} = attach_client(server, client)
     assert :ok = Server.detach(server, client)
     assert Process.alive?(server)
-    assert {:ok, _} = attach_bounded(server, client)
+    assert {:ok, _} = attach_client(server, client)
   end
 
-  test "a restarted owner rejects old clients, requests, timers, and runtime messages", %{
+  test "a restarted owner rejects old clients, requests, and runtime messages", %{
     server: server,
     session: session,
     opts: opts
@@ -126,31 +125,18 @@ defmodule Jido.Console.Session.ServerTest do
 
     before = Server.state(replacement)
 
-    send(
-      replacement,
-      {:delivery_ack_timeout, {session.generation, session.owner_instance_id}, old_attachment.id, make_ref()}
-    )
-
     send(replacement, {:jidoka_turn_event, :old_runtime_event})
     Process.sleep(10)
     assert Server.state(replacement) == before
   end
 
-  test "bounded attachments get one advisory and pull canonical batches", %{
+  test "attachments receive direct events and can read the complete history", %{
     server: server,
     session: session
   } do
     client = identity(:client, session)
 
-    assert {:ok, %{attachment: attachment, snapshot: snapshot}} =
-             attach_bounded(server, client,
-               delivery_limits: %{ack_timeout_ms: 25},
-               token_secret: String.duplicate("t", 32)
-             )
-
-    assert snapshot["type"] == "attach_snapshot"
-    assert snapshot["payload"]["snapshot_sequence"] == 0
-    assert snapshot["payload"]["snapshot"]["sequence"] == 0
+    assert {:ok, %{attachment: attachment, events: []}} = Server.attach(server, client)
     test_pid = self()
 
     spec = [
@@ -166,131 +152,63 @@ defmodule Jido.Console.Session.ServerTest do
 
     assert {:ok, request} = Server.start_operation(server, client.id, spec)
     assert_receive {:bounded_await, worker}
-    assert_receive {:jido_console_session, attachment_id, :output_ready}
+    assert_receive {:jido_console_session, attachment_id, {:event, started}}
     assert attachment_id == attachment.id
-    refute_receive {:jido_console_session, ^attachment_id, :output_ready}, 20
+    assert started["type"] == "run_started"
 
     assert {:ok, durable_started} = History.rebuild(session.id)
     assert durable_started.state.sequence == 1
     assert Enum.map(durable_started.state.history, & &1["type"]) == ["run_started"]
 
-    assert {:ok, batch} = output(server, session, client, attachment.id)
-    assert batch["type"] == "output_batch"
-    assert Enum.map(batch["payload"]["events"], & &1["type"]) == ["run_started"]
-    token = batch["payload"]["acknowledgement_token"]
+    assert {:ok, [^started]} = client_call(server, session, client, attachment.id, :events)
 
-    assert {:error, :ack_required} = output(server, session, client, attachment.id)
-
-    assert {:error, :delivery_identity_mismatch} =
-             output(server, session, client, "old_attachment")
-
-    assert {:ok, receipt} =
-             delivery(server, session, client, attachment.id, token)
-
-    assert receipt["through_sequence"] == 1
+    assert {:error, :attachment_identity_mismatch} =
+             client_call(server, session, client, "old_attachment", :events)
 
     send(worker, :finish_bounded)
     assert :done = Server.await_request(server, request, 1_000)
-    assert_receive {:jido_console_session, ^attachment_id, :output_ready}
-
-    assert {:ok, terminal_batch} = output(server, session, client, attachment.id)
-    assert Enum.map(terminal_batch["payload"]["events"], & &1["type"]) == ["run_completed"]
+    assert_receive {:jido_console_session, ^attachment_id, {:event, completed}}
+    assert completed["type"] == "run_completed"
+    assert {:ok, [^started, ^completed]} = client_call(server, session, client, attachment.id, :events)
 
     assert {:ok, durable_terminal} = History.rebuild(session.id)
     assert durable_terminal.state.sequence == 2
     assert durable_terminal.events == 2
-
-    assert_receive {:jido_console_session, ^attachment_id, :output_ready}, 200
-    assert {:gap, gap} = output(server, session, client, attachment.id)
-    assert gap["payload"]["reason"] == "acknowledgement_timeout"
-
-    assert {:ok, measurements} = client_call(server, session, client, attachment.id, :delivery_measurements)
-    assert measurements.status == :gapped
-    assert measurements.advisory_count == 0
   end
 
-  test "bounded recovery queues output and resumes incremental delivery", %{
+  test "reattach returns full history and receives later events directly", %{
     server: server,
     session: session
   } do
     client = identity(:client, session)
 
-    assert {:ok, %{attachment: attachment}} =
-             attach_bounded(server, client,
-               delivery_limits: %{ack_timeout_ms: 25},
-               token_secret: String.duplicate("r", 32)
-             )
+    assert {:ok, %{attachment: first_attachment, events: []}} = Server.attach(server, client)
 
-    test_pid = self()
-
-    spec = [
-      start: fn _owner -> {:ok, %{request_id: "recovery-request"}} end,
-      await: fn _request ->
-        send(test_pid, {:recovery_await, self()})
-
-        receive do
-          :finish_recovery -> :recovered
-        end
-      end
+    first_spec = [
+      start: fn _owner -> {:ok, %{request_id: "first-request"}} end,
+      await: fn _request -> :first_done end
     ]
 
-    assert {:ok, request} = Server.start_operation(server, client.id, spec)
-    assert_receive {:recovery_await, worker}
-    assert_receive {:jido_console_session, attachment_id, :output_ready}
-    assert attachment_id == attachment.id
-    assert {:ok, _batch} = output(server, session, client, attachment.id)
+    assert {:ok, first_request} = Server.start_operation(server, client.id, first_spec)
+    assert :first_done = Server.await_request(server, first_request, 1_000)
+    assert_receive {:jido_console_session, first_id, {:event, _started}}
+    assert first_id == first_attachment.id
+    assert_receive {:jido_console_session, ^first_id, {:event, _completed}}
 
-    assert_receive {:jido_console_session, ^attachment_id, :output_ready}, 200
-    assert {:gap, gap} = output(server, session, client, attachment.id)
+    assert {:ok, %{attachment: second_attachment, events: history}} = Server.attach(server, client)
+    assert Enum.map(history, & &1["type"]) == ["run_started", "run_completed"]
 
-    assert {:ok, snapshot} =
-             client_call(
-               server,
-               session,
-               client,
-               attachment.id,
-               {:recovery, :recover, gap["payload"]["gap_id"]}
-             )
-
-    send(worker, :finish_recovery)
-    assert :recovered = Server.await_request(server, request, 1_000)
-
-    assert {:error, :delivery_recovering} =
-             output(server, session, client, attachment.id)
-
-    assert {:ok, suffix} =
-             client_call(
-               server,
-               session,
-               client,
-               attachment.id,
-               {:recovery, :replay, snapshot["payload"]["recovery_token"]}
-             )
-
-    assert Enum.map(suffix["payload"]["events"], & &1["type"]) == ["run_completed"]
-
-    assert {:ok, receipt} =
-             client_call(
-               server,
-               session,
-               client,
-               attachment.id,
-               {:recovery, :resume, suffix["payload"]["completion_token"]}
-             )
-
-    assert receipt["payload"]["through_sequence"] == 2
-    assert :empty = output(server, session, client, attachment.id)
-
-    next_spec = [
-      start: fn _owner -> {:ok, %{request_id: "post-recovery-request"}} end,
-      await: fn _request -> :post_recovery_done end
+    second_spec = [
+      start: fn _owner -> {:ok, %{request_id: "second-request"}} end,
+      await: fn _request -> :second_done end
     ]
 
-    assert {:ok, next_request} = Server.start_operation(server, client.id, next_spec)
-    assert :post_recovery_done = Server.await_request(server, next_request, 1_000)
-    assert_receive {:jido_console_session, ^attachment_id, :output_ready}
-    assert {:ok, next_batch} = output(server, session, client, attachment.id)
-    assert Enum.map(next_batch["payload"]["events"], & &1["payload"]["sequence"]) == [3, 4]
+    assert {:ok, second_request} = Server.start_operation(server, client.id, second_spec)
+    assert :second_done = Server.await_request(server, second_request, 1_000)
+    assert_receive {:jido_console_session, second_id, {:event, later_started}}
+    assert second_id == second_attachment.id
+    assert_receive {:jido_console_session, ^second_id, {:event, later_completed}}
+    assert [3, 4] == Enum.map([later_started, later_completed], & &1["payload"]["sequence"])
   end
 
   test "stale, repeated, and cross-session results cannot resolve current work", %{server: server, session: session} do
@@ -309,12 +227,12 @@ defmodule Jido.Console.Session.ServerTest do
     client = identity(:client, session)
     foreign = Identity.new!(:client, session_id: Identity.new!(:session).id)
 
-    assert {:error, :cross_session_result} = attach_bounded(server, foreign)
+    assert {:error, :cross_session_result} = attach_client(server, foreign)
     assert {:error, :not_attached} = Server.detach(server, client)
     assert {:error, :not_attached} = Server.runtime_info(server, client.id)
     assert {:error, :not_attached} = Server.configure_runtime(server, client.id, FakeRuntime, :agent, [])
 
-    assert {:ok, _snapshot} = attach_bounded(server, client)
+    assert {:ok, _events} = attach_client(server, client)
     assert {:ok, %{configured?: false, active_request: nil}} = Server.runtime_info(server, client.id)
     assert {:error, :invalid_runtime} = Server.configure_runtime(server, client.id, "runtime", :agent, [])
 
@@ -369,7 +287,7 @@ defmodule Jido.Console.Session.ServerTest do
     session: session
   } do
     client = identity(:client, session)
-    assert {:ok, _snapshot} = attach_bounded(server, client)
+    assert {:ok, _events} = attach_client(server, client)
     assert {:error, :idempotency_key_required} = Server.start_turn(server, client.id, "prompt", [])
 
     assert {:error, :runtime_not_configured} =
@@ -459,7 +377,7 @@ defmodule Jido.Console.Session.ServerTest do
     session: session
   } do
     client = identity(:client, session)
-    assert {:ok, _snapshot} = attach_bounded(server, client)
+    assert {:ok, _events} = attach_client(server, client)
     test_pid = self()
 
     pending_spec = [
@@ -555,7 +473,7 @@ defmodule Jido.Console.Session.ServerTest do
     session: session
   } do
     client = identity(:client, session)
-    assert {:ok, _snapshot} = attach_bounded(server, client)
+    assert {:ok, _events} = attach_client(server, client)
     test_pid = self()
 
     spec = [
@@ -593,13 +511,11 @@ defmodule Jido.Console.Session.ServerTest do
     assert Server.state(server).permissions["expiring-review"]["decision"] == "expired"
   end
 
-  defp attach_bounded(server, client) do
-    with {:ok, %{snapshot: snapshot}} <- Server.attach(server, client) do
-      {:ok, snapshot}
+  defp attach_client(server, client) do
+    with {:ok, %{events: events}} <- Server.attach(server, client) do
+      {:ok, events}
     end
   end
-
-  defp attach_bounded(server, client, opts), do: Server.attach(server, client, opts)
 
   defp identity(kind, session, opts \\ []) do
     Identity.new!(
@@ -612,12 +528,6 @@ defmodule Jido.Console.Session.ServerTest do
         ]
     )
   end
-
-  defp output(server, session, client, attachment_id),
-    do: client_call(server, session, client, attachment_id, :output)
-
-  defp delivery(server, session, client, attachment_id, token),
-    do: client_call(server, session, client, attachment_id, {:delivery, token})
 
   defp client_call(server, session, client, attachment_id, operation) do
     Server.client_operation(

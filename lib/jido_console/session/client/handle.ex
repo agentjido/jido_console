@@ -3,7 +3,7 @@ defmodule Jido.Console.Session.Client.Handle do
   Opaque process-lifetime handle for one exact session attachment.
 
   The value contains public identities and bounded capability data. It does
-  not contain a server PID, runtime handle, delivery state, or snapshot cache.
+  not contain a server PID, runtime handle, event cache, or snapshot cache.
   """
 
   alias Jido.Console.Session.Identity

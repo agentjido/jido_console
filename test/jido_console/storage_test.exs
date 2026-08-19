@@ -21,17 +21,17 @@ defmodule Jido.Console.StorageTest do
     %{root: root, opts: opts, supervisor: supervisor}
   end
 
-  test "uses one private database with three product tables", context do
+  test "uses one private database with two product tables", context do
     path = Path.join(context.root, "state/console.sqlite3")
     assert File.regular?(path)
-    assert {:ok, %{integrity: :ok, tables: 3}} = Storage.inspect_store(storage_opts(context.opts))
+    assert {:ok, %{integrity: :ok, tables: 2}} = Storage.inspect_store(storage_opts(context.opts))
 
     Supervisor.stop(context.supervisor)
     assert {:ok, conn} = Sqlite3.open(path)
     assert {:ok, statement} = Sqlite3.prepare(conn, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     assert :ok = Sqlite3.bind(statement, [])
     assert {:ok, rows} = Sqlite3.fetch_all(conn, statement)
-    assert Enum.map(rows, &hd/1) == ["credential_profiles", "events", "operations"]
+    assert Enum.map(rows, &hd/1) == ["events", "operations"]
     assert :ok = Sqlite3.release(conn, statement)
     assert :ok = Sqlite3.close(conn)
   end
@@ -49,7 +49,7 @@ defmodule Jido.Console.StorageTest do
     Supervisor.stop(context.supervisor)
     assert {:ok, _supervisor} = StorageSupervisor.start_link(context.opts)
     assert {:ok, [^event]} = Storage.events("session-one", storage_opts(context.opts))
-    assert {:ok, %{events: 1, operations: 0, profiles: 0}} = Storage.status(storage_opts(context.opts))
+    assert {:ok, %{events: 1, operations: 0}} = Storage.status(storage_opts(context.opts))
   end
 
   test "rejects event gaps and changed duplicate identities", context do

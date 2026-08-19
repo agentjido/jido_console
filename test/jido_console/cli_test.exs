@@ -147,8 +147,7 @@ defmodule Jido.ConsoleTest do
       ["models", "--help"],
       ["models", "-h"],
       ["models", "list", "--help"],
-      ["models", "show", "--help"],
-      ["models", "test", "-h"]
+      ["models", "show", "--help"]
     ]
 
     Enum.each(help_commands, fn args ->
@@ -167,7 +166,7 @@ defmodule Jido.ConsoleTest do
       ["models", "list", "extra"],
       ["models", "show"],
       ["models", "show", "one", "two", "three"],
-      ["models", "test", "openai:gpt-4.1-mini", "--unknown"]
+      ["models", "test", "openai:gpt-4.1-mini"]
     ]
 
     Enum.each(invalid_commands, fn args ->
@@ -212,28 +211,7 @@ defmodule Jido.ConsoleTest do
     refute shown =~ "sk-"
   end
 
-  test "tests recorded contracts and denies offline or unsupported features" do
-    tested =
-      capture_io(fn ->
-        assert :ok = Jido.Console.run(["models", "test", "openai:gpt-4.1-mini"])
-      end)
-
-    assert tested =~ "contract.streaming: pass"
-
-    offline =
-      capture_io(fn ->
-        assert {:error, 1} = Jido.Console.run(["models", "test", "openai", "gpt-4.1-mini", "--offline"])
-      end)
-
-    assert offline =~ "offline: deny"
-
-    denied =
-      capture_io(fn ->
-        assert {:error, 1} = Jido.Console.run(["models", "test", "ollama", "llama3.2", "--require", "streaming"])
-      end)
-
-    assert denied =~ "preflight: deny"
-
+  test "returns a configuration error for an unknown model" do
     unknown =
       capture_io(:stderr, fn ->
         assert {:error, 64} = Jido.Console.run(["models", "show", "openai", "missing"])

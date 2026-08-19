@@ -71,7 +71,7 @@ defmodule Jido.Console.Session.State do
     }
   end
 
-  @doc "Returns the canonical state stored in attach and recovery snapshots."
+  @doc "Returns the portable state used by diagnostic snapshots."
   @spec to_snapshot_protocol(t()) :: map()
   def to_snapshot_protocol(state) do
     %{

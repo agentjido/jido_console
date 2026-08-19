@@ -72,23 +72,6 @@ defmodule Jido.Console.Storage do
     read_call({:history_head, session_id}, opts)
   end
 
-  @doc "Stores one credential profile version."
-  @spec put_credential_profile(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def put_credential_profile(profile, operation_id, opts \\ [])
-      when is_map(profile) and is_binary(operation_id) and operation_id != "" do
-    write_call({:put_profile, profile, operation_id}, opts, operation_id)
-  end
-
-  @doc "Returns all versions of one credential profile."
-  @spec credential_profile_history(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def credential_profile_history(profile_id, opts \\ []) when is_binary(profile_id) do
-    read_call({:profile_history, profile_id}, opts)
-  end
-
-  @doc "Returns the latest credential profiles."
-  @spec credential_profiles(keyword()) :: {:ok, [map()]} | {:error, term()}
-  def credential_profiles(opts \\ []), do: read_call(:profiles, opts)
-
   @doc "Checks SQLite and stored payload integrity."
   @spec inspect_store(keyword()) :: {:ok, map()} | {:error, term()}
   def inspect_store(opts \\ []), do: read_call(:inspect_store, opts)

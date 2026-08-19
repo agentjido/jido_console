@@ -14,7 +14,6 @@ defmodule Jido.Console.Session.Server do
 
   alias Jido.Console.Session.{
     Admission,
-    Delivery,
     DurableClock,
     DynamicSupervisor,
     Effect,
@@ -25,7 +24,6 @@ defmodule Jido.Console.Session.Server do
     Identity,
     Projection,
     Queue,
-    Recovery,
     Reducer,
     Registry,
     Request,
@@ -101,7 +99,7 @@ defmodule Jido.Console.Session.Server do
 
   defp retry_start(_session_id, _opts, 0), do: {:error, :session_start_unavailable}
 
-  @doc "Attaches a client to the session and returns its current snapshot."
+  @doc "Attaches a client and returns the complete ordered event history."
   @spec attach(name(), Identity.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def attach(server, client, opts \\ []),
     do: GenServer.call(server, {:attach, client, self(), opts})
@@ -197,57 +195,10 @@ defmodule Jido.Console.Session.Server do
     GenServer.call(server, {:admit_result, identity, result})
   end
 
-  @doc "Pulls one bounded canonical output batch for an exact attachment."
-  @spec output(name(), String.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:gap, map()} | :empty | {:error, term()}
-  def output(server, session_id, client_id, attachment_id) do
-    GenServer.call(server, {:output, session_id, client_id, attachment_id})
-  end
-
-  @doc "Acknowledges one exact bounded output batch."
-  @spec ack_output(name(), String.t(), String.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, term()}
-  def ack_output(server, session_id, client_id, attachment_id, token) do
-    GenServer.call(server, {:ack_output, session_id, client_id, attachment_id, token})
-  end
-
-  @doc "Returns bounded delivery measurements for proof and diagnosis."
-  @spec delivery_measurements(name(), String.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def delivery_measurements(server, client_id, attachment_id) do
-    GenServer.call(server, {:delivery_measurements, client_id, attachment_id})
-  end
-
   @doc "Runs one facade operation for an exact bounded client attachment."
   @spec client_operation(name(), map(), term()) :: term()
   def client_operation(server, identity, operation) do
     GenServer.call(server, {:client_operation, identity, operation}, :infinity)
-  end
-
-  @doc "Begins bounded recovery for one exact delivery gap."
-  @spec begin_recovery(name(), String.t(), String.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, term()}
-  def begin_recovery(server, session_id, client_id, attachment_id, gap_id) do
-    GenServer.call(server, {:begin_recovery, session_id, client_id, attachment_id, gap_id})
-  end
-
-  @doc "Returns the bounded suffix for one exact recovery transaction."
-  @spec replay_recovery(name(), String.t(), String.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, term()}
-  def replay_recovery(server, session_id, client_id, attachment_id, recovery_token) do
-    GenServer.call(
-      server,
-      {:replay_recovery, session_id, client_id, attachment_id, recovery_token}
-    )
-  end
-
-  @doc "Completes one exact recovery transaction."
-  @spec complete_recovery(name(), String.t(), String.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, term()}
-  def complete_recovery(server, session_id, client_id, attachment_id, completion_token) do
-    GenServer.call(
-      server,
-      {:complete_recovery, session_id, client_id, attachment_id, completion_token}
-    )
   end
 
   @doc "Stops one live session server."
@@ -465,100 +416,6 @@ defmodule Jido.Console.Session.Server do
     {:reply, next, %{state | reserved: next}}
   end
 
-  def handle_call({:output, session_id, client_id, attachment_id}, _from, state) do
-    identity = delivery_identity(session_id, client_id, attachment_id)
-
-    case fetch_bounded_client(state, client_id, attachment_id) do
-      {:ok, client} -> handle_output_pull(state, client_id, client, identity)
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
-  end
-
-  def handle_call({:ack_output, session_id, client_id, attachment_id, token}, _from, state) do
-    identity = delivery_identity(session_id, client_id, attachment_id)
-
-    case fetch_bounded_client(state, client_id, attachment_id) do
-      {:ok, client} -> handle_output_ack(state, client_id, client, identity, token)
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
-  end
-
-  def handle_call({:delivery_measurements, client_id, attachment_id}, _from, state) do
-    case fetch_bounded_client(state, client_id, attachment_id) do
-      {:ok, client} -> {:reply, {:ok, Delivery.measurements(client.delivery)}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
-  end
-
-  def handle_call(
-        {:begin_recovery, session_id, client_id, attachment_id, gap_id},
-        _from,
-        state
-      ) do
-    identity = delivery_identity(session_id, client_id, attachment_id)
-
-    case fetch_bounded_client(state, client_id, attachment_id) do
-      {:ok, client} ->
-        case Recovery.begin(state.state, client.delivery, identity, gap_id) do
-          {:ok, delivery, snapshot} ->
-            client = client |> cancel_delivery_timer() |> put_delivery(delivery)
-            {:reply, {:ok, snapshot}, put_client(state, client_id, client)}
-
-          {:error, reason, _delivery} ->
-            {:reply, {:error, reason}, state}
-        end
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  def handle_call(
-        {:replay_recovery, session_id, client_id, attachment_id, recovery_token},
-        _from,
-        state
-      ) do
-    identity = delivery_identity(session_id, client_id, attachment_id)
-
-    case fetch_bounded_client(state, client_id, attachment_id) do
-      {:ok, client} ->
-        case Recovery.replay(state.state, client.delivery, identity, recovery_token) do
-          {:ok, delivery, suffix} ->
-            {:reply, {:ok, suffix}, put_client(state, client_id, put_delivery(client, delivery))}
-
-          {:error, reason, _delivery} ->
-            {:reply, {:error, reason}, state}
-        end
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  def handle_call(
-        {:complete_recovery, session_id, client_id, attachment_id, completion_token},
-        _from,
-        state
-      ) do
-    identity = delivery_identity(session_id, client_id, attachment_id)
-
-    case fetch_bounded_client(state, client_id, attachment_id) do
-      {:ok, client} ->
-        case Recovery.complete(client.delivery, identity, completion_token) do
-          {:ok, delivery, receipt, advisory?} ->
-            client = put_delivery(client, delivery)
-            if advisory?, do: send_ready(client)
-            {:reply, {:ok, receipt}, put_client(state, client_id, client)}
-
-          {:error, reason, _delivery} ->
-            {:reply, {:error, reason}, state}
-        end
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
   def handle_call({:admit_result, identity, result}, _from, state) do
     case exact_identity_fence(state, identity) do
       :ok ->
@@ -617,19 +474,6 @@ defmodule Jido.Console.Session.Server do
   def handle_info({:projection_terminal_timeout, fence, request_id, token}, state) do
     if current_fence_token?(state, fence) do
       handle_projection_terminal_timeout(state, request_id, token)
-    else
-      {:noreply, state}
-    end
-  end
-
-  def handle_info({:delivery_ack_timeout, fence, attachment_id, timer_token}, state) do
-    if current_fence_token?(state, fence) do
-      clients =
-        Map.new(state.clients, fn {client_id, client} ->
-          {client_id, timeout_client(client, attachment_id, timer_token, state.state.sequence)}
-        end)
-
-      {:noreply, %{state | clients: clients}}
     else
       {:noreply, state}
     end
@@ -1413,41 +1257,18 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp publish(clients, event, session_state) do
-    Map.new(clients, fn {id, client} ->
-      {id, deliver(client, event, session_state, true)}
+  defp publish(clients, event, _session_state) do
+    Enum.each(clients, fn {_id, client} ->
+      send(client.pid, {:jido_console_session, client.attachment.id, {:event, event}})
     end)
+
+    clients
   end
-
-  defp publish_silent(clients, event, session_state) do
-    Map.new(clients, fn {id, client} ->
-      {id, deliver(client, event, session_state, false)}
-    end)
-  end
-
-  defp deliver(client, event, _session_state, notify?) do
-    case Delivery.offer(client.delivery, event) do
-      {:ok, delivery, advisory?} ->
-        client = put_delivery(client, delivery)
-        if advisory? and notify?, do: send_ready(client)
-        client
-
-      {:duplicate, delivery} ->
-        put_delivery(client, delivery)
-
-      {:gap, delivery, _gap, advisory?} ->
-        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
-        if advisory? and notify?, do: send_ready(client)
-        client
-    end
-  end
-
-  defp notify_clients(clients), do: Enum.each(clients, fn {_id, client} -> send_ready(client) end)
 
   defp fetch_bounded_client(state, client_id, attachment_id) do
     case Map.fetch(state.clients, client_id) do
       {:ok, %{attachment: %{id: ^attachment_id}} = client} -> {:ok, client}
-      {:ok, _client} -> {:error, :delivery_identity_mismatch}
+      {:ok, _client} -> {:error, :attachment_identity_mismatch}
       :error -> {:error, :not_attached}
     end
   end
@@ -1461,7 +1282,7 @@ defmodule Jido.Console.Session.Server do
 
     cond do
       session_id != state.session.id ->
-        {:error, :delivery_identity_mismatch}
+        {:error, :attachment_identity_mismatch}
 
       generation != state.session.generation or owner_instance_id != state.session.owner_instance_id ->
         {:error, :stale_generation}
@@ -1488,8 +1309,7 @@ defmodule Jido.Console.Session.Server do
       "attachment_id" => client.attachment.id,
       "sequence" => state.state.sequence,
       "active_request" => active_public_request(state),
-      "delivery" => Atom.to_string(client.delivery.status),
-      "process_lifetime" => true
+      "notification" => "direct"
     }
 
     {:reply, {:ok, status}, state}
@@ -1499,57 +1319,8 @@ defmodule Jido.Console.Session.Server do
     {:reply, {:ok, Reducer.snapshot(state.state)}, state}
   end
 
-  defp execute_client_operation(:output, _from, state, client) do
-    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
-    handle_output_pull(state, client.identity.id, client, identity)
-  end
-
-  defp execute_client_operation({:delivery, token}, _from, state, client) do
-    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
-    handle_output_ack(state, client.identity.id, client, identity, token)
-  end
-
-  defp execute_client_operation(:delivery_measurements, _from, state, client) do
-    {:reply, {:ok, Delivery.measurements(client.delivery)}, state}
-  end
-
-  defp execute_client_operation({:recovery, :recover, gap_id}, _from, state, client) do
-    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
-
-    case Recovery.begin(state.state, client.delivery, identity, gap_id) do
-      {:ok, delivery, snapshot} ->
-        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
-        {:reply, {:ok, snapshot}, put_client(state, client.identity.id, client)}
-
-      {:error, reason, _delivery} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  defp execute_client_operation({:recovery, :replay, token}, _from, state, client) do
-    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
-
-    case Recovery.replay(state.state, client.delivery, identity, token) do
-      {:ok, delivery, suffix} ->
-        {:reply, {:ok, suffix}, put_client(state, client.identity.id, put_delivery(client, delivery))}
-
-      {:error, reason, _delivery} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  defp execute_client_operation({:recovery, :resume, token}, _from, state, client) do
-    identity = delivery_identity(state.session, client.identity.id, client.attachment.id)
-
-    case Recovery.complete(client.delivery, identity, token) do
-      {:ok, delivery, receipt, advisory?} ->
-        client = put_delivery(client, delivery)
-        if advisory?, do: send_ready(client)
-        {:reply, {:ok, receipt}, put_client(state, client.identity.id, client)}
-
-      {:error, reason, _delivery} ->
-        {:reply, {:error, reason}, state}
-    end
+  defp execute_client_operation(:events, _from, state, _client) do
+    {:reply, {:ok, state.state.history}, state}
   end
 
   defp execute_client_operation({:configure_runtime, runtime, agent, opts}, _from, state, _client) do
@@ -1785,7 +1556,7 @@ defmodule Jido.Console.Session.Server do
          {:ok, semantic} <- Reducer.apply_event(state.state, event),
          {:ok, admission} <-
            Admission.commit(prepared, event, semantic, state.fence, state.storage_options) do
-      state = committed_admission_state(state, event, semantic, admission, false)
+      state = committed_admission_state(state, event, semantic, admission)
 
       case Admission.transition(
              prepared.operation_id,
@@ -1797,7 +1568,6 @@ defmodule Jido.Console.Session.Server do
           start_admitted_turn(state, spec, prepared, started)
 
         {:error, reason} ->
-          notify_clients(state.clients)
           {:reply, {:error, {:admitted_not_started, admission.receipt, reason}}, state}
       end
     else
@@ -1808,7 +1578,6 @@ defmodule Jido.Console.Session.Server do
   defp start_admitted_turn(state, spec, prepared, started) do
     case begin_operation(state, spec) do
       {:ok, request, state} ->
-        notify_clients(state.clients)
         {:reply, {:ok, %{request: request, receipt: started.receipt, duplicate: false}}, state}
 
       {:error, reason} ->
@@ -1821,7 +1590,6 @@ defmodule Jido.Console.Session.Server do
           )
 
         receipt = transition_receipt(terminal, started.receipt)
-        notify_clients(state.clients)
         {:reply, {:error, {:admitted_not_started, receipt, reason}}, state}
     end
   end
@@ -1981,7 +1749,7 @@ defmodule Jido.Console.Session.Server do
   defp validate_client_input(state, client, input) do
     cond do
       input.identity.session_id != state.session.id -> {:error, :cross_session_result}
-      input.client_id != client.identity.id -> {:error, :delivery_identity_mismatch}
+      input.client_id != client.identity.id -> {:error, :client_identity_mismatch}
       true -> :ok
     end
   end
@@ -2145,13 +1913,8 @@ defmodule Jido.Console.Session.Server do
   defp transition_receipt({:ok, %{receipt: receipt}}, _fallback), do: receipt
   defp transition_receipt(_result, fallback), do: fallback
 
-  defp committed_admission_state(state, event, semantic, admission, notify? \\ true)
-
-  defp committed_admission_state(state, event, semantic, %{duplicate: false}, notify?) do
-    clients =
-      if notify?,
-        do: publish(state.clients, event, semantic),
-        else: publish_silent(state.clients, event, semantic)
+  defp committed_admission_state(state, event, semantic, %{duplicate: false}) do
+    clients = publish(state.clients, event, semantic)
 
     %{
       state
@@ -2161,7 +1924,7 @@ defmodule Jido.Console.Session.Server do
     }
   end
 
-  defp committed_admission_state(state, _event, _semantic, %{duplicate: true}, _notify?), do: state
+  defp committed_admission_state(state, _event, _semantic, %{duplicate: true}), do: state
 
   defp durable_client_event(state, client, operation_id, type, fields, sequence) do
     attrs =
@@ -2219,98 +1982,19 @@ defmodule Jido.Console.Session.Server do
   defp attach_client(state, client, pid, opts) do
     attachment = attachment_identity(state.session, opts)
 
-    delivery =
-      Delivery.new(
-        client_id: client.id,
-        session_id: state.session.id,
-        attachment_id: attachment.id,
-        generation: state.session.generation,
-        owner_instance_id: state.session.owner_instance_id,
-        baseline: state.state.sequence,
-        limits: Keyword.get(opts, :delivery_limits, %{}),
-        token_secret: Keyword.get(opts, :token_secret, :crypto.strong_rand_bytes(32))
-      )
-
-    identity = delivery_identity(state.session, client.id, attachment.id)
-
-    with {:ok, snapshot} <- Recovery.attach_snapshot(state.state, identity) do
-      record = %{
-        identity: client,
-        attachment: attachment,
-        pid: pid,
-        ref: Process.monitor(pid),
-        timer_ref: nil,
-        delivery: delivery
-      }
-
-      {previous, clients} = Map.pop(state.clients, client.id)
-      if previous, do: cleanup_client(previous)
-      state = %{state | clients: Map.put(clients, client.id, record)}
-
-      {:ok, state, %{attachment: attachment, snapshot: snapshot}}
-    end
-  end
-
-  defp handle_output_pull(state, client_id, client, identity) do
-    case Delivery.pull(client.delivery, identity) do
-      {:ok, delivery, batch} ->
-        client =
-          client
-          |> cancel_delivery_timer()
-          |> put_delivery(delivery)
-          |> schedule_delivery_timer()
-
-        {:reply, {:ok, batch}, put_client(state, client_id, client)}
-
-      {:gap, delivery, gap} ->
-        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
-        {:reply, {:gap, gap}, put_client(state, client_id, client)}
-
-      {:empty, delivery} ->
-        {:reply, :empty, put_client(state, client_id, put_delivery(client, delivery))}
-
-      {:error, reason, delivery} ->
-        {:reply, {:error, reason}, put_client(state, client_id, put_delivery(client, delivery))}
-    end
-  end
-
-  defp handle_output_ack(state, client_id, client, identity, token) do
-    case Delivery.ack(client.delivery, identity, token) do
-      {:ok, delivery, receipt, advisory?} ->
-        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
-        if advisory?, do: send_ready(client)
-        {:reply, {:ok, receipt}, put_client(state, client_id, client)}
-
-      {:error, reason, delivery} ->
-        {:reply, {:error, reason}, put_client(state, client_id, put_delivery(client, delivery))}
-    end
-  end
-
-  defp timeout_client(%{attachment: %{id: attachment_id}} = client, attachment_id, timer_token, sequence) do
-    case Delivery.timeout(client.delivery, attachment_id, timer_token, sequence) do
-      {:gap, delivery, _gap, advisory?} ->
-        client = client |> cancel_delivery_timer() |> put_delivery(delivery)
-        if advisory?, do: send_ready(client)
-        client
-
-      {:ok, delivery} ->
-        put_delivery(client, delivery)
-    end
-  end
-
-  defp timeout_client(client, _attachment_id, _timer_token, _sequence), do: client
-
-  defp delivery_identity(%{kind: :session} = session, client_id, attachment_id),
-    do: %{
-      session_id: session.id,
-      client_id: client_id,
-      attachment_id: attachment_id,
-      generation: session.generation,
-      owner_instance_id: session.owner_instance_id
+    record = %{
+      identity: client,
+      attachment: attachment,
+      pid: pid,
+      ref: Process.monitor(pid)
     }
 
-  defp delivery_identity(session_id, client_id, attachment_id),
-    do: %{session_id: session_id, client_id: client_id, attachment_id: attachment_id}
+    {previous, clients} = Map.pop(state.clients, client.id)
+    if previous, do: cleanup_client(previous)
+    state = %{state | clients: Map.put(clients, client.id, record)}
+
+    {:ok, state, %{attachment: attachment, events: state.state.history}}
+  end
 
   defp attachment_identity(session, opts) do
     identity_opts = [
@@ -2325,45 +2009,10 @@ defmodule Jido.Console.Session.Server do
     end
   end
 
-  defp send_ready(client) do
-    advisory = Delivery.advisory(client.delivery)
-
-    if :erlang.external_size(advisory) <= client.delivery.limits.advisory_bytes do
-      send(client.pid, advisory)
-    end
-
-    :ok
-  end
-
-  defp schedule_delivery_timer(client) do
-    inflight = client.delivery.inflight
-
-    timer_ref =
-      Process.send_after(
-        self(),
-        {:delivery_ack_timeout, fence_token(client.identity), client.attachment.id, inflight.timer_token},
-        client.delivery.limits.ack_timeout_ms
-      )
-
-    %{client | timer_ref: timer_ref}
-  end
-
-  defp cancel_delivery_timer(%{timer_ref: nil} = client), do: client
-
-  defp cancel_delivery_timer(client) do
-    Process.cancel_timer(client.timer_ref)
-    %{client | timer_ref: nil}
-  end
-
   defp cleanup_client(client) do
-    client = cancel_delivery_timer(client)
     Process.demonitor(client.ref, [:flush])
-    Delivery.detach(client.delivery)
     :ok
   end
-
-  defp put_delivery(client, delivery), do: %{client | delivery: delivery}
-  defp put_client(state, client_id, client), do: %{state | clients: Map.put(state.clients, client_id, client)}
 
   defp close_runtime(nil), do: :ok
 
