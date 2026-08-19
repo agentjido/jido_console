@@ -18,35 +18,33 @@ defmodule Jido.Console.ExtensionsTest do
     %{root: root}
   end
 
-  test "resolves a user built-in record in both modes without launch data", %{root: root} do
+  test "resolves a user built-in record without launch data", %{root: root} do
     records = Path.join(root, "extensions.json")
     write_records(records, [built_in_record("acme.fixture")])
     request = Request.new!(id: "acme.fixture")
     factory = fn _binding, _config, _context -> {:ok, :instance, %{namespace: "acme.fixture"}} end
     resolver = fn "acme.fixture", _context -> {:ok, factory} end
 
-    for mode <- [:interactive, :automation] do
-      assert {:ok, setup} =
-               Extensions.resolve([request], mode,
-                 extension_record_files: [records],
-                 project_root: root,
-                 built_in_extension_resolver: resolver
-               )
+    assert {:ok, setup} =
+             Extensions.resolve([request],
+               extension_record_files: [records],
+               project_root: root,
+               built_in_extension_resolver: resolver
+             )
 
-      assert Map.has_key?(Setup.registry(setup), "acme.fixture")
-      projection = Setup.projection(setup)
-      refute inspect(projection) =~ "command"
-      refute inspect(projection) =~ root
-      assert {:ok, _json} = Jason.encode(projection)
-      refute Map.has_key?(setup, :registry)
-      refute Map.has_key?(setup, :projection)
-    end
+    assert Map.has_key?(Setup.registry(setup), "acme.fixture")
+    projection = Setup.projection(setup)
+    refute inspect(projection) =~ "command"
+    refute inspect(projection) =~ root
+    assert {:ok, _json} = Jason.encode(projection)
+    refute Map.has_key?(setup, :registry)
+    refute Map.has_key?(setup, :projection)
   end
 
   test "does not resolve a disabled inert request", %{root: root} do
     request = Request.new!(id: "acme.disabled", enabled: false)
 
-    assert {:ok, setup} = Extensions.resolve([request], :interactive, project_root: root)
+    assert {:ok, setup} = Extensions.resolve([request], project_root: root)
     assert Setup.registry(setup) == %{}
     assert Setup.projection(setup) == %{"status" => "not_requested"}
   end
@@ -71,31 +69,24 @@ defmodule Jido.Console.ExtensionsTest do
     end
   end
 
-  test "detects duplicates, disabled records, and interactive-only automation", %{root: root} do
+  test "detects duplicate and disabled records", %{root: root} do
     records = Path.join(root, "duplicates.json")
     write_records(records, [built_in_record("acme.fixture"), built_in_record("acme.fixture")])
 
     assert {:error, {:duplicate_extension_record, {:user, "acme.fixture"}}} =
-             Extensions.resolve([Request.new!(id: "acme.fixture")], :interactive,
+             Extensions.resolve([Request.new!(id: "acme.fixture")],
                extension_record_files: [records],
                project_root: root
              )
 
-    for {overrides, expected} <- [
-          {%{"enabled" => false}, :extension_record_disabled},
-          {%{"modes" => ["interactive"]}, :extension_mode_not_allowed}
-        ] do
-      path = Path.join(root, "invalid-#{expected}.json")
-      write_records(path, [Map.merge(built_in_record("acme.fixture"), overrides)])
+    path = Path.join(root, "disabled.json")
+    write_records(path, [Map.put(built_in_record("acme.fixture"), "enabled", false)])
 
-      assert {:error, reason} =
-               Extensions.resolve([Request.new!(id: "acme.fixture")], :automation,
-                 extension_record_files: [path],
-                 project_root: root
-               )
-
-      assert elem(reason, 0) == expected
-    end
+    assert {:error, {:extension_record_disabled, "acme.fixture"}} =
+             Extensions.resolve([Request.new!(id: "acme.fixture")],
+               extension_record_files: [path],
+               project_root: root
+             )
   end
 
   test "requires canonical project trust and verifies a process executable pin", %{root: root} do
@@ -113,7 +104,6 @@ defmodule Jido.Console.ExtensionsTest do
       "sha256" => digest,
       "permissions" => ["tools"],
       "capabilities" => ["protocol.tool"],
-      "modes" => ["automation"],
       "scope" => "project",
       "command" => [executable]
     }
@@ -151,7 +141,7 @@ defmodule Jido.Console.ExtensionsTest do
       process_extension_descriptor_resolver: descriptor_resolver
     ]
 
-    assert {:ok, setup} = Extensions.resolve([Request.new!(id: "acme.process")], :automation, opts)
+    assert {:ok, setup} = Extensions.resolve([Request.new!(id: "acme.process")], opts)
     refute inspect(Setup.projection(setup)) =~ executable
     refute inspect(Setup.projection(setup)) =~ "api_key"
     refute inspect(setup) =~ executable
@@ -160,7 +150,7 @@ defmodule Jido.Console.ExtensionsTest do
     File.write!(executable, "changed process")
 
     assert {:error, {:process_extension_unavailable, "acme.process", _reason}} =
-             Extensions.resolve([Request.new!(id: "acme.process")], :automation, opts)
+             Extensions.resolve([Request.new!(id: "acme.process")], opts)
   end
 
   test "opens fresh public hosts with separate state and closes both", %{root: root} do
@@ -188,7 +178,7 @@ defmodule Jido.Console.ExtensionsTest do
     end
 
     assert {:ok, setup} =
-             Extensions.resolve([Request.new!(id: "acme.fixture")], :automation,
+             Extensions.resolve([Request.new!(id: "acme.fixture")],
                extension_record_files: [records],
                project_root: root,
                built_in_extension_resolver: resolver
@@ -204,8 +194,8 @@ defmodule Jido.Console.ExtensionsTest do
 
     {:ok, first_session} = Jidoka.Session.start(spec, "fresh-1")
     {:ok, second_session} = Jidoka.Session.start(spec, "fresh-2")
-    assert {:ok, first} = Extensions.open(first_session, spec.extensions, setup, :automation)
-    assert {:ok, second} = Extensions.open(second_session, spec.extensions, setup, :automation)
+    assert {:ok, first} = Extensions.open(first_session, spec.extensions, setup)
+    assert {:ok, second} = Extensions.open(second_session, spec.extensions, setup)
     assert_receive {:opened, first_id}
     assert_receive {:opened, second_id}
     assert first_id != second_id
@@ -263,7 +253,7 @@ defmodule Jido.Console.ExtensionsTest do
     end
 
     assert {:ok, opened} =
-             Extensions.open(session, [request], setup, :interactive, operations: base)
+             Extensions.open(session, [request], setup, operations: base)
 
     capability = Keyword.fetch!(opened.runtime_opts, :operations)
     journal = Journal.new!()
@@ -326,7 +316,7 @@ defmodule Jido.Console.ExtensionsTest do
       )
 
     {:ok, session} = Jidoka.Session.Data.start(spec, session_id: "extension-conflict")
-    assert {:error, _reason} = Extensions.open(session, [request], setup, :interactive)
+    assert {:error, _reason} = Extensions.open(session, [request], setup)
     assert_receive :conflict_closed
   end
 
@@ -339,7 +329,6 @@ defmodule Jido.Console.ExtensionsTest do
       "sha256" => @hash,
       "permissions" => ["state", "results"],
       "capabilities" => ["#{id}.run"],
-      "modes" => ["interactive", "automation"],
       "scope" => "user"
     }
   end

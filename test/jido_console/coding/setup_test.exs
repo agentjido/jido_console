@@ -262,7 +262,6 @@ defmodule Jido.Console.Coding.SetupTest do
           "sha256" => "sha256:" <> String.duplicate("a", 64),
           "permissions" => [],
           "capabilities" => [],
-          "modes" => ["interactive"],
           "scope" => "user"
         }
       ]

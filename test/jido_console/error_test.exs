@@ -51,36 +51,9 @@ defmodule Jido.Console.ErrorTest do
       refute inspect(normalized.details) =~ "secretvalue"
     end
 
-    test "maps known automation reason terms to concrete errors with binary messages" do
-      checks = [
-        {:missing_agent, Error.InvalidInputError},
-        {:choose_one_input_or_scenario, Error.InvalidInputError},
-        {:missing_suite, Error.InvalidInputError},
-        {{:invalid_jobs, 0}, Error.InvalidJobsError},
-        {{:unknown_automation_command, ["compare"]}, Error.UnknownCommandError},
-        {{:unexpected_arguments, ["extra"]}, Error.UnexpectedArgumentsError},
-        {{:invalid_options, [{"--wat", nil}]}, Error.InvalidOptionsError},
-        {{:output_directory_not_empty, "/tmp/x", ["a"]}, Error.OutputDirectoryNotEmptyError},
-        {{:unknown_runtime_profile, "trusted"}, Error.UnknownRuntimeProfileError},
-        {{:invalid_output_directory, 42}, Error.ConfigurationError},
-        {{:output_directory_unavailable, "/tmp/x", :eacces}, Error.ConfigurationError}
-      ]
-
-      for {reason, module} <- checks do
-        normalized = Error.normalize(reason)
-        assert %^module{} = normalized, "expected #{inspect(module)} for #{inspect(reason)}"
-        assert is_binary(Exception.message(normalized))
-      end
-    end
-
-    test "carries structured fields through where they exist" do
-      assert %Error.InvalidJobsError{value: 0} = Error.normalize({:invalid_jobs, 0})
-
-      assert %Error.UnknownCommandError{command: ["compare"]} =
-               Error.normalize({:unknown_automation_command, ["compare"]})
-
-      assert %Error.OutputDirectoryNotEmptyError{output_path: "/tmp/x", entries: ["a"]} =
-               Error.normalize({:output_directory_not_empty, "/tmp/x", ["a"]})
+    test "maps a known configuration reason to a concrete error" do
+      assert %Error.UnknownRuntimeProfileError{profile: "trusted"} =
+               Error.normalize({:unknown_runtime_profile, "trusted"})
     end
 
     test "falls back to an execution failure with a readable message" do
@@ -169,9 +142,9 @@ defmodule Jido.Console.ErrorTest do
   describe "redaction and portable errors" do
     test "redacts messages and all structured fields at construction" do
       error =
-        Error.InvalidOptionsError.exception(
+        Error.ExecutionFailureError.exception(
           message: "bad token=private-token",
-          options: [api_key: "sk-secretvalue123"],
+          phase: [api_key: "sk-secretvalue123"],
           details: %{prompt: "private prompt", authorization: "Bearer secret"}
         )
 
@@ -182,16 +155,8 @@ defmodule Jido.Console.ErrorTest do
       refute encoded =~ "secretvalue"
       refute encoded =~ "private prompt"
       refute encoded =~ "Bearer secret"
-      assert error.options == [api_key: "[REDACTED]"]
+      assert error.phase == [api_key: "[REDACTED]"]
       assert error.details == %{prompt: "[OMITTED]", authorization: "[REDACTED]"}
-    end
-
-    test "serializes one normalized project error shape" do
-      assert Error.to_map({:invalid_jobs, 0}) == %{
-               category: :validation,
-               message: "--jobs must be a positive integer, got: 0",
-               value: 0
-             }
     end
 
     test "redacts structs and tuples and serializes aggregate errors" do
@@ -219,7 +184,6 @@ defmodule Jido.Console.ErrorTest do
                %{category: :validation, message: "second"}
              ]
 
-      assert %Error.InvalidOptionsError{} = Error.normalize({:invalid_options, [:flag]})
       assert %Error.InvalidInputError{} = Error.InvalidInputError.exception(%{message: nil})
     end
   end

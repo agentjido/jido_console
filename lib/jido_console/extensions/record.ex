@@ -15,7 +15,6 @@ defmodule Jido.Console.Extensions.Record do
                      sha256: Zoi.string(),
                      permissions: Zoi.array(Zoi.string()) |> Zoi.required() |> Zoi.default([]),
                      capabilities: Zoi.array(Zoi.string()) |> Zoi.required() |> Zoi.default([]),
-                     modes: Zoi.array(Zoi.enum([:interactive, :automation])) |> Zoi.required() |> Zoi.default([]),
                      scope: Zoi.enum([:user, :project]),
                      enabled: Zoi.boolean() |> Zoi.optional() |> Zoi.default(true),
                      command: Zoi.array(Zoi.string()) |> Zoi.nullish(),
@@ -41,7 +40,6 @@ defmodule Jido.Console.Extensions.Record do
          sha256 when is_binary(sha256) <- Map.get(attrs, "sha256"),
          {:ok, permissions} <- PermissionSet.new(Map.get(attrs, "permissions", [])),
          {:ok, capabilities} <- CapabilitySet.new(Map.get(attrs, "capabilities", [])),
-         {:ok, modes} <- modes(Map.get(attrs, "modes", ["interactive", "automation"])),
          {:ok, scope} <- enum(Map.get(attrs, "scope", "user"), ~w(user project)),
          enabled when is_boolean(enabled) <- Map.get(attrs, "enabled", true),
          {:ok, command} <- command(source, Map.get(attrs, "command"), record_path) do
@@ -54,7 +52,6 @@ defmodule Jido.Console.Extensions.Record do
          sha256: sha256,
          permissions: permissions.values,
          capabilities: capabilities.values,
-         modes: modes,
          scope: scope,
          enabled: enabled,
          command: command,
@@ -79,7 +76,7 @@ defmodule Jido.Console.Extensions.Record do
       },
       permissions: record.permissions,
       capabilities: record.capabilities,
-      modes: record.modes,
+      modes: [:interactive],
       enabled: record.enabled,
       protocol_version: 1
     })
@@ -95,7 +92,6 @@ defmodule Jido.Console.Extensions.Record do
       "sha256" => record.sha256,
       "permissions" => record.permissions,
       "capabilities" => record.capabilities,
-      "modes" => Enum.map(record.modes, &Atom.to_string/1),
       "scope" => Atom.to_string(record.scope),
       "enabled" => record.enabled
     }
@@ -106,22 +102,6 @@ defmodule Jido.Console.Extensions.Record do
       do: {:ok, String.to_existing_atom(value)},
       else: {:error, {:invalid_extension_record_enum, value}}
   end
-
-  defp modes(values) when is_list(values) do
-    Enum.reduce_while(values, {:ok, []}, fn value, {:ok, acc} ->
-      case enum(value, ~w(interactive automation)) do
-        {:ok, mode} -> {:cont, {:ok, [mode | acc]}}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-    |> case do
-      {:ok, []} -> {:error, :empty_extension_modes}
-      {:ok, modes} -> {:ok, Enum.reverse(modes) |> Enum.uniq()}
-      error -> error
-    end
-  end
-
-  defp modes(value), do: {:error, {:invalid_extension_modes, value}}
 
   defp command(:built_in, nil, _record_path), do: {:ok, nil}
   defp command(:built_in, _command, _record_path), do: {:error, :built_in_command_forbidden}
@@ -149,7 +129,6 @@ defmodule Jido.Console.Extensions.Record do
         "command" => Zoi.array(Jido.Console.Document.non_empty_string()) |> Zoi.nullish() |> Zoi.optional(),
         "enabled" => Zoi.boolean() |> Zoi.optional(),
         "id" => Jido.Console.Document.non_empty_string(),
-        "modes" => Zoi.array(Zoi.enum(~w(interactive automation))) |> Zoi.optional(),
         "permissions" => Zoi.array(Jido.Console.Document.non_empty_string()) |> Zoi.optional(),
         "release" => Jido.Console.Document.non_empty_string(),
         "scope" => Zoi.enum(~w(user project)) |> Zoi.optional(),

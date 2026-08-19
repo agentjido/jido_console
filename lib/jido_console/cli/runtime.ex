@@ -326,7 +326,7 @@ defmodule Jido.Console.Runtime.Jidoka do
 
     with {:ok, session} <- Jidoka.session(agent, opts),
          {:ok, extension_runtime} <-
-           Jido.Console.Extensions.open(session, session.spec.extensions, setup, :interactive,
+           Jido.Console.Extensions.open(session, session.spec.extensions, setup,
              operations: Keyword.get(opts, :operations)
            ) do
       {:ok,

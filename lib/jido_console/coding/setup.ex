@@ -99,7 +99,7 @@ defmodule Jido.Console.Coding.Setup do
     extensions = Enum.reject(spec.extensions, &(&1.id == @default_pack))
 
     with {:ok, spec} <- Jidoka.Agent.Spec.new(spec |> Map.from_struct() |> Map.put(:extensions, extensions)),
-         {:ok, extension_setup} <- Extensions.resolve(extensions, :interactive, opts) do
+         {:ok, extension_setup} <- Extensions.resolve(extensions, opts) do
       {:ok,
        %__MODULE__{
          spec: spec,
@@ -205,7 +205,7 @@ defmodule Jido.Console.Coding.Setup do
     other_requests = Enum.reject(requests, &(&1.id == @default_pack))
 
     with {:ok, entry} <- CodingPack.entry(workspace, entry_opts),
-         {:ok, other_setup} <- Extensions.resolve(other_requests, :interactive, opts) do
+         {:ok, other_setup} <- Extensions.resolve(other_requests, opts) do
       {:ok,
        ExtensionSetup.prepend(
          other_setup,
@@ -217,7 +217,7 @@ defmodule Jido.Console.Coding.Setup do
   end
 
   defp extension_setup(_replacement, requests, _workspace, _local, opts),
-    do: Extensions.resolve(requests, :interactive, opts)
+    do: Extensions.resolve(requests, opts)
 
   defp local_profile(nil, _workspace, nil), do: {:ok, %{}}
 

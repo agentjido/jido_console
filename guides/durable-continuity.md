@@ -217,9 +217,3 @@ prompt text. It controls declared credential structures and the exact value
 that is materialized for one final call.
 
 ## Compatibility Inputs
-
-The versioned M2 compatibility manifest records the exact M2-E37 source,
-roadmap, Jidoka, and native payload identities. It also records SHA-256 digests
-for the frozen protocol, replay, client, automation, artifact, raw-path, and
-fault-isolation inputs. M3 compatibility proof must use these identities. It
-must not replace them with a later development checkout.

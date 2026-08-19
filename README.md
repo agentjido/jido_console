@@ -10,7 +10,7 @@
 
 Jido Console is a BEAM-native local coding harness built on
 [Jidoka](https://github.com/agentjido/jidoka). It provides an interactive
-terminal and deterministic automation for agent runs and evaluations.
+terminal for supervised coding-agent sessions.
 
 The package, OTP application, and namespace are `jido_console`,
 `:jido_console`, and `Jido.Console`. The user command remains `jido`.
@@ -50,9 +50,6 @@ to the changed files, then show me the diff and the check results.
 ## Current Capabilities
 
 - Start the interactive terminal with `jido`.
-- Run one agent input or scenario with `jido run`.
-- Run an evaluation suite with `jido eval`.
-- Write versioned JSONL results and run artifacts.
 - Use the restricted local coding profile during development.
 - Build and test a macOS ARM64 release candidate with the local release tools.
 
@@ -145,34 +142,6 @@ approve the operation or `D` to deny it. See the
 [multi-turn coding guide](guides/multi-turn-coding.md) for its tools, limits,
 file mentions, and recovery flow.
 
-### Run One Prompt
-
-Use `jido run` when another program will read the result. Automated commands
-write JSONL to standard output. This example selects the included concise
-agent and prints only its response text:
-
-```sh
-printf '%s\n' 'Explain OTP in one sentence.' |
-  ./jido run --agent examples/agents/concise.yml --input - |
-  jq -r 'select(.schema == "jido.case-result") | .turns[].response.content'
-```
-
-The included agent uses `openai:gpt-4o-mini`. Use `--model PROVIDER:MODEL` to
-override its model.
-
-### Run The Example Evaluation
-
-The example evaluation makes live provider requests. It requires both
-`OPENAI_API_KEY` and `ANTHROPIC_API_KEY`:
-
-```sh
-./jido eval examples/evals/smoke.yml
-```
-
-The suite runs two agents, two models, two repeats, and a two-turn scenario.
-It can make 16 model turns. Review the suite before you run it so that you
-understand its time and provider cost.
-
 ## Develop Locally
 
 ```sh
@@ -204,14 +173,12 @@ in a Discussion before you start code work.
 | `dev/` | Developer and test-only Mix tasks, release assembly, and acceptance tooling |
 | `release/` | Controlled release policy, packaging, and acceptance inputs |
 | `rel/` | Source launcher and package overlay files used by the native artifact builder |
-| `priv/release/` | Runtime release data loaded through the OTP application private directory |
-| `examples/` | Public runnable agent and evaluation examples |
 | `roadmap/` | Canonical roadmap, milestone definitions, and roadmap changelog |
-| `test/` | Unit, integration, terminal, automation, and release contract tests |
+| `test/` | Unit, integration, terminal, and release contract tests |
 
-The `release/`, `rel/`, `priv/release/`, and `dev/` directories have different
-active roles. The release tools use all four. Controlled fixtures stay under
-`release/fixtures/`; `examples/` contains only user-facing samples.
+The `release/`, `rel/`, and `dev/` directories have different active roles.
+Controlled fixtures stay under `release/fixtures/`. Release tools stay under
+`dev/`, and the native launcher stays under `rel/`.
 
 ## Jido, Jidoka, and Jido Console
 
@@ -219,7 +186,7 @@ active roles. The release tools use all four. Controlled fixtures stay under
 | --- | --- |
 | [Jido](https://github.com/agentjido/jido) | Elixir framework and core agent building blocks |
 | [Jidoka](https://github.com/agentjido/jidoka) | Runtime for sessions, effects, tools, cancellation, and recovery |
-| Jido Console | User-facing terminal, automation, and future multi-client control plane |
+| Jido Console | User-facing terminal and session control plane |
 
 Jidoka owns agent execution truth. Jido Console owns user-visible session truth.
 A renderer or transport does not own either source of truth.

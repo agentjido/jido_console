@@ -15,7 +15,6 @@ defmodule Jido.Console.Session.Jidoka do
   alias Jido.Console.Session.Generation
   alias Jido.Console.Session.Protocol
   alias Jido.Console.Session.Protocol.Validator
-  alias Jido.Console.Release.Identity
   alias Jidoka.Event
   alias Jidoka.Event.Order
   alias Jidoka.Session.Data
@@ -28,23 +27,33 @@ defmodule Jido.Console.Session.Jidoka do
 
   @namespace "jido_console"
   @mapping_kinds ~w(normal imported forked)
+  @jidoka_ref Mix.Project.config() |> Keyword.fetch!(:jidoka_ref)
 
   @type session_mapping :: %{String.t() => String.t()}
+
+  @doc "Returns the immutable Jidoka source reference used by this build."
+  @spec jidoka_ref() :: String.t()
+  def jidoka_ref, do: @jidoka_ref
 
   @doc "Returns the approved durable Jidoka schema and codec contract."
   @spec durable_contract() :: map()
   def durable_contract do
-    release = Identity.current()
-
     %{
-      jidoka_ref: release.jidoka_ref,
-      jidoka_version: release.jidoka,
+      jidoka_ref: @jidoka_ref,
+      jidoka_version: application_version(:jidoka),
       session_schema_version: Data.schema_version(),
       supported_session_schema_versions: Data.supported_schema_versions(),
       snapshot_schema_version: Snapshot.schema_version(),
       supported_snapshot_schema_versions: Snapshot.supported_schema_versions(),
       snapshot_serialization_prefix: Snapshot.serialization_prefix()
     }
+  end
+
+  defp application_version(application) do
+    case Application.spec(application, :vsn) do
+      nil -> "unknown"
+      version -> to_string(version)
+    end
   end
 
   @doc "Builds an explicit durable Console-to-Jidoka session mapping."

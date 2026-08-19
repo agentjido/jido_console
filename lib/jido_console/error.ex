@@ -57,10 +57,6 @@ defmodule Jido.Console.Error do
   alias Jido.Console.Error
 
   @simple_reasons %{
-    missing_agent: {Jido.Console.Error.InvalidInputError, "an --agent file is required for `jido run`"},
-    choose_one_input_or_scenario:
-      {Jido.Console.Error.InvalidInputError, "provide exactly one of --input or --scenario with `jido run`"},
-    missing_suite: {Jido.Console.Error.InvalidInputError, "a suite file argument is required for `jido eval`"},
     request_expired:
       {Jido.Console.Error.InternalError,
        "The request was no longer available when Jido read the result. " <>
@@ -106,42 +102,6 @@ defmodule Jido.Console.Error do
       default_message: "Invalid input"
   end
 
-  defmodule InvalidJobsError do
-    @moduledoc "An invalid `--jobs` value."
-
-    use Error.Type,
-      class: :invalid,
-      fields: [message: nil, value: nil, details: %{}],
-      default_message: "Invalid --jobs value"
-  end
-
-  defmodule UnknownCommandError do
-    @moduledoc "An unrecognized automation command."
-
-    use Error.Type,
-      class: :invalid,
-      fields: [message: nil, command: nil, details: %{}],
-      default_message: "Unknown command"
-  end
-
-  defmodule UnexpectedArgumentsError do
-    @moduledoc "Unexpected positional arguments."
-
-    use Error.Type,
-      class: :invalid,
-      fields: [message: nil, arguments: nil, details: %{}],
-      default_message: "Unexpected arguments"
-  end
-
-  defmodule InvalidOptionsError do
-    @moduledoc "Invalid or unknown command-line options."
-
-    use Error.Type,
-      class: :invalid,
-      fields: [message: nil, options: nil, details: %{}],
-      default_message: "Invalid options"
-  end
-
   defmodule ConfigurationError do
     @moduledoc "File, directory, or configuration problems."
 
@@ -149,15 +109,6 @@ defmodule Jido.Console.Error do
       class: :config,
       fields: [message: nil, details: %{}],
       default_message: "Configuration error"
-  end
-
-  defmodule OutputDirectoryNotEmptyError do
-    @moduledoc "A requested output directory already has contents."
-
-    use Error.Type,
-      class: :config,
-      fields: [message: nil, output_path: nil, entries: nil, details: %{}],
-      default_message: "Output directory is not empty"
   end
 
   defmodule UnknownRuntimeProfileError do
@@ -232,56 +183,6 @@ defmodule Jido.Console.Error do
 
   def normalize(reason) when is_atom(reason) do
     ExecutionFailureError.exception(message: inspect(reason), details: %{reason: reason})
-  end
-
-  def normalize({:invalid_jobs, value}) do
-    InvalidJobsError.exception(
-      message: "--jobs must be a positive integer, got: #{inspect(redact(value))}",
-      value: value
-    )
-  end
-
-  def normalize({:unknown_automation_command, command}) do
-    UnknownCommandError.exception(
-      message: "unknown command: #{inspect(redact(command))}",
-      command: command
-    )
-  end
-
-  def normalize({:unexpected_arguments, arguments}) do
-    UnexpectedArgumentsError.exception(
-      message: "unexpected arguments: #{inspect(redact(arguments))}",
-      arguments: arguments
-    )
-  end
-
-  def normalize({:invalid_options, options}) do
-    InvalidOptionsError.exception(
-      message: "invalid options: #{format_options(options)}",
-      options: options
-    )
-  end
-
-  def normalize({:output_directory_not_empty, path, entries}) do
-    OutputDirectoryNotEmptyError.exception(
-      message: "output directory is not empty: #{redact(path)}",
-      output_path: path,
-      entries: entries
-    )
-  end
-
-  def normalize({:output_directory_unavailable, path, reason}) do
-    ConfigurationError.exception(
-      message: "output directory is unavailable: #{redact(path)}: #{inspect(redact(reason))}",
-      details: %{path: path, reason: reason}
-    )
-  end
-
-  def normalize({:invalid_output_directory, value}) do
-    ConfigurationError.exception(
-      message: "invalid output directory: #{inspect(redact(value))}",
-      details: %{value: value}
-    )
   end
 
   def normalize({:unknown_runtime_profile, profile}) do
@@ -537,16 +438,6 @@ defmodule Jido.Console.Error do
     |> redact()
   rescue
     _error -> reason |> redact() |> inspect()
-  end
-
-  defp format_options(options) do
-    options
-    |> List.wrap()
-    |> redact()
-    |> Enum.map_join(", ", fn
-      {key, value} -> "#{key} #{inspect(value)}"
-      key -> inspect(key)
-    end)
   end
 
   defp error_map(%module{errors: errors} = error) do

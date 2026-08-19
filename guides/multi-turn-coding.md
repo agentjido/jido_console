@@ -107,13 +107,6 @@ The review panel shows bounded edit and Git-diff evidence after a turn.
 
 ## Keep Versioned Data Stable
 
-Agent, scenario, and suite documents use `version: 1`. Automation output uses
-schema version `1` for `jido.case-result`, `jido.run-manifest`,
-`jido.run-summary`, and `jido.run-lifecycle`. Producers are strict. Version-1
-readers can remove unknown optional fields, but they do not accept another
-schema version. Additive fields do not change the schema version. A breaking
-field change requires a new version and an explicit reader path.
-
 Local release metadata uses `jido.release` schema version `1`. That version is
 independent of the CLI package version and the Jidoka session schema version.
 

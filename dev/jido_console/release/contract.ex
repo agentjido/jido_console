@@ -89,10 +89,6 @@ defmodule Jido.Console.Release.Contract do
         "signed" => false,
         "notarized" => false,
         "publishable" => not Map.fetch!(source, :dirty)
-      },
-      "distribution" => %{
-        "github" => false,
-        "homebrew" => false
       }
     }
 
@@ -124,24 +120,6 @@ defmodule Jido.Console.Release.Contract do
          :ok <- validate_executable(root) do
       validate_launcher(root)
     end
-  end
-
-  @doc "Returns the inputs needed by a future Homebrew formula."
-  @spec homebrew_inputs(map(), String.t()) :: map()
-  def homebrew_inputs(metadata, sha256) do
-    :ok = validate_metadata(metadata)
-
-    unless Regex.match?(~r/\A[0-9a-f]{64}\z/, sha256) do
-      raise ArgumentError, "invalid SHA-256 value"
-    end
-
-    %{
-      "version" => metadata["version"],
-      "target" => metadata["target"],
-      "artifact" => metadata["artifact"],
-      "sha256" => sha256,
-      "executable" => metadata["executable"]
-    }
   end
 
   defp target_spec!(target) do
@@ -261,11 +239,6 @@ defmodule Jido.Console.Release.Contract do
           ),
         "components" => Zoi.array(component_schema()) |> Zoi.optional(),
         "digest_scope" => Zoi.enum(["all package files except release.json"]),
-        "distribution" =>
-          Zoi.map(
-            %{"github" => Zoi.boolean(), "homebrew" => Zoi.boolean()},
-            unrecognized_keys: :error
-          ),
         "executable" => Zoi.enum([@executable]),
         "files" => Zoi.array(file_schema()),
         "native_files" => Zoi.array(non_empty_string()) |> Zoi.optional(),

@@ -5,7 +5,7 @@ defmodule Jido.Console.MixProject do
 
   @version "0.1.0"
   @source_url "https://github.com/agentjido/jido_console"
-  @description "Terminal and automation harness for the Jidoka agent framework."
+  @description "Interactive terminal harness for the Jidoka agent framework."
   @jidoka_ref "caef68851df6812bf97c1ff2d815da610ab78c62"
 
   def project do
@@ -100,6 +100,7 @@ defmodule Jido.Console.MixProject do
   defp aliases do
     [
       setup: ["deps.get"],
+      build: ["escript.build"],
       install_hooks: ["git_hooks.install"],
       test: ["test --exclude flaky"],
       q: ["precommit"],

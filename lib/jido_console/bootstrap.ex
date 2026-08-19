@@ -64,7 +64,7 @@ defmodule Jido.Console.Bootstrap do
   end
 
   defp cache_path(root, digest, opts) do
-    version = Keyword.get(opts, :version, Jido.Console.Release.Identity.version())
+    version = Keyword.get(opts, :version, Jido.Console.Version.current())
     otp = Keyword.get(opts, :otp_release, :erlang.system_info(:otp_release)) |> to_string()
     Path.join(root, "#{version}-otp-#{otp}-#{digest}")
   end

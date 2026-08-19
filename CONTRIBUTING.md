@@ -4,11 +4,8 @@ The current `jido_console` implementation follows the Jido ecosystem package
 quality standards.
 
 - keep library code in `lib/`;
-- keep runnable agent and scenario examples in `examples/`;
 - keep controlled release fixtures in `release/fixtures/`;
-- validate command input through the `Jido.Console.Automation.Command` Zoi schema;
-- normalize user-facing errors through `Jido.Console.Error`;
-- keep automated output as the stable `jido.case-result` JSONL contract.
+- normalize user-facing errors through `Jido.Console.Error`.
 
 ## Setup
 

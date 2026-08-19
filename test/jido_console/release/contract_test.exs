@@ -13,18 +13,10 @@ defmodule Jido.Console.Release.ContractTest do
     assert {:error, {:unsupported_target, "other"}} = Contract.target_spec("other")
   end
 
-  test "builds strict metadata and future Homebrew inputs" do
+  test "builds strict metadata" do
     metadata = metadata()
 
     assert :ok = Contract.validate_metadata(metadata)
-
-    assert Contract.homebrew_inputs(metadata, String.duplicate("a", 64)) == %{
-             "artifact" => "jido-1.2.3-darwin-arm64.tar.gz",
-             "executable" => "bin/jido",
-             "sha256" => String.duplicate("a", 64),
-             "target" => "darwin-arm64",
-             "version" => "1.2.3"
-           }
   end
 
   test "rejects inconsistent target metadata" do
@@ -87,7 +79,6 @@ defmodule Jido.Console.Release.ContractTest do
     assert_raise ArgumentError, fn -> Contract.root_name("invalid", @target) end
     assert_raise ArgumentError, fn -> apply(Contract, :root_name, [123, @target]) end
     assert_raise ArgumentError, fn -> Contract.archive_name(@version, "other") end
-    assert_raise ArgumentError, fn -> Contract.homebrew_inputs(metadata(), "short") end
     assert {:error, {:metadata_not_a_map, :invalid}} = Contract.validate_metadata(:invalid)
 
     assert {:error, :invalid_file_inventory} =

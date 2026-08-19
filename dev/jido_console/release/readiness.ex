@@ -26,7 +26,6 @@ defmodule Jido.Console.Release.Readiness do
   defp registry do
     [
       {"baseline", &baseline!/1},
-      {"replay", &replay!/1},
       {"golden-task", &golden_task!/1},
       {"tui-layout", &tui_layout!/1},
       {"tui-terminal", &tui_terminal!/1},
@@ -66,21 +65,6 @@ defmodule Jido.Console.Release.Readiness do
       "runs" => runs,
       "semantic_sha256" => digest(first)
     }
-  end
-
-  defp replay!(opts) do
-    command_check!(
-      "replay",
-      [
-        "test",
-        "test/jido_console/cli/automation/replay_test.exs",
-        "test/jido_console/cli/automation/jsonl_test.exs",
-        "test/jido_console/release/tooling_test.exs",
-        "--seed",
-        "0"
-      ],
-      opts
-    )
   end
 
   defp golden_task!(opts) do
@@ -477,15 +461,12 @@ defmodule Jido.Console.Release.Readiness do
       "live_provider_calls" => acceptance["live_provider_calls"],
       "gates" => acceptance["gates"],
       "commands" => acceptance["commands"],
-      "tui" => acceptance["tui"],
       "read_only_installation" => acceptance["read_only_installation"],
-      "coding_workflow" => acceptance["coding_workflow"],
       "categories" => %{
         "test" => "passed",
         "production_build" => "passed",
         "release" => "passed",
         "command" => "passed",
-        "automation" => "passed",
         "artifact" => "passed",
         "exit_status" => "passed"
       }

@@ -1,7 +1,6 @@
 defmodule Jido.Console.JidokaCompatibilityTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Release.Identity
   alias Jido.Console.Session.Jidoka, as: SessionJidoka
   alias Jidoka.Event
   alias Jidoka.ExecutionEnvironment.RestrictedContract
@@ -10,7 +9,7 @@ defmodule Jido.Console.JidokaCompatibilityTest do
   @jidoka_ref "caef68851df6812bf97c1ff2d815da610ab78c62"
 
   test "production uses the immutable pin and the compatibility gate uses its explicit checkout" do
-    assert Identity.jidoka_ref() == @jidoka_ref
+    assert SessionJidoka.jidoka_ref() == @jidoka_ref
 
     {_app, options} =
       Mix.Project.config()

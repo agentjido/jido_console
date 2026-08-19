@@ -9,7 +9,7 @@ defmodule Mix.Tasks.Jido.Release do
       mix jido.release --allow-dirty
 
   A dirty override creates an unsigned, non-publishable development candidate.
-  The task does not tag, sign, notarize, upload, publish, or change Homebrew.
+  The task does not tag, sign, notarize, upload, or publish.
   """
 
   @impl Mix.Task
@@ -35,11 +35,10 @@ defmodule Mix.Tasks.Jido.Release do
 
     Mix.shell().info("Local Jido release candidate passed automated acceptance.")
     Mix.shell().info("Artifact: #{result.artifact}")
-    Mix.shell().info("Version: #{result.homebrew["version"]}")
-    Mix.shell().info("Target: #{result.homebrew["target"]}")
-    Mix.shell().info("SHA-256: #{result.homebrew["sha256"]}")
-    Mix.shell().info("Future Brew executable: #{result.homebrew["executable"]}")
+    Mix.shell().info("Version: #{result.version}")
+    Mix.shell().info("Target: #{result.target}")
+    Mix.shell().info("SHA-256: #{result.sha256}")
     Mix.shell().info("Manual TUI status: pending in #{Path.join(result.dist, "manual-tui.json")}")
-    Mix.shell().info("Signing: not done; notarization: not done; publication: not done; Homebrew: not done")
+    Mix.shell().info("Signing: not done; notarization: not done; publication: not done")
   end
 end

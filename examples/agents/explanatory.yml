@@ -1,6 +1,0 @@
-version: 1
-agent:
-  id: explanatory_assistant
-  model: openai:gpt-4o-mini
-  instructions: |
-    Give a clear answer. Add a short explanation when the request permits it.

@@ -2,10 +2,8 @@ defmodule Jido.Console.Release.ToolingTest do
   use ExUnit.Case, async: false
 
   alias CodingScenario.Oracle
-  alias Jido.Console.Automation.Replay
-  alias Jido.Console.Release.{Acceptance, Artifact, LicenseAudit, Local, OfflineProfile, ProbeRuntime}
+  alias Jido.Console.Release.{Acceptance, Artifact, LicenseAudit, Local, ProbeRuntime}
   alias Jido.Console.Runtime.Result
-  alias Jidoka.ExecutionEnvironment.{PolicyRequest, ProfileResolver}
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-release-tooling-#{System.unique_integer([:positive])}")
@@ -135,20 +133,6 @@ defmodule Jido.Console.Release.ToolingTest do
     assert first =~ "sample 1.0.0"
     assert first =~ "priv/sample.dylib"
     assert first =~ "license text"
-  end
-
-  test "the embedded release profile resolves a pinned provider-free replay" do
-    assert {:ok, registration} = OfflineProfile.resolve(%{profile_id: "offline-example"}, [])
-    request = PolicyRequest.new!(profile_id: "offline-example")
-
-    assert {:ok, selection} =
-             ProfileResolver.resolve(request, fn _profile_id, _opts -> {:ok, registration} end)
-
-    assert {:ok, %{mode: :replay} = replay} = Replay.resolve(%{selection: selection})
-    assert replay.fixture.digest == "sha256:cace48232cdf26c6b325a45a1a0074cf1994e719b09eca534e29f2c7793636b8"
-
-    assert {:error, {:unknown_runtime_profile, "other"}} =
-             OfflineProfile.resolve(%{profile_id: "other"}, [])
   end
 
   test "the TUI release probe records one turn", %{root: root} do

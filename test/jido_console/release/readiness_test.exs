@@ -6,7 +6,6 @@ defmodule Jido.Console.Release.ReadinessTest do
   test "advertises checks in their required order" do
     assert Readiness.checks() == [
              "baseline",
-             "replay",
              "golden-task",
              "tui-layout",
              "tui-terminal",
@@ -65,23 +64,6 @@ defmodule Jido.Console.Release.ReadinessTest do
     assert_raise RuntimeError, "release-readiness checks require a clean checkout", fn ->
       Readiness.source_identity!(File.cwd!(), runner)
     end
-  end
-
-  test "runs the provider-free replay contract through existing product tests" do
-    parent = self()
-
-    runner = fn "mix", args, opts ->
-      send(parent, {:command, args, opts})
-      {"", 0}
-    end
-
-    assert %{"check" => "replay", "status" => "passed"} =
-             Readiness.run!("replay", command_runner: runner)
-
-    assert_receive {:command, ["test" | tests], opts}
-    assert "test/jido_console/cli/automation/replay_test.exs" in tests
-    assert "test/jido_console/cli/automation/jsonl_test.exs" in tests
-    assert opts[:cd] == File.cwd!()
   end
 
   test "forwards options to the selected runner" do

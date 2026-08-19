@@ -8,30 +8,17 @@
 - Implementation identifiers: package `jido_console`, OTP application
   `:jido_console`, and namespace `Jido.Console`.
 
-`jido` starts the interactive terminal with no command. `jido run` and
-`jido eval` run plain YAML or JSON inputs and write JSONL results.
+`jido` starts the interactive terminal with no command.
 
 ## Runtime Boundaries
 
 - Depend on the approved immutable Jidoka source. Do not depend on `jido_eval`.
 - Use documented Jidoka facades and stable data contracts. Do not use Jidoka
   runtime, adapter, execution, or asynchronous task internals.
-- Keep agent, scenario, and suite inputs as data. They must not load Elixir
-  modules.
-- Validate command input and cross-field rules through
-  `Jido.Console.Automation.Command`. Return its documented reason terms.
-- Preserve the automation flow: `Command` parses, `Loader` resolves versioned
-  documents, `Plan` builds the digest-keyed matrix, `Engine.Jidoka` runs each
-  cell through the `Engine` behavior, and `JSONL` writes outputs.
 - Normalize user-facing failures through `Jido.Console.Error`. Keep rich provider
   and execution failure data in the portable Jidoka error form.
-- Keep `Jido.Console.Automation.JSONL` as the only writer of standard output and
-  run artifacts.
-- Keep `jido.case-result` as the portable integration boundary.
-- Give each evaluation matrix cell one fresh Jidoka session. State can continue
-  across ordered turns in one cell, but not between cells.
-- Preserve exit statuses: `0` for success, `1` for failed assertion or
-  execution, and `64` for usage or configuration failure.
+- Preserve exit statuses: `0` for success, `1` for execution failure, and `64`
+  for usage or configuration failure.
 
 ## Source Boundaries
 
@@ -43,11 +30,6 @@
   the packaging and acceptance fixtures. These files are not public examples.
 - `rel/bin/jido` is the native package launcher copied by the artifact builder.
   It is not a sample script.
-- `priv/release/offline_fixture.json` is the canonical provider-free replay
-  record. Product code loads it through `:code.priv_dir/1`, including in the
-  packaged release. Do not add a second copy.
-- `examples/` contains only public agent and evaluation examples. Release and
-  test fixtures do not belong there.
 - `roadmap/` is the canonical roadmap. Each milestone is in
   `roadmap/milestones/<name>/milestone.md`. Generated epics belong under the
   owning milestone. Do not add a separate Markdown backlog.
@@ -95,8 +77,8 @@ bw export
 
 ## Deterministic Tests
 
-- Inject engines, clocks, identifiers, and IO devices through options such as
-  `:engine`, `:automation`, `:output_device`, `:input_device`, `:utc_now`,
+- Inject clocks, identifiers, and IO devices through options such as
+  `:output_device`, `:input_device`, `:utc_now`,
   `:monotonic_ms`, and `:id_generator`.
 - Do not call live model providers in tests.
 - Keep terminal tests bounded and make process cleanup explicit.
@@ -118,8 +100,7 @@ MIX_ENV=prod mix escript.build
 ```
 
 Use `mix jido.release` only for the supported local macOS ARM64 release flow.
-It builds and tests a candidate. It does not publish, sign, notarize, or update
-Homebrew.
+It builds and tests a candidate. It does not publish, sign, or notarize.
 
 The terminal UI requires Erlang/OTP 28 or newer for raw terminal input. The
 developer escript still needs a compatible Erlang/OTP installation. The native

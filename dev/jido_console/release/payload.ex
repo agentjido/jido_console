@@ -2,7 +2,7 @@ defmodule Jido.Console.Release.Payload do
   @moduledoc """
   Signs and verifies the macOS ARM64 native payload and its evidence files.
 
-  This module does not publish an archive, Homebrew formula, or npm package.
+  This module does not publish artifacts.
   """
 
   alias Jido.Console.Providers.Redaction

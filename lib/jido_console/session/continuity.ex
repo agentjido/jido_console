@@ -10,12 +10,8 @@ defmodule Jido.Console.Session.Continuity do
 
   @schema_name "jido.continuity.v1.json"
   @schema_source Path.expand("../../../priv/session/continuity/#{@schema_name}", __DIR__)
-  @manifest_name "m2-compatibility-inputs.v1.json"
-  @manifest_source Path.expand("../../../priv/session/continuity/#{@manifest_name}", __DIR__)
   @external_resource @schema_source
-  @external_resource @manifest_source
   @schema_contents File.read!(@schema_source)
-  @manifest_contents File.read!(@manifest_source)
   @required_sections ~w(
     storage
     records
@@ -42,21 +38,9 @@ defmodule Jido.Console.Session.Continuity do
     |> decode(:continuity_contract_invalid, :continuity_contract_unreadable)
   end
 
-  @doc "Loads the frozen M2 compatibility-input manifest."
-  @spec compatibility_inputs(keyword()) :: result(map())
-  def compatibility_inputs(opts \\ []) do
-    opts
-    |> contents(:path, @manifest_contents)
-    |> decode(:compatibility_manifest_invalid, :compatibility_manifest_unreadable)
-  end
-
   @doc "Returns the installed continuity-contract path."
   @spec schema_path() :: Path.t()
   def schema_path, do: priv_path(@schema_name)
-
-  @doc "Returns the installed M2 compatibility-input manifest path."
-  @spec compatibility_inputs_path() :: Path.t()
-  def compatibility_inputs_path, do: priv_path(@manifest_name)
 
   @doc "Returns all declared records."
   @spec records(contract()) :: [map()]
@@ -126,24 +110,6 @@ defmodule Jido.Console.Session.Continuity do
   end
 
   def review(_contract), do: {:error, [:invalid_continuity_contract]}
-
-  @doc "Reviews the frozen compatibility manifest for complete SHA-256 identities."
-  @spec review_compatibility_inputs(map()) :: :ok | {:error, [term()]}
-  def review_compatibility_inputs(manifest) when is_map(manifest) do
-    inputs = List.wrap(manifest["inputs"])
-
-    defects =
-      []
-      |> maybe_add(manifest["schema"] != "jido.m2-compatibility-inputs", :compatibility_schema_invalid)
-      |> maybe_add(manifest["version"] != "1", :compatibility_version_invalid)
-      |> maybe_add(inputs == [], :compatibility_inputs_missing)
-      |> maybe_add(Enum.any?(inputs, &(not valid_input?(&1))), :compatibility_input_invalid)
-      |> maybe_add(duplicate_values(inputs, "path") != [], :compatibility_input_path_duplicate)
-
-    if defects == [], do: :ok, else: {:error, Enum.reverse(defects)}
-  end
-
-  def review_compatibility_inputs(_manifest), do: {:error, [:invalid_compatibility_manifest]}
 
   defp contents(opts, key, embedded) do
     case Keyword.fetch(opts, key) do
@@ -223,14 +189,6 @@ defmodule Jido.Console.Session.Continuity do
     invalid? = map_size(limits) == 0 or Enum.any?(limits, fn {_name, value} -> not is_number(value) or value <= 0 end)
     maybe_add(defects, invalid?, :continuity_limits_invalid)
   end
-
-  defp valid_input?(input) when is_map(input) do
-    is_binary(input["category"]) and input["category"] != "" and
-      is_binary(input["path"]) and input["path"] != "" and
-      is_binary(input["sha256"]) and Regex.match?(~r/\A[0-9a-f]{64}\z/, input["sha256"])
-  end
-
-  defp valid_input?(_input), do: false
 
   defp duplicate_values(values, field) do
     values

@@ -43,9 +43,6 @@ defmodule Jido.Console.Session.ClientTest do
   test "all production client adapters pass the syntax boundary" do
     adapters = [
       "lib/jido_console/cli/tui.ex",
-      "lib/jido_console/session/client/automation.ex",
-      "lib/jido_console/session/client/json.ex",
-      "lib/jido_console/session/client/text.ex",
       "lib/jido_console/session/client/tui.ex"
     ]
 

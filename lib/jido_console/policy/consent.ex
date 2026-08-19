@@ -84,7 +84,7 @@ defmodule Jido.Console.Policy.Consent do
 
   def apply_grant(_selection, _grant), do: {:error, :invalid_consent_grant}
 
-  @doc "Formats a redacted consent request for CLI, TUI, and automation."
+  @doc "Formats a redacted consent request for the CLI and TUI."
   @spec format_request(request()) :: String.t()
   def format_request(request) do
     current = format_boundary(request.current)

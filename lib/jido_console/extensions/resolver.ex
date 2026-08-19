@@ -16,21 +16,20 @@ defmodule Jido.Console.Extensions.Resolver do
   @type setup :: Setup.t()
 
   @doc "Resolves inert requests to a private registry and portable trust projection."
-  @spec resolve([Request.t()], :interactive | :automation, keyword()) ::
-          {:ok, setup()} | {:error, term()}
-  def resolve([], _mode, _opts),
+  @spec resolve([Request.t()], keyword()) :: {:ok, setup()} | {:error, term()}
+  def resolve([], _opts),
     do: {:ok, Setup.not_requested()}
 
-  def resolve(requests, mode, opts) when is_list(requests) and mode in [:interactive, :automation] do
+  def resolve(requests, opts) when is_list(requests) do
     case Enum.filter(requests, & &1.enabled) do
       [] ->
-        resolve([], mode, opts)
+        resolve([], opts)
 
       active_requests ->
         with {:ok, records} <- load_records(opts),
              {:ok, identity} <- project_identity(opts),
-             {:ok, selected} <- select_records(active_requests, records, identity, mode, opts),
-             {:ok, entries} <- build_entries(selected, identity, mode, opts) do
+             {:ok, selected} <- select_records(active_requests, records, identity, opts),
+             {:ok, entries} <- build_entries(selected, identity, opts) do
           project = %{"root_digest" => digest(identity.root), "repository_id" => identity.repository_id}
           {:ok, Setup.trusted(entries, project)}
         end
@@ -88,7 +87,7 @@ defmodule Jido.Console.Extensions.Resolver do
     Trust.project_identity(root, opts)
   end
 
-  defp select_records(requests, records, identity, mode, opts) do
+  defp select_records(requests, records, identity, opts) do
     user = Map.new(Enum.filter(records, &(&1.scope == :user)), &{&1.id, &1})
     project = Map.new(Enum.filter(records, &(&1.scope == :project)), &{&1.id, &1})
 
@@ -98,7 +97,7 @@ defmodule Jido.Console.Extensions.Resolver do
       effective = Map.merge(user, project)
 
       Enum.reduce_while(requests, {:ok, []}, fn request, {:ok, acc} ->
-        case select_record(request, effective, trusted, mode) do
+        case select_record(request, effective, trusted) do
           {:ok, record} -> {:cont, {:ok, [record | acc]}}
           {:error, reason} -> {:halt, {:error, reason}}
         end
@@ -110,21 +109,17 @@ defmodule Jido.Console.Extensions.Resolver do
     end
   end
 
-  defp select_record(request, effective, trusted, mode) do
+  defp select_record(request, effective, trusted) do
     case Map.fetch(effective, request.id) do
-      {:ok, record} -> allow_record(record, request.id, trusted, mode)
+      {:ok, record} -> allow_record(record, request.id, trusted)
       :error -> {:error, {:unknown_extension_record, request.id}}
     end
   end
 
-  defp allow_record(%{enabled: false}, id, _trusted, _mode),
+  defp allow_record(%{enabled: false}, id, _trusted),
     do: {:error, {:extension_record_disabled, id}}
 
-  defp allow_record(record, id, trusted, mode) do
-    if mode in record.modes,
-      do: allow_record_scope(record, id, trusted),
-      else: {:error, {:extension_mode_not_allowed, id, mode}}
-  end
+  defp allow_record(record, id, trusted), do: allow_record_scope(record, id, trusted)
 
   defp allow_record_scope(%{scope: :project} = record, id, trusted) do
     if Map.get(trusted, id) == record.sha256,
@@ -137,9 +132,9 @@ defmodule Jido.Console.Extensions.Resolver do
   defp project_trust([], _identity, _opts), do: {:ok, %{}}
   defp project_trust(_ids, identity, opts), do: Trust.trusted_extensions(identity, opts)
 
-  defp build_entries(records, identity, mode, opts) do
+  defp build_entries(records, identity, opts) do
     Enum.reduce_while(records, {:ok, []}, fn record, {:ok, entries} ->
-      case registry_entry(record, identity, mode, opts) do
+      case registry_entry(record, identity, opts) do
         {:ok, runtime} -> {:cont, {:ok, [{runtime, Record.project(record)} | entries]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -150,7 +145,7 @@ defmodule Jido.Console.Extensions.Resolver do
     end
   end
 
-  defp registry_entry(%Record{source: :built_in} = record, identity, _mode, opts) do
+  defp registry_entry(%Record{source: :built_in} = record, identity, opts) do
     resolver = Keyword.get(opts, :built_in_extension_resolver)
 
     with true <- is_function(resolver, 2),
@@ -161,7 +156,7 @@ defmodule Jido.Console.Extensions.Resolver do
     end
   end
 
-  defp registry_entry(%Record{source: :process} = record, identity, mode, opts) do
+  defp registry_entry(%Record{source: :process} = record, identity, opts) do
     resolver = Keyword.get(opts, :process_extension_descriptor_resolver)
 
     with :ok <- verify_executable(record, opts),
@@ -171,7 +166,7 @@ defmodule Jido.Console.Extensions.Resolver do
       {:ok,
        %{
          registration: Record.registration(record),
-         factory: ProcessHost.factory(descriptor, mode: mode)
+         factory: ProcessHost.factory(descriptor, mode: :interactive)
        }}
     else
       reason -> {:error, {:process_extension_unavailable, record.id, reason}}

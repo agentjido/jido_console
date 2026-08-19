@@ -1,7 +1,7 @@
 defmodule Jido.Console.Release.Local do
   @moduledoc "Runs the complete local macOS ARM64 release candidate flow."
 
-  alias Jido.Console.Release.{Acceptance, Artifact, Contract, CrossRepo}
+  alias Jido.Console.Release.{Acceptance, Artifact, CrossRepo}
 
   @output_names ~w(
     acceptance.json
@@ -45,13 +45,14 @@ defmodule Jido.Console.Release.Local do
 
       write_manual_checklist!(candidate, artifact)
       dist = promote!(candidate, artifact, project_root)
-      homebrew = Contract.homebrew_inputs(artifact.metadata, artifact.archive_sha256)
 
       %{
         artifact: Path.join(dist, Path.basename(artifact.archive)),
         acceptance: Path.join(dist, "acceptance.json"),
         dist: dist,
-        homebrew: homebrew,
+        version: artifact.version,
+        target: artifact.target,
+        sha256: artifact.archive_sha256,
         metadata: artifact.metadata,
         automated_status: acceptance["status"]
       }
@@ -128,7 +129,6 @@ defmodule Jido.Console.Release.Local do
       "sha256" => artifact.archive_sha256,
       "version" => artifact.version,
       "target" => artifact.target,
-      "automation_is_not_manual_review" => true,
       "checks" => [
         "first paint and runtime ready",
         "input and one queued submission during startup",

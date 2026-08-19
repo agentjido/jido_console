@@ -153,38 +153,12 @@ defmodule Jido.Console.Session.ContinuityTest do
     assert profile["os_kill_repetitions_per_window"] == 25
   end
 
-  test "the M2 compatibility inputs have exact approved identities and digests" do
-    assert {:ok, manifest} = Continuity.compatibility_inputs()
-    assert :ok = Continuity.review_compatibility_inputs(manifest)
-
-    assert manifest["source"] == %{
-             "console_commit" => "e7ee26e70c571c9af50ba9840d17f3524ba5e7e0",
-             "console_tree" => "7266e79495db8bf6e59277613571a381c9d14f6f",
-             "roadmap_version" => "1.3.4",
-             "jidoka_commit" => "29246d0a762fe1b17f4250e4f5c98c9f3f6d8419",
-             "jidoka_tree" => "f86eaf57bdea8e347acd5e0aca35c21ebc08850d",
-             "jidoka_version" => "0.9.1",
-             "native_payload_sha256" => "65cbb458061e72bd38ac2efe96bef5de6677a9b649d90a12841a8b40303a7e35"
-           }
-
-    inputs = manifest["inputs"]
-    assert length(inputs) == 23
-    assert Enum.uniq_by(inputs, & &1["path"]) == inputs
-
-    assert ~w(protocol semantic_replay client_parity client_contract fault_isolation automation raw_path_guard) --
-             Enum.map(inputs, & &1["category"]) == []
-  end
-
   test "invalid contracts and manifests return stable review defects" do
     assert {:error, defects} = Continuity.review(%{})
     assert :continuity_identity_invalid in defects
     assert :continuity_records_missing in defects
     assert :continuity_acknowledgements_missing in defects
     assert :continuity_limits_invalid in defects
-
-    assert {:error, defects} = Continuity.review_compatibility_inputs(%{})
-    assert :compatibility_schema_invalid in defects
-    assert :compatibility_inputs_missing in defects
 
     assert {:error, {:unknown_continuity_record, "missing"}} =
              Continuity.record(%{}, "missing")

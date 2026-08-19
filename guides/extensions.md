@@ -16,7 +16,6 @@ extensions:
     sha256: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     permissions: [context, state]
     capabilities: [acme.context.run]
-    modes: [interactive, automation]
     scope: user
     enabled: true
 ```
@@ -41,16 +40,12 @@ projects:
 
 The key uses the canonical project root and repository identity. A project
 record overrides a user record with the same ID only after this check. A pin
-change removes trust. Automation never prompts. Unknown, disabled, changed,
-untrusted, duplicate, or interactive-only records fail as configuration errors
-before JSONL opens, with exit status 64.
+change removes trust. Unknown, disabled, changed, untrusted, or duplicate
+records fail as configuration errors.
 
-Interactive, `jido run`, and `jido eval` use `Jidoka.Extension.Host`. Each
-automation cell opens fresh instances and keeps state in its own session.
-Extension results and portable UI data stay below their registered namespaces.
-Trust evidence stays below `jido.cli.trust`. Runtime or close failure creates
-one case error and exit status 1. Diagnostics use stderr. JSONL remains the only
-automation stdout writer.
+The interactive terminal uses `Jidoka.Extension.Host`. Each session opens fresh
+extension instances. Extension results and portable UI data stay below their
+registered namespaces. Trust evidence stays below `jido.cli.trust`.
 
 The CLI does not install, download, update, or discover packages. It has no
 marketplace, signature system, hot reload, custom executable UI, MCP bridge, or

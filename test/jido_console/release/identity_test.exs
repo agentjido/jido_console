@@ -57,11 +57,12 @@ defmodule Jido.Console.Release.IdentityTest do
     refute Application.spec(:jido_cli, :vsn)
   end
 
-  test "release launcher keeps the jido executable and new entry module" do
+  test "release launcher starts the product entry module directly" do
     launcher = Path.expand("../../../rel/bin/jido", __DIR__)
     source = File.read!(launcher)
 
-    assert source =~ ~r/-s Elixir\.Jido\.Console\.Release\.Entry main/
+    assert source =~ ~r/-s Elixir\.Jido\.Console main/
+    refute source =~ "Jido.Console.Release"
     refute source =~ "Jido.Cli"
     refute source =~ "jido_cli"
   end

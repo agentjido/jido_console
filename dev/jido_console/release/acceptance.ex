@@ -1,7 +1,6 @@
 defmodule Jido.Console.Release.Acceptance do
   @moduledoc "Validates and benchmarks the exact final release archive."
 
-  alias CodingScenario.Oracle
   alias Jido.Console.Release.{Artifact, Contract, CrossRepo}
 
   @warm_runs 20
@@ -56,18 +55,11 @@ defmodule Jido.Console.Release.Acceptance do
         gate!("startup performance", fn -> startup_evidence!(bin, warm_runs, limits, runtime_env) end)
 
       commands =
-        gate!("packaged commands", fn -> command_evidence!(bin, root, expected_version, runtime_env) end)
-
-      tui = gate!("paint-first TUI", fn -> tui_evidence!(bin, isolation, runtime_env) end)
+        gate!("packaged commands", fn -> command_evidence!(bin, expected_version, runtime_env) end)
 
       read_only =
         gate!("read-only installation", fn ->
           read_only_evidence!(root, bin, expected_version, runtime_env)
-        end)
-
-      coding =
-        gate!("external coding workflow", fn ->
-          coding_workflow_evidence!(root, bin, isolation, runtime_env)
         end)
 
       evidence = %{
@@ -92,9 +84,7 @@ defmodule Jido.Console.Release.Acceptance do
         "live_provider_calls" => false,
         "startup" => startup,
         "commands" => commands,
-        "tui" => tui,
         "read_only_installation" => read_only,
-        "coding_workflow" => coding,
         "gates" => [
           "archive checksum",
           "metadata contract",
@@ -103,9 +93,7 @@ defmodule Jido.Console.Release.Acceptance do
           "notices and evidence",
           "startup performance",
           "packaged commands",
-          "paint-first TUI",
-          "read-only installation",
-          "external coding workflow"
+          "read-only installation"
         ]
       }
 
@@ -176,157 +164,20 @@ defmodule Jido.Console.Release.Acceptance do
     Map.put(stats, "limits_ms", limits)
   end
 
-  defp command_evidence!(bin, root, version, runtime_env) do
+  defp command_evidence!(bin, version, runtime_env) do
     checks = [
       {"version", ["--version"], 0, "jido #{version}"},
       {"help", ["--help"], 0, "Usage:"},
-      {"run_help", ["run", "--help"], 0, "Run options:"},
-      {"eval_help", ["eval", "--help"], 0, "Eval options:"},
-      {"execution_error", ["--release-unknown-option"], 1, "unknown option"},
-      {"usage_error", ["run"], 64, "--agent"}
+      {"execution_error", ["--release-unknown-option"], 1, "unknown option"}
     ]
 
-    results =
-      Enum.map(checks, fn {name, args, status, text} ->
-        {output, actual_status} = run_command(bin, args, runtime_env)
+    Enum.map(checks, fn {name, args, status, text} ->
+      {output, actual_status} = run_command(bin, args, runtime_env)
 
-        if actual_status != status, do: raise("#{name} returned #{actual_status}, expected #{status}: #{output}")
-        unless String.contains?(output, text), do: raise("#{name} output did not contain #{inspect(text)}")
-        %{"name" => name, "status" => status}
-      end)
-
-    suite = Path.join(root, "share/jido/offline/suite.yml")
-    {output, status} = run_command(bin, ["eval", suite], runtime_env)
-
-    if status != 0 or not String.contains?(output, ~s("status":"matched")) do
-      raise "offline replay failed with status #{status}: #{output}"
-    end
-
-    {native_output, native_status} =
-      run_command(bin, [], Map.put(runtime_env, "JIDO_RELEASE_NATIVE_PROBE", "1"))
-
-    if native_status != 0 or not String.contains?(native_output, "native probe passed") do
-      raise "native library probe failed with status #{native_status}: #{native_output}"
-    end
-
-    results ++
-      [
-        %{"name" => "provider_free_offline_replay", "status" => 0, "matched" => true},
-        %{"name" => "native_library_load", "status" => 0}
-      ]
-  end
-
-  defp tui_evidence!(bin, isolation, runtime_env) do
-    log = Path.join(isolation, "queued-turn.log")
-
-    success_script = """
-    set timeout 12
-    log_user 0
-    spawn -noecho $env(JIDO_BIN)
-    expect {
-      -re {Jido} {}
-      timeout {puts "missing first frame"; exit 2}
-      eof {puts "early exit before first frame"; exit 3}
-    }
-    after 50
-    send "release probe\r"
-    expect {
-      -re {prompt queued} {}
-      timeout {puts "missing queued prompt"; exit 4}
-      eof {puts "early exit before queued prompt"; exit 5}
-    }
-    expect {
-      -re {Release probe completed\.} {}
-      timeout {puts "missing probe result"; exit 6}
-      eof {puts "early exit before probe result"; exit 7}
-    }
-    expect {
-      -re {idle .* Enter sends} {}
-      timeout {puts "missing idle state"; exit 8}
-      eof {puts "early exit before idle state"; exit 9}
-    }
-    send "\\003"
-    expect {
-      -exact "\\033\\[?2004l\\033\\[0m\\033\\[?25h\\033\\[?1049l" {}
-      -re {BREAK:} {puts "Erlang break menu opened"; exit 10}
-      timeout {puts "missing Ctrl+C terminal cleanup"; exit 11}
-      eof {puts "early exit before Ctrl+C terminal cleanup"; exit 12}
-    }
-    expect eof
-    puts "probe=passed"
-    """
-
-    {output, status} =
-      System.cmd(
-        "/usr/bin/env",
-        isolated_command(
-          "/usr/bin/expect",
-          ["-c", success_script],
-          Map.merge(runtime_env, %{
-            "JIDO_BIN" => bin,
-            "JIDO_RELEASE_TUI_PROBE" => "success",
-            "JIDO_RELEASE_TUI_PROBE_DELAY_MS" => "1000",
-            "JIDO_RELEASE_TUI_PROBE_LOG" => log
-          })
-        ),
-        cd: bin |> Path.dirname() |> Path.dirname(),
-        stderr_to_stdout: true
-      )
-
-    if status != 0 or not String.contains?(output, "probe=passed"),
-      do: raise("queued prompt probe failed: #{output}")
-
-    turns = log |> File.read!() |> String.split("\n", trim: true)
-    if length(turns) != 1, do: raise("queued prompt ran #{length(turns)} times")
-
-    failure_script = """
-    set timeout 12
-    log_user 0
-    spawn -noecho $env(JIDO_BIN)
-    expect {
-      -re {Jido} {}
-      timeout {puts "missing failure first frame"; exit 2}
-      eof {puts "early failure exit"; exit 3}
-    }
-    expect {
-      -re {startup failed .* Esc exits} {}
-      timeout {puts "missing startup failure"; exit 4}
-      eof {puts "early exit before startup failure"; exit 5}
-    }
-    send "\\033"
-    expect eof
-    puts "failure=passed"
-    """
-
-    {failure_output, failure_status} =
-      System.cmd(
-        "/usr/bin/env",
-        isolated_command(
-          "/usr/bin/expect",
-          ["-c", failure_script],
-          Map.merge(runtime_env, %{
-            "JIDO_BIN" => bin,
-            "JIDO_RELEASE_TUI_PROBE" => "failure",
-            "JIDO_RELEASE_TUI_PROBE_DELAY_MS" => "300"
-          })
-        ),
-        cd: bin |> Path.dirname() |> Path.dirname(),
-        stderr_to_stdout: true
-      )
-
-    if failure_status != 0 or not String.contains?(failure_output, "failure=passed"),
-      do: raise("startup failure probe failed: #{failure_output}")
-
-    %{
-      "first_paint_before_ready" => true,
-      "input_during_startup" => true,
-      "queued_submission_count" => 1,
-      "startup_failure_display" => true,
-      "ctrl_c_clean_exit" => true,
-      "erlang_break_menu" => false,
-      "terminal_cleanup" => true,
-      "pseudo_terminal_only" => true
-    }
+      if actual_status != status, do: raise("#{name} returned #{actual_status}, expected #{status}: #{output}")
+      unless String.contains?(output, text), do: raise("#{name} output did not contain #{inspect(text)}")
+      %{"name" => name, "status" => status}
+    end)
   end
 
   defp read_only_evidence!(root, bin, version, runtime_env) do
@@ -346,187 +197,6 @@ defmodule Jido.Console.Release.Acceptance do
       do: raise("read-only package did not run: #{output}")
 
     %{"passed" => true, "package_writable" => false}
-  end
-
-  defp coding_workflow_evidence!(package_root, bin, isolation, runtime_env) do
-    workspace = Path.join(isolation, "external-writable-workspace")
-    expected = Path.join(isolation, "expected-rate-limiter.ex")
-    log = Path.join(isolation, "coding-workflow.jsonl")
-    trap_dir = Path.join(isolation, "blocked-system-runtime")
-    trap_log = Path.join(isolation, "blocked-system-runtime.log")
-    fixture = Oracle.materialize!(workspace)
-    prompts = Enum.map(fixture.scenario["turns"], & &1["prompt"])
-
-    File.write!(expected, Oracle.expected_content!("lib/rate_limiter.ex"))
-    install_runtime_traps!(trap_dir)
-
-    script = """
-    encoding system utf-8
-    set timeout 45
-    set stty_init "rows 30 columns 100"
-    log_user 0
-    spawn -noecho $env(JIDO_BIN)
-    expect {
-      -re {idle .* Enter sends} {}
-      timeout {puts "missing initial idle frame"; exit 2}
-      eof {puts "early executable exit"; exit 3}
-    }
-    send "\\033\\[200~$env(JIDO_PROBE_PROMPT_1)\\033\\[201~\\r"
-    expect {
-      -re {Inspected café λ source and tests\\.} {}
-      timeout {puts "missing inspection result"; exit 4}
-    }
-    send "\\033\\[200~$env(JIDO_PROBE_PROMPT_2)\\033\\[201~\\r"
-    expect {
-      -re {Review required} {}
-      timeout {puts "missing approval review"; exit 5}
-    }
-    send "a"
-    expect {
-      -re {Implemented café λ rate limiter\\.} {}
-      timeout {puts "missing approved result"; exit 6}
-    }
-    send "\\033\\[200~$env(JIDO_PROBE_PROMPT_3)\\033\\[201~\\r"
-    expect {
-      -re {Verification passed\\. Repository review is ready\\.} {}
-      -re {error .*} {puts "verification failed: $expect_out(0,string)"; exit 7}
-      timeout {puts "missing verification result: $expect_out(buffer)"; exit 7}
-    }
-    expect {
-      -re {Git diff} {}
-      timeout {puts "missing Git review"; exit 8}
-    }
-    expect {
-      -re {idle .* Enter sends} {}
-      timeout {puts "missing idle state after verification"; exit 9}
-    }
-    send "\\033"
-    expect {
-      -exact "\\033\\[?2004l\\033\\[0m\\033\\[?25h\\033\\[?1049l" {}
-      timeout {puts "missing terminal cleanup"; exit 10}
-    }
-    expect eof
-    set wait_result [wait]
-    if {[llength $wait_result] != 4 || [lindex $wait_result 2] != 0 || [lindex $wait_result 3] != 0} {
-      puts "executable failed: $wait_result"
-      exit 11
-    }
-    puts "workflow=passed"
-    """
-
-    {output, status} =
-      System.cmd(
-        "/usr/bin/env",
-        isolated_command(
-          "/usr/bin/expect",
-          ["-c", script],
-          Map.merge(runtime_env, %{
-            "JIDO_BIN" => bin,
-            "JIDO_RELEASE_TUI_PROBE" => "workflow",
-            "JIDO_RELEASE_TUI_PROBE_DELAY_MS" => "25",
-            "JIDO_RELEASE_TUI_PROBE_WORKSPACE" => workspace,
-            "JIDO_RELEASE_TUI_PROBE_EXPECTED" => expected,
-            "JIDO_RELEASE_TUI_PROBE_LOG" => log,
-            "JIDO_RELEASE_TUI_PROBE_VERIFIER" => "private_runtime",
-            "JIDO_PROBE_PROMPT_1" => Enum.at(prompts, 0),
-            "JIDO_PROBE_PROMPT_2" => Enum.at(prompts, 1),
-            "JIDO_PROBE_PROMPT_3" => Enum.at(prompts, 2),
-            "JIDO_RUNTIME_TRAP_LOG" => trap_log,
-            "PATH" => trap_dir <> ":/usr/bin:/bin"
-          })
-        ),
-        cd: workspace,
-        stderr_to_stdout: true
-      )
-
-    if status != 0 or not String.contains?(output, "workflow=passed") do
-      raise "packaged coding workflow failed with status #{status}: #{output}"
-    end
-
-    if File.exists?(trap_log) do
-      raise "packaged coding workflow invoked a blocked system runtime: #{File.read!(trap_log)}"
-    end
-
-    records = read_jsonl!(log)
-    operations = records |> Enum.filter(&(&1["event"] == "operation")) |> Enum.map(& &1["operation"])
-
-    verification_record =
-      Enum.find(records, &(&1["event"] == "verification")) ||
-        raise "packaged coding workflow did not record verification"
-
-    verification = Map.drop(verification_record, ["event"])
-
-    unless records |> Enum.filter(&(&1["event"] == "turn_started")) |> length() == 3,
-      do: raise("packaged coding workflow did not run exactly three turns")
-
-    unless Enum.any?(records, &(&1 == %{"event" => "review", "decision" => "approved"})),
-      do: raise("packaged coding workflow did not approve the edit")
-
-    unless List.last(records) == %{"event" => "session_closed"},
-      do: raise("packaged coding workflow did not close its session")
-
-    {:ok, oracle} =
-      Oracle.verify_observed(
-        fixture,
-        operations,
-        Oracle.expected_claims(fixture),
-        verification
-      )
-
-    writable_package_paths = writable_paths(package_root)
-
-    if writable_package_paths != [],
-      do: raise("packaged coding workflow changed package permissions: #{inspect(writable_package_paths)}")
-
-    unless writable?(workspace), do: raise("external coding workspace is not writable")
-
-    if String.starts_with?(workspace, package_root <> "/"),
-      do: raise("coding workspace is inside the read-only package")
-
-    %{
-      "passed" => true,
-      "provider_calls" => false,
-      "workspace_writable" => writable?(workspace),
-      "workspace_outside_package" => not String.starts_with?(workspace, package_root <> "/"),
-      "package_writable" => false,
-      "system_toolchain" => %{"blocked" => ["erl", "elixir", "mix"], "invocations" => []},
-      "verification" => verification,
-      "repository_oracle" => "passed",
-      "changed_paths" => oracle["changed_paths"],
-      "before_digest" => oracle["before_digest"],
-      "after_digest" => oracle["after_digest"]
-    }
-  end
-
-  defp read_jsonl!(path) do
-    path
-    |> File.read!()
-    |> String.split("\n", trim: true)
-    |> Enum.map(&Jason.decode!/1)
-  end
-
-  defp install_runtime_traps!(directory) do
-    File.mkdir_p!(directory)
-
-    Enum.each(["erl", "elixir", "mix"], fn name ->
-      path = Path.join(directory, name)
-
-      File.write!(
-        path,
-        "#!/bin/sh\nprintf '%s\\n' '#{name}' >> \"$JIDO_RUNTIME_TRAP_LOG\"\nexit 97\n"
-      )
-
-      File.chmod!(path, 0o755)
-    end)
-  end
-
-  defp writable?(path), do: Bitwise.band(File.stat!(path).mode, 0o222) != 0
-
-  defp writable_paths(root) do
-    [root | Path.wildcard(Path.join(root, "**/*"), match_dot: true)]
-    |> Enum.filter(&writable?/1)
-    |> Enum.map(&Path.relative_to(&1, root))
-    |> Enum.sort()
   end
 
   defp command_samples(bin, args, count, runtime_env) do

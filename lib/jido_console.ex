@@ -3,7 +3,15 @@ defmodule Jido.Console do
 
   @doc "Returns the Jido Console version."
   @spec version() :: String.t()
-  def version, do: Jido.Console.Release.Identity.version()
+  def version, do: Jido.Console.Version.current()
+
+  @doc false
+  @spec main() :: no_return()
+  def main do
+    args = Enum.map(:init.get_plain_arguments(), &List.to_string/1)
+    main(args)
+    System.halt(0)
+  end
 
   @doc false
   @spec main([String.t()]) :: :ok

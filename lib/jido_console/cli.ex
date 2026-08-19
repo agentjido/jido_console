@@ -12,8 +12,6 @@ defmodule Jido.Console.CLI do
     jido models list
     jido models show PROVIDER MODEL
     jido models test PROVIDER MODEL [--offline] [--require FEATURE]
-    jido run --agent FILE (--input FILE|- | --scenario FILE) [options]
-    jido eval SUITE [options]
 
   Options:
     -h, --help       Show this help
@@ -23,29 +21,15 @@ defmodule Jido.Console.CLI do
         --project-root DIR      Select the trusted coding workspace root
         --model MODEL           Select the interactive provider and model
 
-  Run options:
-    -a, --agent FILE           Load one agent YAML or JSON file
-    -i, --input FILE|-         Read one prompt from a file or standard input
-        --scenario FILE        Run one single-turn or multi-turn scenario
-        --model MODEL          Override the model in the agent file
-        --runtime-profile ID   Use a trusted runtime capability profile
-    -o, --output DIR           Also write run artifacts to a new directory
-
-  Eval options:
-    -j, --jobs N               Set the maximum concurrent scenario cells
-        --runtime-profile ID   Override the trusted execution profile
-    -o, --output DIR           Also write run artifacts to a new directory
-
   With no command, start jido in an interactive terminal. Provider credentials
-  are read from the environment by Jidoka's model provider. Automated commands
-  write JSONL records to standard output and diagnostics to standard error.
+  are read from the environment by Jidoka's model provider.
   """
 
   @doc false
   @spec main([String.t()]) :: :ok
   def main(args) do
     case dispatch_fast(args) do
-      :continue -> start_probe_or_run(args)
+      :continue -> start_and_run(args)
       :ok -> :ok
     end
   end
@@ -54,7 +38,7 @@ defmodule Jido.Console.CLI do
   defp dispatch_fast([flag]) when flag in ["--version", "-v"], do: print_version()
 
   defp dispatch_fast([command, flag])
-       when command in ["run", "eval", "status", "stop", "doctor", "auth", "models"] and
+       when command in ["status", "stop", "doctor", "auth", "models"] and
               flag in ["--help", "-h"],
        do: print_help()
 
@@ -68,16 +52,8 @@ defmodule Jido.Console.CLI do
 
   defp dispatch_fast(_args), do: :continue
 
-  defp start_probe_or_run(args) do
-    if Jido.Console.Release.Probe.configured?() do
-      System.halt(Jido.Console.Release.Probe.run(args, cli_run: &run/2))
-    else
-      start_and_run(args)
-    end
-  end
-
   defp start_and_run([command | _rest] = args)
-       when command in ["run", "eval", "status", "stop", "auth", "doctor", "models"] do
+       when command in ["status", "stop", "auth", "doctor", "models"] do
     case start_runtime() do
       :ok ->
         handle_run_result(run(args))
@@ -104,15 +80,6 @@ defmodule Jido.Console.CLI do
   @spec run([String.t()], keyword()) :: :ok | {:error, pos_integer()}
   def run(args, opts \\ []) do
     case args do
-      [command, "--help"] when command in ["run", "eval"] ->
-        print_help()
-
-      [command, "-h"] when command in ["run", "eval"] ->
-        print_help()
-
-      [command | _rest] when command in ["run", "eval"] ->
-        run_automation(args, opts)
-
       ["status" | rest] ->
         run_process_status(rest, opts)
 
@@ -392,55 +359,13 @@ defmodule Jido.Console.CLI do
     end
   end
 
-  defp run_automation(args, opts) do
-    automation = Keyword.get(opts, :automation, Jido.Console.Automation)
-
-    opts =
-      Keyword.put_new(
-        opts,
-        :cancellation_source,
-        Jido.Console.Automation.Interrupt.Signal
-      )
-
-    case automation.execute(args, opts) do
-      {:ok, %{status: :passed}} ->
-        :ok
-
-      {:ok, %{status: :failed} = summary} ->
-        IO.puts(:stderr, "jido: automated run failed: #{format_summary(summary)}")
-        {:error, 1}
-
-      {:ok, %{status: :cancelled} = summary} ->
-        IO.puts(:stderr, "jido: automated run cancelled: #{format_summary(summary)}")
-        {:error, 1}
-
-      {:error, kind, reason} when kind in [:usage, :configuration] ->
-        IO.puts(:stderr, "jido: #{format_error(reason)}")
-        {:error, 64}
-
-      {:error, :execution, reason} ->
-        fail(format_error(reason))
-
-      other ->
-        fail("invalid automation result: #{inspect(other)}")
-    end
-  end
-
   defp print_help, do: IO.write(@usage)
-  defp print_version, do: IO.puts("jido #{Jido.Console.Release.Identity.version()}")
+  defp print_version, do: IO.puts("jido #{Jido.Console.Version.current()}")
 
   defp format_error(reason) do
     Jido.Console.Error.message(reason)
   rescue
     _exception -> inspect(reason)
-  end
-
-  defp format_summary(summary) do
-    counts = Map.get(summary, :counts, %{})
-
-    "#{Map.get(counts, :failed, 0)} failed, " <>
-      "#{Map.get(counts, :errors, 0)} errors, " <>
-      "#{Map.get(counts, :cancelled, 0)} cancelled"
   end
 
   defp usage_error do

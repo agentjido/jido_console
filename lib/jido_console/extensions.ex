@@ -5,15 +5,14 @@ defmodule Jido.Console.Extensions do
   alias Jidoka.Extension.Request
 
   @doc "Resolves inert requests to a private registry and portable trust projection."
-  @spec resolve([Request.t()], :interactive | :automation, keyword()) ::
-          {:ok, Setup.t()} | {:error, term()}
-  defdelegate resolve(requests, mode, opts), to: Resolver
+  @spec resolve([Request.t()], keyword()) :: {:ok, Setup.t()} | {:error, term()}
+  defdelegate resolve(requests, opts), to: Resolver
 
   @doc "Opens one public Jidoka host and compiles its operation sources."
-  @spec open(Jidoka.Session.Data.t(), [Request.t()], Setup.t(), :interactive | :automation, keyword()) ::
+  @spec open(Jidoka.Session.Data.t(), [Request.t()], Setup.t(), keyword()) ::
           {:ok, map()} | {:error, term()}
-  def open(session, requests, setup, mode, opts \\ []),
-    do: Host.open(session, requests, setup, mode, opts)
+  def open(session, requests, setup, opts \\ []),
+    do: Host.open(session, requests, setup, opts)
 
   @doc "Returns namespaced extension results and UI data."
   defdelegate results(host), to: Host

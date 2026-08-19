@@ -1,6 +1,0 @@
-version: 1
-agent:
-  id: offline_example
-  model: openai:gpt-4o-mini
-  instructions: Return the exact short answer requested by the scenario.
-  execution_profile: offline-example

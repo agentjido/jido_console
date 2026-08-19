@@ -15,14 +15,6 @@ defmodule Jido.ConsoleTest do
     def run(opts), do: {:error, Keyword.fetch!(opts, :reason)}
   end
 
-  defmodule FakeAutomation do
-    def execute(args, opts) do
-      send(Keyword.fetch!(opts, :test_pid), {:automation_started, args})
-      send(Keyword.fetch!(opts, :test_pid), {:automation_options, opts})
-      Keyword.get(opts, :automation_result, {:ok, %{status: :passed}})
-    end
-  end
-
   test "rejects unknown options" do
     assert capture_io(:stderr, fn ->
              assert {:error, 1} = Jido.Console.run(["--wat"])
@@ -33,6 +25,18 @@ defmodule Jido.ConsoleTest do
     assert capture_io(:stderr, fn ->
              assert {:error, 64} = Jido.Console.run(["agent.yaml"])
            end) =~ "Usage:\n  jido"
+  end
+
+  test "does not expose removed automation commands" do
+    help = capture_io(fn -> assert :ok = Jido.Console.run(["--help"]) end)
+    refute help =~ "jido run"
+    refute help =~ "jido eval"
+
+    for command <- ["run", "eval"] do
+      assert capture_io(:stderr, fn ->
+               assert {:error, 64} = Jido.Console.run([command])
+             end) =~ "Usage:\n  jido"
+    end
   end
 
   test "starts the TUI with no arguments" do
@@ -77,112 +81,8 @@ defmodule Jido.ConsoleTest do
     assert output =~ "invalid_coding_pack"
   end
 
-  test "sends run commands to the automation boundary" do
-    args = ["run", "--agent", "agent.yml", "--input", "prompt.md"]
-
-    assert :ok =
-             Jido.Console.run(args,
-               automation: FakeAutomation,
-               test_pid: self()
-             )
-
-    assert_received {:automation_started, ^args}
-    assert_received {:automation_options, options}
-    assert options[:cancellation_source] == Jido.Console.Automation.Interrupt.Signal
-  end
-
-  test "sends eval commands to the automation boundary" do
-    args = ["eval", "suite.yml"]
-
-    assert :ok =
-             Jido.Console.run(args,
-               automation: FakeAutomation,
-               test_pid: self()
-             )
-
-    assert_received {:automation_started, ^args}
-  end
-
-  test "maps failed evaluations and automation errors to exit statuses" do
-    opts = [automation: FakeAutomation, test_pid: self()]
-
-    failed_output =
-      capture_io(:stderr, fn ->
-        assert {:error, 1} =
-                 Jido.Console.run(
-                   ["eval", "suite.yml"],
-                   opts ++
-                     [
-                       automation_result:
-                         {:ok,
-                          %{
-                            status: :failed,
-                            counts: %{failed: 2, errors: 1}
-                          }}
-                     ]
-                 )
-      end)
-
-    assert failed_output =~ "2 failed, 1 errors"
-
-    cancelled_output =
-      capture_io(:stderr, fn ->
-        assert {:error, 1} =
-                 Jido.Console.run(
-                   ["eval", "suite.yml"],
-                   opts ++
-                     [
-                       automation_result:
-                         {:ok,
-                          %{
-                            status: :cancelled,
-                            counts: %{failed: 0, errors: 0, cancelled: 1}
-                          }}
-                     ]
-                 )
-      end)
-
-    assert cancelled_output =~ "automated run cancelled"
-
-    usage_output =
-      capture_io(:stderr, fn ->
-        assert {:error, 64} =
-                 Jido.Console.run(
-                   ["run"],
-                   opts ++ [automation_result: {:error, :usage, "missing agent"}]
-                 )
-      end)
-
-    assert usage_output == "jido: missing agent\n"
-
-    execution_output =
-      capture_io(:stderr, fn ->
-        assert {:error, 1} =
-                 Jido.Console.run(
-                   ["eval", "suite.yml"],
-                   opts ++ [automation_result: {:error, :execution, "write failed"}]
-                 )
-      end)
-
-    assert execution_output == "jido: write failed\n"
-  end
-
-  test "rejects an invalid automation boundary result" do
-    output =
-      capture_io(:stderr, fn ->
-        assert {:error, 1} =
-                 Jido.Console.run(["eval", "suite.yml"],
-                   automation: FakeAutomation,
-                   test_pid: self(),
-                   automation_result: :invalid
-                 )
-      end)
-
-    assert output =~ "invalid automation result"
-  end
-
   test "defines the built-in agent" do
-    assert Jido.Console.version() == Jido.Console.Release.Identity.version()
+    assert Jido.Console.version() == to_string(Application.spec(:jido_console, :vsn))
     assert Jido.Console.DefaultAgent.spec().id == "jido"
   end
 
@@ -200,20 +100,13 @@ defmodule Jido.ConsoleTest do
     assert 1 = :erlang.trace(self(), true, [:call])
 
     try do
-      for args <- [
-            ["--help"],
-            ["-h"],
-            ["run", "--help"],
-            ["run", "-h"],
-            ["eval", "--help"],
-            ["eval", "-h"]
-          ] do
+      for args <- [["--help"], ["-h"]] do
         assert capture_io(fn -> assert :ok = Jido.Console.main(args) end) =~ "Usage:"
       end
 
       for args <- [["--version"], ["-v"]] do
         assert capture_io(fn -> assert :ok = Jido.Console.main(args) end) ==
-                 "jido #{Jido.Console.Release.Identity.version()}\n"
+                 "jido #{Jido.Console.version()}\n"
       end
     after
       :erlang.trace(self(), false, [:call])
