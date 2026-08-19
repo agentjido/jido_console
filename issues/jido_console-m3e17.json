@@ -28,6 +28,10 @@
     {
       "text": "Roadmap 1.3.5 refinement: use SQLite VACUUM INTO through the adapter SQL path under the writer-owned barrier. Do not require the unavailable SQLite online backup C API. Keep staging, capacity, consistency, verification, crash cleanup, and private-path rules.",
       "timestamp": "2026-08-17T23:20:14Z"
+    },
+    {
+      "text": "Reset to open during integration cleanup. The E17 worktree contained no source changes or commit; only its temporary dependency symlink was present. Start E17 again from the synchronized milestone-3 branch in the next work round.",
+      "timestamp": "2026-08-19T11:45:24Z"
     }
   ],
   "priority": 1,
