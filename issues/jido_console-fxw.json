@@ -1,0 +1,21 @@
+{
+  "assignee": "Mike Hostetler",
+  "blocked_by": [],
+  "blocks": [],
+  "closed_at": "2026-08-19T11:56:42Z",
+  "created": "2026-08-19T11:36:53Z",
+  "description": "Update the locked git_ops development dependency to 2.12.1, validate the canonical package commands, open a pull request, and merge it after required CI passes.",
+  "id": "jido_console-fxw",
+  "labels": [],
+  "comments": [
+    {
+      "text": "Skipped at the user's request because jido_console is under active development.",
+      "timestamp": "2026-08-19T11:56:42Z"
+    }
+  ],
+  "priority": 2,
+  "status": "closed",
+  "title": "Update git_ops to 2.12.1",
+  "type": "task",
+  "updated_at": "2026-08-19T11:56:42Z"
+}
