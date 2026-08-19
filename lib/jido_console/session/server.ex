@@ -18,6 +18,7 @@ defmodule Jido.Console.Session.Server do
     DurableClock,
     DynamicSupervisor,
     Effect,
+    Envelope,
     Event,
     Generation,
     History,
@@ -264,7 +265,7 @@ defmodule Jido.Console.Session.Server do
   def init(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
 
-    case Generation.claim(session_id, generation_options(opts)) do
+    case Generation.claim(session_id, owner_options(opts)) do
       {:ok, fence} ->
         session =
           Identity.new!(:session,
@@ -273,7 +274,7 @@ defmodule Jido.Console.Session.Server do
             owner_instance_id: fence.owner_instance_id
           )
 
-        case History.rebuild(session_id, generation_options(opts)) do
+        case History.rebuild(session_id, storage_options(opts)) do
           {:ok, recovered} ->
             semantic = recovered.state
 
@@ -281,7 +282,7 @@ defmodule Jido.Console.Session.Server do
              %{
                session: session,
                fence: fence,
-               generation_options: generation_options(opts),
+               storage_options: storage_options(opts),
                state: semantic,
                clients: %{},
                admissions: %{},
@@ -297,7 +298,7 @@ defmodule Jido.Console.Session.Server do
              }}
 
           {:error, reason} ->
-            _ = Generation.release(fence, generation_options(opts))
+            _ = Generation.release(fence)
             {:stop, reason}
         end
 
@@ -697,7 +698,7 @@ defmodule Jido.Console.Session.Server do
 
     stop_generation_relay(state.active)
     close_runtime(state.runtime)
-    _result = Generation.release(state.fence, state.generation_options)
+    _result = Generation.release(state.fence)
     :ok
   catch
     :exit, _reason -> :ok
@@ -1347,7 +1348,7 @@ defmodule Jido.Console.Session.Server do
 
   defp admit_event_state(state, event) do
     with {:ok, semantic} <- Reducer.apply_event(state.state, event),
-         {:ok, _durable} <- History.append(event, semantic, state.fence, state.generation_options) do
+         {:ok, _durable} <- History.append(event, semantic, state.fence, state.storage_options) do
       clients = publish(state.clients, event, semantic)
 
       {:ok,
@@ -1618,8 +1619,8 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp execute_client_operation({:admission_receipt, operation_id}, _from, state, _client) do
-    case Admission.receipt(operation_id, state.generation_options) do
-      {:ok, %{"session_id" => session_id} = receipt} when session_id == state.session.id ->
+    case Admission.receipt(operation_id, state.storage_options) do
+      {:ok, %Envelope{session_id: session_id} = receipt} when session_id == state.session.id ->
         {:reply, {:ok, receipt}, state}
 
       {:ok, _receipt} ->
@@ -1783,14 +1784,14 @@ defmodule Jido.Console.Session.Server do
            ),
          {:ok, semantic} <- Reducer.apply_event(state.state, event),
          {:ok, admission} <-
-           Admission.commit(prepared, event, semantic, state.fence, state.generation_options) do
+           Admission.commit(prepared, event, semantic, state.fence, state.storage_options) do
       state = committed_admission_state(state, event, semantic, admission, false)
 
       case Admission.transition(
              prepared.operation_id,
              "started",
              state.fence,
-             state.generation_options
+             state.storage_options
            ) do
         {:ok, started} ->
           start_admitted_turn(state, spec, prepared, started)
@@ -1816,7 +1817,7 @@ defmodule Jido.Console.Session.Server do
             prepared.operation_id,
             "terminal",
             state.fence,
-            state.generation_options
+            state.storage_options
           )
 
         receipt = transition_receipt(terminal, started.receipt)
@@ -1826,7 +1827,7 @@ defmodule Jido.Console.Session.Server do
   end
 
   defp existing_admission(prepared, state) do
-    case Admission.receipt(prepared.operation_id, state.generation_options) do
+    case Admission.receipt(prepared.operation_id, state.storage_options) do
       {:ok, receipt} ->
         if get_in(receipt, ["payload", "payload_digest"]) == prepared.payload_digest do
           {:ok, receipt}
@@ -2133,7 +2134,7 @@ defmodule Jido.Console.Session.Server do
              event,
              semantic,
              state.fence,
-             state.generation_options
+             state.storage_options
            ) do
       {:ok, admission, committed_admission_state(state, event, semantic, admission)}
     else
@@ -2415,10 +2416,10 @@ defmodule Jido.Console.Session.Server do
 
   defp stop_generation_relay(_active), do: :ok
 
-  defp generation_options(opts) do
-    opts
-    |> Keyword.take([:writer, :quota, :admission, :deadline, :jidoka_lease_id])
-    |> maybe_put_option(:expected_generation, Keyword.get(opts, :expected_generation))
+  defp storage_options(opts), do: Keyword.take(opts, [:writer, :deadline])
+
+  defp owner_options(opts) do
+    []
     |> maybe_put_option(:owner_instance_id, Keyword.get(opts, :owner_instance_id))
     |> maybe_put_option(:operation_id, Keyword.get(opts, :generation_operation_id))
   end

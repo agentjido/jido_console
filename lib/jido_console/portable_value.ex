@@ -1,19 +1,22 @@
-defmodule Jido.Console.Session.Durable.Value do
+defmodule Jido.Console.PortableValue do
   @moduledoc "Pre-encode rejection for runtime, renderer, client, and credential-bearing values."
-
-  alias Jido.Console.Session.Protocol
 
   @raw_client_fields ~w(client provider_client raw_client raw_provider_client request_handle)
   @credential_query_fields ~w(api_key apikey authorization credential password private_key secret token)
+  @local_fields ~w(draft cursor viewport terminal_size ansi dom navigation key_chord palette selection_anchor)
+  @policy %{
+    "allowed_reference_fields" => ~w(credential_profile_id credential_reference_id credential_source_identity),
+    "forbidden_field_names" =>
+      ~w(api_key authorization cookie credential credential_value password private_key secret secret_value token),
+    "forbidden_shell_flags" => ~w(--api-key --authorization --cookie --credential --password --secret --token),
+    "structural_string_fields" => ~w(arguments effective_arguments environment headers metadata uri url),
+    "uri_fields" => ~w(uri url)
+  }
 
   @doc "Validates a value before durable encoding without resolving an external credential source."
   @spec validate(term(), keyword()) :: :ok | {:error, term()}
   def validate(value, opts \\ []) do
-    {:ok, schema} = Protocol.schema()
-    {:ok, policy} = Protocol.sensitive_values(schema)
-    local_fields = MapSet.new(Protocol.client_local_fields(schema))
-
-    walk(value, [], nil, policy, local_fields, opts)
+    walk(value, [], nil, @policy, @local_fields, opts)
   end
 
   defp walk(value, _path, _parent, _policy, _local_fields, _opts)
@@ -71,7 +74,7 @@ defmodule Jido.Console.Session.Durable.Value do
         forbidden_field?(field, policy) ->
           {:halt, reject(item_path, :credential_field)}
 
-        MapSet.member?(local_fields, field) and not Keyword.get(opts, :allow_local_fields, false) ->
+        field in local_fields and not Keyword.get(opts, :allow_local_fields, false) ->
           {:halt, reject(item_path, :client_local_state)}
 
         field in @raw_client_fields ->

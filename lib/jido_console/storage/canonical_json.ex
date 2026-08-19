@@ -1,4 +1,4 @@
-defmodule Jido.Console.Session.Durable.CanonicalJSON do
+defmodule Jido.Console.Storage.CanonicalJSON do
   @moduledoc "Canonical JSON with recursive lexical object-key order."
 
   @type result(value) :: {:ok, value} | {:error, term()}
@@ -51,6 +51,12 @@ defmodule Jido.Console.Session.Durable.CanonicalJSON do
       {:ok, items} -> {:ok, Enum.reverse(items)}
       error -> error
     end)
+  end
+
+  defp order(%{__struct__: Jido.Console.Session.Envelope} = envelope) do
+    envelope
+    |> Jido.Console.Session.Envelope.to_map()
+    |> order()
   end
 
   defp order(value) when is_map(value) and not is_struct(value) do

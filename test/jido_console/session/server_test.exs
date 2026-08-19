@@ -198,7 +198,7 @@ defmodule Jido.Console.Session.ServerTest do
 
     assert {:ok, durable_terminal} = History.rebuild(session.id)
     assert durable_terminal.state.sequence == 2
-    assert durable_terminal.snapshot != nil
+    assert durable_terminal.events == 2
 
     assert_receive {:jido_console_session, ^attachment_id, :output_ready}, 200
     assert {:gap, gap} = output(server, session, client, attachment.id)

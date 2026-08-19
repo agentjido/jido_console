@@ -1,11 +1,11 @@
-defmodule Jido.Console.Session.Durable.CredentialProfileTest do
+defmodule Jido.Console.Credential.ProfileSchemaTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Session.Durable.CredentialProfile
+  alias Jido.Console.Credential.ProfileSchema
 
   test "declared environment, private dotenv, and keychain identities pass without values" do
     for reference <- [environment_reference(), dotenv_reference(), keychain_reference()] do
-      assert :ok = CredentialProfile.validate(profile([reference]))
+      assert :ok = ProfileSchema.validate(profile([reference]))
     end
   end
 
@@ -19,7 +19,7 @@ defmodule Jido.Console.Session.Durable.CredentialProfileTest do
     ]
 
     for candidate <- cases do
-      assert {:error, _reason} = CredentialProfile.validate(candidate)
+      assert {:error, _reason} = ProfileSchema.validate(candidate)
     end
   end
 
@@ -27,23 +27,23 @@ defmodule Jido.Console.Session.Durable.CredentialProfileTest do
     reference = environment_reference()
 
     assert {:error, {:duplicate_credential_reference, "environment-fixture"}} =
-             CredentialProfile.validate(profile([reference, reference]))
+             ProfileSchema.validate(profile([reference, reference]))
 
     unsupported = Map.put(reference, "kind", "remote_vault")
 
     assert {:error, {:unsupported_credential_source, "remote_vault"}} =
-             CredentialProfile.validate(profile([unsupported]))
+             ProfileSchema.validate(profile([unsupported]))
 
     assert {:error, :credential_reference_limit} =
              0..8
              |> Enum.map(fn index -> Map.put(reference, "reference_id", "reference-#{index}") end)
              |> profile()
-             |> CredentialProfile.validate()
+             |> ProfileSchema.validate()
 
     oversized = String.duplicate("a", 16_384)
 
     assert {:error, {:oversized_credential_metadata, size, 16_384}} =
-             profile([Map.put(reference, "source_identity", oversized)]) |> CredentialProfile.validate()
+             profile([Map.put(reference, "source_identity", oversized)]) |> ProfileSchema.validate()
 
     assert size > 16_384
   end
@@ -51,31 +51,31 @@ defmodule Jido.Console.Session.Durable.CredentialProfileTest do
   test "missing and invalid identities fail with typed metadata errors" do
     reference = environment_reference()
 
-    assert {:error, :invalid_credential_profile} = CredentialProfile.validate(nil)
+    assert {:error, :invalid_credential_profile} = ProfileSchema.validate(nil)
 
     assert {:error, :invalid_credential_profile_id} =
-             profile([reference]) |> Map.put("profile_id", "") |> CredentialProfile.validate()
+             profile([reference]) |> Map.put("profile_id", "") |> ProfileSchema.validate()
 
     assert {:error, :invalid_credential_references} =
-             profile([reference]) |> Map.put("references", nil) |> CredentialProfile.validate()
+             profile([reference]) |> Map.put("references", nil) |> ProfileSchema.validate()
 
     assert {:error, :invalid_credential_reference_id} =
              reference
              |> Map.put("reference_id", "")
              |> then(&profile([&1]))
-             |> CredentialProfile.validate()
+             |> ProfileSchema.validate()
 
     assert {:error, :invalid_credential_reference_source} =
              reference
              |> Map.put("source_identity", "")
              |> then(&profile([&1]))
-             |> CredentialProfile.validate()
+             |> ProfileSchema.validate()
 
     assert {:error, {:missing_credential_profile_fields, ["profile_id"]}} =
-             profile([reference]) |> Map.delete("profile_id") |> CredentialProfile.validate()
+             profile([reference]) |> Map.delete("profile_id") |> ProfileSchema.validate()
 
     assert {:error, :invalid_credential_reference} =
-             profile([:not_a_reference]) |> CredentialProfile.validate()
+             profile([:not_a_reference]) |> ProfileSchema.validate()
   end
 
   defp profile(references) do

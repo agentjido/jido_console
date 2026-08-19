@@ -7,8 +7,7 @@ defmodule Jido.Console.Session.Delivery do
   Delivery state and receipts are not durable across an application restart.
   """
 
-  alias Jido.Console.Session.{Event, Protocol}
-  alias Jido.Console.Session.Protocol.Validator
+  alias Jido.Console.Session.{Envelope, Event}
 
   @maximums %{
     advisory_count: 1,
@@ -279,9 +278,7 @@ defmodule Jido.Console.Session.Delivery do
       "events" => events
     }
 
-    with {:ok, schema} <- Protocol.schema(),
-         {:ok, batch} <- Protocol.envelope(schema, "delivery", "output_batch", attrs),
-         {:ok, batch} <- Validator.validate(batch),
+    with {:ok, batch} <- Envelope.new("delivery", "output_batch", attrs),
          {:ok, bytes} <- encoded_size(batch),
          true <- bytes <= state.limits.batch_bytes and bytes <= state.limits.copied_bytes do
       {:ok, batch,
@@ -316,9 +313,7 @@ defmodule Jido.Console.Session.Delivery do
       "reason" => String.slice(to_string(reason), 0, 256)
     }
 
-    {:ok, schema} = Protocol.schema()
-    {:ok, gap} = Protocol.envelope(schema, "delivery", "gap", attrs)
-    {:ok, gap} = Validator.validate(gap)
+    {:ok, gap} = Envelope.new("delivery", "gap", attrs)
 
     advisory? = not state.advisory_outstanding
 
@@ -389,7 +384,7 @@ defmodule Jido.Console.Session.Delivery do
     queued? or inflight? or acknowledged?
   end
 
-  defp require_session(state, %{"session_id" => session_id}) when session_id == state.session_id,
+  defp require_session(state, %Envelope{session_id: session_id}) when session_id == state.session_id,
     do: :ok
 
   defp require_session(_state, _event), do: {:error, :delivery_session_mismatch}

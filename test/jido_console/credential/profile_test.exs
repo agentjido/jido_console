@@ -12,9 +12,6 @@ defmodule Jido.Console.Credential.ProfileTest do
     names = [
       name: unique(:supervisor),
       lock: unique(:lock),
-      maintenance: unique(:maintenance),
-      quota: unique(:quota),
-      admission: unique(:admission),
       writer: unique(:writer),
       jido_home: root
     ]
@@ -40,12 +37,12 @@ defmodule Jido.Console.Credential.ProfileTest do
     assert {:ok, _restarted} = StorageSupervisor.start_link(context.names)
     assert {:ok, ^shown} = Profile.show("provider-main", storage_opts(context.names, "read-after-restart"))
 
-    database = Path.join(context.root, "state/sessions/v1/console.sqlite3")
+    database = Path.join(context.root, "state/console.sqlite3")
     assert File.regular?(database)
     assert String.starts_with?(database, Path.join(context.root, "state") <> "/")
 
     context.root
-    |> Path.join("state/sessions/v1/*")
+    |> Path.join("state/*")
     |> Path.wildcard()
     |> Enum.filter(&File.regular?/1)
     |> Enum.each(fn path -> refute File.read!(path) =~ @canary end)
@@ -171,8 +168,6 @@ defmodule Jido.Console.Credential.ProfileTest do
 
     assert {:error, :operation_id_required} =
              Profile.create(Map.put(profile(), "profile_id", "operation-required"),
-               admission: context.names[:admission],
-               quota: context.names[:quota],
                writer: context.names[:writer]
              )
 
@@ -236,7 +231,7 @@ defmodule Jido.Console.Credential.ProfileTest do
 
     candidate = Map.put(profile(), "profile_version", 129)
 
-    assert {:error, {:credential_profile_version_limit, "credential-profile:provider-main", 128}} =
+    assert {:error, :credential_profile_version_limit_exceeded} =
              Profile.new_version(candidate, storage_opts(context.names, "profile-v129"))
 
     assert {:ok, %{profile_version: 128}} = Profile.show("provider-main", storage_opts(context.names, "show-v128"))
@@ -256,7 +251,7 @@ defmodule Jido.Console.Credential.ProfileTest do
 
     overflow = Map.put(profile(), "profile_id", "provider-overflow")
 
-    assert {:error, {:credential_profile_limit, 128}} =
+    assert {:error, :credential_profile_limit_exceeded} =
              Profile.create(overflow, storage_opts(context.names, "create-overflow"))
 
     assert {:ok, profiles} = Profile.list(storage_opts(context.names, "list-bounded"))
@@ -287,8 +282,6 @@ defmodule Jido.Console.Credential.ProfileTest do
 
   defp storage_opts(names, operation_id) do
     [
-      admission: names[:admission],
-      quota: names[:quota],
       writer: names[:writer],
       operation_id: operation_id
     ]

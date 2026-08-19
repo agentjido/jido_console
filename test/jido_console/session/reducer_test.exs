@@ -53,8 +53,8 @@ defmodule Jido.Console.Session.ReducerTest do
     other = classified(Identity.new!(:session), "run_completed", 2)
     assert {:error, :cross_session_event} = Reducer.apply_event(state, other)
 
-    assert {:error, :invalid_event_session_id} =
-             Reducer.apply_event(state, Map.delete(classified(session, "run_completed", 2), "session_id"))
+    invalid = %{classified(session, "run_completed", 2) | session_id: nil}
+    assert {:error, :invalid_event_session_id} = Reducer.apply_event(state, invalid)
   end
 
   test "replay restores pending permissions and terminal cancellation without authority" do
@@ -104,8 +104,7 @@ defmodule Jido.Console.Session.ReducerTest do
         %{"kind" => "session", "id" => "ses_foreign", "session_id" => session.id}
       ])
 
-    assert {:error, {:missing_protocol_fields, "event", "run_started", ["identities"]}} =
-             Reducer.apply_event(state, missing)
+    assert {:error, :event_session_identity_missing} = Reducer.apply_event(state, missing)
 
     assert {:error, :event_identity_mismatch} = Reducer.apply_event(state, mixed)
     assert {:error, :event_identity_mismatch} = Reducer.apply_event(state, foreign)

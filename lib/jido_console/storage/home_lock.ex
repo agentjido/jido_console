@@ -36,7 +36,7 @@ defmodule Jido.Console.Storage.HomeLock do
   defp lock_path(opts) do
     with {:ok, _home} <- Home.ensure(Keyword.take(opts, [:jido_home, :user_home])),
          {:ok, state} <- Home.path(:state, Keyword.take(opts, [:jido_home, :user_home])) do
-      {:ok, Path.join([state, "sessions", "v1", "home-lock.sqlite3"])}
+      {:ok, Path.join(state, "console-lock.sqlite3")}
     end
   end
 

@@ -2,12 +2,11 @@ defmodule Jido.Console.Session.State do
   @moduledoc """
   Renderer-neutral semantic session state.
 
-  Shared state is composed only from generated protocol values and classified
-  Console events. It contains no renderer data, process handles, or live
-  runtime values.
+  Shared state contains classified Console events. It contains no renderer
+  data, process handles, or live runtime values.
   """
 
-  alias Jido.Console.Session.Identity
+  alias Jido.Console.Session.{Envelope, Identity}
 
   @forbidden_keys MapSet.new(
                     ~w(ansi dom viewport draft cursor terminal_size key_chord palette navigation selection_anchor pid ref fun)
@@ -49,7 +48,7 @@ defmodule Jido.Console.Session.State do
   @spec validate(term()) :: :ok | {:error, term()}
   def validate(value), do: reject_forbidden(value, [])
 
-  @doc "Returns a protocol-safe snapshot of semantic state."
+  @doc "Returns a portable snapshot of semantic state."
   @spec to_protocol(t()) :: map()
   def to_protocol(state) do
     history = state.history
@@ -90,6 +89,12 @@ defmodule Jido.Console.Session.State do
   defp reject_forbidden(value, _path)
        when is_pid(value) or is_reference(value) or is_function(value) or is_port(value) do
     {:error, :live_runtime_forbidden}
+  end
+
+  defp reject_forbidden(%Envelope{} = envelope, path) do
+    envelope
+    |> Envelope.to_map()
+    |> reject_forbidden(path)
   end
 
   defp reject_forbidden(%module{} = _struct, _path) when module not in [Date, Time, DateTime, NaiveDateTime] do

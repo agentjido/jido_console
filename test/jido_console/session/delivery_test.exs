@@ -1,7 +1,7 @@
 defmodule Jido.Console.Session.DeliveryTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Session.{Delivery, Event, Protocol, Reducer, State}
+  alias Jido.Console.Session.{Delivery, Envelope, Event, Reducer, State}
 
   @identity %{
     session_id: "ses_1",
@@ -156,8 +156,6 @@ defmodule Jido.Console.Session.DeliveryTest do
   end
 
   test "the deprecated canonical gap remains readable but cannot enter new history" do
-    {:ok, schema} = Protocol.schema()
-
     attrs = %{
       "id" => "old_gap",
       "session_id" => "ses_1",
@@ -172,7 +170,7 @@ defmodule Jido.Console.Session.DeliveryTest do
       "current_sequence" => 1
     }
 
-    assert {:ok, old_gap} = Protocol.envelope(schema, "event", "delivery_gap", attrs)
+    assert {:ok, old_gap} = Envelope.new("event", "delivery_gap", attrs)
     assert {:ok, _readable} = Event.validate(old_gap)
     assert {:error, :deprecated_event_emission} = Event.classify(Map.put(attrs, "type", "delivery_gap"))
     assert {:error, :deprecated_event_emission} = Reducer.apply_event(State.new("ses_1"), old_gap)

@@ -7,14 +7,13 @@ defmodule Jido.Console.Session.Event do
   Origin is descriptive data and cannot grant authority.
   """
 
-  alias Jido.Console.Session.{Identity, Protocol}
-  alias Jido.Console.Session.Protocol.Validator
+  alias Jido.Console.Session.{Envelope, Identity}
 
   @durabilities ~w(ephemeral process)
   @sensitivities ~w(public redacted secret)
   @origin_kinds ~w(client session worker jidoka system)
 
-  @type t :: map()
+  @type t :: Envelope.t()
 
   @doc "Classifies one Console event from owner-allocated sequence data."
   @spec classify(map()) :: {:ok, t()} | {:error, term()}
@@ -24,10 +23,8 @@ defmodule Jido.Console.Session.Event do
     with :ok <- reject_deprecated_emission(attrs),
          :ok <- reject_runtime(attrs),
          {:ok, attrs} <- canonicalize_identities(attrs),
-         {:ok, schema} <- Protocol.schema(),
          {:ok, envelope} <-
-           Protocol.envelope(
-             schema,
+           Envelope.new(
              "event",
              attrs["type"],
              attrs
@@ -46,10 +43,9 @@ defmodule Jido.Console.Session.Event do
   defp reject_deprecated_emission(_attrs), do: :ok
 
   @doc "Validates one classified event envelope and its canonical session identity."
-  @spec validate(map()) :: {:ok, t()} | {:error, term()}
+  @spec validate(Envelope.t() | map()) :: {:ok, t()} | {:error, term()}
   def validate(event) when is_map(event) do
-    with :ok <- reject_runtime(event),
-         {:ok, event} <- Validator.validate(event),
+    with {:ok, event} <- Envelope.validate(event),
          :ok <- validate_event_semantics(event) do
       {:ok, event}
     end
@@ -116,10 +112,10 @@ defmodule Jido.Console.Session.Event do
     end
   end
 
-  defp validate_event_semantics(%{
-         "family" => "event",
-         "session_id" => session_id,
-         "payload" => payload
+  defp validate_event_semantics(%Envelope{
+         family: "event",
+         session_id: session_id,
+         payload: payload
        })
        when is_binary(session_id) and session_id != "" and is_map(payload) do
     with :ok <- require_sequence(payload),
@@ -134,7 +130,7 @@ defmodule Jido.Console.Session.Event do
     end
   end
 
-  defp validate_event_semantics(%{"family" => "event"}), do: {:error, :invalid_event_session_id}
+  defp validate_event_semantics(%Envelope{family: "event"}), do: {:error, :invalid_event_session_id}
   defp validate_event_semantics(_event), do: {:error, :invalid_event_envelope}
 
   defp ensure_session_identity(identities, session_id) do

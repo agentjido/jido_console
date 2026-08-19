@@ -40,8 +40,7 @@ defmodule Jido.Console.SessionClientContract do
     quote do
       use ExUnit.Case, async: true
 
-      alias Jido.Console.Session.{Client, Identity, Supervisor}
-      alias Jido.Console.Session.Protocol.Validator
+      alias Jido.Console.Session.{Client, Envelope, Identity, Supervisor}
 
       setup do
         suffix = System.unique_integer([:positive])
@@ -75,7 +74,7 @@ defmodule Jido.Console.SessionClientContract do
         assert handle.attachment.session_id == context.session.id
         assert handle.protocol == "1"
         assert attached.capabilities["grants_authority"] == false
-        assert {:ok, _snapshot} = Validator.validate(attached.snapshot)
+        assert {:ok, _snapshot} = Envelope.validate(attached.snapshot)
         assert attached.snapshot["type"] == "attach_snapshot"
 
         public = Map.from_struct(handle)
@@ -109,7 +108,7 @@ defmodule Jido.Console.SessionClientContract do
         refute_receive {:jido_console_session, ^attachment_id, :output_ready}, 20
 
         assert {:ok, batch} = Client.output(handle)
-        assert {:ok, ^batch} = Validator.validate(batch)
+        assert {:ok, ^batch} = Envelope.validate(batch)
         assert batch["type"] == "output_batch"
         assert Enum.count(batch["payload"]["events"], &(&1["type"] == "input_admitted")) == 3
         refute Enum.any?(batch["payload"]["events"], &(&1["type"] == "delivery_gap"))

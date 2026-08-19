@@ -43,8 +43,7 @@ defmodule Jido.Console.Session.EventTest do
       identities: [%{"kind" => "request", "id" => "req_1", "session_id" => "ses_1"}]
     }
 
-    assert {:error, {:missing_protocol_fields, "event", "input_admitted", ["sequence"]}} =
-             Event.classify(base)
+    assert {:error, :invalid_event_sequence} = Event.classify(base)
 
     assert {:error, :origin_cannot_grant_authority} =
              Event.classify(
@@ -107,8 +106,7 @@ defmodule Jido.Console.Session.EventTest do
     missing = update_in(event, ["payload"], &Map.delete(&1, "identities"))
     empty = put_in(event, ["payload", "identities"], [])
 
-    assert {:error, {:missing_protocol_fields, "event", "run_started", ["identities"]}} =
-             Event.validate(missing)
+    assert {:error, :event_session_identity_missing} = Event.validate(missing)
 
     assert {:error, :event_session_identity_missing} = Event.validate(empty)
   end

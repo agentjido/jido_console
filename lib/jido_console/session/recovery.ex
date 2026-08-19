@@ -7,8 +7,7 @@ defmodule Jido.Console.Session.Recovery do
   resume, or a durable delivery receipt.
   """
 
-  alias Jido.Console.Session.{Delivery, Protocol, Reducer, State}
-  alias Jido.Console.Session.Protocol.Validator
+  alias Jido.Console.Session.{Delivery, Envelope, Reducer, State}
 
   @max_snapshot_bytes 1_048_576
   @max_suffix_count 1_000
@@ -177,7 +176,7 @@ defmodule Jido.Console.Session.Recovery do
   @doc "Restores canonical state from a validated attach or recovery snapshot."
   @spec restore_snapshot(map(), keyword()) :: {:ok, State.t()} | {:error, term()}
   def restore_snapshot(envelope, opts \\ []) do
-    with {:ok, envelope} <- Validator.validate(envelope),
+    with {:ok, envelope} <- Envelope.validate(envelope),
          true <- envelope["family"] == "delivery" and envelope["type"] in ~w(attach_snapshot recovery_snapshot),
          :ok <- enforce_size(envelope, limit(opts, :snapshot_bytes, @max_snapshot_bytes), :snapshot_limit_exceeded),
          snapshot when is_map(snapshot) <- get_in(envelope, ["payload", "snapshot"]),
@@ -195,7 +194,7 @@ defmodule Jido.Console.Session.Recovery do
   @doc "Applies a validated suffix to temporary projection state."
   @spec apply_suffix(State.t(), map(), map(), keyword()) :: {:ok, State.t()} | {:error, term()}
   def apply_suffix(state, suffix, identity, opts \\ []) do
-    with {:ok, suffix} <- Validator.validate(suffix),
+    with {:ok, suffix} <- Envelope.validate(suffix),
          true <- suffix["family"] == "delivery" and suffix["type"] == "recovery_suffix",
          :ok <- validate_identity(state, identity),
          :ok <- validate_envelope_identity(suffix, identity),
@@ -264,7 +263,7 @@ defmodule Jido.Console.Session.Recovery do
     end
   end
 
-  defp require_gap(%{status: :gapped, gap: %{"payload" => %{"gap_id" => gap_id}}}, gap_id),
+  defp require_gap(%{status: :gapped, gap: %Envelope{payload: %{"gap_id" => gap_id}}}, gap_id),
     do: :ok
 
   defp require_gap(%{status: :gapped}, _gap_id), do: {:error, :stale_gap_identity}
@@ -337,10 +336,7 @@ defmodule Jido.Console.Session.Recovery do
   end
 
   defp envelope(type, attrs) do
-    with {:ok, schema} <- Protocol.schema(),
-         {:ok, envelope} <- Protocol.envelope(schema, "delivery", type, attrs) do
-      Validator.validate(envelope)
-    end
+    Envelope.new("delivery", type, attrs)
   end
 
   defp enforce_size(value, maximum, reason) do

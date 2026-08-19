@@ -1,7 +1,10 @@
-defmodule Jido.Console.Session.Durable.CredentialProfile do
+defmodule Jido.Console.Credential.ProfileSchema do
   @moduledoc "Strict secret-free credential profile and reference metadata contract."
 
-  alias Jido.Console.Session.Durable.{CanonicalJSON, Catalog, Value}
+  alias Jido.Console.PortableValue
+  alias Jido.Console.Storage.CanonicalJSON
+
+  @max_bytes 16 * 1_024
 
   @profile_fields ~w(profile_id profile_version source_identity references disabled)
   @profile_required ~w(profile_id profile_version source_identity references)
@@ -24,7 +27,7 @@ defmodule Jido.Console.Session.Durable.CredentialProfile do
   @doc "Validates profile metadata without reading or resolving a credential source."
   @spec validate(map()) :: :ok | {:error, term()}
   def validate(profile) when is_map(profile) do
-    with :ok <- Value.validate(profile),
+    with :ok <- PortableValue.validate(profile),
          :ok <- exact_fields(profile, @profile_required, @profile_fields, :credential_profile),
          :ok <- validate_profile_identity(profile),
          :ok <- validate_references(profile["references"]),
@@ -122,11 +125,9 @@ defmodule Jido.Console.Session.Durable.CredentialProfile do
   end
 
   defp validate_size(bytes) do
-    {:ok, limit} = Catalog.limit("credential_metadata_bytes")
-
-    if byte_size(bytes) <= limit,
+    if byte_size(bytes) <= @max_bytes,
       do: :ok,
-      else: {:error, {:oversized_credential_metadata, byte_size(bytes), limit}}
+      else: {:error, {:oversized_credential_metadata, byte_size(bytes), @max_bytes}}
   end
 
   defp safe_lookup_value?(value) do

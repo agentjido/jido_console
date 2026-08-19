@@ -3,9 +3,8 @@ defmodule Jido.Console.Session.Client.Local do
 
   @behaviour Jido.Console.Session.Client.Driver
 
-  alias Jido.Console.Session.{Catalog, Identity, Registry, Server}
+  alias Jido.Console.Session.{Catalog, Envelope, Identity, Registry, Server}
   alias Jido.Console.Session.Client.{Driver, Handle}
-  alias Jido.Console.Session.Protocol.Validator
 
   @protocol "1"
 
@@ -21,7 +20,7 @@ defmodule Jido.Console.Session.Client.Local do
          {:ok, client} <- client_identity(session_id, fence, opts),
          {:ok, %{attachment: attachment, snapshot: snapshot}} <-
            Server.attach(server, client, attach_options(opts)),
-         {:ok, snapshot} <- Validator.validate(snapshot) do
+         {:ok, snapshot} <- Envelope.validate(snapshot) do
       handle =
         Handle.new(
           session:
@@ -184,7 +183,7 @@ defmodule Jido.Console.Session.Client.Local do
   end
 
   defp validate_delivery(envelope, type) do
-    with {:ok, envelope} <- Validator.validate(envelope),
+    with {:ok, envelope} <- Envelope.validate(envelope),
          true <- envelope["family"] == "delivery" and envelope["type"] == type,
          false <- Enum.any?(envelope["payload"]["events"], &(&1["type"] == "delivery_gap")) do
       {:ok, envelope}
@@ -195,7 +194,7 @@ defmodule Jido.Console.Session.Client.Local do
   end
 
   defp validate_gap(envelope) do
-    with {:ok, envelope} <- Validator.validate(envelope),
+    with {:ok, envelope} <- Envelope.validate(envelope),
          true <- envelope["family"] == "delivery" and envelope["type"] == "gap" do
       {:gap, envelope}
     else
@@ -205,7 +204,7 @@ defmodule Jido.Console.Session.Client.Local do
   end
 
   defp validate_recovery({:ok, envelope}, type) do
-    with {:ok, envelope} <- Validator.validate(envelope),
+    with {:ok, envelope} <- Envelope.validate(envelope),
          true <- envelope["family"] == "delivery" and envelope["type"] == type do
       {:ok, envelope}
     else

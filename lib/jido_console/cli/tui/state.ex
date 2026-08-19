@@ -2,6 +2,7 @@ defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
   alias Jido.Console.Tui.{Activity, Editor, SafeText, Selection, SemanticProjection, Turn}
+  alias Jido.Console.Session.Envelope
   alias Jido.Console.Session.Request, as: SessionRequest
 
   @default_history_limit 100
@@ -78,6 +79,10 @@ defmodule Jido.Console.Tui.State do
   @doc "Restores renderer state from a bounded semantic session snapshot."
   @spec restore_snapshot(t(), map() | nil, SessionRequest.t() | nil) :: t()
   def restore_snapshot(state, snapshot, active_request \\ nil)
+
+  def restore_snapshot(%__MODULE__{} = state, %Envelope{} = snapshot, active_request) do
+    restore_snapshot(state, Envelope.to_map(snapshot), active_request)
+  end
 
   def restore_snapshot(
         %__MODULE__{} = state,
@@ -578,7 +583,7 @@ defmodule Jido.Console.Tui.State do
          %__MODULE__{activity: {:review, request, turn, event, :awaiting}} = state,
          decision
        )
-       when is_map(event) and not is_struct(event) do
+       when is_map(event) do
     review = List.first(turn.reviews) || %{}
     turn = turn |> Turn.decide_review(review, decision) |> Turn.resume()
 
@@ -639,6 +644,8 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp runtime_selection_changed?(_left, _right), do: false
+
+  defp restore_event(acc, %Envelope{} = event), do: restore_event(acc, Envelope.to_map(event))
 
   defp restore_event(acc, %{"type" => "run_started", "payload" => payload}) do
     prompt = Map.get(payload, "prompt", "")

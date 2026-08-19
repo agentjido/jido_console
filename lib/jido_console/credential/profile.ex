@@ -2,12 +2,10 @@ defmodule Jido.Console.Credential.Profile do
   @moduledoc "Versioned, immutable, and secret-free credential profile operations."
 
   alias Jido.Console.Credential.Resolver
-  alias Jido.Console.Session.Durable.{CredentialProfile, Record}
+  alias Jido.Console.Credential.ProfileSchema
   alias Jido.Console.Storage
 
-  @scope_prefix "credential-profile:"
   @profile_limit 128
-  @profile_list_bytes 2 * 1_024 * 1_024
 
   @type selection :: %{
           profile_id: String.t(),
@@ -41,8 +39,8 @@ defmodule Jido.Console.Credential.Profile do
     with :ok <- validate_profile(profile),
          {:ok, records} <- history(profile["profile_id"], opts),
          {:ok, latest} <- latest_record(records, profile["profile_id"]),
-         :ok <- require_version(profile, latest.record["payload"]["profile_version"] + 1),
-         :ok <- stable_profile_identity(latest.record["payload"], profile) do
+         :ok <- require_version(profile, latest.profile["profile_version"] + 1),
+         :ok <- stable_profile_identity(latest.profile, profile) do
       append(profile, latest, opts)
     end
   end
@@ -54,7 +52,7 @@ defmodule Jido.Console.Credential.Profile do
   def disable(profile_id, opts \\ []) when is_binary(profile_id) do
     with {:ok, records} <- history(profile_id, opts),
          {:ok, latest} <- latest_record(records, profile_id) do
-      profile = latest.record["payload"]
+      profile = latest.profile
 
       if Map.get(profile, "disabled", false) do
         {:ok, Map.put(redacted(profile), :duplicate, true)}
@@ -73,7 +71,7 @@ defmodule Jido.Console.Credential.Profile do
       when is_binary(profile_id) and is_binary(reference_id) do
     with {:ok, records} <- history(profile_id, opts),
          {:ok, latest} <- latest_record(records, profile_id),
-         profile = latest.record["payload"],
+         profile = latest.profile,
          {:ok, reference} <- exact_reference(profile, reference_id) do
       if Map.get(reference, "disabled", false) do
         {:ok, Map.put(redacted(profile), :duplicate, true)}
@@ -95,11 +93,9 @@ defmodule Jido.Console.Credential.Profile do
   @doc "Lists the latest redacted version of each profile."
   @spec list(keyword()) :: {:ok, [map()]} | {:error, term()}
   def list(opts \\ []) do
-    with {:ok, records} <-
-           storage(opts).credential_profile_records(
-             Keyword.merge(opts, limit: @profile_limit, max_bytes: @profile_list_bytes)
-           ) do
-      {:ok, records |> Enum.map(&redacted(&1.record["payload"])) |> Enum.sort_by(& &1.profile_id)}
+    with {:ok, records} <- storage(opts).credential_profiles(opts) do
+      records = Enum.take(records, @profile_limit)
+      {:ok, records |> Enum.map(&redacted(&1.profile)) |> Enum.sort_by(& &1.profile_id)}
     end
   end
 
@@ -108,7 +104,7 @@ defmodule Jido.Console.Credential.Profile do
   def show(profile_id, opts \\ []) when is_binary(profile_id) and is_list(opts) do
     with {:ok, records} <- history(profile_id, opts),
          {:ok, latest} <- latest_record(records, profile_id) do
-      {:ok, redacted(latest.record["payload"])}
+      {:ok, redacted(latest.profile)}
     end
   end
 
@@ -116,7 +112,7 @@ defmodule Jido.Console.Credential.Profile do
   @spec show(String.t(), pos_integer(), keyword()) :: {:ok, map()} | {:error, term()}
   def show(profile_id, version, opts) when is_binary(profile_id) and is_integer(version) and version > 0 do
     with {:ok, encoded} <- load_version(profile_id, version, opts) do
-      {:ok, redacted(encoded.record["payload"])}
+      {:ok, redacted(encoded.profile)}
     end
   end
 
@@ -141,7 +137,7 @@ defmodule Jido.Console.Credential.Profile do
     version = Keyword.get(opts, :profile_version)
 
     with {:ok, encoded} <- load_selected_version(profile_id, version, opts),
-         profile = encoded.record["payload"],
+         profile = encoded.profile,
          :ok <- profile_enabled(profile),
          {:ok, reference} <- select_reference(profile, Keyword.get(opts, :reference_id)) do
       {:ok,
@@ -163,8 +159,8 @@ defmodule Jido.Console.Credential.Profile do
          {:ok, encoded} <- load_version(normalized.profile_id, normalized.profile_version, opts),
          {:ok, records} <- history(normalized.profile_id, opts),
          {:ok, latest} <- latest_record(records, normalized.profile_id),
-         profile = encoded.record["payload"],
-         current = latest.record["payload"],
+         profile = encoded.profile,
+         current = latest.profile,
          :ok <- profile_enabled(current),
          {:ok, current_reference} <- exact_reference(current, normalized.reference_id),
          :ok <- reference_enabled(current_reference),
@@ -186,57 +182,26 @@ defmodule Jido.Console.Credential.Profile do
   def materialize(selection, callback, opts) when is_map(selection) and is_function(callback, 1) do
     with {:ok, compatible} <- compatibility(selection, opts),
          {:ok, encoded} <- load_version(compatible.profile_id, compatible.profile_version, opts),
-         {:ok, reference} <- exact_reference(encoded.record["payload"], compatible.reference_id) do
+         {:ok, reference} <- exact_reference(encoded.profile, compatible.reference_id) do
       Resolver.materialize(reference, callback, opts)
     end
   end
 
   def materialize(_selection, _callback, _opts), do: {:error, :invalid_credential_materialization}
 
-  defp append(profile, prior, opts) do
-    sequence = profile["profile_version"] - 1
-    prior_digest = if prior, do: prior.digest, else: "genesis"
-
-    record =
-      Record.new("credential_profile_reference", profile,
-        record_id: record_id(profile["profile_id"], profile["profile_version"]),
-        scope_id: scope_id(profile["profile_id"]),
-        generation: 0,
-        sequence: sequence,
-        prior_record_digest: prior_digest
-      )
-
+  defp append(profile, _prior, opts) do
     with {:ok, operation_id} <- operation_id(opts),
-         {:ok, desired} <- Record.encode(record) do
-      append_or_return(record, desired, operation_id, opts)
-    end
-  end
-
-  defp append_or_return(record, desired, operation_id, opts) do
-    case storage(opts).receipt(operation_id, opts) do
-      {:ok, %{target_id: target, result_digest: digest}} ->
-        if target == record["record_id"] and digest == desired.digest do
-          {:ok, Map.put(redacted(record["payload"]), :duplicate, true)}
-        else
-          {:error, {:credential_operation_conflict, operation_id}}
-        end
-
-      {:error, {:operation_not_found, ^operation_id}} ->
-        with {:ok, result} <- storage(opts).append(record, Keyword.put(opts, :operation_id, operation_id)) do
-          {:ok, redacted(record["payload"]) |> Map.merge(%{digest: result.digest, duplicate: false})}
-        end
-
-      {:error, _reason} = error ->
-        error
+         {:ok, result} <- storage(opts).put_credential_profile(profile, operation_id, storage_opts(opts)) do
+      {:ok,
+       redacted(profile)
+       |> Map.put(:digest, result.digest)
+       |> Map.put(:duplicate, result.duplicate)}
     end
   end
 
   defp history(profile_id, opts) do
     if valid_id?(profile_id) do
-      storage(opts).range(
-        scope_id(profile_id),
-        Keyword.merge(opts, limit: 128, max_bytes: @profile_list_bytes)
-      )
+      storage(opts).credential_profile_history(profile_id, storage_opts(opts))
     else
       {:error, :invalid_credential_profile_id}
     end
@@ -250,7 +215,7 @@ defmodule Jido.Console.Credential.Profile do
 
   defp load_version(profile_id, version, opts) do
     with {:ok, records} <- history(profile_id, opts) do
-      case Enum.find(records, &(&1.record["payload"]["profile_version"] == version)) do
+      case Enum.find(records, &(&1.profile["profile_version"] == version)) do
         nil -> {:error, {:credential_profile_version_not_found, profile_id, version}}
         encoded -> {:ok, encoded}
       end
@@ -261,7 +226,7 @@ defmodule Jido.Console.Credential.Profile do
   defp latest_record(records, _profile_id), do: {:ok, List.last(records)}
 
   defp validate_profile(profile) do
-    with :ok <- CredentialProfile.validate(profile),
+    with :ok <- ProfileSchema.validate(profile),
          true <- valid_id?(profile["profile_id"]),
          true <- Enum.all?(profile["references"], &valid_id?(&1["reference_id"])),
          true <- Enum.all?(profile["references"], &(&1["source_identity"] == profile["source_identity"])) do
@@ -401,8 +366,7 @@ defmodule Jido.Console.Credential.Profile do
     end
   end
 
-  defp record_id(profile_id, version), do: "credential-profile:#{profile_id}:v#{version}"
-  defp scope_id(profile_id), do: @scope_prefix <> profile_id
   defp valid_id?(value), do: is_binary(value) and Regex.match?(~r/\A[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\z/, value)
+  defp storage_opts(opts), do: Keyword.take(opts, [:writer, :deadline])
   defp storage(opts), do: Keyword.get(opts, :storage, Storage)
 end

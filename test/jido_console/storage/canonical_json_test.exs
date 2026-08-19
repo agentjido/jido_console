@@ -1,7 +1,7 @@
-defmodule Jido.Console.Session.Durable.CanonicalJSONTest do
+defmodule Jido.Console.Storage.CanonicalJSONTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Session.Durable.CanonicalJSON
+  alias Jido.Console.Storage.CanonicalJSON
 
   test "equivalent maps have identical recursive canonical bytes" do
     first = %{"z" => 1, "a" => %{"z" => 2, "a" => [3, %{"b" => 2, "a" => 1}]}}
