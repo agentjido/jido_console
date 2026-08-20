@@ -70,12 +70,14 @@ defmodule Jido.Console.Bootstrap do
   end
 
   defp ensure_extracted(script, cache_root, cache, digest, opts) do
-    if File.exists?(cache) do
-      validate_cache(cache, digest)
-    else
-      with :ok <- report_progress(opts, :extracting_escript) do
-        extract_atomically(script, cache_root, cache, digest, opts)
-      end
+    case validate_cache(cache, digest) do
+      {:error, :escript_cache_missing} ->
+        with :ok <- report_progress(opts, :extracting_escript) do
+          extract_atomically(script, cache_root, cache, digest, opts)
+        end
+
+      result ->
+        result
     end
   end
 
@@ -144,8 +146,16 @@ defmodule Jido.Console.Bootstrap do
   end
 
   defp validate_cache(cache, digest) do
-    with {:ok, %{type: :directory, mode: mode}} <- File.lstat(cache),
-         true <- Bitwise.band(mode, 0o077) == 0,
+    case File.lstat(cache) do
+      {:ok, %{type: :directory, mode: mode}} -> validate_cache_directory(cache, digest, mode)
+      {:ok, _stat} -> {:error, :escript_cache_is_not_a_directory}
+      {:error, :enoent} -> {:error, :escript_cache_missing}
+      {:error, reason} -> {:error, {:escript_cache_invalid, reason}}
+    end
+  end
+
+  defp validate_cache_directory(cache, digest, mode) do
+    with true <- Bitwise.band(mode, 0o077) == 0,
          marker = Path.join(cache, @marker),
          {:ok, %{type: :regular, mode: marker_mode}} <- File.lstat(marker),
          true <- Bitwise.band(marker_mode, 0o077) == 0,

@@ -362,7 +362,7 @@ defmodule Jido.Console.CLI do
     if Keyword.get(opts, :eager_application_startup, false) do
       IO.puts(:stderr, "jido: starting...")
 
-      with :ok <- invoke_application_startup(opts) do
+      with :ok <- Jido.Console.RuntimeStartup.invoke(opts) do
         opts =
           opts
           |> Keyword.delete(:eager_application_startup)
@@ -373,17 +373,6 @@ defmodule Jido.Console.CLI do
     else
       tui.run(opts)
     end
-  end
-
-  defp invoke_application_startup(opts) do
-    case Keyword.fetch!(opts, :application_startup) do
-      startup when is_function(startup, 0) -> startup.()
-      _startup -> {:error, :invalid_application_startup}
-    end
-  rescue
-    exception -> {:error, exception}
-  catch
-    kind, reason -> {:error, {kind, reason}}
   end
 
   defp normalize_interactive_options(options) do

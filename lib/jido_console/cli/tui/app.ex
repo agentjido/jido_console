@@ -129,7 +129,7 @@ defmodule Jido.Console.Tui.App do
   end
 
   defp boot(opts, size) do
-    with :ok <- application_startup(opts),
+    with :ok <- Jido.Console.RuntimeStartup.invoke(opts),
          {:ok, %{handle: handle, view: session_view}} <- attach(opts) do
       tui = session_state(handle, session_view, size, opts)
 
@@ -187,17 +187,6 @@ defmodule Jido.Console.Tui.App do
     end
   rescue
     exception -> {:error, {:session_attach_failed, exception}}
-  end
-
-  defp application_startup(opts) do
-    case Keyword.get(opts, :application_startup, fn -> :ok end) do
-      startup when is_function(startup, 0) -> startup.()
-      _startup -> {:error, :invalid_application_startup}
-    end
-  rescue
-    exception -> {:error, exception}
-  catch
-    kind, reason -> {:error, {kind, reason}}
   end
 
   defp register_interactive(opts) do
