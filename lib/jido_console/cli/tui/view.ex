@@ -317,15 +317,17 @@ defmodule Jido.Console.Tui.View do
         []
       else
         1..last_column
-        |> Enum.flat_map(fn column ->
-          cell = Frame.cell(frame, row, column)
-
-          if cell.wide_placeholder,
-            do: [],
-            else: [{cell.char, %Style{fg: cell.fg, bg: cell.bg, attrs: cell.attrs}}]
-        end)
+        |> Enum.flat_map(&styled_frame_cell(frame, row, &1))
       end
     end)
+  end
+
+  defp styled_frame_cell(frame, row, column) do
+    cell = Frame.cell(frame, row, column)
+
+    if cell.wide_placeholder,
+      do: [],
+      else: [{cell.char, %Style{fg: cell.fg, bg: cell.bg, attrs: cell.attrs}}]
   end
 
   defp structural_diff_rows(%{"redacted" => true}), do: ["  diff redacted"]
