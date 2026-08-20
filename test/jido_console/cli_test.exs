@@ -89,6 +89,7 @@ defmodule Jido.ConsoleTest do
   test "main handles help and version without starting the application" do
     traced_calls = [
       {Jido.Console.Env, :load_provider_credentials, 0},
+      {Jido.Console.Bootstrap, :start_applications, 0},
       {Application, :ensure_all_started, 1}
     ]
 
@@ -127,6 +128,14 @@ defmodule Jido.ConsoleTest do
         ] do
       assert capture_io(fn -> assert :ok = Jido.Console.CLI.main(args) end) =~ "Usage:"
     end
+  end
+
+  test "main runs local status without starting the full application" do
+    startup = fn -> flunk("local status started the full application") end
+
+    assert capture_io(fn ->
+             assert :ok = Jido.Console.CLI.main(["status"], application_startup: startup)
+           end) =~ "jido:"
   end
 
   test "formats TUI errors at the CLI boundary" do

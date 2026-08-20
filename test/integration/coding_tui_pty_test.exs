@@ -42,6 +42,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
 
   test "runs a provider-free Jidoka turn and restores its durable View", context do
     thread_id = "coding-tui-thread"
+    {:ok, event_queue} = Agent.start_link(fn -> :queue.new() end)
     llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "Provider-free answer."}} end
 
     opts = [
@@ -55,7 +56,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
       coding_pack: :disabled,
       turn_opts: [llm: llm],
       term_ui_backend: TermUIBackend,
-      term_ui_backend_opts: [test_pid: self(), size: {20, 80}],
+      term_ui_backend_opts: [test_pid: self(), event_queue: event_queue, size: {20, 80}],
       application_startup: fn -> :ok end,
       process_register: fn _kind, _pid, _opts -> {:ok, %{}} end,
       process_stop: fn _id, _opts -> :ok end,
@@ -68,8 +69,8 @@ defmodule Jido.Console.CodingTuiPtyTest do
     assert_receive {:term_ui_started, runtime}, 2_000
     assert_frame("idle · Enter sends")
 
-    TermUI.Runtime.send_event(runtime, TermUI.Event.paste("Inspect this project."))
-    TermUI.Runtime.send_event(runtime, TermUI.Event.key(:enter))
+    send_event(event_queue, TermUI.Event.paste("Inspect this project."))
+    send_event(event_queue, TermUI.Event.key(:enter))
     assert_frame("Provider-free answer.", 5_000)
 
     TermUI.Runtime.shutdown(runtime)
@@ -100,4 +101,8 @@ defmodule Jido.Console.CodingTuiPtyTest do
   end
 
   defp unique(label, suffix), do: String.to_atom("#{label}-#{suffix}")
+
+  defp send_event(queue, event) do
+    Agent.update(queue, &:queue.in(event, &1))
+  end
 end

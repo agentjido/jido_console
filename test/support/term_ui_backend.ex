@@ -6,19 +6,21 @@ defmodule Jido.Console.Test.TermUIBackend do
   @impl true
   def init(opts) do
     test_pid = Keyword.fetch!(opts, :test_pid)
-    send(test_pid, {:term_ui_started, self()})
+    send(test_pid, {:term_ui_started, Keyword.fetch!(opts, :runtime)})
 
     {:ok,
      %{
        test_pid: test_pid,
        fail_draw?: Keyword.get(opts, :fail_draw, false),
+       fail_flush?: Keyword.get(opts, :fail_flush, false),
+       event_queue: Keyword.fetch!(opts, :event_queue),
        size: Keyword.get(opts, :size, {16, 60}),
-       screen: %{}
+       frame_count: 0
      }}
   end
 
   @impl true
-  def shutdown(state) do
+  def shutdown(state, _reason) do
     send(state.test_pid, :terminal_closed)
     :ok
   end
@@ -27,40 +29,49 @@ defmodule Jido.Console.Test.TermUIBackend do
   def size(state), do: {:ok, state.size}
 
   @impl true
-  def move_cursor(state, _position), do: {:ok, state}
+  def capabilities(_state), do: %{colors: :true_color, unicode: true}
 
   @impl true
-  def hide_cursor(state), do: {:ok, state}
+  def draw(%{fail_draw?: true}, _frame), do: {:error, :draw_failed}
 
-  @impl true
-  def show_cursor(state), do: {:ok, state}
-
-  @impl true
-  def clear(state), do: {:ok, %{state | screen: %{}}}
-
-  @impl true
-  def draw_cells(%{fail_draw?: true}, _cells), do: {:error, :draw_failed}
-
-  def draw_cells(state, cells) do
-    screen = Enum.reduce(cells, state.screen, &put_cell/2)
-    send(state.test_pid, {:frame, screen_text(screen, state.size)})
-    {:ok, %{state | screen: screen}}
+  def draw(state, frame) do
+    send(state.test_pid, {:frame, frame_text(frame)})
+    send(state.test_pid, {:term_ui_frame, frame})
+    {:ok, %{state | frame_count: state.frame_count + 1}}
   end
 
   @impl true
+  def flush(%{fail_flush?: true}), do: {:error, :flush_failed}
   def flush(state), do: {:ok, state}
 
   @impl true
-  def poll_event(state, _timeout), do: {:timeout, state}
+  def poll_event(state, timeout) do
+    case Agent.get_and_update(state.event_queue, fn queue ->
+           case :queue.out(queue) do
+             {{:value, event}, rest} -> {{:event, event}, rest}
+             {:empty, queue} -> {:empty, queue}
+           end
+         end) do
+      {:event, event} ->
+        {:ok, event, state}
 
-  defp put_cell({position, {character, _foreground, _background, _attributes}}, screen),
-    do: Map.put(screen, position, character)
+      :empty ->
+        Process.sleep(min(timeout, 5))
+        {:timeout, state}
+    end
+  end
 
-  defp screen_text(screen, {rows, columns}) do
-    Enum.map_join(1..rows, "\n", fn row ->
-      1..columns
-      |> Enum.map_join(&Map.get(screen, {row, &1}, " "))
-      |> String.trim_trailing()
-    end)
+  @impl true
+  def resize(state, size), do: {:ok, %{state | size: size}}
+
+  @impl true
+  def clipboard(state, operation) do
+    send(state.test_pid, {:clipboard, operation})
+    {:ok, state}
+  end
+
+  defp frame_text(frame) do
+    1..frame.height
+    |> Enum.map_join("\n", fn row -> frame |> TermUI.Frame.row_text(row) |> String.trim_trailing() end)
   end
 end

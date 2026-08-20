@@ -3,35 +3,43 @@ defmodule Jido.Console.Tui.View do
 
   alias Jido.Console.Tui.{Activity, Editor, SafeText, Selection, State}
   alias Jido.Console.Tui.Turn.Tool
-  alias Jido.Console.Terminal.Frame
+  alias Jido.Console.Terminal.TextLayout
+  alias TermUI.{Frame, Markdown, Style}
+  alias TermUI.Widget.DiffViewer
+
+  @max_rendered_turns 200
+  @max_transcript_rows 2_000
+  @max_markdown_bytes 512_000
+  @max_diff_rows 200
 
   @spec render(State.t()) :: Frame.t()
   def render(%State{size: {width, 1}}) do
-    Frame.new(width, 1, ["Jido · resize"], cursor: nil)
+    Frame.from_rows(["Jido · resize"], width, 1)
   end
 
   def render(%State{size: {width, height}}) when width < 12 or height < 5 do
-    Frame.new(width, height, ["Jido", "Resize terminal."], cursor: nil)
+    Frame.from_rows(["Jido", "Resize terminal."], width, height)
   end
 
   def render(%State{size: {width, height}} = state) do
     prompt_limit = min(5, max(height - 4, 1))
-    {editor_rows, {cursor_column, cursor_row}} = Editor.render(state.editor, max(width - 2, 1), prompt_limit)
-    prompt = prompt_rows(editor_rows)
-    body_height = max(height - 3 - length(prompt), 0)
+    editor = Editor.frame(state.editor, max(width - 2, 1), prompt_limit)
+    body_height = max(height - 3 - editor.height, 0)
     review = review_rows(state.coding_reviews, width, min(div(height, 2), body_height))
     transcript_height = max(body_height - length(review), 0)
-    transcript = transcript_viewport(transcript_rows(state, width), transcript_height, state.scroll_offset)
+    row_limit = min(transcript_height + state.scroll_offset, @max_transcript_rows)
+    transcript = transcript_viewport(transcript_rows(state, width, row_limit), transcript_height, state.scroll_offset)
     divider = String.duplicate("─", width)
     status = status_row(state)
 
+    prompt = for row <- 1..editor.height, do: if(row == 1, do: "> ", else: "  ")
     rows = [title(state)] ++ transcript ++ review ++ [divider, status] ++ prompt
-    prompt_start = height - length(prompt) + 1
-    cursor = {min(cursor_column + 3, width), prompt_start + cursor_row}
-    Frame.new(width, height, rows, cursor: cursor)
-  end
+    prompt_start = height - editor.height + 1
 
-  defp prompt_rows([first | rest]), do: ["> " <> first | Enum.map(rest, &("  " <> &1))]
+    rows
+    |> Frame.from_rows(width, height)
+    |> Frame.overlay(editor, 3, prompt_start)
+  end
 
   defp transcript_viewport(_rows, 0, _offset), do: []
 
@@ -43,16 +51,43 @@ defmodule Jido.Console.Tui.View do
     List.duplicate("", height - length(visible)) ++ visible
   end
 
-  defp transcript_rows(state, width) do
-    instructions = instruction_rows(state.project_instructions, width)
+  defp transcript_rows(_state, _width, 0), do: []
+
+  defp transcript_rows(state, width, row_limit) do
     active_turn = State.active_turn(state)
 
     if state.turns == [] and is_nil(active_turn) do
-      instructions ++ legacy_transcript_rows(state, width)
+      recent_rows(state.messages, row_limit, &message_rows([&1], width, row_limit))
+      |> prepend_instructions(state.project_instructions, width, row_limit)
     else
       turns = state.turns ++ if(active_turn, do: [active_turn], else: [])
-      instructions ++ Enum.flat_map(turns, &turn_rows(&1, width))
+
+      turns
+      |> Enum.take(-@max_rendered_turns)
+      |> recent_rows(row_limit, &turn_rows(&1, width, row_limit))
+      |> prepend_instructions(state.project_instructions, width, row_limit)
     end
+  end
+
+  defp recent_rows(items, limit, render) do
+    items
+    |> Enum.reverse()
+    |> Enum.reduce_while([], fn item, rows ->
+      if length(rows) >= limit do
+        {:halt, rows}
+      else
+        block = render.(item)
+        {:cont, Enum.take(block ++ rows, -limit)}
+      end
+    end)
+  end
+
+  defp prepend_instructions(rows, _instructions, _width, limit) when length(rows) >= limit,
+    do: rows
+
+  defp prepend_instructions(rows, instructions, width, limit) do
+    (instruction_rows(instructions, width) ++ rows)
+    |> Enum.take(-limit)
   end
 
   defp instruction_rows(instructions, width) do
@@ -65,28 +100,36 @@ defmodule Jido.Console.Tui.View do
     |> message_rows(width)
   end
 
-  defp legacy_transcript_rows(state, width), do: message_rows(state.messages, width)
-
   defp message_rows(messages, width) do
-    Enum.flat_map(messages, fn message ->
-      role = role(message.role)
-      [role | Frame.wrap(SafeText.clean(message.content), width)] ++ [""]
-    end)
+    Enum.flat_map(messages, &message_block(&1, width, @max_transcript_rows))
   end
 
-  defp turn_rows(turn, width) do
-    user = content_rows("User", turn.prompt, width)
+  defp message_rows(messages, width, limit) do
+    Enum.flat_map(messages, &message_block(&1, width, limit))
+  end
+
+  defp message_block(message, width, limit) do
+    case role(message.role) do
+      "Assistant" -> markdown_rows("Assistant", message.content, width, limit)
+      label -> content_rows(label, message.content, width, limit)
+    end
+  end
+
+  defp turn_rows(turn, width, limit) do
+    user = content_rows("User", turn.prompt, width, limit)
 
     attachments =
       Enum.map(turn.attachments, fn attachment ->
-        Frame.fit("  @#{attachment["path"]} · #{attachment["size"] || 0} bytes", width)
+        TextLayout.fit("  @#{attachment["path"]} · #{attachment["size"] || 0} bytes", width)
       end)
 
     tools = Enum.flat_map(turn.tool_order, &tool_rows(Map.fetch!(turn.tools, &1), width))
-    assistant = content_rows(assistant_role(turn), turn.assistant, width)
+    assistant = markdown_rows(assistant_role(turn), turn.assistant, width, limit)
     reviews = Enum.flat_map(turn.reviews, &approval_rows(&1, width))
     error = error_rows(turn.outcome, width)
-    user ++ attachments ++ tools ++ assistant ++ reviews ++ error
+
+    (user ++ attachments ++ tools ++ assistant ++ reviews ++ error)
+    |> Enum.take(-limit)
   end
 
   defp error_rows(%{status: :failed, error: error}, width) when is_binary(error) and error != "",
@@ -100,7 +143,29 @@ defmodule Jido.Console.Tui.View do
   defp assistant_role(_turn), do: "Assistant"
 
   defp content_rows(_role, "", _width), do: []
-  defp content_rows(role, content, width), do: [role | Frame.wrap(content, width)] ++ [""]
+  defp content_rows(role, content, width), do: [role | TextLayout.wrap(content, width)] ++ [""]
+
+  defp content_rows(_role, "", _width, _limit), do: []
+
+  defp content_rows(role, content, width, limit) do
+    ([role] ++ TextLayout.wrap_tail(content, width, max(limit - 2, 1)) ++ [""])
+    |> Enum.take(-limit)
+  end
+
+  defp markdown_rows(_role, "", _width, _limit), do: []
+
+  defp markdown_rows(role, content, width, limit) do
+    byte_limit = min(@max_markdown_bytes, max(limit * width * 8, 4_096))
+
+    rendered =
+      content
+      |> TextLayout.retain_tail(byte_limit)
+      |> Markdown.render(width)
+      |> Enum.take(-max(limit - 2, 1))
+
+    ([role] ++ rendered ++ [""])
+    |> Enum.take(-limit)
+  end
 
   defp tool_rows(%Tool{} = tool, width) do
     operation = SafeText.summary(tool.operation || "tool")
@@ -113,7 +178,7 @@ defmodule Jido.Console.Tui.View do
         ["  #{SafeText.summary(tool.summary)}"]
       end
 
-    Enum.map([header | detail], &Frame.fit(&1, width))
+    Enum.map([header | detail], &TextLayout.fit(&1, width))
   end
 
   defp approval_rows(review, width) do
@@ -146,7 +211,7 @@ defmodule Jido.Console.Tui.View do
           ["[review #{status}] #{operation}#{arguments_suffix(arguments)}"]
       end
 
-    Enum.map(rows, &Frame.fit(&1, width))
+    Enum.map(rows, &TextLayout.fit(&1, width))
   end
 
   defp arguments_suffix(arguments) when arguments in [nil, "", "%{}"], do: ""
@@ -166,7 +231,7 @@ defmodule Jido.Console.Tui.View do
 
   defp title(state) do
     {width, _height} = state.size
-    Frame.fit(title_prefix(state.selection) <> String.duplicate("─", width), width)
+    TextLayout.fit(title_prefix(state.selection) <> String.duplicate("─", width), width)
   end
 
   defp title_prefix(nil), do: " Jido "
@@ -180,7 +245,7 @@ defmodule Jido.Console.Tui.View do
     rows = Enum.take(all_rows, limit)
 
     if length(rows) < length(all_rows),
-      do: List.replace_at(rows, -1, Frame.fit("… review truncated", width)),
+      do: List.replace_at(rows, -1, TextLayout.fit("… review truncated", width)),
       else: rows
   end
 
@@ -191,7 +256,7 @@ defmodule Jido.Console.Tui.View do
 
     checkpoint = if review["checkpoint_ref"], do: ["  checkpoint #{review["checkpoint_ref"]}"], else: []
     diff = structural_diff_rows(review["diff"])
-    Enum.map([header] ++ checkpoint ++ diff, &Frame.fit(&1, width))
+    Enum.map([header] ++ checkpoint ++ diff, &TextLayout.fit(&1, width))
   end
 
   defp review_record(%{"kind" => "git_diff"} = review, width) do
@@ -209,15 +274,58 @@ defmodule Jido.Console.Tui.View do
         "  #{file["path"]} · #{facts}"
       end)
 
-    patch = review["patch"] |> SafeText.clean() |> String.split("\n") |> Enum.take(4) |> Enum.map(&("  " <> &1))
-    Enum.map([header] ++ files ++ patch, &Frame.fit(&1, width))
+    patch = diff_rows(review["patch"], width)
+    Enum.map([header] ++ files, &TextLayout.fit(&1, width)) ++ patch
   end
 
   defp review_record(review, width) do
     header = "#{marker(review["status"])} #{review["path"] || "coding mutation"} · #{review["status"]}"
     checkpoint = if review["checkpoint_ref"], do: ["  checkpoint #{review["checkpoint_ref"]}"], else: []
     message = if review["message"], do: ["  #{review["message"]}"], else: []
-    Enum.map([header] ++ checkpoint ++ message, &Frame.fit(&1, width))
+    Enum.map([header] ++ checkpoint ++ message, &TextLayout.fit(&1, width))
+  end
+
+  defp diff_rows(patch, width) do
+    inner_width = max(width - 2, 1)
+
+    viewer =
+      DiffViewer.init(
+        unified_diff: SafeText.clean(patch || ""),
+        max_lines: @max_diff_rows,
+        context: 3
+      )
+
+    height = min(max(length(viewer.rows) * 2 + 2, 1), @max_diff_rows)
+
+    viewer
+    |> DiffViewer.view({inner_width, height})
+    |> styled_frame_rows()
+    |> Enum.map(&[{"  ", Style.new()} | &1])
+  end
+
+  defp styled_frame_rows(frame) do
+    Enum.map(1..frame.height, fn row ->
+      last_column =
+        frame.cells
+        |> Enum.flat_map(fn
+          {{^row, column}, cell} when not cell.wide_placeholder -> [column]
+          _entry -> []
+        end)
+        |> Enum.max(fn -> 0 end)
+
+      if last_column == 0 do
+        []
+      else
+        1..last_column
+        |> Enum.flat_map(fn column ->
+          cell = Frame.cell(frame, row, column)
+
+          if cell.wide_placeholder,
+            do: [],
+            else: [{cell.char, %Style{fg: cell.fg, bg: cell.bg, attrs: cell.attrs}}]
+        end)
+      end
+    end)
   end
 
   defp structural_diff_rows(%{"redacted" => true}), do: ["  diff redacted"]

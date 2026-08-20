@@ -2,7 +2,7 @@ defmodule Jido.Console.Tui.StateTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Session.View
-  alias Jido.Console.Tui.{State, Turn}
+  alias Jido.Console.Tui.{Editor, State, Turn}
 
   test "restores all renderer state from one complete View" do
     view =
@@ -49,6 +49,13 @@ defmodule Jido.Console.Tui.StateTest do
 
       assert review.id == "review-1"
     end
+  end
+
+  test "pasted approval letters cannot decide a review" do
+    state = State.new(nil, {80, 24}) |> State.restore_view(review_view())
+
+    assert {^state, []} =
+             State.update(state, {:terminal, {:paste, String.duplicate("A", 2_000)}})
   end
 
   test "restores a failed turn from closing product history" do
@@ -131,7 +138,34 @@ defmodule Jido.Console.Tui.StateTest do
 
     {state, [{:start_turn, "queued"}]} = State.update(state, {:terminal, {:key, :enter}})
     assert {:active, ^request, ^turn, :streaming} = state.activity
-    assert state.editor.text == ""
+    assert Editor.value(state.editor) == ""
+  end
+
+  test "keeps TermUI modifiers and returns selected text for clipboard output" do
+    state = State.new(nil, {80, 24})
+    {state, []} = State.update(state, {:terminal, TermUI.Event.text("hello")})
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:left, modifiers: [:shift])})
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:left, modifiers: [:shift])})
+
+    assert {state, [{:copy, "lo"}]} =
+             State.update(state, {:terminal, TermUI.Event.key("c", modifiers: [:ctrl])})
+
+    assert Editor.value(state.editor) == "hello"
+  end
+
+  test "routes prompt mouse coordinates into TextArea selection" do
+    state = State.new(nil, {30, 12})
+    {state, []} = State.update(state, {:terminal, TermUI.Event.text("hello")})
+    prompt_y = 12 - 5
+
+    {state, []} =
+      State.update(state, {:terminal, TermUI.Event.mouse(:press, :left, 2, prompt_y)})
+
+    {state, []} =
+      State.update(state, {:terminal, TermUI.Event.mouse(:drag, :left, 7, prompt_y)})
+
+    assert {_state, [{:copy, "hello"}]} =
+             State.update(state, {:terminal, TermUI.Event.key("c", modifiers: [:ctrl])})
   end
 
   defp restore_closed_turn(type, payload) do

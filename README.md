@@ -59,7 +59,7 @@ This path is for technical testers who want to build the current source. It is
 not an installation path or a supported release. You do not need to complete
 it to take part in the pre-launch review.
 
-Use the Elixir and Erlang versions in [`.tool-versions`](.tool-versions). The
+Use Elixir 1.18 or later with a supported Erlang/OTP release. The
 interactive terminal requires Erlang/OTP 28 or newer. A live session also
 requires a provider API key and can incur provider charges.
 

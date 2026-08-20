@@ -52,9 +52,18 @@ defmodule Jido.Console.Release.IdentityTest do
     assert Mix.Project.config()[:app] == :jido_console
     assert Mix.Project.config()[:name] == "Jido Console"
     assert Mix.Project.config()[:escript][:name] == "jido"
-    assert Mix.Project.config()[:escript][:main_module] == Jido.Console
+    assert Mix.Project.config()[:escript][:main_module] == Jido.Console.Escript
     assert Application.spec(:jido_console, :vsn)
     refute Application.spec(:jido_cli, :vsn)
+  end
+
+  test "the executable packages only native data used by Console" do
+    assert Mix.Project.config()[:escript][:include_priv_for] == [
+             :exqlite,
+             :mdex_native,
+             :req_llm,
+             :time_zone_info
+           ]
   end
 
   test "release launcher starts the product entry module directly" do

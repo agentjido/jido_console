@@ -7,6 +7,7 @@ defmodule Jido.Console.MixProject do
   @source_url "https://github.com/agentjido/jido_console"
   @description "Interactive terminal harness for the Jidoka agent framework."
   @jidoka_ref "caef68851df6812bf97c1ff2d815da610ab78c62"
+  @documented_modules [Jido.Console, Jido.Console.Error]
 
   def project do
     [
@@ -16,10 +17,10 @@ defmodule Jido.Console.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       escript: [
-        main_module: Jido.Console,
+        main_module: Jido.Console.Escript,
         name: "jido",
         app: nil,
-        include_priv_for: [:exqlite, :extractous_ex, :req_llm, :time_zone_info]
+        include_priv_for: [:exqlite, :mdex_native, :req_llm, :time_zone_info]
       ],
       name: "Jido Console",
       description: @description,
@@ -83,6 +84,7 @@ defmodule Jido.Console.MixProject do
       main: "readme",
       source_ref: "v#{@version}",
       source_url: @source_url,
+      filter_modules: fn module, _metadata -> module in @documented_modules end,
       extras: [
         "README.md",
         "ROADMAP.md",
@@ -123,7 +125,7 @@ defmodule Jido.Console.MixProject do
       jidoka_dep(),
       {:req_llm, "~> 1.20.0"},
       {:splode, "~> 0.3.0"},
-      {:term_ui, github: "mikehostetler/term_ui", ref: "5fe4f562bcfbf69255742623c3f332941928684e"},
+      term_ui_dep(),
       {:yaml_elixir, "~> 2.12"},
       {:zoi, "~> 0.18"},
 
@@ -150,6 +152,10 @@ defmodule Jido.Console.MixProject do
           raise "JIDO_CONSOLE_JIDOKA_PATH is permitted only in development and test"
         end
     end
+  end
+
+  defp term_ui_dep do
+    {:term_ui, github: "mikehostetler/term_ui", ref: "4314b8302c5fce7f2ac486ff319731bb1ddf147f"}
   end
 
   # ReqLLM owns llm_db as an included application. The explicit release mode

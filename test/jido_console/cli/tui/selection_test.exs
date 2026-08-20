@@ -2,6 +2,7 @@ defmodule Jido.Console.Tui.SelectionTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Tui.{Selection, State, View}
+  alias TermUI.Frame
 
   @entries [
     %{identity: "openai:gpt-4.1-mini", provider: "openai", model: "gpt-4.1-mini", tier: :supported},
@@ -65,14 +66,14 @@ defmodule Jido.Console.Tui.SelectionTest do
     assert state.selection == initial
     assert state.activity == :idle
     assert List.last(state.messages).content =~ "new thread"
-    assert hd(View.render(state).rows) =~ "openai:gpt-4.1-mini"
+    assert Frame.row_text(View.render(state), 1) =~ "openai:gpt-4.1-mini"
 
     {state, []} = State.update(state, {:terminal, {:text, "/profile coding.trusted-workspace"}})
     {state, []} = State.update(state, {:terminal, {:key, :enter}})
     assert state.selection == initial
     assert state.activity == :idle
     assert List.last(state.messages).content =~ "new thread"
-    assert hd(View.render(state).rows) =~ "coding.restricted"
+    assert Frame.row_text(View.render(state), 1) =~ "coding.restricted"
   end
 
   test "an unavailable model prevents the turn from starting" do

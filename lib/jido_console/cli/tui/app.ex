@@ -6,9 +6,7 @@ defmodule Jido.Console.Tui.App do
   alias Jido.Console.Session.Client
   alias Jido.Console.Session.Client.TUI, as: SessionTUI
   alias Jido.Console.Tui.{Effects, Shutdown, State, View, Workers}
-  alias TermUI.Component.RenderNode
-  alias TermUI.Event
-  alias TermUI.Renderer.{Cell, DisplayWidth}
+  alias TermUI.{Clipboard, Command, Event}
 
   @impl TermUI.Elm
   def init(opts) do
@@ -30,32 +28,14 @@ defmodule Jido.Console.Tui.App do
   @impl TermUI.Elm
   def event_to_msg(_event, %{closing?: true}), do: :ignore
 
-  def event_to_msg(%Event.Resize{width: width, height: height}, _state),
-    do: {:msg, {:terminal, {:resize, width, height}}}
-
-  def event_to_msg(%Event.Paste{content: content}, _state),
-    do: {:msg, {:terminal, {:paste, content}}}
-
-  def event_to_msg(%Event.Key{key: "c", modifiers: modifiers}, _state)
-      when modifiers == [:ctrl],
-      do: {:msg, {:terminal, {:key, :ctrl_c}}}
-
-  def event_to_msg(%Event.Key{key: key, modifiers: modifiers}, _state)
-      when key in ["j", :enter] and modifiers == [:ctrl],
-      do: {:msg, {:terminal, {:key, :newline}}}
-
-  def event_to_msg(%Event.Key{key: key}, _state)
-      when key in [:enter, :backspace, :left, :right, :up, :down, :page_up, :page_down, :escape],
-      do: {:msg, {:terminal, {:key, key}}}
-
-  def event_to_msg(%Event.Key{char: char, modifiers: []}, _state)
-      when is_binary(char) and char != "",
-      do: {:msg, {:terminal, {:text, char}}}
+  def event_to_msg(%module{} = event, _state)
+      when module in [Event.Resize, Event.Paste, Event.Key, Event.Text, Event.Mouse, Event.Focus],
+      do: {:msg, {:terminal, event}}
 
   def event_to_msg(_event, _state), do: :ignore
 
   @impl TermUI.Elm
-  def update(:stop, state), do: {state, [:quit]}
+  def update(:stop, state), do: {state, [Command.shutdown()]}
 
   def update({:terminal, event}, state) do
     state.tui
@@ -101,9 +81,7 @@ defmodule Jido.Console.Tui.App do
 
   @impl TermUI.Elm
   def view(state) do
-    state.tui
-    |> View.render()
-    |> frame_node()
+    View.render(state.tui)
   end
 
   @impl TermUI.Elm
@@ -128,13 +106,16 @@ defmodule Jido.Console.Tui.App do
 
   defp dispatch({tui, effects}, state) do
     state = %{state | tui: tui}
+    {clipboard_effects, effects} = Enum.split_with(effects, &match?({:copy, _text}, &1))
+    commands = Enum.map(clipboard_effects, fn {:copy, text} -> Clipboard.copy(text) end)
 
     case Effects.dispatch(tui, effects, Client, state.opts, state.workers) do
       {:continue, workers} ->
-        {%{state | workers: workers}, []}
+        {%{state | workers: workers}, commands}
 
       {:exit, workers} ->
-        finish(%{state | workers: workers})
+        {state, shutdown_commands} = finish(%{state | workers: workers})
+        {state, commands ++ shutdown_commands}
     end
   end
 
@@ -143,7 +124,8 @@ defmodule Jido.Console.Tui.App do
   defp finish(state) do
     message = {:jido_tui_result, state.result_ref, exit_result(state.tui)}
 
-    {%{state | closing?: true, result_sent?: true}, [{:send, state.result_owner, message}, {:timer, 0, :stop}]}
+    {%{state | closing?: true, result_sent?: true},
+     [Command.send(state.result_owner, message), Command.timer(0, :stop)]}
   end
 
   defp boot(opts, size) do
@@ -257,47 +239,4 @@ defmodule Jido.Console.Tui.App do
   end
 
   defp process_opts(opts), do: Keyword.take(opts, [:name, :jido_home])
-
-  defp frame_node(frame) do
-    cells =
-      frame.rows
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {row, y} -> row_cells(row, y, frame.cursor) end)
-
-    RenderNode.cells(cells, width: frame.width, height: frame.height)
-  end
-
-  defp row_cells(row, y, cursor) do
-    {cells, _x} =
-      row
-      |> String.graphemes()
-      |> Enum.reduce({[], 0}, fn grapheme, {cells, x} ->
-        width = max(DisplayWidth.width(grapheme), 1)
-        attrs = if cursor_at?(cursor, x, y, width), do: [:reverse], else: []
-        cell = Cell.new(grapheme, attrs: attrs)
-        positioned = %{x: x, y: y, cell: cell}
-
-        cells =
-          cond do
-            grapheme == " " and attrs == [] ->
-              cells
-
-            width == 2 ->
-              [%{x: x + 1, y: y, cell: Cell.wide_placeholder(cell)}, positioned | cells]
-
-            true ->
-              [positioned | cells]
-          end
-
-        {cells, x + width}
-      end)
-
-    Enum.reverse(cells)
-  end
-
-  defp cursor_at?(nil, _x, _y, _width), do: false
-
-  defp cursor_at?({column, row}, x, y, width) do
-    row == y + 1 and column - 1 >= x and column - 1 < x + width
-  end
 end

@@ -35,17 +35,12 @@ defmodule Jido.Console.Tui do
       result_owner: self(),
       result_ref: result_ref,
       backend: backend,
-      render_interval: Keyword.get(opts, :render_interval_ms, @frame_interval_ms),
-      use_input_handler: Keyword.get(opts, :use_input_handler, false)
+      render_interval: Keyword.get(opts, :render_interval_ms, @frame_interval_ms)
     ]
   end
 
-  defp runtime_result({:error, {failure, reason}}, _result_ref)
-       when failure in [:backend_draw_failed, :backend_flush_failed],
-       do: {:error, reason}
-
-  defp runtime_result({:error, {:shutdown, {failure, reason}}}, _result_ref)
-       when failure in [:backend_draw_failed, :backend_flush_failed],
+  defp runtime_result({:error, {:backend, _module, stage, reason}}, _result_ref)
+       when stage in [:draw, :flush],
        do: {:error, reason}
 
   defp runtime_result({:error, reason}, _result_ref), do: {:error, reason}

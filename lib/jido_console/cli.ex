@@ -26,9 +26,13 @@ defmodule Jido.Console.CLI do
 
   @doc false
   @spec main([String.t()]) :: :ok
-  def main(args) do
+  def main(args), do: main(args, [])
+
+  @doc false
+  @spec main([String.t()], keyword()) :: :ok
+  def main(args, opts) do
     case dispatch_fast(args) do
-      :continue -> start_and_run(args)
+      :continue -> start_and_run(args, opts)
       :ok -> :ok
     end
   end
@@ -51,20 +55,13 @@ defmodule Jido.Console.CLI do
 
   defp dispatch_fast(_args), do: :continue
 
-  defp start_and_run([command | _rest] = args)
+  defp start_and_run([command | _rest] = args, opts)
        when command in ["status", "stop", "auth", "doctor", "models"] do
-    case start_runtime() do
-      :ok ->
-        handle_run_result(run(args))
-
-      {:error, reason} ->
-        fail("could not start: #{inspect(reason)}")
-        System.halt(1)
-    end
+    handle_run_result(run(args, opts))
   end
 
-  defp start_and_run(args) do
-    handle_run_result(run(args, application_startup: &start_runtime/0))
+  defp start_and_run(args, opts) do
+    handle_run_result(run(args, Keyword.put_new(opts, :application_startup, &start_runtime/0)))
   end
 
   defp start_runtime do

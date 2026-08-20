@@ -3,6 +3,8 @@ defmodule Jido.Console.Tui.State do
 
   alias Jido.Console.Tui.{Activity, Editor, SafeText, Selection, Turn}
   alias Jido.Console.Session.View, as: SessionView
+  alias TermUI.Event
+  alias TermUI.Widget.TextArea
 
   @default_history_limit 100
   @default_turn_limit 100
@@ -15,7 +17,7 @@ defmodule Jido.Console.Tui.State do
               session: Zoi.any(),
               size: Zoi.tuple({Zoi.integer() |> Zoi.positive(), Zoi.integer() |> Zoi.positive()}),
               session_client: Zoi.any() |> Zoi.nullish(),
-              editor: Zoi.struct(Editor) |> Zoi.optional() |> Zoi.default(%Editor{}),
+              editor: Zoi.struct(TextArea) |> Zoi.optional() |> Zoi.default(Editor.new()),
               history: Zoi.array(Zoi.string()) |> Zoi.optional() |> Zoi.default([]),
               history_index: Zoi.integer() |> Zoi.gte(0) |> Zoi.nullish(),
               history_draft: Zoi.string() |> Zoi.nullish(),
@@ -39,6 +41,7 @@ defmodule Jido.Console.Tui.State do
   @type effect ::
           {:start_turn, String.t()}
           | {:cancel_turn, term()}
+          | {:copy, String.t()}
           | {:respond_review, :approve | :deny, map(), term(), term()}
           | :exit
 
@@ -92,6 +95,55 @@ defmodule Jido.Console.Tui.State do
   def startup_failure(%__MODULE__{}), do: :none
 
   @spec update(t(), term()) :: {t(), [effect()]}
+  def update(%__MODULE__{activity: {:review, _, _, _, :awaiting}} = state, {:terminal, %Event.Text{text: text}}),
+    do: update(state, {:terminal, {:text, text}})
+
+  def update(%__MODULE__{activity: {:review, _, _, _, _}} = state, {:terminal, %Event.Paste{}}),
+    do: {state, []}
+
+  def update(%__MODULE__{activity: {:review, _, _, _, _}} = state, {:terminal, %Event.Key{key: :enter}}),
+    do: {state, []}
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Text{} = event}),
+    do: editor_event(state, event)
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Paste{} = event}),
+    do: editor_event(state, event)
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: key, modifiers: modifiers}})
+      when key in ["j", :enter] do
+    if :ctrl in modifiers,
+      do: editor_event(state, Event.key(:enter)),
+      else: update(state, {:terminal, {:key, :enter}})
+  end
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: "c", modifiers: modifiers} = event}) do
+    if :ctrl in modifiers and Editor.selection?(state.editor),
+      do: editor_event(state, event),
+      else: update(state, {:terminal, {:key, if(:ctrl in modifiers, do: :ctrl_c, else: "c")}})
+  end
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: key} = event})
+      when key in ["a", "x", :backspace, :delete, :left, :right, :home, :end],
+      do: editor_event(state, event)
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: key, modifiers: modifiers} = event})
+      when key in [:up, :down] do
+    if :shift in modifiers,
+      do: editor_event(state, event),
+      else: update(state, {:terminal, {:key, key}})
+  end
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: key}})
+      when key in [:page_up, :page_down, :escape],
+      do: update(state, {:terminal, {:key, key}})
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Mouse{} = event}),
+    do: editor_mouse(state, event)
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Resize{width: width, height: height}}),
+    do: update(state, {:terminal, {:resize, width, height}})
+
   def update(%__MODULE__{activity: {:review, _, _, _, :awaiting}} = state, {:terminal, {:text, text}})
       when text in ["a", "A", "y", "Y"],
       do: respond_to_review(state, :approve)
@@ -145,7 +197,7 @@ defmodule Jido.Console.Tui.State do
     do: {state, []}
 
   def update(%__MODULE__{activity: {:active, _, _, _}} = state, {:terminal, {:key, :enter}}) do
-    prompt = String.trim(state.editor.text)
+    prompt = state.editor |> Editor.value() |> String.trim()
 
     if prompt == "" do
       {state, []}
@@ -160,7 +212,7 @@ defmodule Jido.Console.Tui.State do
       do: {state, []}
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :enter}}) do
-    prompt = String.trim(state.editor.text)
+    prompt = state.editor |> Editor.value() |> String.trim()
 
     if prompt == "" do
       {state, []}
@@ -308,6 +360,37 @@ defmodule Jido.Console.Tui.State do
     )
   end
 
+  defp editor_event(state, event) do
+    {editor, messages} = Editor.update(state.editor, event)
+    edited? = Enum.any?(messages, &match?({:changed, _value}, &1))
+    effects = for {:copy, text} <- messages, do: {:copy, text}
+
+    state =
+      if edited? do
+        %{state | editor: editor, history_index: nil, history_draft: nil}
+      else
+        %{state | editor: editor}
+      end
+
+    {state, effects}
+  end
+
+  defp editor_mouse(state, event) do
+    {columns, rows} = state.size
+    width = max(columns - 2, 1)
+    height = min(5, max(rows - 4, 1))
+    prompt_y = rows - height
+
+    if event.x >= 2 and event.y >= prompt_y do
+      local = %{event | x: event.x - 2, y: event.y - prompt_y}
+      {editor, messages} = Editor.mouse(state.editor, local, {width, height})
+      effects = for {:copy, text} <- messages, do: {:copy, text}
+      {%{state | editor: editor}, effects}
+    else
+      {state, []}
+    end
+  end
+
   defp move_up(state) do
     editor = Editor.up(state.editor)
     if editor == state.editor, do: previous_history(state), else: changed(state, editor: editor)
@@ -326,7 +409,7 @@ defmodule Jido.Console.Tui.State do
     changed(state,
       editor: state.history |> Enum.at(index) |> Editor.from_text(),
       history_index: index,
-      history_draft: state.editor.text
+      history_draft: Editor.value(state.editor)
     )
   end
 

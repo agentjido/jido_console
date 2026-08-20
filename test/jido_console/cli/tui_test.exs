@@ -14,6 +14,7 @@ defmodule Jido.Console.TuiTest do
     sessions = unique(:sessions, suffix)
     tasks = unique(:tasks, suffix)
     session_supervisor_name = unique(:session_supervisor, suffix)
+    {:ok, event_queue} = Agent.start_link(fn -> :queue.new() end)
 
     {:ok, storage} =
       StorageSupervisor.start_link(
@@ -42,7 +43,7 @@ defmodule Jido.Console.TuiTest do
       bridge_module: ThreadBridge,
       test_pid: self(),
       term_ui_backend: TermUIBackend,
-      term_ui_backend_opts: [test_pid: self(), size: {16, 60}],
+      term_ui_backend_opts: [test_pid: self(), event_queue: event_queue, size: {16, 60}],
       application_startup: fn -> :ok end,
       process_register: fn _kind, _pid, _opts -> {:ok, %{}} end,
       process_stop: fn _id, _opts -> :ok end,
@@ -57,20 +58,23 @@ defmodule Jido.Console.TuiTest do
       File.rm_rf(root)
     end)
 
-    %{opts: opts}
+    %{opts: opts, event_queue: event_queue}
   end
 
-  test "submits through Session.Client and exits without stopping completed work", %{opts: opts} do
+  test "submits through Session.Client and exits without stopping completed work", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
     task = Task.async(fn -> Tui.run(Keyword.put(opts, :session_id, "tui-thread")) end)
     assert_receive {:term_ui_started, runtime}
     assert_receive {:frame, _initial}
 
-    TermUI.Runtime.send_event(runtime, TermUI.Event.paste("hello"))
-    TermUI.Runtime.send_event(runtime, TermUI.Event.key(:enter))
+    send_event(event_queue, TermUI.Event.paste("hello"))
+    send_event(event_queue, TermUI.Event.key(:enter))
     assert_receive {:provider_started, "tui-thread", _request_id, bridge}, 2_000
 
-    TermUI.Runtime.send_event(runtime, TermUI.Event.paste("queued"))
-    TermUI.Runtime.send_event(runtime, TermUI.Event.key(:enter))
+    send_event(event_queue, TermUI.Event.paste("queued"))
+    send_event(event_queue, TermUI.Event.key(:enter))
     send(bridge, :finish)
     assert_receive {:provider_started, "tui-thread", _queued_request_id, queued_bridge}, 2_000
     send(queued_bridge, :finish)
@@ -81,34 +85,67 @@ defmodule Jido.Console.TuiTest do
     assert_receive :terminal_closed
   end
 
-  test "reports process registration failure and waits for explicit exit", %{opts: opts} do
+  test "reports process registration failure and waits for explicit exit", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
     opts = Keyword.put(opts, :process_register, fn _kind, _pid, _opts -> {:error, :busy} end)
     task = Task.async(fn -> Tui.run(opts) end)
-    assert_receive {:term_ui_started, runtime}
+    assert_receive {:term_ui_started, _runtime}
     assert_receive {:frame, frame}
     assert frame =~ "startup failed"
-    TermUI.Runtime.send_event(runtime, TermUI.Event.key(:escape))
+    send_event(event_queue, TermUI.Event.key(:escape))
     assert {:error, {:process_register_failed, :busy}} = Task.await(task, 2_000)
     assert_receive :terminal_closed
   end
 
-  test "closes the terminal after a draw failure", %{opts: opts} do
-    opts = Keyword.put(opts, :term_ui_backend_opts, test_pid: self(), fail_draw: true, size: {16, 60})
+  test "copies a TextArea selection through the active terminal backend", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    task = Task.async(fn -> Tui.run(Keyword.put(opts, :session_id, "clipboard-thread")) end)
+    assert_receive {:term_ui_started, _runtime}
+    assert_receive {:frame, _initial}
+
+    send_event(event_queue, TermUI.Event.paste("hello"))
+    send_event(event_queue, TermUI.Event.key(:left, modifiers: [:shift]))
+    send_event(event_queue, TermUI.Event.key(:left, modifiers: [:shift]))
+    send_event(event_queue, TermUI.Event.key("c", modifiers: [:ctrl]))
+
+    assert_receive {:clipboard, %TermUI.Clipboard.Operation{content: "lo"}}, 2_000
+
+    send_event(event_queue, TermUI.Event.key(:escape))
+    assert :ok = Task.await(task, 2_000)
+  end
+
+  test "closes the terminal after a draw failure", %{opts: opts, event_queue: event_queue} do
+    opts =
+      Keyword.put(opts, :term_ui_backend_opts,
+        test_pid: self(),
+        event_queue: event_queue,
+        fail_draw: true,
+        size: {16, 60}
+      )
+
     assert {:error, :draw_failed} = Tui.run(opts)
     assert_receive :terminal_closed
   end
 
-  test "returns its result when process cleanup raises", %{opts: opts} do
+  test "returns its result when process cleanup raises", %{opts: opts, event_queue: event_queue} do
     opts = Keyword.put(opts, :process_stop, fn _id, _opts -> raise "cleanup failed" end)
     task = Task.async(fn -> Tui.run(opts) end)
-    assert_receive {:term_ui_started, runtime}
+    assert_receive {:term_ui_started, _runtime}
     assert_receive {:frame, _initial}
 
-    TermUI.Runtime.send_event(runtime, TermUI.Event.key(:escape))
+    send_event(event_queue, TermUI.Event.key(:escape))
 
     assert :ok = Task.await(task, 2_000)
     assert_receive :terminal_closed
   end
 
   defp unique(label, suffix), do: String.to_atom("#{label}-#{suffix}")
+
+  defp send_event(queue, event) do
+    Agent.update(queue, &:queue.in(event, &1))
+  end
 end
