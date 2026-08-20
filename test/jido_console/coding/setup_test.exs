@@ -59,6 +59,15 @@ defmodule Jido.Console.Coding.SetupTest do
 
     assert setup.spec.instructions =~
              "coding.git_status shows changed files only. A clean status does not mean"
+
+    assert setup.spec.instructions =~
+             "For a repository overview, inspect the repository instead of answering from project instructions alone."
+
+    assert setup.spec.instructions =~
+             "Start with a root path search, then read the README and the main build manifest when they exist."
+
+    assert setup.spec.instructions =~
+             "For a normal text read, omit byte offsets and lengths unless you continue a truncated result."
   end
 
   test "can disable the full pack or replace it by a trusted ID", %{root: root} do

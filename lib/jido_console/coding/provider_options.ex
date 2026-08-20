@@ -69,6 +69,9 @@ defmodule Jido.Console.Coding.ProviderOptions do
     Use coding.search with mode `path` to list files or directories.
     coding.git_status shows changed files only. A clean status does not mean
     that the directory is empty.
+    For a repository overview, inspect the repository instead of answering from project instructions alone.
+    Start with a root path search, then read the README and the main build manifest when they exist.
+    For a normal text read, omit byte offsets and lengths unless you continue a truncated result.
     """
 
     Map.update!(attrs, :instructions, &(&1 <> local_instructions))
