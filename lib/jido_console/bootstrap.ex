@@ -73,7 +73,23 @@ defmodule Jido.Console.Bootstrap do
     if File.exists?(cache) do
       validate_cache(cache, digest)
     else
-      extract_atomically(script, cache_root, cache, digest, opts)
+      with :ok <- report_progress(opts, :extracting_escript) do
+        extract_atomically(script, cache_root, cache, digest, opts)
+      end
+    end
+  end
+
+  defp report_progress(opts, event) do
+    case Keyword.get(opts, :progress) do
+      nil ->
+        :ok
+
+      progress when is_function(progress, 1) ->
+        progress.(event)
+        :ok
+
+      _progress ->
+        {:error, :invalid_bootstrap_progress}
     end
   end
 

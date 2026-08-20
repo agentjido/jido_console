@@ -30,11 +30,13 @@ defmodule Jido.Console.BootstrapTest do
       cache_root: Path.join(root, "cache"),
       version: "test",
       otp_release: "test",
+      progress: fn event -> send(test_pid, {:progress, event}) end,
       extract: fn _path, [] -> {:ok, archive: :fixture} end,
       unzip: unzip
     ]
 
     assert :ok = Bootstrap.make_priv_files_accessible(opts)
+    assert_receive {:progress, :extracting_escript}
     assert_receive :unzipped
 
     [cache] = Path.wildcard(Path.join(root, "cache/escript/test-otp-test-*"))
@@ -48,7 +50,9 @@ defmodule Jido.Console.BootstrapTest do
 
     assert :ok =
              Bootstrap.make_priv_files_accessible(
-               Keyword.put(opts, :extract, fn _path, [] -> flunk("cache was not reused") end)
+               opts
+               |> Keyword.put(:progress, fn event -> flunk("cache reuse reported #{inspect(event)}") end)
+               |> Keyword.put(:extract, fn _path, [] -> flunk("cache was not reused") end)
              )
 
     refute_receive :unzipped

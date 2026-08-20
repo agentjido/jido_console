@@ -61,12 +61,21 @@ defmodule Jido.Console.CLI do
   end
 
   defp start_and_run(args, opts) do
-    handle_run_result(run(args, Keyword.put_new(opts, :application_startup, &start_runtime/0)))
+    opts =
+      opts
+      |> Keyword.put_new(:application_startup, &start_runtime/0)
+      |> Keyword.put(:eager_application_startup, true)
+
+    handle_run_result(run(args, opts))
   end
 
   defp start_runtime do
     with :ok <- Jido.Console.Env.load_provider_credentials(),
-         do: Jido.Console.Bootstrap.start_applications()
+         do: Jido.Console.Bootstrap.start_applications(progress: &startup_progress/1)
+  end
+
+  defp startup_progress(:extracting_escript) do
+    IO.puts(:stderr, "jido: preparing the local runtime. This can take a few seconds...")
   end
 
   defp handle_run_result(:ok), do: :ok
@@ -341,11 +350,40 @@ defmodule Jido.Console.CLI do
     tui = Keyword.get(opts, :tui, Jido.Console.Tui)
     interactive = options |> Map.to_list() |> normalize_interactive_options()
     opts = Keyword.put_new(opts, :application_startup, &start_runtime/0)
+    opts = Keyword.merge(opts, interactive)
 
-    case tui.run(Keyword.merge(opts, interactive)) do
+    case run_tui(tui, opts) do
       :ok -> :ok
       {:error, reason} -> interactive_error(reason)
     end
+  end
+
+  defp run_tui(tui, opts) do
+    if Keyword.get(opts, :eager_application_startup, false) do
+      IO.puts(:stderr, "jido: starting...")
+
+      with :ok <- invoke_application_startup(opts) do
+        opts =
+          opts
+          |> Keyword.delete(:eager_application_startup)
+          |> Keyword.put(:application_startup, fn -> :ok end)
+
+        tui.run(opts)
+      end
+    else
+      tui.run(opts)
+    end
+  end
+
+  defp invoke_application_startup(opts) do
+    case Keyword.fetch!(opts, :application_startup) do
+      startup when is_function(startup, 0) -> startup.()
+      _startup -> {:error, :invalid_application_startup}
+    end
+  rescue
+    exception -> {:error, exception}
+  catch
+    kind, reason -> {:error, {kind, reason}}
   end
 
   defp normalize_interactive_options(options) do
