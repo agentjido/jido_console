@@ -99,6 +99,40 @@ defmodule Jido.Console.TuiTest do
     assert_receive :terminal_closed
   end
 
+  test "shows a clear storage startup failure and waits for explicit exit", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    database = "/private/jido/state/console.sqlite3"
+    backup = database <> ".schema-1-backup"
+
+    reason =
+      {:jido_console,
+       {{:shutdown,
+         {:failed_to_start_child, Jido.Console.Storage.Supervisor,
+          {:shutdown,
+           {:failed_to_start_child, Jido.Console.Storage.SQLite, {:storage_schema_backup_exists, database, backup}}}}},
+        {Jido.Console.Application, :start, [:normal, []]}}}
+
+    opts =
+      opts
+      |> Keyword.put(:application_startup, fn -> {:error, reason} end)
+      |> Keyword.put(:term_ui_backend_opts,
+        test_pid: self(),
+        event_queue: event_queue,
+        size: {16, 120}
+      )
+
+    task = Task.async(fn -> Tui.run(opts) end)
+    assert_receive {:term_ui_started, _runtime}
+    assert_receive {:frame, frame}
+    assert frame =~ "startup failed"
+    assert frame =~ "Old Jido database backup already exists"
+    send_event(event_queue, TermUI.Event.key(:escape))
+    assert {:error, ^reason} = Task.await(task, 2_000)
+    assert_receive :terminal_closed
+  end
+
   test "copies a TextArea selection through the active terminal backend", %{
     opts: opts,
     event_queue: event_queue

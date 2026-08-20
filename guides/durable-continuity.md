@@ -63,5 +63,8 @@ not resume old work.
   through the public Jidoka store, and closes all accepted old items.
 - Queued old items also become interrupted. They do not run after restart.
 
-The store has no migration or compatibility layer. This unreleased format can
-change by replacing the development database.
+The store has no data migration or compatibility layer. When this unreleased
+format changes, startup moves the old development database and its SQLite
+sidecars into a private `console.sqlite3.schema-VERSION-backup` directory. It
+then creates the current database. Startup stops without replacing the old
+database when it cannot make that backup safely.

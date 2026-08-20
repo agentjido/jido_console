@@ -193,9 +193,10 @@ defmodule Jido.Console.Error do
   end
 
   def normalize(reason) do
-    reason
-    |> Jidoka.normalize_error(operation: :jido_console)
-    |> normalize_exception()
+    case find_storage_configuration_reason(reason) do
+      {:ok, storage_reason} -> normalize_storage_configuration(storage_reason)
+      :error -> reason |> Jidoka.normalize_error(operation: :jido_console) |> normalize_exception()
+    end
   rescue
     _error -> ExecutionFailureError.exception(message: fallback_message(reason), details: %{reason: reason})
   end
@@ -431,6 +432,70 @@ defmodule Jido.Console.Error do
 
   defp reason_code(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp reason_code(reason) when is_binary(reason), do: reason
+
+  defp find_storage_configuration_reason(reason)
+
+  defp find_storage_configuration_reason({:storage_schema_backup_exists, path, backup} = reason)
+       when is_binary(path) and is_binary(backup),
+       do: {:ok, reason}
+
+  defp find_storage_configuration_reason({:storage_schema_backup_failed, path, backup, _cause} = reason)
+       when is_binary(path) and is_binary(backup),
+       do: {:ok, reason}
+
+  defp find_storage_configuration_reason({:storage_schema_reset_required, path, version, tables} = reason)
+       when is_binary(path) and is_integer(version) and is_list(tables),
+       do: {:ok, reason}
+
+  defp find_storage_configuration_reason({:unsupported_store_schema, path, version, tables} = reason)
+       when is_binary(path) and is_integer(version) and is_list(tables),
+       do: {:ok, reason}
+
+  defp find_storage_configuration_reason(reason) when is_tuple(reason) do
+    reason |> Tuple.to_list() |> find_nested_storage_reason()
+  end
+
+  defp find_storage_configuration_reason(reason) when is_list(reason), do: find_nested_storage_reason(reason)
+  defp find_storage_configuration_reason(_reason), do: :error
+
+  defp find_nested_storage_reason(values) do
+    Enum.reduce_while(values, :error, fn value, :error ->
+      case find_storage_configuration_reason(value) do
+        {:ok, _reason} = found -> {:halt, found}
+        :error -> {:cont, :error}
+      end
+    end)
+  end
+
+  defp normalize_storage_configuration({:storage_schema_backup_exists, _path, backup}) do
+    config_error(
+      "Old Jido database backup already exists at #{backup}. Move it before startup.",
+      %{backup: backup, reason: :storage_schema_backup_exists}
+    )
+  end
+
+  defp normalize_storage_configuration({:storage_schema_backup_failed, path, backup, cause}) do
+    config_error(
+      "Jido could not preserve the old database at #{path}. " <>
+        "Startup stopped without replacing it.",
+      %{backup: backup, database: path, reason: :storage_schema_backup_failed, cause: cause}
+    )
+  end
+
+  defp normalize_storage_configuration({:storage_schema_reset_required, path, version, tables}) do
+    config_error(
+      "Jido must replace the old database at #{path} before startup.",
+      %{database: path, reason: :storage_schema_reset_required, tables: tables, version: version}
+    )
+  end
+
+  defp normalize_storage_configuration({:unsupported_store_schema, path, version, tables}) do
+    config_error(
+      "Jido cannot use the database at #{path}. " <>
+        "Storage schema version #{version} is not supported.",
+      %{database: path, reason: :unsupported_store_schema, tables: tables, version: version}
+    )
+  end
 
   defp fallback_message(reason) do
     reason

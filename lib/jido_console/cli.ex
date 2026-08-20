@@ -373,7 +373,7 @@ defmodule Jido.Console.CLI do
   defp configuration_error?(:coding_module_name_forbidden), do: true
   defp configuration_error?(:invalid_coding_profile_resolver), do: true
   defp configuration_error?({:invalid_interactive_options, _errors}), do: true
-  defp configuration_error?(_reason), do: false
+  defp configuration_error?(reason), do: Jido.Console.Error.category(reason) == :configuration
 
   defp fail(message, prefix \\ "") do
     IO.puts(:stderr, "jido: #{prefix}#{message}")

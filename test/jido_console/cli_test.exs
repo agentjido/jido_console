@@ -81,6 +81,26 @@ defmodule Jido.ConsoleTest do
     assert output =~ "invalid_coding_pack"
   end
 
+  test "uses configuration exit status for a nested storage startup failure" do
+    database = "/private/jido/state/console.sqlite3"
+    backup = database <> ".schema-1-backup"
+
+    reason =
+      {:jido_console,
+       {{:shutdown,
+         {:failed_to_start_child, Jido.Console.Storage.Supervisor,
+          {:shutdown,
+           {:failed_to_start_child, Jido.Console.Storage.SQLite, {:storage_schema_backup_exists, database, backup}}}}},
+        {Jido.Console.Application, :start, [:normal, []]}}}
+
+    output =
+      capture_io(:stderr, fn ->
+        assert {:error, 64} = Jido.Console.run([], tui: ErrorTui, reason: reason)
+      end)
+
+    assert output =~ "Old Jido database backup already exists"
+  end
+
   test "defines the built-in agent" do
     assert Jido.Console.version() == to_string(Application.spec(:jido_console, :vsn))
     assert Jido.Console.DefaultAgent.spec().id == "jido"

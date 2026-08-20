@@ -56,6 +56,41 @@ defmodule Jido.Console.ErrorTest do
                Error.normalize({:unknown_runtime_profile, "trusted"})
     end
 
+    test "finds a storage backup failure inside an OTP application startup error" do
+      database = "/private/jido/state/console.sqlite3"
+      backup = database <> ".schema-1-backup"
+
+      reason =
+        {:jido_console,
+         {{:shutdown,
+           {:failed_to_start_child, Jido.Console.Storage.Supervisor,
+            {:shutdown,
+             {:failed_to_start_child, Jido.Console.Storage.SQLite, {:storage_schema_backup_exists, database, backup}}}}},
+          {Jido.Console.Application, :start, [:normal, []]}}}
+
+      assert %Error.ConfigurationError{} = normalized = Error.normalize(reason)
+
+      assert Exception.message(normalized) ==
+               "Old Jido database backup already exists at #{backup}. Move it before startup."
+    end
+
+    test "gives clear messages for other storage schema startup failures" do
+      database = "/private/jido/state/console.sqlite3"
+      backup = database <> ".schema-1-backup"
+
+      cases = [
+        {{:storage_schema_backup_failed, database, backup, :eacces}, "could not preserve the old database"},
+        {{:storage_schema_reset_required, database, 1, ["events"]}, "must replace the old database"},
+        {{:unsupported_store_schema, database, 9, ["sessions"]}, "version 9 is not supported"}
+      ]
+
+      Enum.each(cases, fn {reason, expected} ->
+        nested = {:jido_console, {:shutdown, {:failed_to_start_child, Jido.Console.Storage.SQLite, reason}}}
+        assert %Error.ConfigurationError{} = normalized = Error.normalize(nested)
+        assert Exception.message(normalized) =~ expected
+      end)
+    end
+
     test "falls back to an execution failure with a readable message" do
       normalized = Error.normalize({:some, :unknown, :reason})
       assert %Error.ExecutionFailureError{} = normalized

@@ -25,6 +25,8 @@ defmodule Jido.Console.Storage.SQLite do
   @session_codec_version 1
   @session_codec_tag :jido_console_session
   @closing_types ~w(prompt_removed prompt_succeeded prompt_failed prompt_cancelled prompt_interrupted)
+  @store_file_suffixes ["", "-wal", "-shm"]
+  @backup_in_progress ".in-progress"
 
   @schema """
   CREATE TABLE sessions (
@@ -203,12 +205,8 @@ defmodule Jido.Console.Storage.SQLite do
   def init(opts) do
     with {:ok, path} <- store_path(opts),
          :ok <- prepare_path(path),
-         {:ok, conn} <- Sqlite3.open(path),
-         :ok <- Sqlite3.set_busy_timeout(conn, 250),
-         :ok <- configure(conn),
-         :ok <- bootstrap(conn),
-         :ok <- protect_owned_files(path),
-         :ok <- integrity_gate(conn, opts) do
+         :ok <- recover_interrupted_backup(path),
+         {:ok, conn} <- open_store(path, opts) do
       {:ok, %{conn: conn, path: path}}
     else
       {:error, reason} -> {:stop, reason}
@@ -774,23 +772,334 @@ defmodule Jido.Console.Storage.SQLite do
     end
   end
 
-  defp bootstrap(conn) do
+  defp open_store(path, opts) do
+    case open_current_store(path, opts) do
+      {:error, {:storage_schema_reset_required, ^path, version, _tables}} ->
+        with :ok <- preserve_legacy_store(path, version),
+             do: open_current_store(path, opts)
+
+      result ->
+        result
+    end
+  end
+
+  defp open_current_store(path, opts) do
+    case Sqlite3.open(path) do
+      {:ok, conn} ->
+        case initialize_connection(conn, path, opts) do
+          :ok ->
+            {:ok, conn}
+
+          {:error, reason} ->
+            _result = Sqlite3.close(conn)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp initialize_connection(conn, path, opts) do
+    with :ok <- Sqlite3.set_busy_timeout(conn, 250),
+         {:ok, schema_state} <- inspect_schema(conn, path),
+         :ok <- configure(conn),
+         :ok <- bootstrap(conn, schema_state),
+         :ok <- protect_owned_files(path) do
+      integrity_gate(conn, opts)
+    end
+  end
+
+  defp inspect_schema(conn, path) do
     with {:ok, tables} <- user_tables(conn),
          {:ok, [[version]]} <- query(conn, "PRAGMA user_version", []) do
       case {tables, version} do
         {[], 0} ->
-          with :ok <- Sqlite3.execute(conn, @schema) do
-            Sqlite3.execute(conn, "PRAGMA user_version=#{@store_version}")
-          end
+          {:ok, :empty}
 
         {["sessions", "thread_events"], @store_version} ->
-          :ok
+          {:ok, :current}
 
         {tables, version} ->
           if "events" in tables or "operations" in tables,
-            do: {:error, {:storage_schema_reset_required, tables}},
-            else: {:error, {:unsupported_store_schema, version, tables}}
+            do: {:error, {:storage_schema_reset_required, path, version, tables}},
+            else: {:error, {:unsupported_store_schema, path, version, tables}}
       end
+    end
+  end
+
+  defp bootstrap(conn, :empty) do
+    with :ok <- Sqlite3.execute(conn, @schema) do
+      Sqlite3.execute(conn, "PRAGMA user_version=#{@store_version}")
+    end
+  end
+
+  defp bootstrap(_conn, :current), do: :ok
+
+  defp preserve_legacy_store(path, version) do
+    backup = path <> ".schema-#{version}-backup"
+
+    case create_backup_directory(backup) do
+      :ok ->
+        case create_backup_marker(backup) do
+          :ok ->
+            with :ok <- move_store_files(path, backup, @store_file_suffixes, []),
+                 :ok <- remove_backup_marker(backup) do
+              :ok
+            else
+              {:error, reason} -> backup_failure(path, backup, reason)
+            end
+
+          {:error, reason} ->
+            case File.rmdir(backup) do
+              :ok ->
+                backup_failure(path, backup, reason)
+
+              {:error, cleanup_reason} ->
+                backup_failure(path, backup, {:store_backup_cleanup_failed, reason, cleanup_reason})
+            end
+        end
+
+      {:error, :eexist} ->
+        {:error, {:storage_schema_backup_exists, path, backup}}
+
+      {:error, reason} ->
+        backup_failure(path, backup, reason)
+    end
+  end
+
+  defp backup_failure(path, backup, reason),
+    do: {:error, {:storage_schema_backup_failed, path, backup, reason}}
+
+  defp create_backup_directory(path) do
+    case File.mkdir(path) do
+      :ok ->
+        case File.chmod(path, Home.directory_mode()) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            _result = File.rmdir(path)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp create_backup_marker(backup) do
+    marker = backup_marker(backup)
+
+    with :ok <- write_backup_marker(marker),
+         :ok <- protect_owned_file(marker) do
+      :ok
+    else
+      {:error, reason} ->
+        _result = remove_backup_marker(backup)
+        {:error, reason}
+    end
+  end
+
+  defp write_backup_marker(marker) do
+    with {:ok, device} <- File.open(marker, [:write, :binary, :exclusive]) do
+      result =
+        with :ok <- IO.binwrite(device, "in-progress\n") do
+          :file.sync(device)
+        end
+
+      _result = File.close(device)
+      result
+    end
+  end
+
+  defp remove_backup_marker(backup) do
+    case File.rm(backup_marker(backup)) do
+      :ok -> :ok
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp backup_marker(backup), do: Path.join(backup, @backup_in_progress)
+
+  defp recover_interrupted_backup(path) do
+    with {:ok, entries} <- File.ls(Path.dirname(path)),
+         {:ok, backups} <- interrupted_backups(path, entries) do
+      case recover_interrupted_backups(path, backups) do
+        :ok -> :ok
+        {:error, backup, reason} -> backup_failure(path, backup, reason)
+      end
+    else
+      {:error, reason} -> backup_failure(path, path, reason)
+    end
+  end
+
+  defp interrupted_backups(path, entries) do
+    prefix = Path.basename(path) <> ".schema-"
+
+    entries
+    |> Enum.filter(&(String.starts_with?(&1, prefix) and String.ends_with?(&1, "-backup")))
+    |> Enum.map(&Path.join(Path.dirname(path), &1))
+    |> Enum.reduce_while({:ok, []}, fn backup, {:ok, backups} ->
+      case backup_in_progress?(backup) do
+        :in_progress -> {:cont, {:ok, [backup | backups]}}
+        :complete -> {:cont, {:ok, backups}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp backup_in_progress?(backup) do
+    case File.lstat(backup) do
+      {:ok, %{type: :directory}} ->
+        case File.lstat(backup_marker(backup)) do
+          {:ok, %{type: :regular}} -> :in_progress
+          {:error, :enoent} -> :complete
+          {:ok, %{type: type}} -> {:error, {:unsafe_store_file, backup_marker(backup), type}}
+          {:error, reason} -> {:error, {:store_path_unavailable, backup_marker(backup), reason}}
+        end
+
+      {:ok, %{type: type}} ->
+        {:error, {:unsafe_store_file, backup, type}}
+
+      {:error, reason} ->
+        {:error, {:store_path_unavailable, backup, reason}}
+    end
+  end
+
+  defp recover_interrupted_backups(_path, []), do: :ok
+
+  defp recover_interrupted_backups(path, [backup]) do
+    with :ok <- resume_store_files(path, backup, @store_file_suffixes),
+         :ok <- remove_backup_marker(backup) do
+      :ok
+    else
+      {:error, reason} -> {:error, backup, reason}
+    end
+  end
+
+  defp recover_interrupted_backups(_path, backups),
+    do: {:error, hd(backups), {:multiple_incomplete_backups, backups}}
+
+  defp resume_store_files(_path, _backup, []), do: :ok
+
+  defp resume_store_files(path, backup, [suffix | suffixes]) do
+    source = path <> suffix
+    target = Path.join(backup, Path.basename(source))
+
+    case File.lstat(source) do
+      {:ok, %{type: :regular}} ->
+        case File.lstat(target) do
+          {:error, :enoent} ->
+            with :ok <- File.rename(source, target),
+                 :ok <- protect_owned_file(target) do
+              resume_store_files(path, backup, suffixes)
+            end
+
+          {:ok, _stat} ->
+            {:error, {:store_backup_recovery_conflict, source, target}}
+
+          {:error, reason} ->
+            {:error, {:store_path_unavailable, target, reason}}
+        end
+
+      {:ok, %{type: type}} ->
+        {:error, {:unsafe_store_file, source, type}}
+
+      {:error, :enoent} ->
+        resume_missing_store_file(path, backup, source, target, suffix, suffixes)
+
+      {:error, reason} ->
+        {:error, {:store_path_unavailable, source, reason}}
+    end
+  end
+
+  defp resume_missing_store_file(path, backup, source, target, suffix, suffixes) do
+    case File.lstat(target) do
+      {:ok, %{type: :regular}} ->
+        with :ok <- protect_owned_file(target) do
+          resume_store_files(path, backup, suffixes)
+        end
+
+      {:ok, %{type: type}} ->
+        {:error, {:unsafe_store_file, target, type}}
+
+      {:error, :enoent} when suffix == "" ->
+        {:error, {:store_backup_recovery_missing, source, target}}
+
+      {:error, :enoent} ->
+        resume_store_files(path, backup, suffixes)
+
+      {:error, reason} ->
+        {:error, {:store_path_unavailable, target, reason}}
+    end
+  end
+
+  defp move_store_files(_path, _backup, [], _moved), do: :ok
+
+  defp move_store_files(path, backup, [suffix | suffixes], moved) do
+    source = path <> suffix
+    target = Path.join(backup, Path.basename(source))
+
+    case File.lstat(source) do
+      {:ok, %{type: :regular}} ->
+        move_store_file(path, backup, source, target, suffixes, moved)
+
+      {:ok, %{type: type}} ->
+        rollback_store_files(backup, moved, {:unsafe_store_file, source, type})
+
+      {:error, :enoent} ->
+        move_store_files(path, backup, suffixes, moved)
+
+      {:error, reason} ->
+        rollback_store_files(backup, moved, {:store_path_unavailable, source, reason})
+    end
+  end
+
+  defp move_store_file(path, backup, source, target, suffixes, moved) do
+    case File.rename(source, target) do
+      :ok ->
+        moved = [{source, target} | moved]
+
+        case protect_owned_file(target) do
+          :ok -> move_store_files(path, backup, suffixes, moved)
+          {:error, reason} -> rollback_store_files(backup, moved, reason)
+        end
+
+      {:error, reason} ->
+        rollback_store_files(backup, moved, {:store_backup_move_failed, source, target, reason})
+    end
+  end
+
+  defp protect_owned_file(path) do
+    with :ok <- File.chmod(path, Home.file_mode()), do: Home.check_private(path)
+  end
+
+  defp rollback_store_files(backup, moved, reason) do
+    rollback =
+      Enum.reduce_while(moved, :ok, fn {source, target}, :ok ->
+        case File.rename(target, source) do
+          :ok -> {:cont, :ok}
+          {:error, rollback_reason} -> {:halt, {:error, {target, source, rollback_reason}}}
+        end
+      end)
+
+    case rollback do
+      :ok ->
+        case remove_backup_marker(backup) do
+          :ok ->
+            case File.rmdir(backup) do
+              :ok -> {:error, reason}
+              {:error, cleanup_reason} -> {:error, {:store_backup_cleanup_failed, reason, cleanup_reason}}
+            end
+
+          {:error, cleanup_reason} ->
+            {:error, {:store_backup_cleanup_failed, reason, cleanup_reason}}
+        end
+
+      {:error, rollback_reason} ->
+        {:error, {:store_backup_rollback_failed, reason, rollback_reason}}
     end
   end
 
@@ -942,14 +1251,12 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   defp protect_owned_files(path) do
-    [path, path <> "-wal", path <> "-shm"]
+    Enum.map(@store_file_suffixes, &(path <> &1))
     |> Enum.reduce_while(:ok, fn owned_path, :ok ->
       case File.lstat(owned_path) do
         {:ok, %{type: :regular}} ->
-          with :ok <- File.chmod(owned_path, Home.file_mode()),
-               :ok <- Home.check_private(owned_path) do
-            {:cont, :ok}
-          else
+          case protect_owned_file(owned_path) do
+            :ok -> {:cont, :ok}
             {:error, reason} -> {:halt, {:error, {:store_file_permission_failed, owned_path, reason}}}
           end
 
