@@ -54,9 +54,11 @@ defmodule Jido.Console.MixProject do
   defp extra_applications(env) when env in [:dev, :test], do: [:logger, :mix]
   defp extra_applications(_env), do: [:logger]
 
-  defp cli do
+  def cli do
     [
       preferred_envs: [
+        build: :prod,
+        "escript.build": :prod,
         coveralls: :test,
         "coveralls.github": :test,
         "coveralls.html": :test

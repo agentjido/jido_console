@@ -66,6 +66,15 @@ defmodule Jido.Console.Release.IdentityTest do
            ]
   end
 
+  test "escript build tasks use the production environment" do
+    assert function_exported?(Jido.Console.MixProject, :cli, 0)
+
+    preferred_envs = Mix.Project.config() |> Keyword.fetch!(:cli) |> Keyword.fetch!(:preferred_envs)
+
+    assert preferred_envs[:build] == :prod
+    assert preferred_envs[:"escript.build"] == :prod
+  end
+
   test "release launcher starts the product entry module directly" do
     launcher = Path.expand("../../../rel/bin/jido", __DIR__)
     source = File.read!(launcher)
