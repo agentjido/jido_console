@@ -51,11 +51,11 @@ defmodule Jido.Console.Tui.StateTest do
     end
   end
 
-  test "pasted approval letters cannot decide a review" do
+  test "a TermUI paste event cannot decide a review" do
     state = State.new(nil, {80, 24}) |> State.restore_view(review_view())
 
     assert {^state, []} =
-             State.update(state, {:terminal, {:paste, String.duplicate("A", 2_000)}})
+             State.update(state, {:terminal, TermUI.Event.paste(String.duplicate("A", 2_000))})
   end
 
   test "restores a failed turn from closing product history" do
@@ -151,6 +151,17 @@ defmodule Jido.Console.Tui.StateTest do
              State.update(state, {:terminal, TermUI.Event.key("c", modifiers: [:ctrl])})
 
     assert Editor.value(state.editor) == "hello"
+  end
+
+  test "an unselected TermUI Ctrl-C event cancels the active turn" do
+    request = %{queue_item_id: "active", request_id: "request-1"}
+    turn = Turn.new(0, "active") |> Turn.put_request(request)
+    state = %{State.new(nil, {80, 24}) | activity: {:active, request, turn, :streaming}}
+
+    assert {state, [{:cancel_turn, ^request}]} =
+             State.update(state, {:terminal, TermUI.Event.key("c", modifiers: [:ctrl])})
+
+    assert {:cancelling, ^turn, {:request, ^request}} = state.activity
   end
 
   test "routes prompt mouse coordinates into TextArea selection" do

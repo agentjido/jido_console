@@ -131,6 +131,19 @@ defmodule Jido.Console.TuiTest do
     assert_receive :terminal_closed
   end
 
+  test "closes the terminal after a flush failure", %{opts: opts, event_queue: event_queue} do
+    opts =
+      Keyword.put(opts, :term_ui_backend_opts,
+        test_pid: self(),
+        event_queue: event_queue,
+        fail_flush: true,
+        size: {16, 60}
+      )
+
+    assert {:error, :flush_failed} = Tui.run(opts)
+    assert_receive :terminal_closed
+  end
+
   test "returns its result when process cleanup raises", %{opts: opts, event_queue: event_queue} do
     opts = Keyword.put(opts, :process_stop, fn _id, _opts -> raise "cleanup failed" end)
     task = Task.async(fn -> Tui.run(opts) end)
