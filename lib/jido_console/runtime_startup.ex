@@ -1,6 +1,7 @@
 defmodule Jido.Console.RuntimeStartup do
   @moduledoc false
 
+  @doc false
   @spec invoke(keyword()) :: :ok | {:error, term()}
   def invoke(opts) do
     case Keyword.get(opts, :application_startup, fn -> :ok end) do

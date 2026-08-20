@@ -112,18 +112,41 @@ defmodule Jido.Console.BootstrapTest do
     home = Path.join(System.tmp_dir!(), "jido-bootstrap-home-#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf!(home) end)
 
+    add_filter = fn id, {filter, config} ->
+      send(test_pid, {:logger_filter, id, filter, config})
+      :ok
+    end
+
     assert :ok =
              Bootstrap.start_applications(
                priv_dir: fn :time_zone_info -> String.to_charlist(priv) end,
                jido_home: home,
                name: :"jido-bootstrap-proc-#{System.unique_integer([:positive])}",
+               add_primary_logger_filter: add_filter,
                ensure_all_started: fn :jido_console ->
                  send(test_pid, :started)
                  {:ok, [:jido_console]}
                end
              )
 
+    assert_receive {:logger_filter, :jido_console_optional_native_load, filter, config}
+    assert filter.(extractous_load_warning(), config) == :stop
+    assert filter.(put_in(extractous_load_warning(), [:level], :error), config) == :ignore
     assert_receive :started
+  end
+
+  defp extractous_load_warning do
+    %{
+      level: :warning,
+      msg:
+        {:report,
+         %{
+           args: [ExtractousEx.Native, {:error, :nif_not_loaded}, 10],
+           label: {:error_logger, :warning_msg},
+           format: ~c"The on_load function for module ~s returned:~n~P\n"
+         }},
+      meta: %{}
+    }
   end
 
   defp fixture_unzip(test_pid) do

@@ -2,6 +2,8 @@ defmodule Jido.Console.Bootstrap do
   @moduledoc "Secure runtime startup for the escript and packaged CLI."
 
   @marker ".complete"
+  @optional_native_filter :jido_console_optional_native_load
+  @on_load_warning_format ~c"The on_load function for module ~s returned:~n~P\n"
 
   alias Jido.Console.Digest
 
@@ -10,11 +12,31 @@ defmodule Jido.Console.Bootstrap do
   def start_applications(opts \\ []) do
     ensure_started = Keyword.get(opts, :ensure_all_started, &Application.ensure_all_started/1)
 
-    with :ok <- make_priv_files_accessible(opts),
+    with :ok <- install_optional_native_filter(opts),
+         :ok <- make_priv_files_accessible(opts),
          {:ok, _applications} <- ensure_started.(:jido_console) do
       :ok
     end
   end
+
+  @doc false
+  @spec filter_optional_native_load(map(), term()) :: :stop | :ignore
+  def filter_optional_native_load(
+        %{
+          level: :warning,
+          msg:
+            {:report,
+             %{
+               label: {:error_logger, :warning_msg},
+               format: @on_load_warning_format,
+               args: [ExtractousEx.Native | _rest]
+             }}
+        },
+        _config
+      ),
+      do: :stop
+
+  def filter_optional_native_load(_event, _config), do: :ignore
 
   @doc false
   @spec make_priv_files_accessible(keyword()) :: :ok | {:error, term()}
@@ -92,6 +114,17 @@ defmodule Jido.Console.Bootstrap do
 
       _progress ->
         {:error, :invalid_bootstrap_progress}
+    end
+  end
+
+  defp install_optional_native_filter(opts) do
+    add_filter = Keyword.get(opts, :add_primary_logger_filter, &:logger.add_primary_filter/2)
+    filter = {&__MODULE__.filter_optional_native_load/2, nil}
+
+    case add_filter.(@optional_native_filter, filter) do
+      :ok -> :ok
+      {:error, {:already_exist, @optional_native_filter}} -> :ok
+      {:error, reason} -> {:error, {:logger_filter_install_failed, reason}}
     end
   end
 

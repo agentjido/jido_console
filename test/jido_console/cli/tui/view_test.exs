@@ -12,6 +12,12 @@ defmodule Jido.Console.Tui.ViewTest do
     assert %Frame{width: 1, height: 1} = View.render(%{state | size: {1, 1}})
   end
 
+  test "limits oversized terminal dimensions to TermUI frame limits" do
+    frame = View.render(State.new(nil, {1_001, 501}))
+
+    assert %Frame{width: 1_000, height: 500} = frame
+  end
+
   test "keeps a multiline Unicode editor cursor inside the frame" do
     editor = Editor.from_text("alpha\n界e\u0301")
     frame = View.render(%{State.new(nil, {18, 8}) | editor: editor})
@@ -62,6 +68,43 @@ defmodule Jido.Console.Tui.ViewTest do
 
     assert text =~ "seventh-line"
     assert Enum.any?(frame.cells, fn {_position, cell} -> cell.char == "+" and cell.fg == :green end)
+  end
+
+  test "does not render patches from hidden coding reviews" do
+    visible_review = %{"kind" => "edit", "status" => "changed", "path" => "visible"}
+
+    hidden_review = %{
+      "kind" => "git_diff",
+      "status" => "changed",
+      "files" => nil,
+      "patch" => "this patch must remain hidden",
+      "binary" => false,
+      "truncated" => false
+    }
+
+    frame = View.render(%{State.new(nil, {40, 6}) | coding_reviews: [visible_review, hidden_review]})
+    text = Enum.map_join(1..frame.height, "\n", &Frame.row_text(frame, &1))
+
+    assert text =~ "review truncated"
+  end
+
+  test "limits the visible rows of a git patch" do
+    patch = Enum.map_join(1..100, "\n", &"+changed line #{&1}")
+
+    review = %{
+      "kind" => "git_diff",
+      "status" => "changed",
+      "files" => [],
+      "patch" => patch,
+      "binary" => false,
+      "truncated" => false
+    }
+
+    frame = View.render(%{State.new(nil, {40, 8}) | coding_reviews: [review]})
+    text = Enum.map_join(1..frame.height, "\n", &Frame.row_text(frame, &1))
+
+    assert text =~ "review truncated"
+    refute text =~ "changed line 100"
   end
 
   test "a large retained transcript has bounded frame and render work" do

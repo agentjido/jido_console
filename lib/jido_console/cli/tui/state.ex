@@ -95,6 +95,18 @@ defmodule Jido.Console.Tui.State do
   def startup_failure(%__MODULE__{}), do: :none
 
   @spec update(t(), term()) :: {t(), [effect()]}
+  def update(%__MODULE__{activity: {:review, _, _, _, {:responding, _}}} = state, {:terminal, %Event.Text{}}),
+    do: {state, []}
+
+  def update(%__MODULE__{activity: {:review, _, _, _, {:responding, _}}} = state, {:terminal, %Event.Paste{}}),
+    do: {state, []}
+
+  def update(%__MODULE__{activity: {:review, _, _, _, {:responding, _}}} = state, {:terminal, %Event.Key{}}),
+    do: {state, []}
+
+  def update(%__MODULE__{activity: {:review, _, _, _, {:responding, _}}} = state, {:terminal, %Event.Mouse{}}),
+    do: {state, []}
+
   def update(%__MODULE__{activity: {:review, _, _, _, :awaiting}} = state, {:terminal, %Event.Text{text: text}}),
     do: update(state, {:terminal, {:text, text}})
 
@@ -625,6 +637,7 @@ defmodule Jido.Console.Tui.State do
   defp history_content(%{type: "prompt_succeeded", payload: payload}, "") do
     case map_get(payload, :result) do
       result when is_binary(result) -> result
+      result when is_map(result) -> map_get(result, :content, "")
       _result -> ""
     end
   end

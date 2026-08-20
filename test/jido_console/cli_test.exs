@@ -196,6 +196,41 @@ defmodule Jido.ConsoleTest do
            end) =~ "jido:"
   end
 
+  test "main starts the runtime before stopping processes" do
+    root = Path.join(System.tmp_dir!(), "jido-cli-stop-#{System.unique_integer([:positive])}")
+    name = String.to_atom("jido-cli-stop-#{System.unique_integer([:positive])}")
+    opts = [jido_home: root, name: name]
+    test_pid = self()
+
+    on_exit(fn ->
+      if manager = Process.whereis(name) do
+        try do
+          GenServer.stop(manager)
+        catch
+          :exit, _reason -> :ok
+        end
+      end
+
+      File.rm_rf(root)
+    end)
+
+    startup = fn ->
+      send(test_pid, :application_started)
+      {:ok, _manager} = Jido.Console.Process.Supervisor.start_link(opts)
+      :ok
+    end
+
+    assert capture_io(fn ->
+             assert :ok =
+                      Jido.Console.CLI.main(
+                        ["stop"],
+                        Keyword.put(opts, :application_startup, startup)
+                      )
+           end) == "jido: no owned background processes\n"
+
+    assert_receive :application_started
+  end
+
   test "formats TUI errors at the CLI boundary" do
     reasons = [
       {RuntimeError.exception("exception failure"), "exception failure"},

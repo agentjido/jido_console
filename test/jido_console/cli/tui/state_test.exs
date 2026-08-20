@@ -58,6 +58,28 @@ defmodule Jido.Console.Tui.StateTest do
              State.update(state, {:terminal, TermUI.Event.paste(String.duplicate("A", 2_000))})
   end
 
+  test "ignores editor input while a review response is pending" do
+    state =
+      State.new(nil, {30, 12})
+      |> State.restore_view(review_view())
+      |> Map.put(:editor, Editor.from_text("hidden prompt"))
+
+    {state, [{:respond_review, :approve, _request, _event, _review}]} =
+      State.update(state, {:terminal, TermUI.Event.text("a")})
+
+    assert {:review, _request, _turn, _event, {:responding, :approve}} = state.activity
+
+    for event <- [
+          TermUI.Event.text("x"),
+          TermUI.Event.key(:backspace),
+          TermUI.Event.mouse(:press, :left, 2, 7)
+        ] do
+      assert {^state, []} = State.update(state, {:terminal, event})
+    end
+
+    assert Editor.value(state.editor) == "hidden prompt"
+  end
+
   test "restores a failed turn from closing product history" do
     error = "provider failed exactly"
     state = restore_closed_turn("prompt_failed", %{"error" => error})
@@ -124,7 +146,7 @@ defmodule Jido.Console.Tui.StateTest do
     view =
       closed_view(
         "prompt_succeeded",
-        %{"result" => "stored final answer"},
+        %{"result" => %{"content" => "stored final answer"}},
         transcript: [
           %{"role" => "user", "content" => "do work"},
           %{
@@ -136,6 +158,13 @@ defmodule Jido.Console.Tui.StateTest do
       )
 
     state = State.new(nil, {80, 24}) |> State.restore_view(view)
+
+    assert [%Turn{assistant: "stored final answer", outcome: %{status: :completed}}] = state.turns
+  end
+
+  test "uses atom-keyed content from a successful result" do
+    state =
+      restore_closed_turn("prompt_succeeded", %{"result" => %{content: "stored final answer"}})
 
     assert [%Turn{assistant: "stored final answer", outcome: %{status: :completed}}] = state.turns
   end

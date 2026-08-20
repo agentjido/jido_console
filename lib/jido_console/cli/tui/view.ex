@@ -11,17 +11,25 @@ defmodule Jido.Console.Tui.View do
   @max_transcript_rows 2_000
   @max_markdown_bytes 512_000
   @max_diff_rows 200
+  @max_frame_width 1_000
+  @max_frame_height 500
 
   @spec render(State.t()) :: Frame.t()
-  def render(%State{size: {width, 1}}) do
+  def render(%State{} = state) do
+    state
+    |> normalize_frame_size()
+    |> render_frame()
+  end
+
+  defp render_frame(%State{size: {width, 1}}) do
     Frame.from_rows(["Jido · resize"], width, 1)
   end
 
-  def render(%State{size: {width, height}}) when width < 12 or height < 5 do
+  defp render_frame(%State{size: {width, height}}) when width < 12 or height < 5 do
     Frame.from_rows(["Jido", "Resize terminal."], width, height)
   end
 
-  def render(%State{size: {width, height}} = state) do
+  defp render_frame(%State{size: {width, height}} = state) do
     prompt_limit = min(5, max(height - 4, 1))
     editor = Editor.frame(state.editor, max(width - 2, 1), prompt_limit)
     body_height = max(height - 3 - editor.height, 0)
@@ -241,25 +249,44 @@ defmodule Jido.Console.Tui.View do
   defp review_rows(_reviews, _width, 0), do: []
 
   defp review_rows(reviews, width, limit) do
-    all_rows = ["Review"] ++ Enum.flat_map(reviews, &review_record(&1, width))
-    rows = Enum.take(all_rows, limit)
+    {rows, truncated?} =
+      Enum.reduce_while(reviews, {["Review"], false}, fn review, {rows, _truncated?} ->
+        remaining = limit - length(rows)
 
-    if length(rows) < length(all_rows),
+        if remaining == 0 do
+          {:halt, {rows, true}}
+        else
+          {review_rows, truncated?} = review_record(review, width, remaining)
+          rows = rows ++ review_rows
+
+          if truncated? do
+            {:halt, {rows, true}}
+          else
+            {:cont, {rows, false}}
+          end
+        end
+      end)
+
+    if truncated?,
       do: List.replace_at(rows, -1, TextLayout.fit("… review truncated", width)),
       else: rows
   end
 
-  defp review_record(%{"kind" => "edit"} = review, width) do
+  defp normalize_frame_size(%State{size: {width, height}} = state) do
+    %{state | size: {min(width, @max_frame_width), min(height, @max_frame_height)}}
+  end
+
+  defp review_record(%{"kind" => "edit"} = review, width, limit) do
     header =
       "#{marker(review["status"])} #{review["path"]} · #{review["operation"] || "edit"} · " <>
         "#{review["before_sha256"] || "new"} → #{review["after_sha256"]}"
 
     checkpoint = if review["checkpoint_ref"], do: ["  checkpoint #{review["checkpoint_ref"]}"], else: []
     diff = structural_diff_rows(review["diff"])
-    Enum.map([header] ++ checkpoint ++ diff, &TextLayout.fit(&1, width))
+    limited_review_rows([header] ++ checkpoint ++ diff, width, limit)
   end
 
-  defp review_record(%{"kind" => "git_diff"} = review, width) do
+  defp review_record(%{"kind" => "git_diff"} = review, width, limit) do
     file_count = length(review["files"])
     file_label = if file_count == 1, do: "file", else: "files"
 
@@ -274,33 +301,49 @@ defmodule Jido.Console.Tui.View do
         "  #{file["path"]} · #{facts}"
       end)
 
-    patch = diff_rows(review["patch"], width)
-    Enum.map([header] ++ files, &TextLayout.fit(&1, width)) ++ patch
+    file_rows = Enum.map([header] ++ files, &TextLayout.fit(&1, width))
+    remaining = limit - length(file_rows)
+
+    if remaining <= 0 do
+      {Enum.take(file_rows, limit), true}
+    else
+      {patch, truncated?} = diff_rows(review["patch"], width, remaining)
+      {file_rows ++ patch, truncated?}
+    end
   end
 
-  defp review_record(review, width) do
+  defp review_record(review, width, limit) do
     header = "#{marker(review["status"])} #{review["path"] || "coding mutation"} · #{review["status"]}"
     checkpoint = if review["checkpoint_ref"], do: ["  checkpoint #{review["checkpoint_ref"]}"], else: []
     message = if review["message"], do: ["  #{review["message"]}"], else: []
-    Enum.map([header] ++ checkpoint ++ message, &TextLayout.fit(&1, width))
+    limited_review_rows([header] ++ checkpoint ++ message, width, limit)
   end
 
-  defp diff_rows(patch, width) do
+  defp limited_review_rows(rows, width, limit) do
+    rows = Enum.map(rows, &TextLayout.fit(&1, width))
+    {Enum.take(rows, limit), length(rows) > limit}
+  end
+
+  defp diff_rows(patch, width, limit) do
     inner_width = max(width - 2, 1)
 
     viewer =
       DiffViewer.init(
         unified_diff: SafeText.clean(patch || ""),
-        max_lines: @max_diff_rows,
+        max_lines: min(@max_diff_rows, limit),
         context: 3
       )
 
-    height = min(max(length(viewer.rows) * 2 + 2, 1), @max_diff_rows)
+    full_height = min(max(length(viewer.rows) * 2 + 2, 1), @max_diff_rows)
+    height = min(full_height, limit)
 
-    viewer
-    |> DiffViewer.view({inner_width, height})
-    |> styled_frame_rows()
-    |> Enum.map(&[{"  ", Style.new()} | &1])
+    rows =
+      viewer
+      |> DiffViewer.view({inner_width, height})
+      |> styled_frame_rows()
+      |> Enum.map(&[{"  ", Style.new()} | &1])
+
+    {rows, full_height > height}
   end
 
   defp styled_frame_rows(frame) do
