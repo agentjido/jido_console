@@ -527,7 +527,8 @@ defmodule Jido.Console.Tui.State do
   defp view_message(message) do
     %{
       role: map_get(message, :role, :assistant) |> normalize_role(),
-      content: map_get(message, :content, "") |> SafeText.clean()
+      content: map_get(message, :content, "") |> SafeText.clean(),
+      tool_calls: map_get(message, :tool_calls, [])
     }
   end
 
@@ -537,6 +538,9 @@ defmodule Jido.Console.Tui.State do
         %{role: :user, content: content}, {turns, pending, id} ->
           turns = finish_pending(turns, pending)
           {turns, Turn.new(id, content), id + 1}
+
+        %{role: :assistant, tool_calls: tool_calls}, acc when tool_calls != [] ->
+          acc
 
         %{role: :assistant, content: content}, {turns, %Turn{} = pending, id} ->
           {turns ++ [Turn.finish(pending, :completed, content)], nil, id}
@@ -615,8 +619,17 @@ defmodule Jido.Console.Tui.State do
   defp finish_from_history(turn, record) do
     turn = Turn.put_request(turn, %{request_id: record.request_id})
     {outcome, error} = history_outcome(record.type, record.payload)
-    Turn.finish(turn, outcome, turn.assistant, error: error)
+    Turn.finish(turn, outcome, history_content(record, turn.assistant), error: error)
   end
+
+  defp history_content(%{type: "prompt_succeeded", payload: payload}, "") do
+    case map_get(payload, :result) do
+      result when is_binary(result) -> result
+      _result -> ""
+    end
+  end
+
+  defp history_content(_record, assistant), do: assistant
 
   defp history_outcome("prompt_succeeded", _payload), do: {:completed, nil}
   defp history_outcome("prompt_failed", payload), do: {:failed, map_get(payload, :error)}
@@ -691,7 +704,9 @@ defmodule Jido.Console.Tui.State do
 
   defp normalize_role(role) when role in [:user, "user"], do: :user
   defp normalize_role(role) when role in [:assistant, "assistant"], do: :assistant
-  defp normalize_role(_role), do: :assistant
+  defp normalize_role(role) when role in [:tool, "tool"], do: :tool
+  defp normalize_role(role) when role in [:system, "system"], do: :system
+  defp normalize_role(_role), do: :system
 
   defp map_get(map, key, default \\ nil)
   defp map_get(map, key, default) when is_map(map), do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))

@@ -95,6 +95,51 @@ defmodule Jido.Console.Tui.StateTest do
     assert [%Turn{prompt: "do work", assistant: "done", outcome: %{status: :completed}}] = state.turns
   end
 
+  test "restores the final assistant answer after tool calls" do
+    operation =
+      Jason.encode!(%{
+        "type" => "operations",
+        "operations" => [%{"name" => "coding.read", "arguments" => %{"path" => "AGENTS.md"}}]
+      })
+
+    view =
+      closed_view(
+        "prompt_succeeded",
+        %{"result" => "final answer"},
+        transcript: [
+          %{"role" => "user", "content" => "explain this repo"},
+          %{"role" => "assistant", "content" => operation, "tool_calls" => [%{"name" => "coding.read"}]},
+          %{"role" => "tool", "content" => "repository instructions"},
+          %{"role" => "assistant", "content" => "final answer"}
+        ]
+      )
+
+    state = State.new(nil, {80, 24}) |> State.restore_view(view)
+
+    assert [%Turn{prompt: "explain this repo", assistant: "final answer", outcome: %{status: :completed}}] = state.turns
+    assert Enum.map(state.messages, & &1.role) == [:user, :assistant, :tool, :assistant]
+  end
+
+  test "uses the successful result when the final transcript answer is absent" do
+    view =
+      closed_view(
+        "prompt_succeeded",
+        %{"result" => "stored final answer"},
+        transcript: [
+          %{"role" => "user", "content" => "do work"},
+          %{
+            "role" => "assistant",
+            "content" => ~s({"type":"operations","operations":[]}),
+            "tool_calls" => [%{"name" => "coding.read"}]
+          }
+        ]
+      )
+
+    state = State.new(nil, {80, 24}) |> State.restore_view(view)
+
+    assert [%Turn{assistant: "stored final answer", outcome: %{status: :completed}}] = state.turns
+  end
+
   test "does not assign a truncated closing event to an unrelated transcript turn" do
     view =
       View.new!(
