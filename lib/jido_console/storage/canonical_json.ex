@@ -53,12 +53,6 @@ defmodule Jido.Console.Storage.CanonicalJSON do
     end)
   end
 
-  defp order(%{__struct__: Jido.Console.Session.Envelope} = envelope) do
-    envelope
-    |> Jido.Console.Session.Envelope.to_map()
-    |> order()
-  end
-
   defp order(value) when is_map(value) and not is_struct(value) do
     value
     |> Enum.reduce_while({:ok, []}, fn

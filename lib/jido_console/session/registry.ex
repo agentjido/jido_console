@@ -25,8 +25,11 @@ defmodule Jido.Console.Session.Registry do
   @spec lookup(String.t(), atom()) :: {:ok, pid()} | {:error, :not_found}
   def lookup(session_id, registry \\ __MODULE__) when is_binary(session_id) do
     case Registry.lookup(registry, session_id) do
-      [{pid, _value}] -> {:ok, pid}
-      [] -> {:error, :not_found}
+      [{pid, _value}] when is_pid(pid) ->
+        if Process.alive?(pid), do: {:ok, pid}, else: {:error, :not_found}
+
+      [] ->
+        {:error, :not_found}
     end
   rescue
     ArgumentError -> {:error, :not_found}

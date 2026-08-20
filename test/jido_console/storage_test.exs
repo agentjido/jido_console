@@ -2,73 +2,76 @@ defmodule Jido.Console.StorageTest do
   use ExUnit.Case, async: false
 
   alias Exqlite.Sqlite3
-  alias Jido.Console.Session.{Event, Reducer, State}
+  alias Jido.Console.Home
   alias Jido.Console.Storage
   alias Jido.Console.Storage.Supervisor, as: StorageSupervisor
+  alias Jidoka.Agent
+  alias Jidoka.Session.Data
+  alias Jidoka.Session.Store
 
   setup do
-    root = Path.join(System.tmp_dir!(), "jido-storage-#{System.unique_integer([:positive])}")
-
-    opts = [
-      name: unique(:supervisor),
-      lock: unique(:lock),
-      writer: unique(:writer),
-      jido_home: root
-    ]
+    root = temp_root()
+    opts = storage_options(root)
 
     assert {:ok, supervisor} = StorageSupervisor.start_link(opts)
     on_exit(fn -> File.rm_rf(root) end)
-    %{root: root, opts: opts, supervisor: supervisor}
+
+    %{root: root, opts: opts, supervisor: supervisor, store: Storage.session_store(storage_opts(opts))}
   end
 
-  test "uses one private database with two product tables", context do
-    path = Path.join(context.root, "state/console.sqlite3")
+  test "uses one private database with only sessions and thread_events", context do
+    path = database_path(context.root)
+
     assert File.regular?(path)
-    assert {:ok, %{integrity: :ok, tables: 2}} = Storage.inspect_store(storage_opts(context.opts))
+    assert :ok = Home.check_private(path)
+
+    assert {:ok, %{integrity: :ok, tables: 2, sessions: 0, thread_events: 0}} =
+             Storage.inspect_store(storage_opts(context.opts))
 
     Supervisor.stop(context.supervisor)
     assert {:ok, conn} = Sqlite3.open(path)
-    assert {:ok, statement} = Sqlite3.prepare(conn, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+
+    assert {:ok, statement} =
+             Sqlite3.prepare(
+               conn,
+               "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+             )
+
     assert :ok = Sqlite3.bind(statement, [])
     assert {:ok, rows} = Sqlite3.fetch_all(conn, statement)
-    assert Enum.map(rows, &hd/1) == ["events", "operations"]
+    assert Enum.map(rows, &hd/1) == ["sessions", "thread_events"]
     assert :ok = Sqlite3.release(conn, statement)
     assert :ok = Sqlite3.close(conn)
   end
 
-  test "commits ordered events and reads them after restart", context do
-    event = event("session-one", 1, "event-one", "input_admitted")
-    {:ok, semantic} = Reducer.apply_event(State.new("session-one"), event)
-
-    assert {:ok, %{sequence: 1, duplicate: false}} =
-             Storage.append_event(event, semantic, storage_opts(context.opts))
-
-    assert {:ok, %{sequence: 1}} = Storage.history_head("session-one", storage_opts(context.opts))
-    assert {:ok, [^event]} = Storage.events("session-one", storage_opts(context.opts))
+  test "keeps validated sessions across writer restarts", context do
+    session = session("stored-session")
+    assert {:ok, ^session} = Store.put_session(context.store, session)
 
     Supervisor.stop(context.supervisor)
     assert {:ok, _supervisor} = StorageSupervisor.start_link(context.opts)
-    assert {:ok, [^event]} = Storage.events("session-one", storage_opts(context.opts))
-    assert {:ok, %{events: 1, operations: 0}} = Storage.status(storage_opts(context.opts))
+
+    store = Storage.session_store(storage_opts(context.opts))
+    assert {:ok, ^session} = Store.get_session(store, session.session_id)
+    assert {:ok, [^session]} = Store.list_sessions(store)
+    assert {:ok, %{sessions: 1, thread_events: 0}} = Storage.status(storage_opts(context.opts))
   end
 
-  test "rejects event gaps and changed duplicate identities", context do
-    gap = event("session-gap", 2, "event-gap", "input_admitted")
-    semantic = %{State.new("session-gap") | sequence: 2}
+  test "rejects the removed events and operations schema", context do
+    Supervisor.stop(context.supervisor)
+    previous = Process.flag(:trap_exit, true)
+    path = database_path(context.root)
 
-    assert {:error, {:invalid_event_sequence, "session-gap", 0, 2}} =
-             Storage.append_event(gap, semantic, storage_opts(context.opts))
+    File.rm!(path)
+    assert {:ok, conn} = Sqlite3.open(path)
+    assert :ok = Sqlite3.execute(conn, "CREATE TABLE events(id TEXT PRIMARY KEY) STRICT")
+    assert :ok = Sqlite3.execute(conn, "CREATE TABLE operations(id TEXT PRIMARY KEY) STRICT")
+    assert :ok = Sqlite3.close(conn)
+    assert :ok = File.chmod(path, Home.file_mode())
 
-    first = event("session-conflict", 1, "shared-event", "input_admitted")
-    {:ok, first_state} = Reducer.apply_event(State.new("session-conflict"), first)
-    assert {:ok, %{duplicate: false}} = Storage.append_event(first, first_state, storage_opts(context.opts))
-    assert {:ok, %{duplicate: true}} = Storage.append_event(first, first_state, storage_opts(context.opts))
-
-    changed = event("session-conflict", 1, "shared-event", "run_started")
-    {:ok, changed_state} = Reducer.apply_event(State.new("session-conflict"), changed)
-
-    assert {:error, {:canonical_event_conflict, "shared-event"}} =
-             Storage.append_event(changed, changed_state, storage_opts(context.opts))
+    assert {:error, reason} = StorageSupervisor.start_link(context.opts)
+    assert inspect(reason) =~ "storage_schema_reset_required"
+    Process.flag(:trap_exit, previous)
   end
 
   test "denies a second writer for the same home", context do
@@ -85,22 +88,31 @@ defmodule Jido.Console.StorageTest do
     Process.flag(:trap_exit, previous)
   end
 
-  defp event(session_id, sequence, id, type) do
-    {:ok, event} =
-      Event.classify(%{
-        "id" => id,
-        "session_id" => session_id,
-        "type" => type,
-        "sequence" => sequence,
-        "durability" => "process",
-        "sensitivity" => "public",
-        "origin" => %{"kind" => "session", "actor_id" => session_id},
-        "trust" => %{"evidence" => "test", "policy" => "test"}
-      })
-
-    event
+  defp session(id) do
+    {:ok, session} = Data.start(spec(), session_id: id)
+    session
   end
 
+  defp spec do
+    Agent.Spec.new!(
+      id: "storage-test-agent",
+      instructions: "Test durable storage.",
+      model: %{provider: :test, id: "model"}
+    )
+  end
+
+  defp database_path(root), do: Path.join(root, "state/console.sqlite3")
   defp storage_opts(opts), do: [writer: opts[:writer], deadline: 1_000]
+
+  defp storage_options(root) do
+    [
+      name: unique(:supervisor),
+      lock: unique(:lock),
+      writer: unique(:writer),
+      jido_home: root
+    ]
+  end
+
+  defp temp_root, do: Path.join(System.tmp_dir!(), "jido-storage-#{System.unique_integer([:positive])}")
   defp unique(label), do: String.to_atom("#{label}-#{System.unique_integer([:positive])}")
 end

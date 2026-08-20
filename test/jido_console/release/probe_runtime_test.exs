@@ -2,7 +2,7 @@ defmodule Jido.Console.Release.ProbeRuntimeTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Release.ProbeRuntime
-  alias Jido.Console.Runtime.Result
+  alias Jido.Console.Release.ProbeRuntime.Result
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-probe-runtime-#{System.unique_integer([:positive])}")

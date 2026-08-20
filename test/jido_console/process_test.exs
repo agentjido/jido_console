@@ -5,6 +5,7 @@ defmodule Jido.Console.ProcessTest do
 
   alias Jido.Console.Process
   alias Jido.Console.Process.{Contract, Store}
+  alias Jido.Console.Process.Supervisor, as: ProcessSupervisor
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-process-#{System.unique_integer([:positive])}")
@@ -32,7 +33,7 @@ defmodule Jido.Console.ProcessTest do
     catalog = Process.catalog()
     assert Process.statuses() == [:starting, :ready, :running, :stopping, :stopped, :failed]
     assert Map.has_key?(catalog, :interactive)
-    assert Map.has_key?(catalog, :coding_runtime)
+    assert Map.keys(catalog) == [:interactive]
     assert Process.spec(:interactive) == catalog.interactive
     assert Process.format_status([]) == "jido: no owned background processes\n"
 
@@ -148,12 +149,42 @@ defmodule Jido.Console.ProcessTest do
     Elixir.Process.exit(owner, :kill)
   end
 
+  test "accepts the exact contract id and ignores unrelated manager messages", %{opts: opts} do
+    owner = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+    assert {:ok, %{name: "interactive"}} = Process.register(:interactive, owner, Keyword.put(opts, :id, "interactive"))
+
+    manager = Elixir.Process.whereis(opts[:name])
+    send(manager, {:EXIT, owner, :ignored})
+    send(manager, {:DOWN, make_ref(), :process, self(), :ignored})
+    send(manager, :unrelated)
+    assert Elixir.Process.alive?(manager)
+
+    assert {:error, _reason} = Process.stop("unknown", opts)
+    Elixir.Process.exit(owner, :kill)
+  end
+
+  test "stops a stored ownerless marker through the manager", %{opts: opts} do
+    {:ok, stored} =
+      Contract.restore(%{
+        kind: :interactive,
+        name: "interactive",
+        status: :running,
+        readiness: "ready",
+        failure: nil,
+        owner_os_pid: nil
+      })
+
+    assert {:ok, _} = Store.put(stored, opts)
+    assert {:ok, %{status: :stopped}} = ProcessSupervisor.stop_named("interactive", opts)
+    assert {:ok, []} = Process.list(opts)
+  end
+
   test "stored markers use only the stored projection", %{opts: opts} do
     owner = spawn(fn -> Elixir.Process.sleep(:infinity) end)
-    assert {:ok, _record} = Process.register(:coding_runtime, owner, opts)
+    assert {:ok, _record} = Process.register(:interactive, owner, opts)
     {:ok, dir} = Jido.Console.Home.path(:run, opts)
 
-    assert {:ok, encoded} = File.read(Path.join(dir, "coding_runtime.coding-runtime.json"))
+    assert {:ok, encoded} = File.read(Path.join(dir, "interactive.interactive.json"))
     assert {:ok, marker} = Jason.decode(encoded)
 
     assert Map.keys(marker) |> Enum.sort() ==
@@ -184,12 +215,6 @@ defmodule Jido.Console.ProcessTest do
 
     assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} =
              Store.get(identity, opts)
-
-    wrong_path = Path.join(dir, "coding_runtime.coding-runtime.json")
-    File.write!(wrong_path, Jason.encode!(marker))
-
-    assert {:error, {:process_marker_invalid, ^wrong_path, :process_identity_conflict}} =
-             Store.get(Contract.identity(:coding_runtime), opts)
   end
 
   test "skips invalid process markers instead of crashing status", %{opts: opts} do
@@ -313,7 +338,7 @@ defmodule Jido.Console.ProcessTest do
 
   test "owner exit and supervisor stop leave no owned process", %{opts: opts} do
     pid = spawn(fn -> Elixir.Process.sleep(:infinity) end)
-    assert {:ok, _} = Process.register(:coding_runtime, pid, opts)
+    assert {:ok, _} = Process.register(:interactive, pid, opts)
     Elixir.Process.exit(pid, :kill)
     assert_receive_gone(pid)
 

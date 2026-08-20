@@ -1,110 +1,129 @@
 defmodule Jido.Console.Session.SupervisorTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Jido.Console.Session.{DynamicSupervisor, Registry, Supervisor}
 
-  defmodule Placeholder do
+  defmodule TemporaryOwner do
     use GenServer
 
     def child_spec(opts) do
-      session_id = Keyword.fetch!(opts, :session_id)
-
       %{
-        id: session_id,
+        id: Keyword.fetch!(opts, :thread_id),
         start: {__MODULE__, :start_link, [opts]},
         restart: :temporary
       }
     end
 
     def start_link(opts) do
-      session_id = Keyword.fetch!(opts, :session_id)
-      registry = Keyword.fetch!(opts, :registry)
-      GenServer.start_link(__MODULE__, session_id, name: Registry.via(session_id, registry))
+      GenServer.start_link(__MODULE__, :ok,
+        name: Registry.via(Keyword.fetch!(opts, :thread_id), Keyword.fetch!(opts, :registry))
+      )
     end
 
-    def init(session_id), do: {:ok, session_id}
+    def init(:ok), do: {:ok, %{}}
   end
 
   setup do
     suffix = System.unique_integer([:positive])
-    supervisor = :"session-sup-#{suffix}"
-    registry = :"session-reg-#{suffix}"
-    sessions = :"session-dyn-#{suffix}"
-    {:ok, pid} = Supervisor.start_link(name: supervisor, registry: registry, sessions: sessions)
-    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :shutdown) end)
-    %{registry: registry, sessions: sessions, supervisor: supervisor}
+    name = unique(:session_supervisor, suffix)
+    registry = unique(:registry, suffix)
+    sessions = unique(:sessions, suffix)
+    tasks = unique(:tasks, suffix)
+    {:ok, supervisor} = Supervisor.start_link(name: name, registry: registry, sessions: sessions, tasks: tasks)
+    on_exit(fn -> if Process.alive?(supervisor), do: Process.exit(supervisor, :shutdown) end)
+    %{supervisor: supervisor, name: name, registry: registry, sessions: sessions, tasks: tasks}
   end
 
-  test "starts registry then dynamic supervisor and maps one session ID to one server", %{
-    registry: registry,
-    sessions: sessions
-  } do
-    assert Process.whereis(registry)
-    assert Process.whereis(sessions)
+  test "starts Registry, Task.Supervisor, and DynamicSupervisor", context do
+    assert is_pid(Process.whereis(context.registry))
+    assert is_pid(Process.whereis(context.tasks))
+    assert is_pid(Process.whereis(context.sessions))
 
-    opts = [session_id: "ses_one", registry: registry, supervisor: sessions]
-    assert {:ok, pid} = DynamicSupervisor.start_session(Placeholder, opts)
-    assert {:ok, ^pid} = Registry.lookup("ses_one", registry)
-    assert {:error, {:already_started, ^pid}} = DynamicSupervisor.start_session(Placeholder, opts)
-    refute is_atom(elem(Registry.via("ses_untrusted", registry), 2) |> elem(1))
-    assert is_binary(elem(Registry.via("ses_untrusted", registry), 2) |> elem(1))
+    opts = [thread_id: "one-thread", registry: context.registry, supervisor: context.sessions]
+    assert {:ok, owner} = DynamicSupervisor.start_session(TemporaryOwner, opts)
+    assert {:ok, ^owner} = Registry.lookup("one-thread", context.registry)
+    assert {:error, {:already_started, ^owner}} = DynamicSupervisor.start_session(TemporaryOwner, opts)
   end
 
-  test "normal stop removes the registry entry", %{registry: registry, sessions: sessions} do
-    session_id = "ses_stop_#{System.unique_integer([:positive])}"
-    opts = [session_id: session_id, registry: registry, supervisor: sessions]
-    {:ok, pid} = DynamicSupervisor.start_session(Placeholder, opts)
-    ref = Process.monitor(pid)
-    :ok = Elixir.DynamicSupervisor.terminate_child(sessions, pid)
-    assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 1_000
-    refute Process.alive?(pid)
-
-    assert :ok =
-             Enum.reduce_while(1..20, :registry_cleanup_timeout, fn _, _ ->
-               case Registry.lookup(session_id, registry) do
-                 {:error, :not_found} ->
-                   {:halt, :ok}
-
-                 {:ok, _pid} ->
-                   Process.sleep(5)
-                   {:cont, :registry_cleanup_timeout}
-               end
-             end)
-
-    assert {:error, :not_found} = Registry.lookup(session_id, registry)
-  end
-
-  test "ensure and missing-supervisor paths return stable results", %{supervisor: supervisor} do
-    assert {:ok, pid} = Supervisor.ensure_started(name: supervisor)
-    assert pid == Process.whereis(supervisor)
-
-    missing_registry = :"missing-registry-#{System.unique_integer([:positive])}"
-    missing_sessions = :"missing-sessions-#{System.unique_integer([:positive])}"
-    assert {:error, :not_found} = Registry.lookup("missing", missing_registry)
-
-    assert {:error, :not_found} =
-             DynamicSupervisor.start_session(Placeholder,
-               session_id: "missing",
-               registry: missing_registry,
-               supervisor: missing_sessions
-             )
-
+  test "ensure_started starts one named tree and returns the existing tree" do
     suffix = System.unique_integer([:positive])
-    name = :"ensured-session-sup-#{suffix}"
-    registry = :"ensured-session-reg-#{suffix}"
-    sessions = :"ensured-session-dyn-#{suffix}"
-    tasks = :"ensured-session-tasks-#{suffix}"
 
-    assert {:ok, ensured} =
-             Supervisor.ensure_started(
-               name: name,
-               registry: registry,
-               sessions: sessions,
-               tasks: tasks
-             )
+    opts = [
+      name: unique(:ensured_session_supervisor, suffix),
+      registry: unique(:ensured_registry, suffix),
+      sessions: unique(:ensured_sessions, suffix),
+      tasks: unique(:ensured_tasks, suffix)
+    ]
 
-    on_exit(fn -> if Process.alive?(ensured), do: Process.exit(ensured, :shutdown) end)
-    assert Process.whereis(tasks)
-    assert {:ok, ^ensured} = Supervisor.ensure_started(name: name)
+    assert {:ok, supervisor} = Supervisor.ensure_started(opts)
+    assert {:ok, ^supervisor} = Supervisor.ensure_started(opts)
+    assert Process.alive?(supervisor)
+    Elixir.Supervisor.stop(supervisor)
   end
+
+  test "default helpers use the application session tree" do
+    assert {:ok, supervisor} = Supervisor.ensure_started()
+    assert Process.alive?(supervisor)
+
+    assert {:via, Elixir.Registry, {Jido.Console.Session.Registry, "default-thread"}} =
+             Registry.via("default-thread")
+  end
+
+  test "registry lookup returns not found when the registry does not exist" do
+    assert {:error, :not_found} = Registry.lookup("missing-thread", unique(:missing_registry, 0))
+  end
+
+  test "temporary owners are not restarted", context do
+    opts = [thread_id: "temporary-thread", registry: context.registry, supervisor: context.sessions]
+    {:ok, owner} = DynamicSupervisor.start_session(TemporaryOwner, opts)
+    monitor = Process.monitor(owner)
+    Process.exit(owner, :shutdown)
+    assert_receive {:DOWN, ^monitor, :process, ^owner, :shutdown}
+    assert {:error, :not_found} = Registry.lookup("temporary-thread", context.registry)
+    assert Elixir.DynamicSupervisor.count_children(context.sessions).active == 0
+  end
+
+  test "a task supervisor restart keeps Registry and replaces the dynamic subtree", context do
+    registry_pid = Process.whereis(context.registry)
+    tasks_pid = Process.whereis(context.tasks)
+    sessions_pid = Process.whereis(context.sessions)
+    owner_opts = [thread_id: "active-thread", registry: context.registry, supervisor: context.sessions]
+    {:ok, owner} = DynamicSupervisor.start_session(TemporaryOwner, owner_opts)
+    owner_monitor = Process.monitor(owner)
+    tasks_monitor = Process.monitor(tasks_pid)
+    sessions_monitor = Process.monitor(sessions_pid)
+
+    Process.exit(tasks_pid, :kill)
+    assert_receive {:DOWN, ^tasks_monitor, :process, ^tasks_pid, :killed}
+    assert_receive {:DOWN, ^sessions_monitor, :process, ^sessions_pid, :shutdown}
+    assert_receive {:DOWN, ^owner_monitor, :process, ^owner, :shutdown}
+
+    assert Process.whereis(context.registry) == registry_pid
+    assert_eventually(fn -> is_pid(Process.whereis(context.tasks)) and Process.whereis(context.tasks) != tasks_pid end)
+
+    assert_eventually(fn ->
+      is_pid(Process.whereis(context.sessions)) and Process.whereis(context.sessions) != sessions_pid
+    end)
+
+    assert {:error, :not_found} = Registry.lookup("active-thread", context.registry)
+  end
+
+  defp unique(label, suffix), do: String.to_atom("#{label}-#{suffix}")
+
+  defp assert_eventually(fun, attempts \\ 50)
+
+  defp assert_eventually(fun, attempts) when attempts > 0 do
+    if fun.() do
+      assert true
+    else
+      receive do
+      after
+        10 -> :ok
+      end
+
+      assert_eventually(fun, attempts - 1)
+    end
+  end
+
+  defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 end

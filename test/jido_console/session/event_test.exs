@@ -1,167 +1,123 @@
 defmodule Jido.Console.Session.EventTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Session.{Event, Identity}
+  alias Jido.Console.Session.Event
 
-  test "classified events carry sequence, classes, origin, trust, and identities" do
-    session = Identity.new!(:session)
-    request = Identity.new!(:request, session_id: session.id)
-
-    assert {:ok, event} =
-             Event.classify(%{
-               type: "input_admitted",
-               session_id: session.id,
-               sequence: 1,
-               durability: "process",
-               sensitivity: "public",
-               origin: %{kind: "client", actor_id: "cli_tui"},
-               trust: %{evidence: "admitted", policy: "session-owner"},
-               identities: [Identity.to_protocol(request)],
-               input_id: request.id,
-               client_id: "cli_tui"
-             })
-
-    assert event["payload"]["sequence"] == 1
-    assert event["payload"]["durability"] == "process"
-    assert event["payload"]["sensitivity"] == "public"
-    assert event["session_id"] == session.id
-
-    assert [session_identity, request_identity] = event["payload"]["identities"]
-    assert session_identity == %{"kind" => "session", "id" => session.id, "session_id" => session.id}
-    assert request_identity["id"] == request.id
-    refute Event.origin_authority?(event["payload"])
-  end
-
-  test "invalid sequence, origin authority, and raw runtime values fail" do
-    base = %{
-      type: "input_admitted",
-      durability: "process",
-      sensitivity: "public",
-      origin: %{kind: "client", actor_id: "cli_tui"},
-      trust: %{evidence: "admitted", policy: "session-owner"},
-      session_id: "ses_1",
-      identities: [%{"kind" => "request", "id" => "req_1", "session_id" => "ses_1"}]
-    }
-
-    assert {:error, :invalid_event_sequence} = Event.classify(base)
-
-    assert {:error, :origin_cannot_grant_authority} =
-             Event.classify(
-               Map.merge(base, %{sequence: 1, origin: %{kind: "client", actor_id: "cli_tui", authority: true}})
-             )
-
-    assert {:error, :raw_runtime_forbidden} = Event.classify(Map.put(base, :sequence, self()))
-  end
-
-  test "missing, nil, and empty session identities fail" do
-    base = event_attrs("ses_1")
-
-    assert {:error, :invalid_event_session_id} = Event.classify(Map.delete(base, :session_id))
-    assert {:error, :invalid_event_session_id} = Event.classify(Map.put(base, :session_id, nil))
-    assert {:error, :invalid_event_session_id} = Event.classify(Map.put(base, :session_id, ""))
-  end
-
-  test "mixed and foreign embedded identities fail" do
-    base = event_attrs("ses_1")
-
-    mixed = [
-      %{"kind" => "session", "id" => "ses_1", "session_id" => "ses_1"},
-      %{"kind" => "request", "id" => "req_1", "session_id" => "ses_2"}
-    ]
-
-    foreign = [%{"kind" => "session", "id" => "ses_2", "session_id" => "ses_1"}]
-
-    assert {:error, :event_identity_mismatch} = Event.classify(%{base | identities: mixed})
-    assert {:error, :event_identity_mismatch} = Event.classify(%{base | identities: foreign})
-  end
-
-  test "embedded identities require a nonempty session ID" do
-    base = event_attrs("ses_1")
-    missing = [%{"kind" => "request", "id" => "req_1"}]
-    nil_id = [%{"kind" => "request", "id" => "req_1", "session_id" => nil}]
-    empty = [%{"kind" => "request", "id" => "req_1", "session_id" => ""}]
-
-    assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: missing})
-    assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: nil_id})
-    assert {:error, :invalid_event_identity} = Event.classify(%{base | identities: empty})
-  end
-
-  test "validates classified envelopes without constructing missing identities" do
-    session = Identity.new!(:session)
-
-    {:ok, event} =
-      Event.classify(%{
-        type: "run_started",
-        session_id: session.id,
-        sequence: 1,
-        durability: "process",
-        sensitivity: "public",
-        origin: %{kind: "session", actor_id: session.id},
-        trust: %{evidence: "test", policy: "session-owner"},
-        identities: [Identity.to_protocol(session)]
-      })
+  test "builds and validates one portable product event" do
+    event =
+      Event.new!(
+        id: "command-1:prompt_queued",
+        type: "prompt_queued",
+        session_id: "thread-1",
+        queue_item_id: "command-1",
+        request_id: "request-1",
+        payload: %{input: "hello"}
+      )
 
     assert {:ok, ^event} = Event.validate(event)
-
-    missing = update_in(event, ["payload"], &Map.delete(&1, "identities"))
-    empty = put_in(event, ["payload", "identities"], [])
-
-    assert {:error, :event_session_identity_missing} = Event.validate(missing)
-
-    assert {:error, :event_session_identity_missing} = Event.validate(empty)
+    assert event.sequence == nil
+    assert event.committed_at_ms == nil
+    assert Event.commit(event, 1, 10).sequence == 1
+    refute inspect(event) =~ "#PID"
   end
 
-  test "rejects invalid event classes, trust, origin, identities, and shapes" do
-    assert {:error, :invalid_event} = Event.classify(:invalid)
-    assert {:error, :invalid_event} = Event.validate(:invalid)
-    assert Event.origin_authority?(%{"origin" => %{"kind" => "host", "actor_id" => "user"}})
-    refute Event.origin_authority?(%{})
+  test "rejects unknown types, unsupported versions, and incomplete identities" do
+    attrs = %{
+      id: "event-1",
+      type: "prompt_queued",
+      session_id: "thread-1",
+      queue_item_id: "item-1",
+      request_id: "request-1"
+    }
 
-    base = event_attrs("ses_1")
+    assert {:error, :invalid_thread_event} = Event.new(%{attrs | type: "lease_claimed"})
+    assert {:error, {:unsupported_thread_event_schema, 2}} = Event.new(Map.put(attrs, :schema_version, 2))
+    assert {:error, :invalid_thread_event} = Event.new(Map.delete(attrs, :request_id))
+  end
 
-    cases = [
-      {%{base | sequence: -1}, :invalid_event_sequence},
-      {%{base | durability: "durable"}, {:invalid_event_class, "durability"}},
-      {%{base | sensitivity: "unknown"}, {:invalid_event_class, "sensitivity"}},
-      {%{base | origin: %{"kind" => "client"}}, :invalid_event_origin},
-      {%{base | trust: %{"evidence" => "test"}}, :invalid_event_trust},
-      {%{base | identities: :invalid}, :invalid_event_identity},
-      {%{
-         base
-         | identities: [
-             %{"kind" => "session", "id" => "ses_1", "session_id" => "ses_1"},
-             %{"kind" => "session", "id" => "ses_1", "session_id" => "ses_1"}
-           ]
-       }, :event_identity_mismatch}
-    ]
+  test "classifies start and closing outcomes" do
+    assert Event.started?("prompt_started")
+    refute Event.started?("prompt_queued")
 
-    for {attrs, expected} <- cases do
-      assert {:error, ^expected} = Event.classify(attrs)
+    for type <- ~w(prompt_removed prompt_succeeded prompt_failed prompt_cancelled prompt_interrupted) do
+      assert Event.closing?(type)
     end
 
-    assert {:error, :raw_runtime_forbidden} =
-             Event.classify(%{base | identities: [%{"kind" => "request", "id" => "request", "session_id" => self()}]})
+    refute Event.closing?("review_presented")
   end
 
-  defp event_attrs(session_id) do
-    %{
-      type: "input_admitted",
-      session_id: session_id,
-      sequence: 1,
-      durability: "process",
-      sensitivity: "public",
-      origin: %{kind: "client", actor_id: "cli_tui"},
-      trust: %{evidence: "admitted", policy: "session-owner"},
-      identities: []
+  test "projects values to JSON data without live runtime terms" do
+    assert Event.json(%{status: :ok, nested: {:left, 2}}) == %{
+             "status" => "ok",
+             "nested" => ["left", 2]
+           }
+  end
+
+  test "exposes its schema and normalizes all supported string keys" do
+    assert Event.schema_version() == 1
+    assert "prompt_queued" in Event.types()
+    assert %Zoi.Types.Struct{} = Event.schema()
+
+    attrs = %{
+      "id" => "event-1",
+      "type" => "prompt_queued",
+      "session_id" => "thread-1",
+      "queue_item_id" => "item-1",
+      "request_id" => "request-1",
+      "schema_version" => 1,
+      "jidoka_revision" => 2,
+      "payload" => %{"input" => "hello"},
+      "sequence" => 3,
+      "committed_at_ms" => 4
     }
+
+    assert {:ok, %Event{} = event} = Event.new(attrs)
+    assert event.sequence == 3
+    assert event.committed_at_ms == 4
+    assert {:error, :invalid_thread_event} = Event.new(:invalid)
+    assert {:error, :invalid_thread_event} = Event.validate(:invalid)
+    assert_raise ArgumentError, fn -> Event.new!(%{}) end
   end
 
-  test "classification does not keep live sequence state" do
-    source = File.read!("lib/jido_console/session/event.ex")
-    refute source =~ ":ets"
-    refute source =~ "Agent."
-    refute source =~ "Process.put"
-    refute source =~ "next_sequence"
-    refute source =~ "@sequence"
+  test "projects event identity, views, classifications, and arbitrary JSON values" do
+    state = %{thread_id: "thread-1"}
+    item = %{id: "item-1", request_id: "request-1"}
+    event = Event.for_item(state, item, "prompt_started", %{answer: :ok}, 7) |> Event.commit(2, 10)
+
+    assert Event.started?(event)
+    assert Event.closing?(%{event | type: "prompt_failed"})
+    refute Event.closing?(:unknown)
+    assert Event.identity(event).id == "thread-1:item-1:prompt_started"
+
+    assert Event.to_view(event) == %{
+             "committed_at_ms" => 10,
+             "id" => "thread-1:item-1:prompt_started",
+             "jidoka_revision" => 7,
+             "payload" => %{answer: :ok},
+             "queue_item_id" => "item-1",
+             "request_id" => "request-1",
+             "sequence" => 2,
+             "type" => "prompt_started"
+           }
+
+    assert Event.json([nil, true, 1, 1.5, "text", :atom]) == [nil, true, 1, 1.5, "text", "atom"]
+    assert Event.json(event)["id"] == "thread-1:item-1:prompt_started"
+    assert Event.json(%{{:key, 1} => self()}) |> Map.has_key?("{:key, 1}")
+  end
+
+  test "builds globally unique item IDs and stable review IDs" do
+    item = %{id: "shared-item", request_id: "shared-request"}
+    first = Event.for_item(%{thread_id: "thread-1"}, item, "prompt_queued", %{})
+    second = Event.for_item(%{thread_id: "thread-2"}, item, "prompt_queued", %{})
+
+    refute first.id == second.id
+    assert first.id == "thread-1:shared-item:prompt_queued"
+
+    review = Event.for_item(%{thread_id: "thread-1"}, item, "review_presented", %{}, 1, "review-1")
+    retry = Event.for_item(%{thread_id: "thread-1"}, item, "review_presented", %{}, 1, "review-1")
+    next_review = Event.for_item(%{thread_id: "thread-1"}, item, "review_presented", %{}, 2, "review-2")
+
+    assert review.id == retry.id
+    refute review.id == next_review.id
   end
 end

@@ -188,8 +188,16 @@ Controlled fixtures stay under `release/fixtures/`. Release tools stay under
 | [Jidoka](https://github.com/agentjido/jidoka) | Runtime for sessions, effects, tools, cancellation, and recovery |
 | Jido Console | User-facing terminal and session control plane |
 
-Jidoka owns agent execution truth. Jido Console owns user-visible session truth.
-A renderer or transport does not own either source of truth.
+Jidoka session data owns durable execution truth. Console thread events own
+durable product history. One temporary OTP owner per thread owns the live FIFO,
+partial output, and complete revisioned View. A renderer or transport owns none
+of these authorities.
+
+One request runs at a time in each thread. Up to 32 later prompts wait in FIFO
+order. Different thread IDs can run in parallel. A replacement owner does not
+resume old work; it waits for a live Jidoka lease or records interruption after
+the lease expires. See [local thread storage](guides/durable-continuity.md) for
+the storage and recovery contract.
 
 Jido Console collects no usage data or telemetry. Never include credentials in
 bug reports, logs, artifacts, examples, or fixtures.

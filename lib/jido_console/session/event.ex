@@ -1,203 +1,212 @@
 defmodule Jido.Console.Session.Event do
-  @moduledoc """
-  Classifies Console events without owning live session sequence state.
+  @moduledoc "One ordered Console product-history event."
 
-  The session owner allocates the monotonic sequence and passes it in. This
-  module validates classification, identities, and JSON-compatible shape.
-  Origin is descriptive data and cannot grant authority.
-  """
+  @schema_version 1
+  @types ~w(
+    prompt_queued
+    prompt_started
+    prompt_removed
+    review_presented
+    prompt_succeeded
+    prompt_failed
+    prompt_cancelled
+    prompt_interrupted
+  )
+  @closing_types ~w(prompt_removed prompt_succeeded prompt_failed prompt_cancelled prompt_interrupted)
 
-  alias Jido.Console.Session.{Envelope, Identity}
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              id: Zoi.string() |> Zoi.min(1),
+              session_id: Zoi.string() |> Zoi.min(1),
+              queue_item_id: Zoi.string() |> Zoi.min(1),
+              request_id: Zoi.string() |> Zoi.min(1),
+              type: Zoi.enum(@types),
+              schema_version: Zoi.integer() |> Zoi.gte(1) |> Zoi.default(@schema_version),
+              jidoka_revision: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(nil),
+              payload: Zoi.map() |> Zoi.default(%{}),
+              sequence: Zoi.integer() |> Zoi.positive() |> Zoi.optional() |> Zoi.default(nil),
+              committed_at_ms: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(nil)
+            },
+            coerce: true,
+            unrecognized_keys: :error
+          )
 
-  @durabilities ~w(ephemeral process)
-  @sensitivities ~w(public redacted secret)
-  @origin_kinds ~w(client session worker jidoka system)
+  @type t :: unquote(Zoi.type_spec(@schema))
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
-  @type t :: Envelope.t()
+  @doc "Returns the event schema."
+  @spec schema() :: Zoi.schema()
+  def schema, do: @schema
 
-  @doc "Classifies one Console event from owner-allocated sequence data."
-  @spec classify(map()) :: {:ok, t()} | {:error, term()}
-  def classify(attrs) when is_map(attrs) do
-    attrs = stringify(attrs)
+  @doc "Returns the current event schema version."
+  @spec schema_version() :: pos_integer()
+  def schema_version, do: @schema_version
 
-    with :ok <- reject_runtime(attrs),
-         {:ok, attrs} <- canonicalize_identities(attrs),
-         {:ok, envelope} <-
-           Envelope.new(
-             "event",
-             attrs["type"],
-             attrs
-             |> Map.delete("type")
-             |> Map.put("id", attrs["id"] || default_event_id(attrs))
-           ) do
-      validate(envelope)
+  @doc "Returns the allowed event types."
+  @spec types() :: [String.t()]
+  def types, do: @types
+
+  @doc "Builds one event before storage assigns its sequence and commit time."
+  @spec new(keyword() | map()) :: {:ok, t()} | {:error, term()}
+  def new(attrs) when is_list(attrs), do: attrs |> Map.new() |> new()
+
+  def new(attrs) when is_map(attrs) do
+    attrs
+    |> normalize_keys()
+    |> Map.put_new(:schema_version, @schema_version)
+    |> Map.put_new(:payload, %{})
+    |> Map.put_new(:jidoka_revision, nil)
+    |> Map.put_new(:sequence, nil)
+    |> Map.put_new(:committed_at_ms, nil)
+    |> parse()
+  end
+
+  def new(_attrs), do: {:error, :invalid_thread_event}
+
+  @doc "Builds one event and raises when it is invalid."
+  @spec new!(keyword() | map()) :: t()
+  def new!(attrs) do
+    case new(attrs) do
+      {:ok, event} -> event
+      {:error, reason} -> raise ArgumentError, "invalid thread event: #{inspect(reason)}"
     end
   end
 
-  def classify(_attrs), do: {:error, :invalid_event}
+  @doc "Validates an event struct or map."
+  @spec validate(t() | map()) :: {:ok, t()} | {:error, term()}
+  def validate(%__MODULE__{} = event), do: event |> Map.from_struct() |> new()
+  def validate(event) when is_map(event), do: new(event)
+  def validate(_event), do: {:error, :invalid_thread_event}
 
-  @doc "Validates one classified event envelope and its canonical session identity."
-  @spec validate(Envelope.t() | map()) :: {:ok, t()} | {:error, term()}
-  def validate(event) when is_map(event) do
-    with {:ok, event} <- Envelope.validate(event),
-         :ok <- validate_event_semantics(event) do
-      {:ok, event}
+  @doc "Adds storage-owned fields to a validated event."
+  @spec commit(t(), pos_integer(), non_neg_integer()) :: t()
+  def commit(%__MODULE__{} = event, sequence, committed_at_ms)
+      when is_integer(sequence) and sequence > 0 and is_integer(committed_at_ms) and committed_at_ms >= 0 do
+    %__MODULE__{event | sequence: sequence, committed_at_ms: committed_at_ms}
+  end
+
+  @doc "Returns true for the first execution event."
+  @spec started?(t() | String.t()) :: boolean()
+  def started?(%__MODULE__{type: type}), do: started?(type)
+  def started?("prompt_started"), do: true
+  def started?(_type), do: false
+
+  @doc "Returns true when the event closes a queue item."
+  @spec closing?(t() | String.t()) :: boolean()
+  def closing?(%__MODULE__{type: type}), do: closing?(type)
+  def closing?(type) when is_binary(type), do: type in @closing_types
+  def closing?(_type), do: false
+
+  @doc "Returns the canonical fields supplied by the caller."
+  @spec identity(t()) :: map()
+  def identity(%__MODULE__{} = event) do
+    Map.take(event, [
+      :id,
+      :session_id,
+      :queue_item_id,
+      :request_id,
+      :type,
+      :schema_version,
+      :jidoka_revision,
+      :payload
+    ])
+  end
+
+  @doc "Converts a safe projected value to canonical JSON data."
+  @spec json(term()) :: term()
+  def json(value) when is_nil(value) or is_boolean(value) or is_number(value) or is_binary(value), do: value
+  def json(value) when is_atom(value), do: Atom.to_string(value)
+  def json(value) when is_list(value), do: Enum.map(value, &json/1)
+
+  def json(%_{} = value), do: value |> Map.from_struct() |> json()
+
+  def json(value) when is_map(value) do
+    Map.new(value, fn {key, item} -> {json_key(key), json(item)} end)
+  end
+
+  def json(value) when is_tuple(value), do: value |> Tuple.to_list() |> json()
+  def json(value), do: inspect(value, limit: 20, printable_limit: 200)
+
+  @doc "Builds one event for a private thread queue item."
+  @spec for_item(map(), map(), String.t(), map(), non_neg_integer() | nil, String.t() | nil) :: t()
+  def for_item(state, item, type, payload, revision \\ nil, identity \\ nil) do
+    new!(
+      id: event_id(state.thread_id, item.id, type, identity),
+      session_id: state.thread_id,
+      queue_item_id: item.id,
+      request_id: item.request_id,
+      type: type,
+      payload: payload,
+      jidoka_revision: revision
+    )
+  end
+
+  @doc "Builds one globally unique deterministic product event ID."
+  @spec event_id(String.t(), String.t(), String.t(), String.t() | nil) :: String.t()
+  def event_id(thread_id, queue_item_id, type, identity \\ nil)
+
+  def event_id(thread_id, queue_item_id, type, nil),
+    do: Enum.join([thread_id, queue_item_id, type], ":")
+
+  def event_id(thread_id, queue_item_id, type, identity),
+    do: Enum.join([thread_id, queue_item_id, type, identity], ":")
+
+  @doc "Projects one stored event into portable View data."
+  @spec to_view(t()) :: map()
+  def to_view(%__MODULE__{} = event) do
+    event
+    |> Map.from_struct()
+    |> Map.take([
+      :id,
+      :sequence,
+      :queue_item_id,
+      :request_id,
+      :type,
+      :jidoka_revision,
+      :payload,
+      :committed_at_ms
+    ])
+    |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
+  end
+
+  defp parse(attrs) do
+    case Zoi.parse(@schema, attrs) do
+      {:ok, %__MODULE__{schema_version: @schema_version} = event} ->
+        {:ok, event}
+
+      {:ok, %__MODULE__{schema_version: version}} ->
+        {:error, {:unsupported_thread_event_schema, version}}
+
+      {:error, _errors} ->
+        {:error, :invalid_thread_event}
     end
   end
 
-  def validate(_event), do: {:error, :invalid_event}
+  defp normalize_keys(attrs) do
+    Map.new(attrs, fn
+      {key, value} when is_binary(key) ->
+        case key do
+          "id" -> {:id, value}
+          "session_id" -> {:session_id, value}
+          "queue_item_id" -> {:queue_item_id, value}
+          "request_id" -> {:request_id, value}
+          "type" -> {:type, value}
+          "schema_version" -> {:schema_version, value}
+          "jidoka_revision" -> {:jidoka_revision, value}
+          "payload" -> {:payload, value}
+          "sequence" -> {:sequence, value}
+          "committed_at_ms" -> {:committed_at_ms, value}
+          _other -> {key, value}
+        end
 
-  @doc "Returns true when origin is treated as descriptive data only."
-  @spec origin_authority?(map()) :: boolean()
-  def origin_authority?(%{"origin" => origin}) when is_map(origin) do
-    Identity.authority_source?(origin["kind"]) or origin["authority"] == true
-  end
-
-  def origin_authority?(_attrs), do: false
-
-  defp require_sequence(%{"sequence" => sequence}) when is_integer(sequence) and sequence >= 0, do: :ok
-  defp require_sequence(_attrs), do: {:error, :invalid_event_sequence}
-
-  defp require_class(attrs, field, allowed) do
-    if attrs[field] in allowed, do: :ok, else: {:error, {:invalid_event_class, field}}
-  end
-
-  defp require_origin(%{"origin" => %{"kind" => kind, "actor_id" => actor_id}})
-       when kind in @origin_kinds and is_binary(actor_id) do
-    :ok
-  end
-
-  defp require_origin(_attrs), do: {:error, :invalid_event_origin}
-
-  defp require_trust(%{"trust" => %{"evidence" => evidence, "policy" => policy}})
-       when is_binary(evidence) and is_binary(policy) do
-    :ok
-  end
-
-  defp require_trust(_attrs), do: {:error, :invalid_event_trust}
-
-  defp canonicalize_identities(%{"session_id" => session_id} = attrs)
-       when is_binary(session_id) and session_id != "" do
-    with {:ok, identities} <- identities(attrs),
-         :ok <- identities_belong_to_session(identities, session_id),
-         {:ok, identities} <- ensure_session_identity(identities, session_id) do
-      {:ok, Map.put(attrs, "identities", identities)}
-    end
-  end
-
-  defp canonicalize_identities(_attrs), do: {:error, :invalid_event_session_id}
-
-  defp identities(%{"identities" => identities}) when is_list(identities) do
-    if Enum.all?(identities, &valid_identity?/1) do
-      {:ok, identities}
-    else
-      {:error, :invalid_event_identity}
-    end
-  end
-
-  defp identities(attrs) when not is_map_key(attrs, "identities"), do: {:ok, []}
-  defp identities(_attrs), do: {:error, :invalid_event_identity}
-
-  defp identities_belong_to_session(identities, session_id) do
-    if Enum.all?(identities, &(&1["session_id"] == session_id)) do
-      :ok
-    else
-      {:error, :event_identity_mismatch}
-    end
-  end
-
-  defp validate_event_semantics(%Envelope{
-         family: "event",
-         session_id: session_id,
-         payload: payload
-       })
-       when is_binary(session_id) and session_id != "" and is_map(payload) do
-    with :ok <- require_sequence(payload),
-         :ok <- require_class(payload, "durability", @durabilities),
-         :ok <- require_class(payload, "sensitivity", @sensitivities),
-         :ok <- require_origin(payload),
-         :ok <- require_trust(payload),
-         {:ok, identities} <- identities(payload),
-         :ok <- identities_belong_to_session(identities, session_id),
-         :ok <- require_session_identity(identities, session_id) do
-      reject_origin_authority(payload)
-    end
-  end
-
-  defp validate_event_semantics(%Envelope{family: "event"}), do: {:error, :invalid_event_session_id}
-  defp validate_event_semantics(_event), do: {:error, :invalid_event_envelope}
-
-  defp ensure_session_identity(identities, session_id) do
-    case Enum.filter(identities, &(&1["kind"] == "session")) do
-      [] ->
-        identity = %{"kind" => "session", "id" => session_id, "session_id" => session_id}
-        {:ok, [identity | identities]}
-
-      [%{"id" => ^session_id}] ->
-        {:ok, identities}
-
-      _other ->
-        {:error, :event_identity_mismatch}
-    end
-  end
-
-  defp require_session_identity(identities, session_id) do
-    case Enum.filter(identities, &(&1["kind"] == "session")) do
-      [%{"id" => ^session_id}] -> :ok
-      [] -> {:error, :event_session_identity_missing}
-      _other -> {:error, :event_identity_mismatch}
-    end
-  end
-
-  defp valid_identity?(%{"kind" => kind, "id" => id, "session_id" => session_id})
-       when is_binary(kind) and kind != "" and is_binary(id) and id != "" and is_binary(session_id) and
-              session_id != "" do
-    true
-  end
-
-  defp valid_identity?(_identity), do: false
-
-  defp default_event_id(attrs) do
-    type = attrs["type"] || "event"
-    sequence = attrs["sequence"] || 0
-    "plt_event_#{type}_#{sequence}"
-  end
-
-  defp reject_origin_authority(attrs) do
-    if origin_authority?(attrs), do: {:error, :origin_cannot_grant_authority}, else: :ok
-  end
-
-  defp reject_runtime(value) when is_pid(value) or is_reference(value) or is_function(value) or is_port(value) do
-    {:error, :raw_runtime_forbidden}
-  end
-
-  defp reject_runtime(value) when is_map(value) do
-    Enum.reduce_while(value, :ok, fn {_key, item}, :ok ->
-      case reject_runtime(item) do
-        :ok -> {:cont, :ok}
-        error -> {:halt, error}
-      end
+      pair ->
+        pair
     end)
   end
 
-  defp reject_runtime(value) when is_list(value) do
-    Enum.reduce_while(value, :ok, fn item, :ok ->
-      case reject_runtime(item) do
-        :ok -> {:cont, :ok}
-        error -> {:halt, error}
-      end
-    end)
-  end
-
-  defp reject_runtime(_value), do: :ok
-
-  defp stringify(map) do
-    Map.new(map, fn
-      {key, value} when is_atom(key) -> {Atom.to_string(key), stringify_value(value)}
-      {key, value} -> {key, stringify_value(value)}
-    end)
-  end
-
-  defp stringify_value(value) when is_map(value), do: stringify(value)
-  defp stringify_value(value), do: value
+  defp json_key(key) when is_binary(key), do: key
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: inspect(key, limit: 20, printable_limit: 200)
 end

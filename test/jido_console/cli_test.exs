@@ -118,6 +118,17 @@ defmodule Jido.ConsoleTest do
     refute_received {:trace, _pid, :call, {Application, :ensure_all_started, [:jido_console]}}
   end
 
+  test "main handles nested command help without starting command services" do
+    for args <- [
+          ["status", "--help"],
+          ["stop", "-h"],
+          ["auth", "status", "--help"],
+          ["models", "list", "-h"]
+        ] do
+      assert capture_io(fn -> assert :ok = Jido.Console.CLI.main(args) end) =~ "Usage:"
+    end
+  end
+
   test "formats TUI errors at the CLI boundary" do
     reasons = [
       {RuntimeError.exception("exception failure"), "exception failure"},
@@ -209,6 +220,46 @@ defmodule Jido.ConsoleTest do
 
     assert shown =~ "tier: supported"
     refute shown =~ "sk-"
+
+    single =
+      capture_io(fn ->
+        assert :ok = Jido.Console.run(["models", "show", "openai:gpt-4.1-mini"])
+      end)
+
+    assert single =~ "tier: supported"
+  end
+
+  test "reports and stops processes through CLI commands" do
+    root = Path.join(System.tmp_dir!(), "jido-cli-process-#{System.unique_integer([:positive])}")
+    name = String.to_atom("jido-cli-process-#{System.unique_integer([:positive])}")
+    opts = [jido_home: root, name: name]
+    {:ok, manager} = Jido.Console.Process.Supervisor.start_link(opts)
+
+    on_exit(fn ->
+      if Process.alive?(manager) do
+        try do
+          GenServer.stop(manager)
+        catch
+          :exit, _reason -> :ok
+        end
+      end
+
+      File.rm_rf(root)
+    end)
+
+    assert capture_io(fn -> assert :ok = Jido.Console.run(["status"], opts) end) ==
+             "jido: no owned background processes\n"
+
+    owner = spawn(fn -> Process.sleep(:infinity) end)
+    assert {:ok, _} = Jido.Console.Process.register(:interactive, owner, opts)
+
+    assert capture_io(fn -> assert :ok = Jido.Console.run(["status"], opts) end) =~ "interactive"
+
+    assert capture_io(fn -> assert :ok = Jido.Console.run(["stop", "--name", "interactive"], opts) end) =~
+             "interactive"
+
+    assert capture_io(fn -> assert :ok = Jido.Console.run(["stop"], opts) end) ==
+             "jido: no owned background processes\n"
   end
 
   test "returns a configuration error for an unknown model" do

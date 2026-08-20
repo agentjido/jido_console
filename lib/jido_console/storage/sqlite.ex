@@ -1,50 +1,90 @@
 defmodule Jido.Console.Storage.SQLite do
-  @moduledoc "Small SQLite owner for events and operations."
+  @moduledoc "Single-writer SQLite store for Jidoka sessions and Console thread events."
 
   use GenServer
 
+  @behaviour Jidoka.Session.Store
+
   alias Exqlite.Sqlite3
   alias Jido.Console.{Digest, Home}
-  alias Jido.Console.Session.{Envelope, Event}
+  alias Jido.Console.Session.Event
   alias Jido.Console.Storage.CanonicalJSON
+  alias Jidoka.Session.Data
+  alias Jidoka.Session.Transitions
+  alias Jidoka.Snapshot
+  alias Jidoka.Turn
 
   @database_bytes 1_024 * 1_024 * 1_024
   @page_size 4_096
   @max_pages div(@database_bytes, @page_size)
-  @event_limit 10_000
+  @session_bytes 64 * 1_024 * 1_024
   @event_bytes 256 * 1_024
+  @default_event_limit 200
+  @max_event_limit 1_000
+  @store_version 2
+  @session_codec_version 1
+  @session_codec_tag :jido_console_session
+  @closing_types ~w(prompt_removed prompt_succeeded prompt_failed prompt_cancelled prompt_interrupted)
 
   @schema """
-  CREATE TABLE IF NOT EXISTS events (
-    session_id TEXT NOT NULL,
+  CREATE TABLE sessions (
+    session_id TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL CHECK (revision >= 0),
+    status TEXT NOT NULL CHECK (status IN ('new','running','hibernated','waiting','finished','cancelled','error')),
+    schema_version INTEGER NOT NULL CHECK (schema_version > 0),
+    codec_version INTEGER NOT NULL CHECK (codec_version = 1),
+    encoded_bytes INTEGER NOT NULL CHECK (encoded_bytes > 0),
+    session_term BLOB NOT NULL,
+    updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
+  ) STRICT;
+
+  CREATE TABLE thread_events (
+    thread_id TEXT NOT NULL,
     sequence INTEGER NOT NULL CHECK (sequence > 0),
     event_id TEXT NOT NULL UNIQUE,
-    event_type TEXT NOT NULL,
-    digest TEXT NOT NULL,
-    encoded_bytes INTEGER NOT NULL,
-    json BLOB NOT NULL,
-    committed_at_ms INTEGER NOT NULL,
-    PRIMARY KEY (session_id, sequence)
-  ) STRICT;
-  CREATE TABLE IF NOT EXISTS operations (
-    operation_id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    sequence INTEGER NOT NULL CHECK (sequence > 0),
-    operation_kind TEXT NOT NULL,
-    principal_id TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL,
+    queue_item_id TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (
+      event_type IN (
+        'prompt_queued',
+        'prompt_started',
+        'prompt_removed',
+        'review_presented',
+        'prompt_succeeded',
+        'prompt_failed',
+        'prompt_cancelled',
+        'prompt_interrupted'
+      )
+    ),
+    event_schema_version INTEGER NOT NULL CHECK (event_schema_version = 1),
+    jidoka_revision INTEGER CHECK (jidoka_revision IS NULL OR jidoka_revision >= 0),
     payload_digest TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    receipt_id TEXT NOT NULL UNIQUE,
-    receipt_type TEXT NOT NULL CHECK (receipt_type IN ('input', 'command')),
-    payload BLOB NOT NULL,
-    admission_state TEXT NOT NULL CHECK (admission_state IN ('accepted', 'started', 'terminal')),
-    event_id TEXT NOT NULL UNIQUE,
-    committed_at_ms INTEGER NOT NULL,
-    UNIQUE (session_id, operation_kind, principal_id, idempotency_key),
-    FOREIGN KEY (session_id, sequence) REFERENCES events(session_id, sequence),
-    FOREIGN KEY (event_id) REFERENCES events(event_id)
+    encoded_bytes INTEGER NOT NULL CHECK (encoded_bytes >= 0),
+    payload_json BLOB NOT NULL,
+    committed_at_ms INTEGER NOT NULL CHECK (committed_at_ms >= 0),
+    PRIMARY KEY (thread_id, sequence),
+    FOREIGN KEY (thread_id) REFERENCES sessions(session_id) ON DELETE RESTRICT
   ) STRICT;
+
+  CREATE INDEX thread_events_queue_idx
+    ON thread_events(thread_id, queue_item_id, sequence);
+
+  CREATE INDEX thread_events_request_idx
+    ON thread_events(thread_id, request_id, sequence);
+
+  CREATE UNIQUE INDEX thread_events_one_start
+    ON thread_events(thread_id, queue_item_id)
+    WHERE event_type = 'prompt_started';
+
+  CREATE UNIQUE INDEX thread_events_one_close
+    ON thread_events(thread_id, queue_item_id)
+    WHERE event_type IN (
+      'prompt_removed',
+      'prompt_succeeded',
+      'prompt_failed',
+      'prompt_cancelled',
+      'prompt_interrupted'
+    );
   """
 
   @type option :: {:name, GenServer.name()} | {:path, Path.t()} | {:jido_home, Path.t()}
@@ -63,68 +103,97 @@ defmodule Jido.Console.Storage.SQLite do
     end
   end
 
-  @doc "Returns the fixed store limits."
+  @doc "Returns fixed storage bounds."
   @spec limits() :: map()
   def limits do
     %{
       database_bytes: @database_bytes,
       event_bytes: @event_bytes,
-      session_events: @event_limit
+      event_page: @default_event_limit,
+      event_page_max: @max_event_limit,
+      session_bytes: @session_bytes
     }
   end
 
-  @doc "Appends one ordered event."
-  @spec append_event(GenServer.server(), Envelope.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def append_event(server, event, opts \\ []) do
-    GenServer.call(server, {:append_event, event}, timeout(opts))
+  @impl true
+  def put_session(%Data{} = session, opts), do: call(opts, {:put_session, session})
+
+  @impl true
+  def get_session(session_id, opts) when is_binary(session_id), do: call(opts, {:get_session, session_id})
+
+  @impl true
+  def list_sessions(opts), do: call(opts, :list_sessions)
+
+  @impl true
+  def claim_session(session_id, %Turn.Request{} = request, opts) when is_binary(session_id) do
+    call(opts, {:transition_session, session_id, {:claim, request}, transition_opts(opts)})
   end
 
-  @doc "Commits one operation and its event in one transaction."
-  @spec admit_operation(GenServer.server(), map(), Envelope.t(), keyword()) ::
-          {:ok, map()} | {:error, term()}
-  def admit_operation(server, prepared, event, opts \\ []) do
-    GenServer.call(server, {:admit_operation, prepared, event}, timeout(opts))
+  @impl true
+  def claim_resume(session_id, opts) when is_binary(session_id) do
+    call(opts, {:transition_session, session_id, :resume, transition_opts(opts)})
   end
 
-  @doc "Returns one operation."
-  @spec operation(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def operation(server, operation_id, opts \\ []) do
-    GenServer.call(server, {:operation, operation_id}, timeout(opts))
+  @impl true
+  def recover_session(session_id, opts) when is_binary(session_id) do
+    call(opts, {:transition_session, session_id, :recover, transition_opts(opts)})
   end
 
-  @doc "Changes one operation state."
-  @spec transition_operation(GenServer.server(), String.t(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, term()}
-  def transition_operation(server, operation_id, state, opts \\ []) do
-    GenServer.call(server, {:transition_operation, operation_id, state}, timeout(opts))
+  @impl true
+  def checkpoint_session(session_id, lease_id, %Snapshot{} = snapshot, opts)
+      when is_binary(session_id) and is_binary(lease_id) do
+    call(opts, {:transition_session, session_id, {:checkpoint, lease_id, snapshot}, transition_opts(opts)})
   end
 
-  @doc "Returns bounded operations for one session."
-  @spec operations(GenServer.server(), String.t(), [String.t()], pos_integer(), keyword()) ::
-          {:ok, [map()]} | {:error, term()}
-  def operations(server, session_id, states, limit, opts \\ []) do
-    GenServer.call(server, {:operations, session_id, states, limit}, timeout(opts))
+  @impl true
+  def commit_session(session_id, lease_id, %Data{} = session, opts)
+      when is_binary(session_id) and is_binary(lease_id) do
+    call(opts, {:transition_session, session_id, {:commit, lease_id, session}, transition_opts(opts)})
   end
 
-  @doc "Returns all ordered events for one session."
-  @spec events(GenServer.server(), String.t(), keyword()) :: {:ok, [Envelope.t()]} | {:error, term()}
-  def events(server, session_id, opts \\ []) do
-    GenServer.call(server, {:events, session_id}, timeout(opts))
+  @impl true
+  def renew_session(session_id, lease_id, opts)
+      when is_binary(session_id) and is_binary(lease_id) do
+    call(opts, {:transition_session, session_id, {:renew, lease_id}, transition_opts(opts)})
   end
 
-  @doc "Returns the last event identity for one session."
-  @spec history_head(GenServer.server(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def history_head(server, session_id, opts \\ []) do
-    GenServer.call(server, {:history_head, session_id}, timeout(opts))
+  @doc "Appends one validated product event."
+  @spec append_thread_event(GenServer.server(), Event.t(), keyword()) ::
+          {:ok, %{event: Event.t(), duplicate: boolean()}} | {:error, term()}
+  def append_thread_event(server, event, opts \\ []) do
+    GenServer.call(server, {:append_thread_event, event, event_opts(opts)}, timeout(opts))
   end
 
-  @doc "Checks SQLite and stored payload integrity."
+  @doc "Returns one bounded newest-first history window in chronological order."
+  @spec thread_events(GenServer.server(), String.t(), keyword()) ::
+          {:ok, %{events: [Event.t()], history_truncated?: boolean()}} | {:error, term()}
+  def thread_events(server, thread_id, opts \\ []) when is_binary(thread_id) do
+    with {:ok, bounds} <- event_bounds(opts) do
+      GenServer.call(server, {:thread_events, thread_id, bounds}, timeout(opts))
+    end
+  end
+
+  @doc "Returns all nonterminal accepted items with their stored lifecycle events."
+  @spec open_thread_items(GenServer.server(), String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def open_thread_items(server, thread_id, opts \\ []) when is_binary(thread_id) do
+    GenServer.call(server, {:open_thread_items, thread_id}, timeout(opts))
+  end
+
+  @doc "Returns all stored events for one public request identity."
+  @spec request_events(GenServer.server(), String.t(), String.t(), keyword()) ::
+          {:ok, [Event.t()]} | {:error, term()}
+  def request_events(server, thread_id, request_id, opts \\ [])
+      when is_binary(thread_id) and is_binary(request_id) do
+    GenServer.call(server, {:request_events, thread_id, request_id}, timeout(opts))
+  end
+
+  @doc "Checks schema, SQLite integrity, codecs, sequences, and event lifecycles."
   @spec inspect_store(GenServer.server(), keyword()) :: {:ok, map()} | {:error, term()}
   def inspect_store(server, opts \\ []) do
     GenServer.call(server, :inspect_store, timeout(opts))
   end
 
-  @doc "Returns small store counts."
+  @doc "Returns small storage counts."
   @spec status(GenServer.server(), keyword()) :: {:ok, map()} | {:error, term()}
   def status(server, opts \\ []) do
     GenServer.call(server, :status, timeout(opts))
@@ -150,398 +219,549 @@ defmodule Jido.Console.Storage.SQLite do
   def terminate(_reason, %{conn: conn}), do: Sqlite3.close(conn)
 
   @impl true
-  def handle_call({:append_event, event}, _from, state) do
-    result = transaction(state.conn, fn -> append_event_conn(state.conn, event) end)
+  def handle_call({:put_session, %Data{} = session}, _from, state) do
+    result = transaction(state.conn, fn -> put_session_conn(state.conn, session) end)
     {:reply, result, state}
   end
 
-  def handle_call({:admit_operation, prepared, event}, _from, state) do
-    result = transaction(state.conn, fn -> admit_operation_conn(state.conn, prepared, event) end)
+  def handle_call({:get_session, session_id}, _from, state) do
+    {:reply, load_session(state.conn, session_id), state}
+  end
+
+  def handle_call(:list_sessions, _from, state) do
+    {:reply, list_sessions_conn(state.conn), state}
+  end
+
+  def handle_call({:transition_session, session_id, operation, opts}, _from, state) do
+    result = transaction(state.conn, fn -> transition_session_conn(state.conn, session_id, operation, opts) end)
     {:reply, result, state}
   end
 
-  def handle_call({:operation, operation_id}, _from, state) do
-    {:reply, load_operation(state.conn, operation_id), state}
-  end
-
-  def handle_call({:transition_operation, operation_id, next}, _from, state) do
-    result = transaction(state.conn, fn -> transition_operation_conn(state.conn, operation_id, next) end)
+  def handle_call({:append_thread_event, event, opts}, _from, state) do
+    result = transaction(state.conn, fn -> append_thread_event_conn(state.conn, event, opts) end)
     {:reply, result, state}
   end
 
-  def handle_call({:operations, session_id, states, limit}, _from, state) do
-    {:reply, read_operations(state.conn, session_id, states, limit), state}
+  def handle_call({:thread_events, thread_id, bounds}, _from, state) do
+    {:reply, read_thread_events(state.conn, thread_id, bounds), state}
   end
 
-  def handle_call({:events, session_id}, _from, state) do
-    {:reply, read_events(state.conn, session_id), state}
+  def handle_call({:open_thread_items, thread_id}, _from, state) do
+    {:reply, read_open_thread_items(state.conn, thread_id), state}
   end
 
-  def handle_call({:history_head, session_id}, _from, state) do
-    {:reply, load_history_head(state.conn, session_id), state}
+  def handle_call({:request_events, thread_id, request_id}, _from, state) do
+    {:reply, read_request_events(state.conn, thread_id, request_id), state}
   end
 
   def handle_call(:inspect_store, _from, state) do
-    result =
-      with {:ok, [["ok"]]} <- query(state.conn, "PRAGMA integrity_check", []),
-           {:ok, _events} <- verify_all_events(state.conn) do
-        {:ok, %{integrity: :ok, tables: 2}}
-      else
-        {:ok, value} -> {:error, {:sqlite_integrity_failed, value}}
-        {:error, reason} -> {:error, reason}
-      end
-
-    {:reply, result, state}
+    {:reply, inspect_store_conn(state.conn), state}
   end
 
   def handle_call(:status, _from, state) do
     result =
-      with {:ok, [[events]]} <- query(state.conn, "SELECT COUNT(*) FROM events", []),
-           {:ok, [[operations]]} <- query(state.conn, "SELECT COUNT(*) FROM operations", []),
+      with {:ok, [[sessions]]} <- query(state.conn, "SELECT COUNT(*) FROM sessions", []),
+           {:ok, [[thread_events]]} <- query(state.conn, "SELECT COUNT(*) FROM thread_events", []),
            {:ok, [[pages]]} <- query(state.conn, "PRAGMA page_count", []) do
-        {:ok, %{events: events, operations: operations, database_bytes: pages * @page_size}}
+        {:ok, %{sessions: sessions, thread_events: thread_events, database_bytes: pages * @page_size}}
       end
 
     {:reply, result, state}
   end
 
-  defp append_event_conn(conn, event) do
-    with {:ok, event} <- Event.validate(event),
-         {:ok, bytes} <- CanonicalJSON.encode(event),
-         :ok <- within_limit(bytes, @event_bytes, :event_too_large),
-         digest = Digest.portable(bytes),
-         {:ok, existing} <- load_event_by_id(conn, event.id) do
-      append_or_return_event(conn, existing, event, bytes, digest)
+  defp put_session_conn(conn, %Data{} = incoming) do
+    with {:ok, current} <- load_optional_session(conn, incoming.session_id),
+         {:ok, %Data{} = updated} <- Transitions.put(current, incoming),
+         :ok <- persist_session(conn, updated) do
+      {:ok, updated}
     end
   end
 
-  defp append_or_return_event(_conn, %{digest: digest} = existing, _event, _bytes, digest) do
-    {:ok, Map.put(existing, :duplicate, true)}
+  defp transition_session_conn(conn, session_id, operation, opts) do
+    with {:ok, %Data{} = current} <- load_session(conn, session_id),
+         {:ok, %Data{} = updated} <- apply_transition(current, operation, opts),
+         :ok <- persist_session(conn, updated) do
+      {:ok, updated}
+    end
   end
 
-  defp append_or_return_event(_conn, %{event_id: event_id}, _event, _bytes, _digest) do
-    {:error, {:canonical_event_conflict, event_id}}
+  defp apply_transition(session, {:claim, request}, opts), do: Transitions.claim(session, request, opts)
+  defp apply_transition(session, :resume, opts), do: Transitions.resume(session, opts)
+  defp apply_transition(session, :recover, opts), do: Transitions.recover(session, opts)
+
+  defp apply_transition(session, {:checkpoint, lease_id, snapshot}, opts),
+    do: Transitions.checkpoint(session, lease_id, snapshot, opts)
+
+  defp apply_transition(session, {:commit, lease_id, completed}, opts),
+    do: Transitions.commit(session, lease_id, completed, opts)
+
+  defp apply_transition(session, {:renew, lease_id}, opts), do: Transitions.renew(session, lease_id, opts)
+
+  defp persist_session(conn, %Data{} = session) do
+    with {:ok, %Data{} = validated} <- Data.from_input(session),
+         {:ok, encoded} <- encode_session(validated),
+         :ok <- within_limit(encoded, @session_bytes, :session_too_large) do
+      execute(
+        conn,
+        """
+        INSERT INTO sessions(
+          session_id,revision,status,schema_version,codec_version,encoded_bytes,session_term,updated_at_ms
+        ) VALUES(?,?,?,?,?,?,?,?)
+        ON CONFLICT(session_id) DO UPDATE SET
+          revision=excluded.revision,
+          status=excluded.status,
+          schema_version=excluded.schema_version,
+          codec_version=excluded.codec_version,
+          encoded_bytes=excluded.encoded_bytes,
+          session_term=excluded.session_term,
+          updated_at_ms=excluded.updated_at_ms
+        """,
+        [
+          validated.session_id,
+          validated.revision,
+          Atom.to_string(validated.status),
+          validated.schema_version,
+          @session_codec_version,
+          byte_size(encoded),
+          {:blob, encoded},
+          now_ms()
+        ]
+      )
+    end
   end
 
-  defp append_or_return_event(conn, nil, event, bytes, digest) do
-    session_id = event.session_id
-    sequence = event.payload["sequence"]
+  defp load_optional_session(conn, session_id) do
+    case load_session(conn, session_id) do
+      {:ok, %Data{} = session} -> {:ok, session}
+      {:error, {:session_not_found, ^session_id}} -> {:ok, nil}
+      {:error, _reason} = error -> error
+    end
+  end
 
-    with :ok <- expect_next_sequence(conn, session_id, sequence),
-         :ok <- enforce_session_limit(conn, session_id),
-         committed_at_ms = now_ms(),
-         :ok <-
-           execute(
+  defp load_session(conn, session_id) do
+    with {:ok, rows} <-
+           query(
              conn,
-             "INSERT INTO events(session_id,sequence,event_id,event_type,digest,encoded_bytes,json,committed_at_ms) VALUES(?,?,?,?,?,?,?,?)",
-             [session_id, sequence, event.id, event.type, digest, byte_size(bytes), {:blob, bytes}, committed_at_ms]
+             "SELECT revision,status,schema_version,codec_version,encoded_bytes,session_term FROM sessions WHERE session_id=?",
+             [session_id]
            ) do
-      {:ok,
-       %{
-         session_id: session_id,
-         sequence: sequence,
-         event_id: event.id,
-         event_type: event.type,
-         digest: digest,
-         chain_digest: digest,
-         encoded_bytes: byte_size(bytes),
-         committed_at_ms: committed_at_ms,
-         duplicate: false
-       }}
-    end
-  end
-
-  defp admit_operation_conn(conn, prepared, event) do
-    with :ok <- validate_prepared_operation(prepared, event),
-         {:ok, existing} <- load_operation_by_key(conn, prepared),
-         {:ok, by_id} <- load_optional_operation(conn, prepared.operation_id) do
-      admit_or_return_operation(conn, existing || by_id, prepared, event)
-    end
-  end
-
-  defp admit_or_return_operation(
-         _conn,
-         %{payload_digest: digest, target_id: target} = existing,
-         %{payload_digest: digest, target_id: target},
-         _event
-       ) do
-    {:ok, Map.put(existing, :duplicate, true)}
-  end
-
-  defp admit_or_return_operation(_conn, existing, _prepared, _event) when is_map(existing) do
-    {:error, {:idempotency_conflict, existing.receipt_id}}
-  end
-
-  defp admit_or_return_operation(conn, nil, prepared, event) do
-    with {:ok, event_result} <- append_event_conn(conn, event),
-         false <- event_result.duplicate,
-         {:ok, payload} <- CanonicalJSON.encode(prepared.normalized_payload),
-         committed_at_ms = now_ms(),
-         :ok <-
-           execute(
-             conn,
-             "INSERT INTO operations(operation_id,session_id,sequence,operation_kind,principal_id,idempotency_key,payload_digest,target_id,receipt_id,receipt_type,payload,admission_state,event_id,committed_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-             [
-               prepared.operation_id,
-               prepared.session_id,
-               prepared.sequence,
-               prepared.operation_kind,
-               prepared.principal_id,
-               prepared.idempotency_key,
-               prepared.payload_digest,
-               prepared.target_id,
-               prepared.receipt_id,
-               prepared.receipt_type,
-               {:blob, payload},
-               "accepted",
-               event.id,
-               committed_at_ms
-             ]
-           ),
-         {:ok, operation} <- load_operation(conn, prepared.operation_id) do
-      {:ok, operation |> Map.put(:event, event_result) |> Map.put(:duplicate, false)}
-    else
-      true -> {:error, :admission_event_already_committed}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp transition_operation_conn(conn, operation_id, next) do
-    with {:ok, current} <- load_operation(conn, operation_id),
-         :ok <- valid_transition(current.admission_state, next) do
-      if current.admission_state == next do
-        {:ok, Map.put(current, :duplicate, true)}
-      else
-        with :ok <- execute(conn, "UPDATE operations SET admission_state=? WHERE operation_id=?", [next, operation_id]),
-             {:ok, updated} <- load_operation(conn, operation_id) do
-          {:ok, Map.put(updated, :duplicate, false)}
-        end
+      case rows do
+        [row] -> decode_session_row(session_id, row)
+        [] -> {:error, {:session_not_found, session_id}}
+        _rows -> {:error, {:session_integrity_failed, session_id, :duplicate_rows}}
       end
     end
   end
 
-  defp valid_transition(state, state), do: :ok
-  defp valid_transition("accepted", next) when next in ["started", "terminal"], do: :ok
-  defp valid_transition("started", "terminal"), do: :ok
-  defp valid_transition(current, next), do: {:error, {:invalid_admission_transition, current, next}}
-
-  defp validate_prepared_operation(prepared, event) when is_map(prepared) do
-    with {:ok, event} <- Event.validate(event),
-         true <- prepared.session_id == event.session_id,
-         true <- prepared.sequence == event.payload["sequence"],
-         true <- prepared.receipt_type in ["input", "command"],
-         true <- is_binary(prepared.operation_id) and prepared.operation_id != "",
-         true <- is_binary(prepared.payload_digest) and prepared.payload_digest != "" do
-      :ok
-    else
-      false -> {:error, :invalid_admission_receipt}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp validate_prepared_operation(_prepared, _event), do: {:error, :invalid_admission_receipt}
-
-  defp load_event_by_id(conn, event_id) do
-    case query(
-           conn,
-           "SELECT session_id,sequence,event_id,event_type,digest,encoded_bytes,committed_at_ms FROM events WHERE event_id=?",
-           [event_id]
-         ) do
-      {:ok, []} ->
-        {:ok, nil}
-
-      {:ok, [[session_id, sequence, id, type, digest, size, committed]]} ->
-        {:ok,
-         %{
-           session_id: session_id,
-           sequence: sequence,
-           event_id: id,
-           event_type: type,
-           digest: digest,
-           chain_digest: digest,
-           encoded_bytes: size,
-           committed_at_ms: committed
-         }}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp load_history_head(conn, session_id) do
-    case query(
-           conn,
-           "SELECT sequence,event_id,event_type,digest,encoded_bytes,committed_at_ms FROM events WHERE session_id=? ORDER BY sequence DESC LIMIT 1",
-           [session_id]
-         ) do
-      {:ok, []} ->
-        {:error, {:history_not_found, session_id}}
-
-      {:ok, [[sequence, event_id, event_type, digest, size, committed]]} ->
-        {:ok,
-         %{
-           session_id: session_id,
-           sequence: sequence,
-           event_id: event_id,
-           event_type: event_type,
-           digest: digest,
-           chain_digest: digest,
-           encoded_bytes: size,
-           committed_at_ms: committed
-         }}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp read_events(conn, session_id) do
+  defp list_sessions_conn(conn) do
     with {:ok, rows} <-
            query(
              conn,
-             "SELECT sequence,digest,encoded_bytes,json FROM events WHERE session_id=? ORDER BY sequence LIMIT ?",
-             [session_id, @event_limit + 1]
-           ),
-         true <- length(rows) <= @event_limit do
-      decode_event_rows(rows, [])
-    else
-      false -> {:error, {:session_event_limit_exceeded, session_id}}
-      {:error, reason} -> {:error, reason}
+             "SELECT session_id,revision,status,schema_version,codec_version,encoded_bytes,session_term FROM sessions ORDER BY session_id",
+             []
+           ) do
+      decode_session_rows(rows, [])
     end
   end
 
-  defp decode_event_rows([[sequence, digest, size, bytes] | rows], events)
-       when is_binary(bytes) and size == byte_size(bytes) do
-    with true <- Digest.portable(bytes) == digest,
-         {:ok, value} <- CanonicalJSON.decode(bytes),
-         {:ok, event} <- Event.validate(value),
-         true <- event.payload["sequence"] == sequence do
-      decode_event_rows(rows, [event | events])
+  defp decode_session_rows(
+         [[session_id, revision, status, schema_version, codec_version, encoded_bytes, encoded] | rows],
+         sessions
+       ) do
+    case decode_session_row(session_id, [revision, status, schema_version, codec_version, encoded_bytes, encoded]) do
+      {:ok, session} -> decode_session_rows(rows, [session | sessions])
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp decode_session_rows([], sessions), do: {:ok, Enum.reverse(sessions)}
+  defp decode_session_rows(_rows, _sessions), do: {:error, :session_integrity_failed}
+
+  defp decode_session_row(
+         session_id,
+         [revision, status, schema_version, @session_codec_version, encoded_bytes, encoded]
+       )
+       when is_binary(encoded) and encoded_bytes == byte_size(encoded) do
+    with {:ok, %Data{} = session} <- decode_session(encoded),
+         true <- session.session_id == session_id,
+         true <- session.revision == revision,
+         true <- Atom.to_string(session.status) == status,
+         true <- session.schema_version == schema_version do
+      {:ok, session}
     else
-      _other -> {:error, {:event_integrity_failed, sequence}}
+      false -> {:error, {:session_integrity_failed, session_id, :indexed_fields}}
+      {:error, reason} -> {:error, {:session_integrity_failed, session_id, reason}}
+    end
+  end
+
+  defp decode_session_row(session_id, _row),
+    do: {:error, {:session_integrity_failed, session_id, :invalid_row}}
+
+  defp encode_session(%Data{} = session) do
+    {:ok,
+     :erlang.term_to_binary(
+       {@session_codec_tag, @session_codec_version, session},
+       compressed: 6,
+       minor_version: 2
+     )}
+  rescue
+    error -> {:error, {:session_encode_failed, Exception.message(error)}}
+  end
+
+  defp decode_session(encoded) do
+    case :erlang.binary_to_term(encoded, [:safe]) do
+      {@session_codec_tag, @session_codec_version, %Data{} = session} -> Data.from_input(session)
+      {@session_codec_tag, version, _value} -> {:error, {:unsupported_session_codec, version}}
+      _value -> {:error, :invalid_session_codec}
+    end
+  rescue
+    error -> {:error, {:session_decode_failed, Exception.message(error)}}
+  end
+
+  defp append_thread_event_conn(conn, event, opts) do
+    with {:ok, %Event{sequence: nil, committed_at_ms: nil} = event} <- Event.validate(event),
+         {:ok, payload_json} <- CanonicalJSON.encode(event.payload),
+         :ok <- within_limit(payload_json, @event_bytes, :thread_event_too_large),
+         {:ok, existing} <- load_event_by_id(conn, event.id) do
+      append_or_return_event(conn, existing, event, payload_json, opts)
+    else
+      {:ok, %Event{}} -> {:error, :thread_event_storage_fields_forbidden}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp append_or_return_event(_conn, %Event{} = existing, %Event{} = event, _payload, _opts) do
+    if Event.identity(existing) == Event.identity(event),
+      do: {:ok, %{event: existing, duplicate: true}},
+      else: {:error, {:event_conflict, event.id}}
+  end
+
+  defp append_or_return_event(conn, nil, %Event{} = event, payload_json, opts) do
+    with {:ok, %Data{}} <- load_session(conn, event.session_id),
+         {:ok, lifecycle} <- load_item_lifecycle(conn, event.session_id, event.queue_item_id),
+         :ok <- validate_event_lifecycle(event, lifecycle),
+         {:ok, sequence} <- next_event_sequence(conn, event.session_id),
+         committed_at_ms = clock_ms(opts),
+         payload_digest = Digest.portable(payload_json),
+         :ok <-
+           execute(
+             conn,
+             """
+             INSERT INTO thread_events(
+               thread_id,sequence,event_id,queue_item_id,request_id,event_type,event_schema_version,
+               jidoka_revision,payload_digest,encoded_bytes,payload_json,committed_at_ms
+             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+             """,
+             [
+               event.session_id,
+               sequence,
+               event.id,
+               event.queue_item_id,
+               event.request_id,
+               event.type,
+               event.schema_version,
+               event.jidoka_revision,
+               payload_digest,
+               byte_size(payload_json),
+               {:blob, payload_json},
+               committed_at_ms
+             ]
+           ) do
+      {:ok, %{event: Event.commit(event, sequence, committed_at_ms), duplicate: false}}
+    end
+  end
+
+  defp load_event_by_id(conn, event_id) do
+    with {:ok, rows} <-
+           query(
+             conn,
+             """
+             SELECT thread_id,sequence,event_id,queue_item_id,request_id,event_type,event_schema_version,
+                    jidoka_revision,payload_digest,encoded_bytes,payload_json,committed_at_ms
+             FROM thread_events WHERE event_id=?
+             """,
+             [event_id]
+           ) do
+      case rows do
+        [row] -> decode_event_row(row)
+        [] -> {:ok, nil}
+        _rows -> {:error, {:thread_event_integrity_failed, event_id, :duplicate_rows}}
+      end
+    end
+  end
+
+  defp load_item_lifecycle(conn, thread_id, queue_item_id) do
+    with {:ok, rows} <-
+           query(
+             conn,
+             "SELECT request_id,event_type FROM thread_events WHERE thread_id=? AND queue_item_id=? ORDER BY sequence",
+             [thread_id, queue_item_id]
+           ) do
+      {:ok, Enum.map(rows, fn [request_id, type] -> {request_id, type} end)}
+    end
+  end
+
+  defp validate_event_lifecycle(%Event{type: "prompt_queued"}, []), do: :ok
+
+  defp validate_event_lifecycle(%Event{type: "prompt_queued"} = event, _lifecycle),
+    do: lifecycle_error(event, :already_queued)
+
+  defp validate_event_lifecycle(%Event{} = event, []), do: lifecycle_error(event, :missing_queued)
+
+  defp validate_event_lifecycle(%Event{} = event, lifecycle) do
+    request_ids = lifecycle |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+    types = Enum.map(lifecycle, &elem(&1, 1))
+
+    with :ok <- validate_event_identity(event, request_ids),
+         :ok <- validate_event_open(event, types) do
+      validate_event_transition(event, types)
+    end
+  end
+
+  defp validate_event_identity(%Event{request_id: request_id}, [request_id]), do: :ok
+
+  defp validate_event_identity(event, _request_ids),
+    do: lifecycle_error(event, :request_identity_conflict)
+
+  defp validate_event_open(event, types) do
+    if Enum.any?(types, &(&1 in @closing_types)),
+      do: lifecycle_error(event, :already_closed),
+      else: :ok
+  end
+
+  defp validate_event_transition(%Event{type: "prompt_started"} = event, types) do
+    if "prompt_started" in types, do: lifecycle_error(event, :already_started), else: :ok
+  end
+
+  defp validate_event_transition(%Event{type: "review_presented"} = event, types) do
+    require_started(event, types)
+  end
+
+  defp validate_event_transition(%Event{type: "prompt_removed"} = event, types) do
+    if "prompt_started" in types, do: lifecycle_error(event, :already_started), else: :ok
+  end
+
+  defp validate_event_transition(%Event{type: type} = event, types)
+       when type in ["prompt_succeeded", "prompt_cancelled"] do
+    require_started(event, types)
+  end
+
+  defp validate_event_transition(%Event{type: type}, _types) when type in @closing_types, do: :ok
+
+  defp validate_event_transition(event, _types),
+    do: lifecycle_error(event, :invalid_transition)
+
+  defp require_started(event, types) do
+    if "prompt_started" in types, do: :ok, else: lifecycle_error(event, :not_started)
+  end
+
+  defp lifecycle_error(event, reason),
+    do: {:error, {:invalid_thread_event_lifecycle, event.queue_item_id, event.type, reason}}
+
+  defp next_event_sequence(conn, thread_id) do
+    with {:ok, [[sequence]]} <-
+           query(conn, "SELECT COALESCE(MAX(sequence),0) + 1 FROM thread_events WHERE thread_id=?", [thread_id]) do
+      {:ok, sequence}
+    end
+  end
+
+  defp read_thread_events(conn, thread_id, %{limit: limit, before_sequence: before_sequence}) do
+    {where, params} =
+      if is_integer(before_sequence) do
+        {"thread_id=? AND sequence<?", [thread_id, before_sequence, limit + 1]}
+      else
+        {"thread_id=?", [thread_id, limit + 1]}
+      end
+
+    with {:ok, rows} <-
+           query(
+             conn,
+             """
+             SELECT thread_id,sequence,event_id,queue_item_id,request_id,event_type,event_schema_version,
+                    jidoka_revision,payload_digest,encoded_bytes,payload_json,committed_at_ms
+             FROM thread_events WHERE #{where} ORDER BY sequence DESC LIMIT ?
+             """,
+             params
+           ),
+         truncated? = length(rows) > limit,
+         rows = Enum.take(rows, limit),
+         {:ok, events} <- decode_event_rows(rows, []) do
+      {:ok, %{events: Enum.reverse(events), history_truncated?: truncated?}}
+    end
+  end
+
+  defp read_open_thread_items(conn, thread_id) do
+    placeholders = Enum.map_join(@closing_types, ",", fn _type -> "?" end)
+
+    with {:ok, rows} <-
+           query(
+             conn,
+             """
+             SELECT e.thread_id,e.sequence,e.event_id,e.queue_item_id,e.request_id,e.event_type,
+                    e.event_schema_version,e.jidoka_revision,e.payload_digest,e.encoded_bytes,
+                    e.payload_json,e.committed_at_ms
+             FROM thread_events e
+             WHERE e.thread_id=?
+               AND NOT EXISTS (
+                 SELECT 1 FROM thread_events closed
+                 WHERE closed.thread_id=e.thread_id
+                   AND closed.queue_item_id=e.queue_item_id
+                   AND closed.event_type IN (#{placeholders})
+               )
+             ORDER BY e.sequence
+             """,
+             [thread_id | @closing_types]
+           ),
+         {:ok, events} <- decode_event_rows(rows, []) do
+      {:ok, group_open_events(events)}
+    end
+  end
+
+  defp read_request_events(conn, thread_id, request_id) do
+    with {:ok, rows} <-
+           query(
+             conn,
+             """
+             SELECT thread_id,sequence,event_id,queue_item_id,request_id,event_type,event_schema_version,
+                    jidoka_revision,payload_digest,encoded_bytes,payload_json,committed_at_ms
+             FROM thread_events WHERE thread_id=? AND request_id=? ORDER BY sequence
+             """,
+             [thread_id, request_id]
+           ) do
+      decode_event_rows(rows, [])
+    end
+  end
+
+  defp group_open_events(events) do
+    {order, grouped} =
+      Enum.reduce(events, {[], %{}}, fn event, {order, grouped} ->
+        first? = not Map.has_key?(grouped, event.queue_item_id)
+        order = if first?, do: order ++ [event.queue_item_id], else: order
+        grouped = Map.update(grouped, event.queue_item_id, [event], &(&1 ++ [event]))
+        {order, grouped}
+      end)
+
+    Enum.map(order, fn queue_item_id ->
+      events = Map.fetch!(grouped, queue_item_id)
+
+      %{
+        queue_item_id: queue_item_id,
+        request_id: hd(events).request_id,
+        queued: Enum.find(events, &(&1.type == "prompt_queued")),
+        started: Enum.find(events, &(&1.type == "prompt_started")),
+        reviews: Enum.filter(events, &(&1.type == "review_presented")),
+        events: events
+      }
+    end)
+  end
+
+  defp decode_event_rows([row | rows], events) do
+    case decode_event_row(row) do
+      {:ok, event} -> decode_event_rows(rows, [event | events])
+      {:error, _reason} = error -> error
     end
   end
 
   defp decode_event_rows([], events), do: {:ok, Enum.reverse(events)}
-  defp decode_event_rows(_rows, _events), do: {:error, :event_integrity_failed}
 
-  defp expect_next_sequence(conn, session_id, sequence) when is_integer(sequence) and sequence > 0 do
-    with {:ok, [[current]]} <-
-           query(conn, "SELECT COALESCE(MAX(sequence),0) FROM events WHERE session_id=?", [session_id]) do
-      if sequence == current + 1,
-        do: :ok,
-        else: {:error, {:invalid_event_sequence, session_id, current, sequence}}
-    end
-  end
-
-  defp expect_next_sequence(_conn, session_id, sequence),
-    do: {:error, {:invalid_event_sequence, session_id, 0, sequence}}
-
-  defp enforce_session_limit(conn, session_id) do
-    with {:ok, [[count]]} <- query(conn, "SELECT COUNT(*) FROM events WHERE session_id=?", [session_id]) do
-      if count < @event_limit, do: :ok, else: {:error, {:session_event_limit_exceeded, session_id}}
-    end
-  end
-
-  defp load_operation_by_key(conn, prepared) do
-    case query(
-           conn,
-           "SELECT operation_id FROM operations WHERE session_id=? AND operation_kind=? AND principal_id=? AND idempotency_key=?",
-           [prepared.session_id, prepared.operation_kind, prepared.principal_id, prepared.idempotency_key]
-         ) do
-      {:ok, []} -> {:ok, nil}
-      {:ok, [[operation_id]]} -> load_operation(conn, operation_id)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp load_optional_operation(conn, operation_id) do
-    case load_operation(conn, operation_id) do
-      {:ok, operation} -> {:ok, operation}
-      {:error, {:admission_receipt_not_found, ^operation_id}} -> {:ok, nil}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp load_operation(conn, operation_id) do
-    sql =
-      "SELECT operation_id,session_id,sequence,operation_kind,principal_id,idempotency_key,payload_digest,target_id,receipt_id,receipt_type,payload,admission_state,event_id,committed_at_ms FROM operations WHERE operation_id=?"
-
-    case query(conn, sql, [operation_id]) do
-      {:ok, []} -> {:error, {:admission_receipt_not_found, operation_id}}
-      {:ok, [row]} -> decode_operation_row(row)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp decode_operation_row([
-         operation_id,
-         session_id,
+  defp decode_event_row([
+         thread_id,
          sequence,
-         kind,
-         principal_id,
-         key,
-         digest,
-         target_id,
-         receipt_id,
-         receipt_type,
-         payload,
-         state,
          event_id,
-         committed
-       ]) do
-    with {:ok, normalized} <- CanonicalJSON.decode(payload) do
-      {:ok,
-       %{
-         operation_id: operation_id,
-         session_id: session_id,
-         sequence: sequence,
-         operation_kind: kind,
-         principal_id: principal_id,
-         idempotency_key: key,
-         payload_digest: digest,
-         target_id: target_id,
-         receipt_id: receipt_id,
-         receipt_type: receipt_type,
-         normalized_payload: normalized,
-         admission_state: state,
-         event_id: event_id,
-         committed_at_ms: committed
-       }}
+         queue_item_id,
+         request_id,
+         event_type,
+         schema_version,
+         jidoka_revision,
+         payload_digest,
+         encoded_bytes,
+         payload_json,
+         committed_at_ms
+       ])
+       when is_binary(payload_json) and encoded_bytes == byte_size(payload_json) do
+    with true <- Digest.portable(payload_json) == payload_digest,
+         {:ok, payload} <- CanonicalJSON.decode(payload_json),
+         {:ok, event} <-
+           Event.new(%{
+             id: event_id,
+             session_id: thread_id,
+             queue_item_id: queue_item_id,
+             request_id: request_id,
+             type: event_type,
+             schema_version: schema_version,
+             jidoka_revision: jidoka_revision,
+             payload: payload,
+             sequence: sequence,
+             committed_at_ms: committed_at_ms
+           }) do
+      {:ok, event}
+    else
+      false -> {:error, {:thread_event_integrity_failed, event_id, :payload_digest}}
+      {:error, reason} -> {:error, {:thread_event_integrity_failed, event_id, reason}}
     end
   end
 
-  defp read_operations(conn, session_id, states, limit) do
-    placeholders = Enum.map_join(states, ",", fn _state -> "?" end)
+  defp decode_event_row(row), do: {:error, {:thread_event_integrity_failed, row}}
 
-    sql =
-      "SELECT operation_id,session_id,sequence,operation_kind,principal_id,idempotency_key,payload_digest,target_id,receipt_id,receipt_type,payload,admission_state,event_id,committed_at_ms FROM operations WHERE session_id=? AND admission_state IN (#{placeholders}) ORDER BY sequence LIMIT ?"
-
-    with {:ok, rows} <- query(conn, sql, [session_id | states] ++ [limit]) do
-      decode_operation_rows(rows, [])
+  defp inspect_store_conn(conn) do
+    with {:ok, [["ok"]]} <- query(conn, "PRAGMA integrity_check", []),
+         {:ok, []} <- query(conn, "PRAGMA foreign_key_check", []),
+         {:ok, ["sessions", "thread_events"]} <- user_tables(conn),
+         {:ok, sessions} <- list_sessions_conn(conn),
+         {:ok, rows} <- all_event_rows(conn),
+         {:ok, events} <- decode_event_rows(rows, []),
+         :ok <- verify_event_sequences(events),
+         :ok <- verify_event_lifecycles(events) do
+      {:ok, %{integrity: :ok, tables: 2, sessions: length(sessions), thread_events: length(events)}}
+    else
+      {:ok, value} -> {:error, {:sqlite_integrity_failed, value}}
+      {:error, _reason} = error -> error
     end
   end
 
-  defp decode_operation_rows([row | rows], operations) do
-    with {:ok, operation} <- decode_operation_row(row) do
-      decode_operation_rows(rows, [operation | operations])
+  defp all_event_rows(conn) do
+    query(
+      conn,
+      """
+      SELECT thread_id,sequence,event_id,queue_item_id,request_id,event_type,event_schema_version,
+             jidoka_revision,payload_digest,encoded_bytes,payload_json,committed_at_ms
+      FROM thread_events ORDER BY thread_id,sequence
+      """,
+      []
+    )
+  end
+
+  defp verify_event_sequences(events) do
+    events
+    |> Enum.group_by(& &1.session_id)
+    |> Enum.reduce_while(:ok, fn {thread_id, thread_events}, :ok ->
+      actual = Enum.map(thread_events, & &1.sequence)
+      expected = Enum.to_list(1..length(thread_events)//1)
+
+      if actual == expected,
+        do: {:cont, :ok},
+        else: {:halt, {:error, {:thread_event_sequence_gap, thread_id, actual}}}
+    end)
+  end
+
+  defp verify_event_lifecycles(events) do
+    events
+    |> Enum.group_by(&{&1.session_id, &1.queue_item_id})
+    |> Enum.reduce_while(:ok, fn {{_thread_id, _queue_item_id}, item_events}, :ok ->
+      case replay_lifecycle(item_events, []) do
+        :ok -> {:cont, :ok}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp replay_lifecycle([event | events], lifecycle) do
+    with :ok <- validate_event_lifecycle(event, lifecycle) do
+      replay_lifecycle(events, lifecycle ++ [{event.request_id, event.type}])
     end
   end
 
-  defp decode_operation_rows([], operations), do: {:ok, Enum.reverse(operations)}
-
-  defp verify_all_events(conn) do
-    with {:ok, rows} <-
-           query(conn, "SELECT sequence,digest,encoded_bytes,json FROM events ORDER BY session_id,sequence", []) do
-      decode_event_rows(rows, [])
-    end
-  end
-
-  defp within_limit(bytes, limit, label) do
-    if byte_size(bytes) <= limit,
-      do: :ok,
-      else: {:error, {label, byte_size(bytes), limit}}
-  end
+  defp replay_lifecycle([], _lifecycle), do: :ok
 
   defp configure(conn) do
     with :ok <- Sqlite3.execute(conn, "PRAGMA journal_mode=WAL"),
@@ -555,13 +775,33 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   defp bootstrap(conn) do
-    with :ok <- Sqlite3.execute(conn, @schema),
+    with {:ok, tables} <- user_tables(conn),
          {:ok, [[version]]} <- query(conn, "PRAGMA user_version", []) do
-      case version do
-        0 -> Sqlite3.execute(conn, "PRAGMA user_version=1")
-        1 -> :ok
-        other -> {:error, {:unsupported_store_version, other}}
+      case {tables, version} do
+        {[], 0} ->
+          with :ok <- Sqlite3.execute(conn, @schema) do
+            Sqlite3.execute(conn, "PRAGMA user_version=#{@store_version}")
+          end
+
+        {["sessions", "thread_events"], @store_version} ->
+          :ok
+
+        {tables, version} ->
+          if "events" in tables or "operations" in tables,
+            do: {:error, {:storage_schema_reset_required, tables}},
+            else: {:error, {:unsupported_store_schema, version, tables}}
       end
+    end
+  end
+
+  defp user_tables(conn) do
+    with {:ok, rows} <-
+           query(
+             conn,
+             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+             []
+           ) do
+      {:ok, Enum.map(rows, &hd/1)}
     end
   end
 
@@ -580,8 +820,12 @@ defmodule Jido.Console.Storage.SQLite do
 
   defp commit(conn, result) do
     case Sqlite3.execute(conn, "COMMIT") do
-      :ok -> result
-      {:error, reason} -> {:error, {:sqlite_commit_failed, reason}}
+      :ok ->
+        result
+
+      {:error, reason} ->
+        _result = Sqlite3.execute(conn, "ROLLBACK")
+        {:error, {:sqlite_commit_failed, reason}}
     end
   end
 
@@ -619,12 +863,53 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   defp normalize_sqlite_error(reason) when is_binary(reason) do
-    if String.contains?(reason, "UNIQUE constraint failed"),
-      do: {:constraint_conflict, reason},
-      else: {:sqlite_error, reason}
+    cond do
+      String.contains?(reason, "UNIQUE constraint failed") -> {:constraint_conflict, reason}
+      String.contains?(reason, "FOREIGN KEY constraint failed") -> {:foreign_key_conflict, reason}
+      true -> {:sqlite_error, reason}
+    end
   end
 
   defp normalize_sqlite_error(reason), do: {:sqlite_error, reason}
+
+  defp within_limit(bytes, limit, label) do
+    if byte_size(bytes) <= limit,
+      do: :ok,
+      else: {:error, {label, byte_size(bytes), limit}}
+  end
+
+  defp event_bounds(opts) do
+    limit = Keyword.get(opts, :limit, @default_event_limit)
+    before_sequence = Keyword.get(opts, :before_sequence)
+
+    if is_integer(limit) and limit > 0 and limit <= @max_event_limit and
+         (is_nil(before_sequence) or (is_integer(before_sequence) and before_sequence > 0)) do
+      {:ok, %{limit: limit, before_sequence: before_sequence}}
+    else
+      {:error, :invalid_thread_event_bounds}
+    end
+  end
+
+  defp event_opts(opts), do: Keyword.take(opts, [:clock])
+
+  defp transition_opts(opts),
+    do: Keyword.take(opts, [:clock, :lease_ttl_ms, :id_generator, :owner_id])
+
+  defp call(opts, message) do
+    opts
+    |> fetch_writer!()
+    |> GenServer.call(message, timeout(opts))
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  defp fetch_writer!(opts) do
+    case Keyword.fetch(opts, :pid) do
+      {:ok, pid} when is_pid(pid) or is_atom(pid) or is_tuple(pid) -> pid
+      :error -> raise ArgumentError, "SQLite session store requires :pid"
+      {:ok, value} -> raise ArgumentError, "invalid SQLite session store pid: #{inspect(value)}"
+    end
+  end
 
   defp store_path(opts) do
     case Keyword.get(opts, :path) do
@@ -689,6 +974,13 @@ defmodule Jido.Console.Storage.SQLite do
       end
     else
       :ok
+    end
+  end
+
+  defp clock_ms(opts) do
+    case Keyword.get(opts, :clock) do
+      clock when is_function(clock, 0) -> clock.()
+      _clock -> now_ms()
     end
   end
 

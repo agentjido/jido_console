@@ -1,97 +1,69 @@
 defmodule Jido.Console.Storage do
-  @moduledoc "Public access to the single SQLite writer."
+  @moduledoc "Public access to the SQLite session and thread-event store."
 
-  alias Jido.Console.Session.{Event, State}
+  alias Jido.Console.Session.Event
+  alias Jido.Console.Storage.SQLite
 
   @deadline 1_000
-  @states ~w(accepted started terminal)
 
-  @doc "Appends one canonical event."
-  @spec append_event(map(), State.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def append_event(event, semantic, opts \\ []) when is_map(event) and is_map(semantic) do
-    with {:ok, event} <- Event.validate(event),
-         true <- event.session_id == semantic.session_id,
-         true <- event.payload["sequence"] == semantic.sequence do
-      write_call({:append_event, event}, opts, event.id)
-    else
-      false -> {:error, :invalid_semantic_history_position}
-      {:error, reason} -> {:error, reason}
-    end
+  @doc "Returns the configured public Jidoka store reference."
+  @spec session_store(keyword()) :: Jidoka.Session.Store.store()
+  def session_store(opts \\ []) do
+    {SQLite, pid: writer(opts), call_timeout: deadline(opts)}
   end
 
-  @doc "Commits one operation and event atomically."
-  @spec admit_operation(map(), map(), State.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def admit_operation(prepared, event, semantic, opts \\ [])
-      when is_map(prepared) and is_map(event) and is_map(semantic) do
-    with {:ok, event} <- Event.validate(event),
-         true <- event.session_id == semantic.session_id,
-         true <- event.payload["sequence"] == semantic.sequence do
-      write_call({:admit_operation, prepared, event}, opts, prepared.operation_id)
-    else
-      false -> {:error, :invalid_semantic_history_position}
-      {:error, reason} -> {:error, reason}
-    end
+  @doc "Appends one ordered product-history event."
+  @spec append_thread_event(Event.t(), keyword()) ::
+          {:ok, %{event: Event.t(), duplicate: boolean()}} | {:error, term()}
+  def append_thread_event(%Event{} = event, opts \\ []) do
+    write_call(fn -> SQLite.append_thread_event(writer(opts), event, sqlite_opts(opts)) end, event.id)
   end
 
-  @doc "Returns one admission receipt."
-  @spec admission_receipt(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def admission_receipt(operation_id, opts \\ []) when is_binary(operation_id) do
-    read_call({:operation, operation_id}, opts)
+  @doc "Returns a bounded product-history window."
+  @spec thread_events(String.t(), keyword()) ::
+          {:ok, %{events: [Event.t()], history_truncated?: boolean()}} | {:error, term()}
+  def thread_events(thread_id, opts \\ []) when is_binary(thread_id) do
+    read_call(fn -> SQLite.thread_events(writer(opts), thread_id, sqlite_opts(opts)) end)
   end
 
-  @doc "Changes one admission state."
-  @spec transition_admission(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def transition_admission(operation_id, state, opts \\ [])
-      when is_binary(operation_id) and state in @states do
-    write_call({:transition_operation, operation_id, state}, opts, operation_id)
+  @doc "Returns all accepted items that do not have a closing outcome."
+  @spec open_thread_items(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def open_thread_items(thread_id, opts \\ []) when is_binary(thread_id) do
+    read_call(fn -> SQLite.open_thread_items(writer(opts), thread_id, sqlite_opts(opts)) end)
   end
 
-  @doc "Returns bounded admissions for one session."
-  @spec recover_admissions(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def recover_admissions(session_id, opts \\ []) when is_binary(session_id) do
-    states = Keyword.get(opts, :states, @states)
-    limit = Keyword.get(opts, :limit, 100)
-
-    if is_list(states) and states != [] and Enum.all?(states, &(&1 in @states)) and is_integer(limit) and
-         limit > 0 and limit <= 1_000 do
-      read_call({:operations, session_id, states, limit}, opts)
-    else
-      {:error, :invalid_admission_recovery_bounds}
-    end
+  @doc "Returns product events for one public Jidoka request ID."
+  @spec request_events(String.t(), String.t(), keyword()) :: {:ok, [Event.t()]} | {:error, term()}
+  def request_events(thread_id, request_id, opts \\ [])
+      when is_binary(thread_id) and is_binary(request_id) do
+    read_call(fn -> SQLite.request_events(writer(opts), thread_id, request_id, sqlite_opts(opts)) end)
   end
 
-  @doc "Returns all canonical events for one session."
-  @spec events(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def events(session_id, opts \\ []) when is_binary(session_id) do
-    read_call({:events, session_id}, opts)
-  end
-
-  @doc "Returns the last canonical event identity for one session."
-  @spec history_head(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def history_head(session_id, opts \\ []) when is_binary(session_id) do
-    read_call({:history_head, session_id}, opts)
-  end
-
-  @doc "Checks SQLite and stored payload integrity."
+  @doc "Checks SQLite and all stored values."
   @spec inspect_store(keyword()) :: {:ok, map()} | {:error, term()}
-  def inspect_store(opts \\ []), do: read_call(:inspect_store, opts)
+  def inspect_store(opts \\ []), do: read_call(fn -> SQLite.inspect_store(writer(opts), sqlite_opts(opts)) end)
 
-  @doc "Returns small store counts."
+  @doc "Returns small storage counts."
   @spec status(keyword()) :: {:ok, map()} | {:error, term()}
-  def status(opts \\ []), do: read_call(:status, opts)
+  def status(opts \\ []), do: read_call(fn -> SQLite.status(writer(opts), sqlite_opts(opts)) end)
 
-  defp write_call(message, opts, operation_id) do
-    GenServer.call(writer(opts), message, deadline(opts))
+  defp write_call(fun, operation_id) do
+    fun.()
   catch
     :exit, {:timeout, _call} -> {:error, {:timeout_unknown, operation_id}}
     :exit, _reason -> {:error, :storage_unavailable}
   end
 
-  defp read_call(message, opts) do
-    GenServer.call(writer(opts), message, deadline(opts))
+  defp read_call(fun) do
+    fun.()
   catch
     :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
     :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  defp sqlite_opts(opts) do
+    Keyword.take(opts, [:before_sequence, :call_timeout, :clock, :limit])
+    |> Keyword.put_new(:call_timeout, deadline(opts))
   end
 
   defp writer(opts), do: Keyword.get(opts, :writer, Jido.Console.Storage.Writer)

@@ -1,25 +1,21 @@
 defmodule Jido.Console.Tui.Activity do
   @moduledoc "Tagged semantic activity for the interactive TUI."
 
-  alias Jido.Console.Session.Request
   alias Jido.Console.Tui.Turn
 
   @type decision :: :approve | :deny
-  @type failure_kind :: :startup | :preparation | :selection | :turn | :hibernated
+  @type failure_kind :: :startup | :selection | :turn | :hibernated
   @type t ::
           :idle
-          | {:preparing, {:prompt, String.t()}}
-          | {:preparing, {:selection, term()}}
-          | {:starting, {:runtime, :empty | :submit_when_ready}}
           | {:starting, {:turn, Turn.t()}}
-          | {:active, Request.t(), Turn.t(), :streaming | :finishing}
-          | {:review, Request.t(), Turn.t(), map(), :awaiting | {:responding, decision()}}
-          | {:cancelling, Turn.t(), :before_start | {:request, Request.t()}}
+          | {:active, map(), Turn.t(), :streaming | :finishing}
+          | {:review, map(), Turn.t(), map(), :awaiting | {:responding, decision()}}
+          | {:cancelling, Turn.t(), :before_start | {:request, map()}}
           | {:failed, failure_kind(), term(), String.t()}
 
-  @spec tag(t()) :: :idle | :preparing | :starting | :active | :review | :cancelling | :failed
+  @spec tag(t()) :: :idle | :starting | :active | :review | :cancelling | :failed
   def tag(:idle), do: :idle
-  def tag({tag, _data}) when tag in [:preparing, :starting], do: tag
+  def tag({:starting, _data}), do: :starting
   def tag({tag, _first, _second, _third}) when tag in [:active, :failed], do: tag
   def tag({:review, _request, _turn, _result, _response}), do: :review
   def tag({:cancelling, _turn, _target}), do: :cancelling
@@ -31,7 +27,7 @@ defmodule Jido.Console.Tui.Activity do
   def turn({:cancelling, turn, _target}), do: turn
   def turn(_activity), do: nil
 
-  @spec request(t()) :: Request.t() | nil
+  @spec request(t()) :: map() | nil
   def request({:active, request, _turn, _phase}), do: request
   def request({:review, request, _turn, _result, _response}), do: request
   def request({:cancelling, _turn, {:request, request}}), do: request

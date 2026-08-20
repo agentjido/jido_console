@@ -9,18 +9,11 @@ defmodule Jido.Console.Process.Contract do
       purpose: "interactive terminal session",
       readiness: "terminal and runtime are ready",
       shutdown: "TUI shutdown through the process supervisor"
-    },
-    coding_runtime: %{
-      name: "coding-runtime",
-      owner: "coding",
-      purpose: "trusted local coding manager",
-      readiness: "execution manager is open",
-      shutdown: "coding setup close through the process supervisor"
     }
   }
 
   @type status :: :starting | :ready | :running | :stopping | :stopped | :failed
-  @type kind :: :interactive | :coding_runtime
+  @type kind :: :interactive
   @type identity :: {kind(), String.t()}
   @type process_record :: %{
           required(:kind) => kind(),

@@ -17,6 +17,7 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
       "Jidoka.CodingPack",
       "Jidoka.Effect",
       "Jidoka.Event",
+      "Jidoka.Id",
       "Jidoka.ExecutionEnvironment",
       "Jidoka.Extension",
       "Jidoka.Operation.Source",

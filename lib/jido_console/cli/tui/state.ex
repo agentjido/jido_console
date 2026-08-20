@@ -1,9 +1,8 @@
 defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
-  alias Jido.Console.Tui.{Activity, Editor, SafeText, Selection, SemanticProjection, Turn}
-  alias Jido.Console.Session.Envelope
-  alias Jido.Console.Session.Request, as: SessionRequest
+  alias Jido.Console.Tui.{Activity, Editor, SafeText, Selection, Turn}
+  alias Jido.Console.Session.View, as: SessionView
 
   @default_history_limit 100
   @default_turn_limit 100
@@ -14,8 +13,6 @@ defmodule Jido.Console.Tui.State do
             __MODULE__,
             %{
               session: Zoi.any(),
-              semantic_session_id: Zoi.string() |> Zoi.nullish(),
-              semantic_sequence: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0),
               size: Zoi.tuple({Zoi.integer() |> Zoi.positive(), Zoi.integer() |> Zoi.positive()}),
               session_client: Zoi.any() |> Zoi.nullish(),
               editor: Zoi.struct(Editor) |> Zoi.optional() |> Zoi.default(%Editor{}),
@@ -27,14 +24,11 @@ defmodule Jido.Console.Tui.State do
               turn_limit: Zoi.integer() |> Zoi.positive() |> Zoi.optional() |> Zoi.default(@default_turn_limit),
               messages: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
               activity: Zoi.any() |> Zoi.optional() |> Zoi.default(:idle),
-              prepare_prompt?: Zoi.boolean() |> Zoi.optional() |> Zoi.default(false),
               project_instructions: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
               coding_reviews: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
               turns: Zoi.array() |> Zoi.optional() |> Zoi.default([]),
               next_turn_id: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0),
-              selection: Zoi.any() |> Zoi.nullish(),
-              dirty?: Zoi.boolean() |> Zoi.optional() |> Zoi.default(true),
-              render_scheduled?: Zoi.boolean() |> Zoi.optional() |> Zoi.default(false)
+              selection: Zoi.any() |> Zoi.nullish()
             },
             unrecognized_keys: :error
           )
@@ -44,14 +38,11 @@ defmodule Jido.Console.Tui.State do
 
   @type effect ::
           {:start_turn, String.t()}
-          | {:start_turn, String.t(), map()}
-          | {:prepare_prompt, String.t()}
-          | {:apply_selection, map()}
           | {:cancel_turn, term()}
-          | {:respond_review, :approve | :deny, SessionRequest.t(), term(), term()}
+          | {:respond_review, :approve | :deny, map(), term(), term()}
           | :exit
 
-  @type t :: %__MODULE__{}
+  @type t :: unquote(Zoi.type_spec(@schema))
 
   @spec new(term(), {pos_integer(), pos_integer()}, keyword()) :: t()
   def new(session, size, opts \\ []) do
@@ -62,99 +53,35 @@ defmodule Jido.Console.Tui.State do
       session_client: Keyword.get(opts, :session_client),
       size: size,
       activity: Keyword.get(opts, :activity, :idle),
-      prepare_prompt?: Keyword.get(opts, :prepare_prompt, false),
       project_instructions: Keyword.get(opts, :project_instructions, []),
       history_limit: positive_limit(opts, :history_limit, @default_history_limit),
       turn_limit: positive_limit(opts, :turn_limit, @default_turn_limit),
       selection: selection
     }
 
-    restore_events(
-      state,
-      Keyword.get(opts, :session_events, []),
-      Keyword.get(opts, :session_request)
-    )
+    state
   end
 
-  @doc "Restores renderer state from the complete ordered event history."
-  @spec restore_events(t(), [map()], SessionRequest.t() | nil) :: t()
-  def restore_events(state, events, active_request \\ nil)
-
-  def restore_events(%__MODULE__{} = state, events, active_request) when is_list(events) do
-    events = Enum.map(events, &event_map/1)
-    session_id = replay_session_id(state, events)
-    sequence = events |> List.last() |> event_sequence()
-
-    restore_semantic_state(
-      state,
-      %{"session_id" => session_id, "sequence" => sequence, "history" => events},
-      active_request
-    )
-  end
-
-  def restore_events(%__MODULE__{} = state, _events, _active_request), do: state
-
-  defp restore_semantic_state(state, semantic, active_request) do
-    transcript = Map.get(semantic, "transcript", [])
-    transcript = if transcript == [], do: semantic_transcript(semantic["history"] || []), else: transcript
-
-    restored =
-      Enum.reduce(transcript, %{turns: [], messages: [], active: nil, next_id: 0}, fn event, acc ->
-        restore_event(acc, event)
-      end)
-
-    active_turn = if restored.active, do: put_active_request(restored.active, active_request), else: nil
-
-    activity =
-      case {active_turn, active_request} do
-        {%Turn{} = turn, %SessionRequest{} = request} -> {:active, request, turn, :streaming}
-        {%Turn{} = turn, _request} -> {:starting, {:turn, turn}}
-        {nil, _request} -> state.activity
-      end
+  @doc "Replaces renderer state from one complete Session.View."
+  @spec restore_view(t(), SessionView.t()) :: t()
+  def restore_view(%__MODULE__{} = state, %SessionView{} = view) do
+    messages = Enum.map(view.transcript, &view_message/1)
+    turns = messages |> transcript_turns(state.turn_limit) |> restore_history_outcomes(view.history, state.turn_limit)
+    {activity, reviews} = view_activity(view, length(turns))
+    active_turn_count = if is_nil(view.active), do: 0, else: 1
 
     %{
       state
-      | messages: retain(restored.messages, state.turn_limit * 2),
-        turns: retain(restored.turns, state.turn_limit),
-        next_turn_id: restored.next_id,
+      | session: view,
+        messages: messages,
+        turns: turns,
+        next_turn_id: length(turns) + active_turn_count,
         activity: activity,
-        semantic_session_id: semantic["session_id"],
-        semantic_sequence: semantic["sequence"] || 0,
-        dirty?: true
+        coding_reviews: reviews
     }
   end
 
-  @doc "Applies a complete ordered canonical batch as one local transaction."
-  @spec apply_session_events(t(), [map()]) :: {:ok, t()} | {:error, term()}
-  def apply_session_events(state, events) when is_list(events) do
-    Enum.reduce_while(events, {:ok, state}, fn event, {:ok, current} ->
-      case apply_session_event(current, event) do
-        {:ok, next} -> {:cont, {:ok, next}}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-  end
-
-  @doc "Applies one exact next canonical event to renderer-local state."
-  @spec apply_session_event(t(), map()) :: {:ok, t()} | {:error, term()}
-  def apply_session_event(state, event) do
-    payload = event["payload"] || %{}
-    sequence = payload["sequence"]
-
-    with {:ok, event} <- Jido.Console.Session.Event.validate(event),
-         true <- event["session_id"] == state.semantic_session_id,
-         true <- sequence == state.semantic_sequence + 1,
-         request_id = request_id(state),
-         {:ok, projection} <- SemanticProjection.project(event, request_id) do
-      state = %{state | semantic_sequence: sequence}
-      {:ok, apply_semantic_projection(state, event, projection)}
-    else
-      false -> {:error, :invalid_tui_event_order}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  @spec active_request(t()) :: SessionRequest.t() | nil
+  @spec active_request(t()) :: map() | nil
   def active_request(%__MODULE__{activity: activity}), do: Activity.request(activity)
 
   @spec active_turn(t()) :: Turn.t() | nil
@@ -181,14 +108,6 @@ defmodule Jido.Console.Tui.State do
 
   def update(%__MODULE__{activity: {:review, _, _, _, _}} = state, {:terminal, {:key, :newline}}),
     do: {state, []}
-
-  def update(%__MODULE__{activity: {:preparing, _}} = state, {:terminal, {kind, _value}})
-      when kind in [:text, :paste],
-      do: {state, []}
-
-  def update(%__MODULE__{activity: {:preparing, _}} = state, {:terminal, {:key, key}})
-      when key in [:newline, :backspace, :left, :right, :up, :down],
-      do: {state, []}
 
   def update(%__MODULE__{} = state, {:terminal, {:text, text}}) do
     edit(state, Editor.insert(state.editor, text))
@@ -222,19 +141,22 @@ defmodule Jido.Console.Tui.State do
     changed(state, scroll_offset: max(state.scroll_offset - scroll_page(state), 0))
   end
 
-  def update(%__MODULE__{activity: {:starting, {:runtime, _}}} = state, {:terminal, {:key, :enter}}) do
-    if String.trim(state.editor.text) == "" do
-      {state, []}
-    else
-      changed(state, activity: {:starting, {:runtime, :submit_when_ready}})
-    end
-  end
-
   def update(%__MODULE__{activity: {:failed, :startup, _, _}} = state, {:terminal, {:key, :enter}}),
     do: {state, []}
 
+  def update(%__MODULE__{activity: {:active, _, _, _}} = state, {:terminal, {:key, :enter}}) do
+    prompt = String.trim(state.editor.text)
+
+    if prompt == "" do
+      {state, []}
+    else
+      state = remember_prompt(state, prompt)
+      {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:start_turn, prompt}]}
+    end
+  end
+
   def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, :enter}})
-      when elem(activity, 0) in [:preparing, :starting, :active, :review, :cancelling],
+      when elem(activity, 0) in [:starting, :active, :review, :cancelling],
       do: {state, []}
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :enter}}) do
@@ -247,80 +169,12 @@ defmodule Jido.Console.Tui.State do
     end
   end
 
-  def update(%__MODULE__{activity: {:preparing, {:prompt, original}}} = state, {:prompt_ready, prompt, context}) do
-    turn = Turn.new(state.next_turn_id, prompt, context)
-
-    state = remember_prompt(state, original)
-
-    state = %{
-      state
-      | editor: Editor.clear(state.editor),
-        scroll_offset: 0,
-        messages: state.messages ++ [%{role: :user, content: turn.prompt}],
-        activity: {:starting, {:turn, turn}},
-        next_turn_id: state.next_turn_id + 1,
-        dirty?: true
-    }
-
-    {state, [{:start_turn, turn.prompt, context}]}
-  end
-
-  def update(%__MODULE__{activity: {:preparing, preparation}} = state, {:prompt_error, reason}) do
-    selection =
-      case preparation do
-        {:selection, previous} -> previous
-        {:prompt, _prompt} -> state.selection
-      end
-
-    {%{
-       state
-       | selection: selection,
-         activity: {:failed, failure_kind(preparation), reason, format_error(reason)},
-         dirty?: true
-     }, []}
-  end
-
-  def update(%__MODULE__{} = state, {:runtime_ready, session, instructions}) do
-    submit? = state.activity == {:starting, {:runtime, :submit_when_ready}}
-
-    activity =
-      case state.activity do
-        {:starting, {:runtime, _queued}} -> :idle
-        {:preparing, {:selection, _previous}} -> :idle
-        other -> other
-      end
-
-    state = %{
-      state
-      | session: session,
-        activity: activity,
-        project_instructions: instructions,
-        dirty?: true
-    }
-
-    prompt = String.trim(state.editor.text)
-
-    if submit? and prompt != "" do
-      submit_prompt(state, prompt)
-    else
-      {state, []}
-    end
-  end
-
-  def update(%__MODULE__{} = state, {:runtime_failed, reason}) do
-    {%{
-       state
-       | activity: {:failed, :startup, reason, format_error(reason)},
-         dirty?: true
-     }, []}
-  end
-
   def update(%__MODULE__{activity: {:starting, {:turn, turn}}} = state, {:terminal, {:key, :ctrl_c}}) do
-    {%{state | activity: {:cancelling, turn, :before_start}, dirty?: true}, []}
+    {%{state | activity: {:cancelling, turn, :before_start}}, []}
   end
 
   def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, :escape}})
-      when activity == :idle or elem(activity, 0) in [:preparing, :starting, :failed],
+      when activity == :idle or elem(activity, 0) in [:starting, :failed],
       do: {state, [:exit]}
 
   def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, key}})
@@ -332,8 +186,8 @@ defmodule Jido.Console.Tui.State do
 
   def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, :ctrl_c}}) do
     case {Activity.turn(activity), Activity.request(activity)} do
-      {%Turn{} = turn, %SessionRequest{} = request} ->
-        {%{state | activity: {:cancelling, turn, {:request, request}}, dirty?: true}, [{:cancel_turn, request}]}
+      {%Turn{} = turn, request} when is_map(request) ->
+        {%{state | activity: {:cancelling, turn, {:request, request}}}, [{:cancel_turn, request}]}
 
       _other ->
         {state, [:exit]}
@@ -349,7 +203,7 @@ defmodule Jido.Console.Tui.State do
 
   def update(
         %__MODULE__{activity: {:starting, {:turn, starting_turn}}} = state,
-        {:turn_started, %SessionRequest{} = request}
+        {:turn_started, %{} = request}
       ) do
     {turn, next_turn_id} = ensure_turn(state, starting_turn)
     turn = Turn.put_request(turn, request)
@@ -357,8 +211,7 @@ defmodule Jido.Console.Tui.State do
     state = %{
       state
       | activity: started_activity(request, turn),
-        next_turn_id: next_turn_id,
-        dirty?: true
+        next_turn_id: next_turn_id
     }
 
     {state, []}
@@ -366,21 +219,14 @@ defmodule Jido.Console.Tui.State do
 
   def update(
         %__MODULE__{activity: {:cancelling, turn, :before_start}} = state,
-        {:turn_started, %SessionRequest{} = request}
+        {:turn_started, %{} = request}
       ) do
     turn = Turn.put_request(turn, request)
-    state = %{state | activity: {:cancelling, turn, {:request, request}}, dirty?: true}
+    state = %{state | activity: {:cancelling, turn, {:request, request}}}
     {state, [{:cancel_turn, request}]}
   end
 
   def update(%__MODULE__{} = state, {:turn_started, _request}), do: {state, []}
-
-  def update(%__MODULE__{} = state, {:session_event, event}) do
-    case apply_session_event(state, event) do
-      {:ok, state} -> {state, []}
-      {:error, _reason} -> {state, []}
-    end
-  end
 
   def update(%__MODULE__{activity: activity} = state, {:turn_result, result}) do
     case Activity.turn(activity) do
@@ -402,12 +248,6 @@ defmodule Jido.Console.Tui.State do
     state = put_active_changes(state, changes)
     changed(state, coding_reviews: changes)
   end
-
-  def update(%__MODULE__{} = state, :render_scheduled),
-    do: {%{state | render_scheduled?: true}, []}
-
-  def update(%__MODULE__{} = state, :rendered),
-    do: {%{state | dirty?: false, render_scheduled?: false}, []}
 
   def update(%__MODULE__{} = state, _event), do: {state, []}
 
@@ -434,12 +274,8 @@ defmodule Jido.Console.Tui.State do
         enqueue_turn(state, prompt)
 
       {:error, reason} ->
-        {%{state | activity: {:failed, :selection, reason, reason}, dirty?: true}, []}
+        {%{state | activity: {:failed, :selection, reason, reason}}, []}
     end
-  end
-
-  defp enqueue_turn(%__MODULE__{prepare_prompt?: true} = state, prompt) do
-    {%{state | activity: {:preparing, {:prompt, prompt}}, dirty?: true}, [{:prepare_prompt, prompt}]}
   end
 
   defp enqueue_turn(state, prompt) do
@@ -453,15 +289,14 @@ defmodule Jido.Console.Tui.State do
         scroll_offset: 0,
         messages: state.messages ++ [%{role: :user, content: turn.prompt}],
         activity: {:starting, {:turn, turn}},
-        next_turn_id: state.next_turn_id + 1,
-        dirty?: true
+        next_turn_id: state.next_turn_id + 1
     }
 
     {state, [{:start_turn, turn.prompt}]}
   end
 
   defp changed(state, updates) do
-    state = struct!(state, Keyword.put(updates, :dirty?, true))
+    state = struct!(state, updates)
     {state, []}
   end
 
@@ -508,8 +343,10 @@ defmodule Jido.Console.Tui.State do
     if index < length(state.history) do
       changed(state, editor: state.history |> Enum.at(index) |> Editor.from_text(), history_index: index)
     else
+      history_draft = if is_nil(state.history_draft), do: "", else: state.history_draft
+
       changed(state,
-        editor: Editor.from_text(state.history_draft || ""),
+        editor: Editor.from_text(history_draft),
         history_index: nil,
         history_draft: nil
       )
@@ -525,7 +362,7 @@ defmodule Jido.Console.Tui.State do
 
   defp finish(state, session, content, next_activity, opts) do
     error = Activity.error(next_activity)
-    content = if is_binary(content) and content != "", do: content, else: Activity.streaming(state.activity)
+    content = finish_content(content, state.activity)
     {turn, next_turn_id} = ensure_turn(state)
 
     turn =
@@ -552,10 +389,12 @@ defmodule Jido.Console.Tui.State do
          messages: messages,
          activity: next_activity,
          turns: turns,
-         next_turn_id: next_turn_id,
-         dirty?: true
+         next_turn_id: next_turn_id
      }, []}
   end
+
+  defp finish_content(content, _activity) when is_binary(content) and byte_size(content) > 0, do: content
+  defp finish_content(_content, activity), do: Activity.streaming(activity)
 
   defp ensure_turn(%__MODULE__{} = state) do
     case Activity.turn(state.activity) do
@@ -578,34 +417,202 @@ defmodule Jido.Console.Tui.State do
          decision
        )
        when is_map(event) do
-    review = List.first(turn.reviews) || %{}
+    review = if turn.reviews == [], do: %{}, else: hd(turn.reviews)
     turn = turn |> Turn.decide_review(review, decision) |> Turn.resume()
 
     {%{
        state
-       | activity: {:review, request, turn, event, {:responding, decision}},
-         dirty?: true
+       | activity: {:review, request, turn, event, {:responding, decision}}
      }, [{:respond_review, decision, request, event, review}]}
   end
 
   defp respond_to_review(state, _decision), do: {state, []}
 
   defp started_activity(request, %Turn{} = turn) do
-    if Enum.any?(turn.reviews, &(Map.get(&1, :status) == :pending)) do
-      {:review, request, turn, %{}, :awaiting}
-    else
-      {:active, request, turn, :streaming}
+    case Enum.find(turn.reviews, &(Map.get(&1, :status) == :pending)) do
+      nil -> {:active, request, turn, :streaming}
+      _review -> {:review, request, turn, %{}, :awaiting}
     end
   end
-
-  defp failure_kind({:prompt, _prompt}), do: :preparation
-  defp failure_kind({:selection, _previous}), do: :selection
 
   defp format_error(reason) do
     Jido.Console.Error.message(reason)
   rescue
     _exception -> inspect(reason)
   end
+
+  defp view_message(message) do
+    %{
+      role: map_get(message, :role, :assistant) |> normalize_role(),
+      content: map_get(message, :content, "") |> SafeText.clean()
+    }
+  end
+
+  defp transcript_turns(messages, limit) do
+    {turns, pending, _next_id} =
+      Enum.reduce(messages, {[], nil, 0}, fn
+        %{role: :user, content: content}, {turns, pending, id} ->
+          turns = finish_pending(turns, pending)
+          {turns, Turn.new(id, content), id + 1}
+
+        %{role: :assistant, content: content}, {turns, %Turn{} = pending, id} ->
+          {turns ++ [Turn.finish(pending, :completed, content)], nil, id}
+
+        _message, acc ->
+          acc
+      end)
+
+    turns = finish_pending(turns, pending)
+    retain(turns, limit)
+  end
+
+  defp finish_pending(turns, nil), do: turns
+  defp finish_pending(turns, %Turn{} = pending), do: turns ++ [Turn.finish(pending, :completed, nil)]
+
+  defp restore_history_outcomes(turns, history, limit) do
+    records = closing_history_records(history)
+
+    {turns, unmatched} =
+      Enum.map_reduce(turns, records, fn turn, records ->
+        case take_history_record(records, turn.prompt) do
+          {nil, records} -> {turn, records}
+          {record, records} -> {finish_from_history(turn, record), records}
+        end
+      end)
+
+    restored =
+      unmatched
+      |> Enum.reject(&(&1.type == "prompt_succeeded"))
+      |> Enum.with_index(length(turns))
+      |> Enum.map(fn {record, id} ->
+        id
+        |> Turn.new(record.input || "")
+        |> finish_from_history(record)
+      end)
+
+    retain(turns ++ restored, limit)
+  end
+
+  defp closing_history_records(history) do
+    {records, _inputs} =
+      Enum.reduce(history, {[], %{}}, fn event, {records, inputs} ->
+        type = map_get(event, :type)
+        queue_item_id = map_get(event, :queue_item_id)
+
+        case type do
+          "prompt_queued" ->
+            input = event |> map_get(:payload, %{}) |> map_get(:input)
+            {records, Map.put(inputs, queue_item_id, input)}
+
+          type when type in ["prompt_succeeded", "prompt_failed", "prompt_cancelled", "prompt_interrupted"] ->
+            record = %{
+              type: type,
+              input: Map.get(inputs, queue_item_id),
+              request_id: map_get(event, :request_id),
+              payload: map_get(event, :payload, %{})
+            }
+
+            {records ++ [record], inputs}
+
+          _other ->
+            {records, inputs}
+        end
+      end)
+
+    records
+  end
+
+  defp take_history_record(records, prompt) do
+    case Enum.find_index(records, &(&1.input == prompt)) do
+      nil -> {nil, records}
+      index -> List.pop_at(records, index)
+    end
+  end
+
+  defp finish_from_history(turn, record) do
+    turn = Turn.put_request(turn, %{request_id: record.request_id})
+    {outcome, error} = history_outcome(record.type, record.payload)
+    Turn.finish(turn, outcome, turn.assistant, error: error)
+  end
+
+  defp history_outcome("prompt_succeeded", _payload), do: {:completed, nil}
+  defp history_outcome("prompt_failed", payload), do: {:failed, map_get(payload, :error)}
+  defp history_outcome("prompt_cancelled", payload), do: {:cancelled, map_get(payload, :error)}
+
+  defp history_outcome("prompt_interrupted", payload),
+    do: {:interrupted, map_get(payload, :error, map_get(payload, :reason))}
+
+  defp view_activity(%SessionView{active: nil, status: :unavailable, error: error}, _id),
+    do: {{:failed, :turn, error, format_error(error)}, []}
+
+  defp view_activity(%SessionView{active: nil, status: :reconciling}, _id),
+    do: {{:failed, :startup, :thread_reconciling, "Thread recovery is in progress."}, []}
+
+  defp view_activity(%SessionView{active: nil}, _id), do: {:idle, []}
+
+  defp view_activity(%SessionView{} = view, id) do
+    request = %{
+      queue_item_id: view.active["queue_item_id"],
+      request_id: view.active["request_id"]
+    }
+
+    turn =
+      id
+      |> Turn.new(active_input(view.active))
+      |> Turn.put_request(request)
+      |> Map.put(:assistant, partial_text(view.partial))
+
+    if view.status == :review and is_map(view.review) do
+      review = normalize_view_review(view.review)
+      turn = %{turn | reviews: [review], status: :review}
+      {{:review, request, turn, view.review, :awaiting}, [review]}
+    else
+      phase = if(view.status == :finishing, do: :finishing, else: :streaming)
+      {{:active, request, turn, phase}, []}
+    end
+  end
+
+  defp partial_text(partial) do
+    partial
+    |> Enum.map(fn projection ->
+      data = map_get(projection, :data, %{})
+
+      Enum.find_value([:text, :delta, :content], "", fn key ->
+        case map_get(data, key) do
+          value when is_binary(value) -> value
+          _other -> nil
+        end
+      end)
+    end)
+    |> Enum.filter(&is_binary/1)
+    |> Enum.join()
+    |> SafeText.clean()
+  end
+
+  defp active_input(active) do
+    case active["input"] do
+      input when is_binary(input) -> input
+      _other -> ""
+    end
+  end
+
+  defp normalize_view_review(review) do
+    %{
+      id: map_get(review, :id),
+      operation: map_get(review, :operation),
+      reason: map_get(review, :reason),
+      arguments: map_get(review, :arguments, %{}),
+      status: :pending
+    }
+  end
+
+  defp normalize_role(role) when role in [:user, "user"], do: :user
+  defp normalize_role(role) when role in [:assistant, "assistant"], do: :assistant
+  defp normalize_role(_role), do: :assistant
+
+  defp map_get(map, key, default \\ nil)
+  defp map_get(map, key, default) when is_map(map), do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+  defp map_get(_map, _key, default), do: default
 
   defp retain(values, limit) when length(values) > limit, do: Enum.take(values, -limit)
   defp retain(values, _limit), do: values
@@ -618,190 +625,14 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp apply_command(state, selection, notice) do
-    previous = state.selection
-    changed? = runtime_selection_changed?(previous, selection)
-
     state = %{
       state
       | selection: selection,
         editor: Editor.clear(state.editor),
         messages: state.messages ++ [%{role: :system, content: notice}],
-        activity: if(changed?, do: {:preparing, {:selection, previous}}, else: :idle),
-        dirty?: true
+        activity: :idle
     }
 
-    if changed?, do: {state, [{:apply_selection, selection}]}, else: {state, []}
-  end
-
-  defp runtime_selection_changed?(left, right) when is_map(left) and is_map(right) do
-    left.model != right.model or left.profile_id != right.profile_id
-  end
-
-  defp runtime_selection_changed?(_left, _right), do: false
-
-  defp event_map(%Envelope{} = event), do: Envelope.to_map(event)
-  defp event_map(event) when is_map(event), do: event
-  defp event_map(_event), do: %{}
-
-  defp replay_session_id(_state, [%{"session_id" => session_id} | _events]), do: session_id
-
-  defp replay_session_id(%{session_client: nil} = state, []), do: state.semantic_session_id
-
-  defp replay_session_id(%{session_client: handle}, []) do
-    Jido.Console.Session.Client.Handle.identity(handle).session_id
-  end
-
-  defp event_sequence(nil), do: 0
-  defp event_sequence(event), do: get_in(event, ["payload", "sequence"]) || 0
-
-  defp restore_event(acc, %Envelope{} = event), do: restore_event(acc, Envelope.to_map(event))
-
-  defp restore_event(acc, %{"type" => "run_started", "payload" => payload}) do
-    prompt = Map.get(payload, "prompt", "")
-    turn = Turn.new(acc.next_id, prompt) |> Turn.put_request(%{request_id: payload["turn_id"]})
-    messages = if prompt == "", do: acc.messages, else: acc.messages ++ [%{role: :user, content: prompt}]
-    %{acc | active: turn, messages: messages, next_id: acc.next_id + 1}
-  end
-
-  defp restore_event(%{active: %Turn{} = turn} = acc, %{"type" => "model_delta", "payload" => payload}) do
-    delta = payload["text"] || ""
-    assistant = String.slice(turn.assistant <> SafeText.clean(delta), 0, 200_000)
-    %{acc | active: %{turn | assistant: assistant}}
-  end
-
-  defp restore_event(%{active: %Turn{} = turn} = acc, %{"type" => type, "payload" => payload})
-       when type in ["run_completed", "run_failed"] do
-    status = if type == "run_completed", do: :completed, else: :failed
-    content = payload["content"] || turn.assistant
-    error = payload["error"] || payload["reason"]
-    turn = Turn.finish(turn, status, content, error: error)
-
-    messages =
-      if turn.assistant == "", do: acc.messages, else: acc.messages ++ [%{role: :assistant, content: turn.assistant}]
-
-    %{acc | active: nil, messages: messages, turns: acc.turns ++ [turn]}
-  end
-
-  defp restore_event(acc, _event), do: acc
-
-  defp put_active_request(turn, %SessionRequest{} = request), do: Turn.put_request(turn, request)
-  defp put_active_request(turn, _request), do: turn
-
-  defp semantic_transcript(history) do
-    Enum.reject(history, &(&1["type"] in ~w(control_requested control_completed queue_changed)))
-  end
-
-  defp request_id(state) do
-    case Activity.request(state.activity) do
-      %SessionRequest{request_id: request_id} -> request_id
-      _request -> nil
-    end
-  end
-
-  defp apply_semantic_projection(state, event, projection) do
-    case event["type"] do
-      type when type in ["run_completed", "run_failed", "session_failed"] ->
-        finish_semantic(state, event, projection)
-
-      "permission_requested" ->
-        apply_permission_request(state, event, projection)
-
-      "permission_decided" ->
-        apply_permission_decision(state, projection)
-
-      "control_completed" ->
-        apply_control_result(state, event)
-
-      _type ->
-        apply_turn_projection(state, projection)
-    end
-  end
-
-  defp apply_turn_projection(state, projection) do
-    case Activity.turn(state.activity) do
-      %Turn{} = turn ->
-        case Turn.apply_event(turn, projection) do
-          {:ok, turn} -> %{state | activity: Activity.replace_turn(state.activity, turn), dirty?: true}
-          {:ignore, _reason} -> state
-        end
-
-      nil ->
-        state
-    end
-  end
-
-  defp apply_permission_request(state, event, projection) do
-    state = apply_turn_projection(state, projection)
-
-    case {Activity.request(state.activity), Activity.turn(state.activity)} do
-      {%SessionRequest{} = request, %Turn{} = turn} ->
-        %{state | activity: {:review, request, turn, event, :awaiting}, dirty?: true}
-
-      _other ->
-        state
-    end
-  end
-
-  defp apply_permission_decision(state, projection) do
-    state = apply_turn_projection(state, projection)
-
-    case state.activity do
-      {:review, request, turn, _event, _status} ->
-        %{state | activity: {:active, request, turn, :streaming}, dirty?: true}
-
-      _activity ->
-        state
-    end
-  end
-
-  defp finish_semantic(state, event, projection) do
-    payload = event["payload"]
-    status = projection.data.status
-    content = payload["content"] || Activity.streaming(state.activity)
-    reason = payload["reason"]
-    changes = get_in(payload, ["view", "coding_reviews"]) || []
-    state = %{state | coding_reviews: retain(changes, @review_limit)}
-
-    next_activity =
-      case status do
-        value when value in [:completed, :cancelled] -> :idle
-        :hibernated -> {:failed, :hibernated, reason, "Agent paused."}
-        :failed -> {:failed, :turn, reason, format_error(reason)}
-      end
-
-    {state, []} =
-      finish(state, state.session, content, next_activity,
-        outcome: status,
-        changes: changes
-      )
-
-    state
-  end
-
-  defp apply_control_result(state, event) do
-    case get_in(event, ["payload", "result"]) do
-      %{"status" => "error", "reason" => reason}
-      when reason in ["request_already_finished", ":request_already_finished"] ->
-        state
-
-      %{"status" => "error", "reason" => reason} ->
-        if Activity.turn(state.activity) do
-          {state, []} =
-            finish(
-              state,
-              state.session,
-              Activity.streaming(state.activity),
-              {:failed, :turn, reason, format_error(reason)},
-              outcome: :failed
-            )
-
-          state
-        else
-          state
-        end
-
-      _result ->
-        state
-    end
+    {state, []}
   end
 end

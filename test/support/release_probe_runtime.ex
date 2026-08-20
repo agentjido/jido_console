@@ -1,11 +1,87 @@
 defmodule Jido.Console.Release.ProbeRuntime do
   @moduledoc false
-  @behaviour Jido.Console.Runtime
-
-  alias Jido.Console.Runtime.Result
-  alias Jido.Console.Runtime.Result.PendingReview
   alias Jidoka.Cancellation
   alias Jidoka.Event
+
+  defmodule Result do
+    @moduledoc false
+
+    defmodule Ok do
+      @moduledoc false
+      defstruct [:content, :coding_reviews, :approval]
+    end
+
+    defmodule PendingReview do
+      @moduledoc false
+      defstruct [:reviews, :snapshot, :approval]
+    end
+
+    defmodule Error do
+      @moduledoc false
+      defstruct [:reason, :approval]
+    end
+
+    defstruct [:request_id, :session, :handle, :outcome, :raw]
+
+    def ok(request_id, session, handle, content, opts \\ []) do
+      reviews =
+        opts
+        |> Keyword.get(:coding_review_candidates, [])
+        |> Jido.Console.Coding.Review.project_candidates()
+
+      build(
+        request_id,
+        session,
+        handle,
+        %Ok{
+          content: content,
+          coding_reviews: reviews,
+          approval: Keyword.get(opts, :approval)
+        },
+        opts
+      )
+    end
+
+    def pending_review(request_id, session, handle, reviews, opts \\ []) do
+      build(
+        request_id,
+        session,
+        handle,
+        %PendingReview{
+          reviews: reviews,
+          snapshot: Keyword.get(opts, :snapshot),
+          approval: Keyword.get(opts, :approval)
+        },
+        opts
+      )
+    end
+
+    def error(request_id, session, handle, reason, opts \\ []) do
+      build(
+        request_id,
+        session,
+        handle,
+        %Error{
+          reason: reason,
+          approval: Keyword.get(opts, :approval)
+        },
+        opts
+      )
+    end
+
+    defp build(request_id, session, handle, outcome, opts) do
+      %__MODULE__{
+        request_id: request_id,
+        session: session,
+        handle: handle,
+        outcome: outcome,
+        raw: Keyword.get(opts, :raw)
+      }
+    end
+  end
+
+  alias __MODULE__.Result
+  alias __MODULE__.Result.PendingReview
 
   defmodule Session do
     @moduledoc false
@@ -63,7 +139,6 @@ defmodule Jido.Console.Release.ProbeRuntime do
           }
   end
 
-  @impl true
   def start_session(_agent, opts) do
     mode = Keyword.get(opts, :probe_mode, :success)
 
@@ -81,7 +156,6 @@ defmodule Jido.Console.Release.ProbeRuntime do
     end
   end
 
-  @impl true
   def start_turn(%Session{} = session, prompt, owner, _opts) do
     turn = Agent.get_and_update(session.state, fn state -> {state.turn + 1, %{state | turn: state.turn + 1}} end)
 
@@ -98,7 +172,6 @@ defmodule Jido.Console.Release.ProbeRuntime do
     {:ok, request}
   end
 
-  @impl true
   def await(%Request{session: %Session{mode: :success}} = request, _opts) do
     result(request, :ok, content: "Release probe completed.")
   end
@@ -176,7 +249,6 @@ defmodule Jido.Console.Release.ProbeRuntime do
     result(request, :ok, content: "Release probe completed.")
   end
 
-  @impl true
   def approve(
         %Result{handle: %Request{turn: 2} = request, outcome: %PendingReview{}} = pending,
         review,
@@ -213,20 +285,17 @@ defmodule Jido.Console.Release.ProbeRuntime do
     )
   end
 
-  @impl true
   def deny(%Result{} = pending, _review, _opts) do
     record(pending.session, %{"event" => "review", "decision" => "denied"})
 
     Result.error(pending.request_id, pending.session, pending.handle, :review_denied, approval: :denied)
   end
 
-  @impl true
   def cancel(%Request{} = request, _opts) do
     record(request.session, %{"event" => "turn_cancelled", "request_id" => request.request_id})
     {:ok, Cancellation.new!(request_id: request.request_id, cancelled_at_ms: 0)}
   end
 
-  @impl true
   def close_session(%Session{} = session) do
     record(session, %{"event" => "session_closed"})
     records = Agent.get(session.state, &Enum.reverse(&1.records))

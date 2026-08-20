@@ -1,59 +1,74 @@
 defmodule Jido.Console.Session.Queue do
-  @moduledoc """
-  Separate steering and follow-up input queues.
-  """
+  @moduledoc "Bounded FIFO prompts for one thread owner."
 
-  @kinds [:steering, :follow_up]
+  @default_limit 32
 
-  @type t :: %{steering: [map()], follow_up: [map()]}
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              items: Zoi.array() |> Zoi.default([]),
+              limit: Zoi.integer() |> Zoi.positive() |> Zoi.default(@default_limit)
+            },
+            unrecognized_keys: :error
+          )
 
-  @doc "Returns empty queues."
-  @spec new() :: t()
-  def new, do: %{steering: [], follow_up: []}
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
-  @doc "Adds one identity-bound item to a queue."
-  @spec add(t(), atom(), map()) :: {:ok, t()} | {:error, term()}
-  def add(queues, kind, item) when kind in @kinds do
-    if valid_item?(item) do
-      {:ok, Map.update!(queues, kind, &(&1 ++ [item]))}
+  @type item :: %{required(:id) => String.t(), optional(atom()) => term()}
+  @type t :: %__MODULE__{items: [item()], limit: pos_integer()}
+
+  @doc "Creates an empty queue."
+  @spec new(pos_integer()) :: t()
+  def new(limit \\ @default_limit) when is_integer(limit) and limit > 0 do
+    %__MODULE__{limit: limit}
+  end
+
+  @doc "Adds one item to the FIFO tail."
+  @spec push(t(), item()) :: {:ok, t()} | {:error, :queue_full | :invalid_queue_item | {:queue_item_exists, String.t()}}
+  def push(%__MODULE__{} = queue, item) do
+    with {:ok, id} <- item_id(item),
+         false <- full?(queue),
+         false <- Enum.any?(queue.items, &(item_id!(&1) == id)) do
+      {:ok, %{queue | items: queue.items ++ [item]}}
     else
-      {:error, :invalid_queue_item}
+      true when length(queue.items) >= queue.limit -> {:error, :queue_full}
+      true -> {:error, {:queue_item_exists, item_id!(item)}}
+      {:error, _reason} = error -> error
     end
   end
 
-  def add(_queues, kind, _item), do: {:error, {:unknown_queue, kind}}
+  @doc "Takes the FIFO head."
+  @spec pop(t()) :: {:ok, item(), t()} | {:error, :queue_empty}
+  def pop(%__MODULE__{items: [item | rest]} = queue), do: {:ok, item, %{queue | items: rest}}
+  def pop(%__MODULE__{}), do: {:error, :queue_empty}
 
-  @doc "Removes one item by input identity."
-  @spec remove(t(), atom(), String.t()) :: {:ok, t()} | {:error, term()}
-  def remove(queues, kind, input_id) when kind in @kinds do
-    {:ok, Map.update!(queues, kind, &Enum.reject(&1, fn item -> item_id(item) == input_id end))}
-  end
-
-  def remove(_queues, kind, _input_id), do: {:error, {:unknown_queue, kind}}
-
-  @doc "Consumes the next item from one queue."
-  @spec consume(t(), atom()) :: {:ok, map(), t()} | {:error, term()}
-  def consume(queues, kind) when kind in @kinds do
-    case queues[kind] do
-      [item | rest] -> {:ok, item, Map.put(queues, kind, rest)}
-      [] -> {:error, :queue_empty}
+  @doc "Removes one item by ID. Missing IDs are successful no-ops."
+  @spec remove(t(), String.t()) :: {:ok, item() | nil, t()}
+  def remove(%__MODULE__{} = queue, id) when is_binary(id) and id != "" do
+    case Enum.split_while(queue.items, &(item_id!(&1) != id)) do
+      {before, [item | after_items]} -> {:ok, item, %{queue | items: before ++ after_items}}
+      {_before, []} -> {:ok, nil, queue}
     end
   end
 
-  def consume(_queues, kind), do: {:error, {:unknown_queue, kind}}
+  @doc "Returns true when no pending slot remains."
+  @spec full?(t()) :: boolean()
+  def full?(%__MODULE__{} = queue), do: length(queue.items) >= queue.limit
 
-  @doc "Returns items from one queue."
-  @spec show(t(), atom()) :: {:ok, [map()]} | {:error, term()}
-  def show(queues, kind) when kind in @kinds, do: {:ok, queues[kind]}
-  def show(_queues, kind), do: {:error, {:unknown_queue, kind}}
+  @doc "Returns the pending item count."
+  @spec size(t()) :: non_neg_integer()
+  def size(%__MODULE__{} = queue), do: length(queue.items)
 
-  defp valid_item?(item) do
-    is_map(item) and present?(item, :session_id) and present?(item, :input_id) and present?(item, :client_id)
+  @doc "Returns items in FIFO order."
+  @spec to_list(t()) :: [item()]
+  def to_list(%__MODULE__{} = queue), do: queue.items
+
+  defp item_id(%{id: id}) when is_binary(id) and id != "", do: {:ok, id}
+  defp item_id(_item), do: {:error, :invalid_queue_item}
+
+  defp item_id!(item) do
+    {:ok, id} = item_id(item)
+    id
   end
-
-  defp item_id(item), do: field(item, :input_id)
-
-  defp present?(item, key), do: is_binary(field(item, key))
-
-  defp field(item, key), do: item[key] || item[Atom.to_string(key)]
 end
