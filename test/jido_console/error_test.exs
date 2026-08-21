@@ -111,6 +111,22 @@ defmodule Jido.Console.ErrorTest do
       end)
     end
 
+    test "derives safe messages from tuple, portable, phase, and empty causes" do
+      cases = [
+        {%{cause: {:timeout, :late}, operation: :llm}, nil, "timeout"},
+        {%{cause: %{type: "tuple", values: [:rate_limited, "private"]}}, nil, "rate_limited"},
+        {%{}, 42, "42"},
+        {%{}, nil, "Jidoka execution failed"}
+      ]
+
+      for {details, phase, expected} <- cases do
+        reason =
+          Jidoka.Error.ExecutionError.exception(message: "Jidoka execution failed", phase: phase, details: details)
+
+        assert Error.message(reason) =~ expected
+      end
+    end
+
     test "explains an expired request and separates it from API-key errors" do
       normalized = Error.normalize(:request_expired)
       message = Exception.message(normalized)
@@ -185,6 +201,17 @@ defmodule Jido.Console.ErrorTest do
              ]
 
       assert %Error.InvalidInputError{} = Error.InvalidInputError.exception(%{message: nil})
+    end
+
+    test "keeps safe primitive data and omits empty portable fields" do
+      assert Error.redact(123) == 123
+
+      mapped =
+        Error.ExecutionFailureError.exception(message: "failed", details: %{}, phase: nil)
+        |> Error.to_map()
+
+      refute Map.has_key?(mapped, :details)
+      refute Map.has_key?(mapped, :phase)
     end
   end
 end

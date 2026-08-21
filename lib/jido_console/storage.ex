@@ -1,604 +1,71 @@
 defmodule Jido.Console.Storage do
-  @moduledoc """
-  Bounded public access to the durable Console store.
+  @moduledoc "Public access to the SQLite session and thread-event store."
 
-  A caller must reserve an operation slot and copied payload bytes before the
-  request enters the private SQLite writer mailbox. A public timeout reports an
-  unknown result with the operation identity; it does not claim a rollback.
-  """
+  alias Jido.Console.Session.Event
+  alias Jido.Console.Storage.SQLite
 
-  alias Jido.Console.Session.Durable.{Record, SemanticSnapshot}
-  alias Jido.Console.Session.Store.SQLite
-  alias Jido.Console.Storage.{Admission, Quota}
+  @deadline 1_000
 
-  @public_deadline 1_000
-  @sqlite_page_bytes 4_096
-  @sqlite_write_overhead_pages 8
-  @generation_payload_bytes 1_024
-  @generation_high_water (@sqlite_write_overhead_pages + 1) * @sqlite_page_bytes
-
-  @doc "Appends one record through the bounded normal write lane."
-  @spec append(map(), keyword()) :: {:ok, map()} | {:error, term()}
-  def append(record, opts \\ []) when is_map(record) do
-    with {:ok, encoded} <- Record.encode(record),
-         {:ok, operation_id} <- operation_id(opts),
-         :ok <- writer_available(opts),
-         high_water = write_high_water(encoded.encoded_bytes),
-         {:ok, quota_token} <-
-           Quota.reserve(quota(opts), operation_id, :normal_write, :normal, %{
-             active_database: high_water,
-             wal: high_water
-           }) do
-      append_admitted(record, encoded, high_water, operation_id, quota_token, opts)
-    end
+  @doc "Returns the configured public Jidoka store reference."
+  @spec session_store(keyword()) :: Jidoka.Session.Store.store()
+  def session_store(opts \\ []) do
+    {SQLite, pid: writer(opts), call_timeout: deadline(opts)}
   end
 
-  @doc "Appends one immutable watermark transition through the normal write lane."
-  @spec append_watermark(map(), keyword()) :: {:ok, map()} | {:error, term()}
-  def append_watermark(record, opts \\ []) when is_map(record) do
-    with {:ok, encoded} <- Record.encode(record),
-         {:ok, operation_id} <- operation_id(opts),
-         :ok <- writer_available(opts),
-         high_water = write_high_water(encoded.encoded_bytes * 2),
-         {:ok, quota_token} <-
-           Quota.reserve(quota(opts), operation_id, :normal_write, :normal, %{
-             active_database: high_water,
-             wal: high_water
-           }) do
-      append_watermark_admitted(record, encoded, high_water, operation_id, quota_token, opts)
-    end
+  @doc "Appends one ordered product-history event."
+  @spec append_thread_event(Event.t(), keyword()) ::
+          {:ok, %{event: Event.t(), duplicate: boolean()}} | {:error, term()}
+  def append_thread_event(%Event{} = event, opts \\ []) do
+    write_call(fn -> SQLite.append_thread_event(writer(opts), event, sqlite_opts(opts)) end, event.id)
   end
 
-  @doc "Appends one canonical event through the bounded normal write lane."
-  @spec append_event(map(), map(), keyword()) :: {:ok, map()} | {:error, term()}
-  def append_event(event, semantic, opts \\ []) when is_map(event) and is_map(semantic) do
-    with {:ok, operation_id} <- operation_id(opts),
-         :ok <- writer_available(opts),
-         {:ok, position} <- semantic_position(semantic) do
-      payload_bytes = :erlang.external_size({event, position}) + @sqlite_page_bytes
-
-      result =
-        normal_mutation(payload_bytes, payload_bytes, operation_id, opts, fn ->
-          SQLite.append_event(writer(opts), event, position,
-            operation_id: operation_id,
-            fence: Keyword.get(opts, :fence),
-            call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-          )
-        end)
-
-      retry_completed_operation(result, payload_bytes, operation_id, opts, fn ->
-        SQLite.append_event(writer(opts), event, position,
-          operation_id: operation_id,
-          fence: Keyword.get(opts, :fence),
-          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-        )
-      end)
-    end
+  @doc "Returns a bounded product-history window."
+  @spec thread_events(String.t(), keyword()) ::
+          {:ok, %{events: [Event.t()], history_truncated?: boolean()}} | {:error, term()}
+  def thread_events(thread_id, opts \\ []) when is_binary(thread_id) do
+    read_call(fn -> SQLite.thread_events(writer(opts), thread_id, sqlite_opts(opts)) end)
   end
 
-  @doc "Atomically commits one admission receipt and canonical event."
-  @spec admit_operation(map(), map(), map(), keyword()) :: {:ok, map()} | {:error, term()}
-  def admit_operation(prepared, event, semantic, opts \\ [])
-      when is_map(prepared) and is_map(event) and is_map(semantic) do
-    with {:ok, operation_id} <- operation_id(opts),
-         true <- operation_id == prepared.operation_id,
-         :ok <- writer_available(opts),
-         {:ok, position} <- semantic_position(semantic) do
-      payload_bytes =
-        :erlang.external_size({prepared, event, position}) + @sqlite_page_bytes
-
-      storage_bytes = payload_bytes + prepared.encoded.encoded_bytes
-
-      result =
-        normal_mutation(payload_bytes, storage_bytes, operation_id, opts, fn ->
-          SQLite.admit_operation(writer(opts), prepared, event, position,
-            operation_id: operation_id,
-            fence: Keyword.get(opts, :fence),
-            call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-          )
-        end)
-
-      retry_completed_operation(result, payload_bytes, operation_id, opts, fn ->
-        SQLite.admit_operation(writer(opts), prepared, event, position,
-          operation_id: operation_id,
-          fence: Keyword.get(opts, :fence),
-          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-        )
-      end)
-    else
-      false -> {:error, :admission_operation_identity_mismatch}
-      {:error, reason} -> {:error, reason}
-    end
+  @doc "Returns all accepted items that do not have a closing outcome."
+  @spec open_thread_items(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def open_thread_items(thread_id, opts \\ []) when is_binary(thread_id) do
+    read_call(fn -> SQLite.open_thread_items(writer(opts), thread_id, sqlite_opts(opts)) end)
   end
 
-  @doc "Returns one exact durable admission receipt."
-  @spec admission_receipt(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def admission_receipt(operation_id, opts \\ []) when is_binary(operation_id) do
-    bounded_read(opts, fn ->
-      SQLite.admission_receipt(writer(opts), operation_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end)
+  @doc "Returns product events for one public Jidoka request ID."
+  @spec request_events(String.t(), String.t(), keyword()) :: {:ok, [Event.t()]} | {:error, term()}
+  def request_events(thread_id, request_id, opts \\ [])
+      when is_binary(thread_id) and is_binary(request_id) do
+    read_call(fn -> SQLite.request_events(writer(opts), thread_id, request_id, sqlite_opts(opts)) end)
   end
 
-  @doc "Appends one durable admission lifecycle transition."
-  @spec transition_admission(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def transition_admission(admission_operation_id, state, opts \\ [])
-      when is_binary(admission_operation_id) and is_binary(state) do
-    with {:ok, operation_id} <- operation_id(opts),
-         :ok <- writer_available(opts) do
-      payload_bytes = @generation_payload_bytes
-
-      result =
-        normal_mutation(payload_bytes, payload_bytes, operation_id, opts, fn ->
-          SQLite.transition_admission(writer(opts), admission_operation_id, state,
-            operation_id: operation_id,
-            fence: Keyword.get(opts, :fence),
-            call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-          )
-        end)
-
-      retry_completed_operation(result, payload_bytes, operation_id, opts, fn ->
-        SQLite.transition_admission(writer(opts), admission_operation_id, state,
-          operation_id: operation_id,
-          fence: Keyword.get(opts, :fence),
-          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-        )
-      end)
-    end
-  end
-
-  @doc "Returns bounded durable admission receipts for restart recovery."
-  @spec recover_admissions(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def recover_admissions(session_id, opts \\ []) when is_binary(session_id) do
-    bounded_read(opts, fn ->
-      SQLite.recover_admissions(writer(opts), session_id,
-        states: Keyword.get(opts, :states, ["accepted", "started", "terminal"]),
-        limit: Keyword.get(opts, :limit, 100),
-        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-      )
-    end)
-  end
-
-  @doc "Returns the durable canonical event head for one session."
-  @spec history_head(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def history_head(session_id, opts \\ []) when is_binary(session_id) do
-    bounded_read(opts, fn ->
-      SQLite.history_head(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end)
-  end
-
-  @doc "Returns one exact committed canonical Console event identity."
-  @spec canonical_event(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def canonical_event(event_id, opts \\ []) when is_binary(event_id) do
-    bounded_read(opts, fn ->
-      SQLite.canonical_event(writer(opts), event_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end)
-  end
-
-  @doc "Returns all immutable transitions for one watermark."
-  @spec watermark_history(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def watermark_history(watermark_id, opts \\ []) when is_binary(watermark_id) do
-    bounded_read(opts, fn ->
-      SQLite.watermark_history(writer(opts), watermark_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end)
-  end
-
-  @doc "Returns the last verified watermark for one Console session."
-  @spec verified_watermark(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def verified_watermark(session_id, opts \\ []) when is_binary(session_id) do
-    bounded_read(opts, fn ->
-      SQLite.verified_watermark(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end)
-  end
-
-  @doc "Returns one committed Jidoka session through its public store contract."
-  @spec jidoka_session(String.t(), keyword()) :: {:ok, Jidoka.Session.Data.t()} | {:error, term()}
-  def jidoka_session(session_id, opts \\ []) when is_binary(session_id) do
-    bounded_read(opts, fn ->
-      SQLite.get_session(session_id,
-        pid: writer(opts),
-        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-      )
-    end)
-  end
-
-  @doc "Stores one verified semantic snapshot through the bounded normal write lane."
-  @spec put_semantic_snapshot(SemanticSnapshot.encoded(), keyword()) :: {:ok, map()} | {:error, term()}
-  def put_semantic_snapshot(encoded, opts \\ []) when is_map(encoded) do
-    with {:ok, operation_id} <- operation_id(opts),
-         :ok <- writer_available(opts) do
-      result =
-        normal_mutation(
-          encoded.encoded_bytes,
-          encoded.encoded_bytes + SemanticSnapshot.max_bytes(),
-          operation_id,
-          opts,
-          fn ->
-            SQLite.put_semantic_snapshot(writer(opts), encoded,
-              operation_id: operation_id,
-              fence: Keyword.get(opts, :fence),
-              call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-            )
-          end
-        )
-
-      retry_completed_operation(result, encoded.encoded_bytes, operation_id, opts, fn ->
-        SQLite.put_semantic_snapshot(writer(opts), encoded,
-          operation_id: operation_id,
-          fence: Keyword.get(opts, :fence),
-          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-        )
-      end)
-    end
-  end
-
-  @doc "Returns the retained semantic snapshot candidates for one session."
-  @spec semantic_snapshots(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def semantic_snapshots(session_id, opts \\ []) when is_binary(session_id) do
-    bounded_read(opts, fn ->
-      SQLite.semantic_snapshots(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end)
-  end
-
-  @doc "Returns one bounded canonical event suffix for semantic rebuild."
-  @spec history_suffix(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def history_suffix(session_id, opts \\ []) when is_binary(session_id) do
-    bounded_read(opts, fn ->
-      SQLite.history_suffix(writer(opts), session_id,
-        after_sequence: Keyword.get(opts, :after_sequence, 0),
-        limit: Keyword.get(opts, :limit, 1_000),
-        max_bytes: Keyword.get(opts, :max_bytes, 8 * 1_024 * 1_024),
-        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-      )
-    end)
-  end
-
-  @doc "Returns the current durable session generation."
-  @spec generation(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def generation(session_id, opts \\ []) when is_binary(session_id) do
-    with :ok <- writer_available(opts) do
-      SQLite.generation(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end
-  catch
-    :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
-    :exit, _reason -> {:error, :storage_unavailable}
-  end
-
-  @doc "Claims one exact next durable session generation through the normal write lane."
-  @spec claim_generation(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def claim_generation(session_id, opts \\ []) when is_binary(session_id) do
-    with {:ok, operation_id} <- operation_id(opts),
-         :ok <- writer_available(opts) do
-      generation_mutation(:normal, :normal_write, operation_id, opts, fn ->
-        SQLite.claim_generation(writer(opts), session_id,
-          expected_generation: Keyword.get(opts, :expected_generation),
-          owner_instance_id: Keyword.get(opts, :owner_instance_id),
-          jidoka_lease_id: Keyword.get(opts, :jidoka_lease_id),
-          operation_id: operation_id,
-          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-        )
-      end)
-    end
-  end
-
-  @doc "Releases one exact durable session generation through the control lane."
-  @spec release_generation(map(), keyword()) :: {:ok, map()} | {:error, term()}
-  def release_generation(fence, opts \\ []) when is_map(fence) do
-    with {:ok, operation_id} <- operation_id(opts),
-         :ok <- writer_available(opts) do
-      generation_mutation(:control, :safe_completion, operation_id, opts, fn ->
-        SQLite.release_generation(writer(opts), fence,
-          operation_id: operation_id,
-          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-        )
-      end)
-    end
-  end
-
-  @doc "Returns immutable generation transitions for one session."
-  @spec generation_audit(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def generation_audit(session_id, opts \\ []) when is_binary(session_id) do
-    with :ok <- writer_available(opts) do
-      SQLite.generation_audit(writer(opts), session_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end
-  catch
-    :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
-    :exit, _reason -> {:error, :storage_unavailable}
-  end
-
-  @doc "Looks up one durable operation result."
-  @spec receipt(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def receipt(operation_id, opts \\ []) when is_binary(operation_id) do
-    with :ok <- writer_available(opts) do
-      SQLite.receipt(writer(opts), operation_id, call_timeout: Keyword.get(opts, :deadline, @public_deadline))
-    end
-  catch
-    :exit, _reason -> {:error, :storage_unavailable}
-  end
-
-  @doc "Reads one ordered record range within the public reader deadline."
-  @spec range(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
-  def range(scope_id, opts \\ []) when is_binary(scope_id) do
-    with :ok <- writer_available(opts) do
-      SQLite.range(writer(opts), scope_id,
-        limit: Keyword.get(opts, :limit, 100),
-        max_bytes: Keyword.get(opts, :max_bytes, 8 * 1_024 * 1_024),
-        after: Keyword.get(opts, :after, -1),
-        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-      )
-    end
-  catch
-    :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
-    :exit, _reason -> {:error, :storage_unavailable}
-  end
-
-  @doc "Returns the latest bounded credential-profile records."
-  @spec credential_profile_records(keyword()) :: {:ok, [map()]} | {:error, term()}
-  def credential_profile_records(opts \\ []) do
-    bounded_read(opts, fn ->
-      SQLite.credential_profile_records(writer(opts),
-        limit: Keyword.get(opts, :limit, 128),
-        max_bytes: Keyword.get(opts, :max_bytes, 2 * 1_024 * 1_024),
-        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-      )
-    end)
-  end
-
-  @doc "Runs the store-wide integrity inspection within the public deadline."
+  @doc "Checks SQLite and all stored values."
   @spec inspect_store(keyword()) :: {:ok, map()} | {:error, term()}
-  def inspect_store(opts \\ []) do
-    with :ok <- writer_available(opts) do
-      SQLite.inspect_store(writer(opts),
-        call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-      )
-    end
-  catch
-    :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
-    :exit, _reason -> {:error, :storage_unavailable}
-  end
+  def inspect_store(opts \\ []), do: read_call(fn -> SQLite.inspect_store(writer(opts), sqlite_opts(opts)) end)
 
-  @doc "Returns bounded admission and writer state without exposing the writer PID."
+  @doc "Returns small storage counts."
   @spec status(keyword()) :: {:ok, map()} | {:error, term()}
-  def status(opts \\ []) do
-    with {:ok, admission_status} <- Admission.status(admission(opts)),
-         {:ok, quota_status} <- Quota.status(quota(opts)),
-         :ok <- writer_available(opts),
-         {:ok, pages} <- SQLite.page_accounting(writer(opts), call_timeout: @public_deadline) do
-      {:ok, %{admission: admission_status, quota: quota_status, pages: pages, writer: :available}}
-    end
+  def status(opts \\ []), do: read_call(fn -> SQLite.status(writer(opts), sqlite_opts(opts)) end)
+
+  defp write_call(fun, operation_id) do
+    fun.()
   catch
+    :exit, {:timeout, _call} -> {:error, {:timeout_unknown, operation_id}}
     :exit, _reason -> {:error, :storage_unavailable}
   end
 
-  defp operation_id(opts) do
-    case Keyword.get(opts, :operation_id) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _other -> {:error, :operation_id_required}
-    end
-  end
-
-  defp semantic_position(%{session_id: session_id, sequence: sequence})
-       when is_binary(session_id) and session_id != "" and is_integer(sequence) and sequence > 0,
-       do: {:ok, %{session_id: session_id, sequence: sequence}}
-
-  defp semantic_position(_semantic), do: {:error, :invalid_semantic_history_position}
-
-  defp writer_available(opts) do
-    case GenServer.whereis(writer(opts)) do
-      pid when is_pid(pid) -> :ok
-      nil -> {:error, :storage_unavailable}
-    end
-  end
-
-  defp admission(opts), do: Keyword.get(opts, :admission, Jido.Console.Storage.Admission)
-  defp quota(opts), do: Keyword.get(opts, :quota, Jido.Console.Storage.Quota)
-  defp writer(opts), do: Keyword.get(opts, :writer, Jido.Console.Storage.Writer)
-
-  defp write_high_water(encoded_bytes) do
-    encoded_pages = div(encoded_bytes + @sqlite_page_bytes - 1, @sqlite_page_bytes)
-    (encoded_pages + @sqlite_write_overhead_pages) * @sqlite_page_bytes
-  end
-
-  defp append_admitted(record, encoded, high_water, operation_id, quota_token, opts) do
-    case Admission.reserve(admission(opts), :normal, encoded.encoded_bytes,
-           page_bytes: high_water,
-           wal_bytes: high_water
-         ) do
-      {:ok, token} ->
-        result = call_writer(record, operation_id, token, opts)
-        finish_quota(result, quota_token, operation_id, opts)
-
-      {:error, _reason} = error ->
-        _result = Quota.finish(quota(opts), quota_token, :rolled_back)
-        error
-    end
-  end
-
-  defp append_watermark_admitted(record, encoded, high_water, operation_id, quota_token, opts) do
-    case Admission.reserve(admission(opts), :normal, encoded.encoded_bytes,
-           page_bytes: high_water,
-           wal_bytes: high_water
-         ) do
-      {:ok, token} ->
-        result = call_watermark_writer(record, operation_id, token, opts)
-        finish_quota(result, quota_token, operation_id, opts)
-
-      {:error, _reason} = error ->
-        _result = Quota.finish(quota(opts), quota_token, :rolled_back)
-        error
-    end
-  end
-
-  defp call_watermark_writer(record, operation_id, token, opts) do
-    try do
-      result =
-        SQLite.append_watermark(writer(opts), record,
-          operation_id: operation_id,
-          fence: Keyword.get(opts, :fence),
-          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-        )
-
-      refresh_wal(opts)
-      result
-    catch
-      :exit, {:timeout, _call} -> {:error, {:timeout_unknown, operation_id}}
-      :exit, {:noproc, _call} -> {:error, :storage_unavailable}
-      :exit, {:normal, _call} -> {:error, :storage_unavailable}
-    after
-      Admission.release(admission(opts), token)
-    end
-  end
-
-  defp call_writer(record, operation_id, token, opts) do
-    try do
-      result =
-        SQLite.append(writer(opts), record,
-          operation_id: operation_id,
-          fence: Keyword.get(opts, :fence),
-          call_timeout: Keyword.get(opts, :deadline, @public_deadline)
-        )
-
-      refresh_wal(opts)
-      result
-    catch
-      :exit, {:timeout, _call} ->
-        {:error, {:timeout_unknown, operation_id}}
-
-      :exit, {:noproc, _call} ->
-        {:error, :storage_unavailable}
-
-      :exit, {:normal, _call} ->
-        {:error, :storage_unavailable}
-    after
-      Admission.release(admission(opts), token)
-    end
-  end
-
-  defp finish_quota({:error, {:timeout_unknown, operation_id}} = result, _token, operation_id, _opts),
-    do: result
-
-  defp finish_quota(result, token, operation_id, opts) do
-    outcome = if match?({:ok, _value}, result), do: :committed, else: :rolled_back
-
-    case Quota.finish(quota(opts), token, outcome) do
-      {:ok, _quota_result} -> result
-      {:error, _reason} -> {:error, {:timeout_unknown, operation_id}}
-    end
-  end
-
-  defp refresh_wal(opts) do
-    case SQLite.checkpoint(writer(opts), call_timeout: 250) do
-      {:ok, %{bytes: bytes, checkpoint: checkpoint}} -> Admission.wal(admission(opts), bytes, checkpoint)
-      {:error, _reason} -> :ok
-    end
-  catch
-    :exit, _reason -> :ok
-  end
-
-  defp generation_mutation(lane, kind, operation_id, opts, fun) do
-    with {:ok, quota_token} <-
-           Quota.reserve(quota(opts), operation_id, kind, lane, %{
-             active_database: @generation_high_water,
-             wal: @generation_high_water
-           }) do
-      generation_admitted(lane, operation_id, quota_token, opts, fun)
-    end
-  end
-
-  defp normal_mutation(payload_bytes, storage_bytes, operation_id, opts, fun) do
-    high_water = write_high_water(storage_bytes)
-
-    with {:ok, quota_token} <-
-           Quota.reserve(quota(opts), operation_id, :normal_write, :normal, %{
-             active_database: high_water,
-             wal: high_water
-           }) do
-      normal_admitted(payload_bytes, high_water, operation_id, quota_token, opts, fun)
-    end
-  end
-
-  defp normal_admitted(payload_bytes, high_water, operation_id, quota_token, opts, fun) do
-    case Admission.reserve(admission(opts), :normal, payload_bytes,
-           page_bytes: high_water,
-           wal_bytes: high_water
-         ) do
-      {:ok, admission_token} ->
-        result = call_generation(fun, operation_id, admission_token, opts)
-        finish_quota(result, quota_token, operation_id, opts)
-
-      {:error, _reason} = error ->
-        _result = Quota.finish(quota(opts), quota_token, :rolled_back)
-        error
-    end
-  end
-
-  defp bounded_read(opts, fun) do
-    with :ok <- writer_available(opts), do: fun.()
+  defp read_call(fun) do
+    fun.()
   catch
     :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
     :exit, _reason -> {:error, :storage_unavailable}
   end
 
-  defp retry_completed_operation(
-         {:error, {:quota_operation_exists, operation_id}},
-         payload_bytes,
-         operation_id,
-         opts,
-         fun
-       ) do
-    case Quota.operation(quota(opts), operation_id) do
-      {:ok, %{outcome: :committed}} ->
-        retry_committed_operation(payload_bytes, operation_id, opts, fun)
-
-      {:ok, %{outcome: :reserved}} ->
-        {:error, {:timeout_unknown, operation_id}}
-
-      {:ok, %{outcome: outcome}} ->
-        {:error, {:quota_operation_exists, operation_id, outcome}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+  defp sqlite_opts(opts) do
+    Keyword.take(opts, [:before_sequence, :call_timeout, :clock, :limit])
+    |> Keyword.put_new(:call_timeout, deadline(opts))
   end
 
-  defp retry_completed_operation(result, _payload_bytes, _operation_id, _opts, _fun), do: result
-
-  defp retry_committed_operation(payload_bytes, operation_id, opts, fun) do
-    high_water = write_high_water(payload_bytes)
-
-    case Admission.reserve(admission(opts), :normal, payload_bytes,
-           page_bytes: high_water,
-           wal_bytes: high_water
-         ) do
-      {:ok, admission_token} -> call_generation(fun, operation_id, admission_token, opts)
-      {:error, _reason} = error -> error
-    end
-  end
-
-  defp generation_admitted(lane, operation_id, quota_token, opts, fun) do
-    case Admission.reserve(admission(opts), lane, @generation_payload_bytes,
-           page_bytes: @generation_high_water,
-           wal_bytes: @generation_high_water
-         ) do
-      {:ok, admission_token} ->
-        result = call_generation(fun, operation_id, admission_token, opts)
-        finish_quota(result, quota_token, operation_id, opts)
-
-      {:error, _reason} = error ->
-        _result = Quota.finish(quota(opts), quota_token, :rolled_back)
-        error
-    end
-  end
-
-  defp call_generation(fun, operation_id, admission_token, opts) do
-    try do
-      result = fun.()
-      refresh_wal(opts)
-      result
-    catch
-      :exit, {:timeout, _call} -> {:error, {:timeout_unknown, operation_id}}
-      :exit, _reason -> {:error, :storage_unavailable}
-    after
-      Admission.release(admission(opts), admission_token)
-    end
-  end
+  defp writer(opts), do: Keyword.get(opts, :writer, Jido.Console.Storage.Writer)
+  defp deadline(opts), do: Keyword.get(opts, :deadline, @deadline)
 end

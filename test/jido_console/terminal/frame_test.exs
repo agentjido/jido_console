@@ -17,19 +17,8 @@ defmodule Jido.Console.Terminal.FrameTest do
 
   test "removes terminal sequences and controls before rendering" do
     frame = Frame.new(16, 2, ["\e]0;title\a\e[31mred\e[0m", "next\e[2Jline\x00"])
-    output = frame |> Frame.to_iodata() |> IO.iodata_to_binary()
 
     assert frame.rows == ["red             ", "nextline        "]
-    refute output =~ "\e[31m"
-    refute output =~ "\e[2Jline"
-  end
-
-  test "renders the cursor and complete rows" do
-    output = Frame.new(5, 2, ["one"], cursor: {4, 2}) |> Frame.to_iodata() |> IO.iodata_to_binary()
-
-    assert output =~ "\e[H"
-    assert output =~ "one  "
-    assert output =~ "\e[2;4H\e[?25h"
   end
 
   test "handles zero-width fits and empty wrapped lines" do
@@ -40,7 +29,7 @@ defmodule Jido.Console.Terminal.FrameTest do
 
   test "hides a missing cursor and clamps an invalid cursor" do
     hidden = Frame.new(3, 1, ["a"])
-    assert hidden |> Frame.to_iodata() |> IO.iodata_to_binary() =~ "\e[?25l"
+    assert hidden.cursor == nil
 
     clamped = Frame.new(3, 2, [], cursor: {0, 20})
     assert clamped.cursor == {1, 2}

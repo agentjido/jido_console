@@ -3,7 +3,7 @@ defmodule Jido.Console.Release.ToolingTest do
 
   alias CodingScenario.Oracle
   alias Jido.Console.Release.{Acceptance, Artifact, LicenseAudit, Local, ProbeRuntime}
-  alias Jido.Console.Runtime.Result
+  alias Jido.Console.Release.ProbeRuntime.Result
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-release-tooling-#{System.unique_integer([:positive])}")

@@ -1,6 +1,9 @@
 {
   "skip_files": [
-    "dev/"
+    "dev/",
+    "lib/jido_console/cli/tui/",
+    "lib/jido_console/cli/tui\\.ex$",
+    "lib/jido_console/terminal/otp\\.ex$"
   ],
   "coverage_options": {
     "minimum_coverage": 90

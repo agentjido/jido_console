@@ -159,7 +159,6 @@ defmodule Jido.Console.Coding.Setup do
             turn_opts: ProviderOptions.turn_opts(selection.profile_id, Jidoka.Config.model_ref(spec.model))
           }
 
-          register_coding_runtime(setup, opts)
           {:ok, setup}
         end
 
@@ -174,14 +173,6 @@ defmodule Jido.Console.Coding.Setup do
         :erlang.raise(kind, reason, __STACKTRACE__)
     end
   end
-
-  defp register_coding_runtime(%__MODULE__{local_resources: %{manager: manager}}, opts)
-       when is_pid(manager) do
-    _ = Jido.Console.Process.register(:coding_runtime, manager, Keyword.take(opts, [:name, :jido_home]))
-    :ok
-  end
-
-  defp register_coding_runtime(_setup, _opts), do: :ok
 
   defp close_on_error({:ok, _setup} = success, _local), do: success
 

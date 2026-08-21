@@ -88,7 +88,6 @@ defmodule Jido.Console.MixProject do
         "ROADMAP.md",
         "guides/extensions.md",
         "guides/durable-continuity.md",
-        "guides/durable-records.md",
         "guides/multi-turn-coding.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
@@ -124,6 +123,7 @@ defmodule Jido.Console.MixProject do
       jidoka_dep(),
       {:req_llm, "~> 1.20.0"},
       {:splode, "~> 0.3.0"},
+      {:term_ui, github: "mikehostetler/term_ui", ref: "5fe4f562bcfbf69255742623c3f332941928684e"},
       {:yaml_elixir, "~> 2.12"},
       {:zoi, "~> 0.18"},
 

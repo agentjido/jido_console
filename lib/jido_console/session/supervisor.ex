@@ -35,21 +35,17 @@ defmodule Jido.Console.Session.Supervisor do
 
   @impl true
   def init(opts) do
-    name = Keyword.get(opts, :name, __MODULE__)
     registry = Keyword.get(opts, :registry, Jido.Console.Session.Registry)
     sessions = Keyword.get(opts, :sessions, Jido.Console.Session.DynamicSupervisor)
 
-    task_children =
-      case Keyword.fetch(opts, :tasks) do
-        {:ok, tasks} -> [{Task.Supervisor, name: tasks}]
-        :error when name == __MODULE__ -> [{Task.Supervisor, name: Jido.Console.Session.TaskSupervisor}]
-        :error -> []
-      end
+    tasks = Keyword.get(opts, :tasks, Jido.Console.Session.TaskSupervisor)
 
-    children =
-      [{Jido.Console.Session.Registry, name: registry}] ++
-        task_children ++ [{Jido.Console.Session.DynamicSupervisor, name: sessions}]
+    children = [
+      {Jido.Console.Session.Registry, name: registry},
+      {Task.Supervisor, name: tasks},
+      {Jido.Console.Session.DynamicSupervisor, name: sessions}
+    ]
 
-    Supervisor.init(children, strategy: :one_for_all)
+    Supervisor.init(children, strategy: :rest_for_one)
   end
 end

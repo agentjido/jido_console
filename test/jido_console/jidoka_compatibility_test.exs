@@ -1,7 +1,6 @@
 defmodule Jido.Console.JidokaCompatibilityTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Console.Session.Jidoka, as: SessionJidoka
   alias Jidoka.Event
   alias Jidoka.ExecutionEnvironment.RestrictedContract
   alias Jidoka.Policy.Decision
@@ -9,8 +8,6 @@ defmodule Jido.Console.JidokaCompatibilityTest do
   @jidoka_ref "caef68851df6812bf97c1ff2d815da610ab78c62"
 
   test "production uses the immutable pin and the compatibility gate uses its explicit checkout" do
-    assert SessionJidoka.jidoka_ref() == @jidoka_ref
-
     {_app, options} =
       Mix.Project.config()
       |> Keyword.fetch!(:deps)
@@ -60,22 +57,21 @@ defmodule Jido.Console.JidokaCompatibilityTest do
       Event.build(:turn_finished, [], request_id: "compat-1", seq: 1)
     ]
 
-    assert :ok = SessionJidoka.validate_events(events)
-    assert {:ok, projected} = SessionJidoka.project_events(events)
+    assert :ok = Jidoka.Event.Order.validate(events)
+    assert {:ok, projected} = Jidoka.project_events(events)
     assert Enum.map(projected, & &1.request_id) == ["compat-1", "compat-1"]
     assert List.last(projected).terminal?
     assert {:ok, _} = Jason.encode(projected)
   end
 
-  test "the immutable pin exposes the qualified durable contract" do
-    assert SessionJidoka.durable_contract() == %{
-             jidoka_ref: @jidoka_ref,
-             jidoka_version: "0.9.1",
-             session_schema_version: 3,
-             supported_session_schema_versions: [1, 2, 3],
-             snapshot_schema_version: 2,
-             supported_snapshot_schema_versions: [1, 2],
-             snapshot_serialization_prefix: "jidoka:snapshot:v1:"
-           }
+  unless System.get_env("JIDO_CONSOLE_JIDOKA_PATH") do
+    test "the immutable pin exposes the qualified durable contract" do
+      assert Application.spec(:jidoka, :vsn) |> to_string() == "0.9.1"
+      assert Jidoka.Session.Data.schema_version() == 3
+      assert Jidoka.Session.Data.supported_schema_versions() == [1, 2, 3]
+      assert Jidoka.Snapshot.schema_version() == 2
+      assert Jidoka.Snapshot.supported_schema_versions() == [1, 2]
+      assert Jidoka.Snapshot.serialization_prefix() == "jidoka:snapshot:v1:"
+    end
   end
 end

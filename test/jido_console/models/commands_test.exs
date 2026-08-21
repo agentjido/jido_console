@@ -2,6 +2,7 @@ defmodule Jido.Console.Models.CommandsTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Models.Commands
+  alias Jido.Console.Providers.ModelCheck
 
   test "list shows only declared catalog identities and tiers" do
     assert {:ok, output} = Commands.list()
@@ -29,7 +30,7 @@ defmodule Jido.Console.Models.CommandsTest do
   end
 
   test "test reports recorded contract success" do
-    assert {:ok, output} = Commands.test("openai", "gpt-4.1-mini")
+    assert {:ok, output} = ModelCheck.run("openai", "gpt-4.1-mini")
     assert output =~ "identity: openai:gpt-4.1-mini"
     assert output =~ "source: recorded"
     assert output =~ "contract.streaming: pass"
@@ -37,14 +38,14 @@ defmodule Jido.Console.Models.CommandsTest do
   end
 
   test "offline test denies a provider network call" do
-    assert {:error, {:offline_denied, output}} = Commands.test("openai", "gpt-4.1-mini", offline: true)
+    assert {:error, {:offline_denied, output}} = ModelCheck.run("openai", "gpt-4.1-mini", offline: true)
     assert output =~ "offline: deny"
     refute output =~ "sk-"
   end
 
   test "required unsupported capability fails before the turn" do
     assert {:error, {:capability_denied, output}} =
-             Commands.test("ollama", "llama3.2", require: "streaming")
+             ModelCheck.run("ollama", "llama3.2", require: "streaming")
 
     assert output =~ "preflight: deny"
     assert output =~ "streaming"

@@ -1,56 +1,161 @@
 defmodule Jido.Console.Session.ClientTest do
-  use Jido.Console.SessionClientContract, driver: Jido.Console.Session.Client.Local
+  use ExUnit.Case, async: false
 
-  alias Jido.Console.Session.{Catalog, Client}
-  alias Jido.Console.Session.Client.{Boundary, Driver, Local}
+  alias Jido.Console.Session.{Client, Command, Registry, Supervisor, View}
+  alias Jido.Console.Session.Client.TUI
+  alias Jido.Console.Storage.Supervisor, as: StorageSupervisor
+  alias Jido.Console.Test.{ThreadBridge, ThreadResources}
 
-  test "the local driver implements the renderer-neutral behavior" do
-    callbacks = Driver.behaviour_info(:callbacks)
-    assert Enum.all?(callbacks, fn {name, arity} -> function_exported?(Local, name, arity) end)
-  end
+  setup do
+    suffix = System.unique_integer([:positive])
+    root = Path.join(System.tmp_dir!(), "jido-client-#{suffix}")
+    writer = unique(:writer, suffix)
+    registry = unique(:registry, suffix)
+    sessions = unique(:sessions, suffix)
+    tasks = unique(:tasks, suffix)
 
-  test "command effects use the same canonical output path", context do
-    command = %{
-      "id" => "cmd_help",
-      "version" => "1",
-      "name" => "help",
-      "help" => "Show help.",
-      "input_schema" => %{},
-      "output_schema" => %{},
-      "permissions" => [],
-      "provenance" => %{"owner" => "jido_console"}
-    }
+    {:ok, storage} =
+      StorageSupervisor.start_link(
+        name: unique(:storage_supervisor, suffix),
+        writer: writer,
+        lock: unique(:lock, suffix),
+        jido_home: root
+      )
 
-    {:ok, catalog} = Catalog.put_command(Local.default_catalog(), command)
-    opts = Keyword.put(context.client_opts, :catalog, catalog)
-    assert {:ok, attached} = Client.attach(context.session.id, opts)
+    {:ok, supervisor} =
+      Supervisor.start_link(
+        name: unique(:session_supervisor, suffix),
+        registry: registry,
+        sessions: sessions,
+        tasks: tasks
+      )
 
-    assert {:ok, effect} =
-             Client.invoke(attached.handle, "help",
-               data: %{"page" => 1},
-               idempotency_key: "client-help"
-             )
-
-    assert effect.command_id == "cmd_help"
-    assert effect.receipt["type"] == "command"
-
-    assert_receive {:jido_console_session, attachment_id, :output_ready}
-    assert attachment_id == attached.handle.attachment.id
-    assert {:ok, batch} = Client.output(attached.handle)
-    assert Enum.map(batch["payload"]["events"], & &1["type"]) == ["command_effected"]
-  end
-
-  test "all production client adapters pass the syntax boundary" do
-    adapters = [
-      "lib/jido_console/cli/tui.ex",
-      "lib/jido_console/session/client/tui.ex"
+    opts = [
+      registry: registry,
+      supervisor: sessions,
+      tasks: tasks,
+      writer: writer,
+      deadline: 5_000,
+      resources_module: ThreadResources,
+      bridge_module: ThreadBridge,
+      test_pid: self()
     ]
 
-    assert :ok = Boundary.check(adapters)
+    on_exit(fn ->
+      if Process.alive?(supervisor), do: Process.exit(supervisor, :shutdown)
+      if Process.alive?(storage), do: Process.exit(storage, :shutdown)
+      File.rm_rf(root)
+    end)
+
+    %{opts: opts, registry: registry}
   end
 
-  test "the public contract records its process-lifetime boundary" do
-    assert Client.limitation() =~ "process-lifetime only"
-    assert Client.limitation() =~ "application restart"
+  test "attach returns one complete View and a small handle", %{opts: opts} do
+    assert {:ok, %{handle: %Client{} = handle, view: %View{} = view}} = Client.attach("client-thread", opts)
+    assert Client.thread_id(handle) == "client-thread"
+    assert is_reference(Client.attachment_ref(handle))
+    assert view.thread_id == "client-thread"
+    assert view.status == :idle
   end
+
+  test "the handle resolves a replacement owner for each command", %{opts: opts, registry: registry} do
+    {:ok, %{handle: handle}} = Client.attach("replacement-thread", opts)
+    {:ok, owner} = Registry.lookup("replacement-thread", registry)
+    monitor = Process.monitor(owner)
+    Process.exit(owner, :kill)
+    assert_receive {:DOWN, ^monitor, :process, ^owner, :killed}
+
+    assert {:ok, %View{status: :idle}} = Client.status(handle)
+    {:ok, replacement} = Registry.lookup("replacement-thread", registry)
+    refute replacement == owner
+  end
+
+  test "a stable command can be retried without a second provider call", %{opts: opts} do
+    {:ok, %{handle: handle}} = Client.attach("retry-thread", opts)
+
+    assert {:ok, %Command{} = command} =
+             Client.submit_command(handle, "hello", command_id: "stable-command", request_id: "stable-request")
+
+    assert {:ok, %{duplicate: false}} = Client.run(handle, command)
+    assert {:ok, %{duplicate: true}} = Client.run(handle, command)
+    assert_receive {:provider_started, "retry-thread", "stable-request", bridge}
+    refute_receive {:provider_started, "retry-thread", "stable-request", _other}, 50
+    send(bridge, :finish)
+  end
+
+  test "detach stops delivery but does not stop the run", %{opts: opts} do
+    {:ok, %{handle: handle}} = Client.attach("detach-thread", opts)
+    attachment_ref = Client.attachment_ref(handle)
+    assert :ok = Client.detach(handle)
+
+    assert {:ok, _accepted} =
+             Client.submit(handle, "hold", command_id: "detach-command", request_id: "detach-request")
+
+    assert_receive {:provider_started, "detach-thread", "detach-request", bridge}
+    refute_receive {:jido_console_view, ^attachment_ref, _view}, 50
+    send(bridge, :finish)
+  end
+
+  test "two attachments receive independent complete views", %{opts: opts} do
+    {:ok, %{handle: first}} = Client.attach("two-clients", opts)
+    {:ok, %{handle: second}} = Client.attach("two-clients", opts)
+    first_ref = Client.attachment_ref(first)
+    second_ref = Client.attachment_ref(second)
+
+    assert {:ok, _accepted} =
+             Client.submit(first, "hello", command_id: "two-command", request_id: "two-request")
+
+    assert_receive {:jido_console_view, ^first_ref, %View{revision: first_revision}}
+    assert_receive {:jido_console_view, ^second_ref, %View{revision: second_revision}}
+    assert first_revision == second_revision
+    assert_receive {:provider_started, "two-clients", "two-request", bridge}
+    send(bridge, :finish)
+  end
+
+  test "Command and View contain no process or framework runtime values", %{opts: opts} do
+    {:ok, %{handle: handle, view: view}} = Client.attach("portable-thread", opts)
+    {:ok, command} = Client.submit_command(handle, "portable", command_id: "portable", request_id: "request")
+
+    refute runtime_value?(command)
+    refute runtime_value?(view)
+  end
+
+  test "all control commands use the same small boundary", %{opts: opts} do
+    {:ok, %{handle: handle}} = Client.attach("control-thread", opts)
+
+    assert {:error, :stale_request} = Client.cancel(handle, "missing")
+    assert {:error, :review_not_pending} = Client.approve(handle, "request", "review")
+    assert {:error, :review_not_pending} = Client.deny(handle, "request", "review")
+    assert {:ok, :removed} = Client.remove(handle, "missing")
+    assert {:ok, %{events: []}} = Client.history(handle, limit: 10, before_sequence: 20)
+    assert :ok = Client.stop(handle)
+  end
+
+  test "reattach replaces the attachment and nil attachments detach safely", %{opts: opts} do
+    {:ok, %{handle: handle}} = TUI.attach("reattach-thread", opts)
+    old_ref = Client.attachment_ref(handle)
+    assert TUI.observe(handle) == []
+    assert {:ok, %{handle: replacement}} = TUI.reattach(handle)
+    refute Client.attachment_ref(replacement) == old_ref
+    assert :ok = TUI.detach(replacement)
+
+    nil_handle = %Client{thread_id: "reattach-thread", attachment_ref: nil, owner_options: opts}
+    assert :ok = Client.detach(nil_handle)
+
+    other = Command.new!(id: "status", type: :status, thread_id: "other")
+    assert {:error, :cross_thread_command} = Client.run(replacement, other)
+  end
+
+  defp runtime_value?(value) when is_pid(value) or is_reference(value) or is_port(value) or is_function(value), do: true
+  defp runtime_value?(%module{}) when module in [Jidoka.Chat.Request, Jidoka.Session.Data], do: true
+  defp runtime_value?(%_{} = value), do: value |> Map.from_struct() |> runtime_value?()
+
+  defp runtime_value?(value) when is_map(value),
+    do: Enum.any?(value, fn {key, item} -> runtime_value?(key) or runtime_value?(item) end)
+
+  defp runtime_value?(value) when is_list(value), do: Enum.any?(value, &runtime_value?/1)
+  defp runtime_value?(value) when is_tuple(value), do: value |> Tuple.to_list() |> Enum.any?(&runtime_value?/1)
+  defp runtime_value?(_value), do: false
+
+  defp unique(label, suffix), do: String.to_atom("#{label}-#{suffix}")
 end

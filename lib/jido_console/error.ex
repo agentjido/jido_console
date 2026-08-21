@@ -40,7 +40,7 @@ defmodule Jido.Console.Error do
 
   All project errors are Splode leaf errors in one of four classes. This module
   converts raw subsystem and dependency failures into those errors before the
-  CLI, JSONL writer, or session protocol shows them to a user.
+  CLI or session client shows them to a user.
   """
 
   use Splode,

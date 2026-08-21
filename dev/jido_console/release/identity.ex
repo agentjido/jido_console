@@ -13,7 +13,7 @@ defmodule Jido.Console.Release.Identity do
 
   @doc "Returns the immutable Jidoka Git source identity."
   @spec jidoka_ref() :: String.t()
-  def jidoka_ref, do: Jido.Console.Session.Jidoka.jidoka_ref()
+  def jidoka_ref, do: Mix.Project.config() |> Keyword.fetch!(:jidoka_ref)
 
   @doc "Returns the compiled product version."
   @spec version(keyword()) :: String.t()

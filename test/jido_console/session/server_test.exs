@@ -1,635 +1,863 @@
 defmodule Jido.Console.Session.ServerTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
-  alias Jido.Console.Runtime.Result, as: RuntimeResult
-  alias Jido.Console.Session.{History, Identity, Server, Supervisor}
+  alias Jido.Console.Session.{Command, Event, Server, Supervisor, View}
+  alias Jido.Console.Storage
+  alias Jido.Console.Storage.Supervisor, as: StorageSupervisor
+  alias Jido.Console.Test.{ThreadBridge, ThreadResources}
 
-  defmodule FakeRuntime do
-    def start_session(agent, opts) do
-      send(Keyword.fetch!(opts, :test_pid), {:runtime_start, agent, opts})
+  defmodule NoResultBridge do
+    def run(owner, run_ref, action) do
+      Process.link(owner)
+      send(owner, {:bridge_linked, self(), run_ref})
 
-      case Keyword.get(opts, :start_result, :ok) do
-        :ok -> {:ok, %{test_pid: opts[:test_pid], value: Keyword.get(opts, :value)}}
-        :error -> {:error, :runtime_start_failed}
-        :invalid -> :invalid
-        :raise -> raise "runtime start raised"
-        :throw -> throw(:runtime_start_threw)
+      receive do
+        {:begin, ^run_ref} -> send(action.runtime_opts[:test_pid], {:provider_started_without_result, self()})
       end
-    end
-
-    def close_session(session) do
-      send(session.test_pid, {:runtime_closed, session.value})
-      :ok
-    end
-  end
-
-  defmodule ResourceCloser do
-    def close(resource, test_pid) do
-      send(test_pid, {:resource_closed, resource})
-      :ok
     end
   end
 
   setup do
     suffix = System.unique_integer([:positive])
-    opts = [name: :"own-#{suffix}", registry: :"own-reg-#{suffix}", sessions: :"own-dyn-#{suffix}"]
-    {:ok, pid} = Supervisor.start_link(opts)
-    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :shutdown) end)
-    session = Identity.new!(:session)
-    {:ok, server} = Server.ensure_started(session.id, registry: opts[:registry], supervisor: opts[:sessions])
-    {:ok, fence} = Server.generation(server)
+    root = Path.join(System.tmp_dir!(), "jido-thread-owner-#{suffix}")
+    writer = unique(:writer, suffix)
+    storage_supervisor = unique(:storage_supervisor, suffix)
+    lock = unique(:lock, suffix)
+    registry = unique(:registry, suffix)
+    sessions = unique(:sessions, suffix)
+    tasks = unique(:tasks, suffix)
+    session_supervisor = unique(:session_supervisor, suffix)
 
-    session =
-      Identity.new!(:session,
-        id: session.id,
-        generation: fence.generation,
-        owner_instance_id: fence.owner_instance_id
+    {:ok, storage_pid} =
+      StorageSupervisor.start_link(
+        name: storage_supervisor,
+        writer: writer,
+        lock: lock,
+        jido_home: root
       )
 
-    %{server: server, session: session, opts: opts}
+    {:ok, session_pid} =
+      Supervisor.start_link(
+        name: session_supervisor,
+        registry: registry,
+        sessions: sessions,
+        tasks: tasks
+      )
+
+    opts = [
+      registry: registry,
+      supervisor: sessions,
+      tasks: tasks,
+      writer: writer,
+      deadline: 5_000,
+      resources_module: ThreadResources,
+      bridge_module: ThreadBridge,
+      test_pid: self()
+    ]
+
+    on_exit(fn ->
+      if Process.alive?(session_pid), do: Process.exit(session_pid, :shutdown)
+      if Process.alive?(storage_pid), do: Process.exit(storage_pid, :shutdown)
+      File.rm_rf(root)
+    end)
+
+    %{opts: opts, registry: registry, sessions: sessions, tasks: tasks, storage_pid: storage_pid}
   end
 
-  test "the server owns sequence allocation and rejects a second owner", %{
-    server: server,
-    session: session,
-    opts: opts
-  } do
-    client = identity(:client, session)
-    assert {:ok, snapshot} = attach_bounded(server, client)
-    assert snapshot["payload"]["snapshot_sequence"] == 0
-    assert {:ok, ^server} = Server.ensure_started(session.id, registry: opts[:registry], supervisor: opts[:sessions])
+  test "open and attach do not prepare execution resources", %{opts: opts} do
+    {:ok, owner} = Server.ensure_started("thread-attach", opts)
+    assert {:ok, %{attachment_ref: attachment_ref, view: %View{} = view}} = Server.attach(owner)
+    assert is_reference(attachment_ref)
+    assert view.status == :idle
+    assert view.resources == %{"status" => "ready"}
+    refute_received {:resources_prepared, _, _}
 
-    first = Server.next_sequence(server)
-    second = Server.next_sequence(server)
-    assert first == 1
-    assert second == 2
-    assert Server.state(server).sequence == 0
+    assert :ok = Server.detach(owner, attachment_ref)
+    assert Process.alive?(owner)
   end
 
-  test "the server exposes no raw admission bypass for missing, mixed, or foreign identities" do
-    refute {:admit_event, 2} in Server.__info__(:functions)
+  test "one active item and three pending items run in FIFO order", %{opts: opts} do
+    {:ok, owner} = Server.ensure_started("thread-fifo", opts)
+
+    commands = for index <- 1..4, do: command("thread-fifo", index)
+    assert {:ok, %{status: :idle}} = Server.command(owner, hd(commands))
+    assert_receive {:resources_prepared, "thread-fifo", "prompt-1"}
+    assert_receive {:provider_started, "thread-fifo", "request-1", first}
+
+    Enum.each(tl(commands), fn queued ->
+      assert {:ok, %{status: :queued}} = Server.command(owner, queued)
+    end)
+
+    last =
+      Enum.reduce(2..4, first, fn expected, current ->
+        send(current, :finish)
+        assert_receive {:provider_started, "thread-fifo", request_id, next}
+        assert request_id == "request-#{expected}"
+        next
+      end)
+
+    send(last, :finish)
+
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
+    view = Server.view(owner)
+
+    assert Enum.map(view.history, & &1["type"]) == [
+             "prompt_queued",
+             "prompt_started",
+             "prompt_queued",
+             "prompt_queued",
+             "prompt_queued",
+             "prompt_failed",
+             "prompt_started",
+             "prompt_failed",
+             "prompt_started",
+             "prompt_failed",
+             "prompt_started",
+             "prompt_failed"
+           ]
   end
 
-  test "clients can detach and reattach while the session stays alive", %{server: server, session: session} do
-    client = identity(:client, session)
-    assert {:ok, _} = attach_bounded(server, client)
-    assert :ok = Server.detach(server, client)
-    assert Process.alive?(server)
-    assert {:ok, _} = attach_bounded(server, client)
+  test "provider work starts only after the durable started event", %{opts: opts} do
+    {:ok, owner} = Server.ensure_started("thread-start-order", opts)
+    assert {:ok, _accepted} = Server.command(owner, command("thread-start-order", 1))
+    assert_receive {:provider_started, "thread-start-order", "request-1", bridge}
+
+    assert Enum.map(Server.view(owner).history, & &1["type"]) == ["prompt_queued", "prompt_started"]
+    send(bridge, :finish)
   end
 
-  test "a restarted owner rejects old clients, requests, timers, and runtime messages", %{
-    server: server,
-    session: session,
-    opts: opts
-  } do
-    old_client = identity(:client, session)
+  test "same-command retry has one durable item and one provider call", %{opts: opts} do
+    {:ok, owner} = Server.ensure_started("thread-retry", opts)
+    command = command("thread-retry", 1)
 
-    assert {:ok, %{attachment: old_attachment}} = Server.attach(server, old_client)
+    assert {:ok, %{duplicate: false}} = Server.command(owner, command)
+    assert {:ok, %{duplicate: true}} = Server.command(owner, command)
+    assert_receive {:provider_started, "thread-retry", "request-1", bridge}
+    refute_receive {:provider_started, "thread-retry", "request-1", _other}, 50
 
-    assert {:ok, old_request} =
-             Server.start_operation(server, old_client.id,
-               start: fn _owner -> {:ok, %{request_id: "old-request"}} end,
-               await: fn _request -> :old_complete end
-             )
+    conflict = %{command | text: "changed"}
+    assert {:error, :command_conflict} = Server.command(owner, conflict)
+    send(bridge, :finish)
+  end
 
-    assert :old_complete = Server.await_request(server, old_request, 1_000)
+  test "same-command retry after terminal closure reads durable identity", %{opts: opts} do
+    thread_id = "thread-closed-retry"
+    {:ok, owner} = Server.ensure_started(thread_id, opts)
+    command = command(thread_id, 1)
 
-    old_handle_identity = %{
-      session_id: session.id,
-      client_id: old_client.id,
-      attachment_id: old_attachment.id,
-      generation: session.generation,
-      owner_instance_id: session.owner_instance_id
-    }
+    assert {:ok, %{duplicate: false}} = Server.command(owner, command)
+    assert_receive {:provider_started, ^thread_id, "request-1", bridge}
+    send(bridge, :finish)
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
 
-    monitor = Process.monitor(server)
-    Process.exit(server, :kill)
-    assert_receive {:DOWN, ^monitor, :process, ^server, :killed}
+    assert {:ok, %{duplicate: true, status: :closed}} = Server.command(owner, command)
+    assert {:error, :command_conflict} = Server.command(owner, %{command | text: "changed after close"})
+    refute_receive {:provider_started, ^thread_id, "request-1", _other}, 50
+  end
 
-    assert {:ok, replacement} =
-             Server.ensure_started(session.id,
-               registry: opts[:registry],
-               supervisor: opts[:sessions]
-             )
+  test "two threads can use the same queue item and request IDs", %{opts: opts} do
+    first_thread = "thread-shared-identity-1"
+    second_thread = "thread-shared-identity-2"
+    {:ok, first_owner} = Server.ensure_started(first_thread, opts)
+    {:ok, second_owner} = Server.ensure_started(second_thread, opts)
 
-    assert {:ok, next_fence} = Server.generation(replacement)
-    assert next_fence.generation == session.generation + 1
-    refute next_fence.owner_instance_id == session.owner_instance_id
+    assert {:ok, %{duplicate: false}} = Server.command(first_owner, command(first_thread, 1))
+    assert {:ok, %{duplicate: false}} = Server.command(second_owner, command(second_thread, 1))
+    assert_receive {:provider_started, ^first_thread, "request-1", first_bridge}
+    assert_receive {:provider_started, ^second_thread, "request-1", second_bridge}
 
-    assert {:error, :stale_generation} = Server.attach(replacement, old_client)
-    assert {:error, :stale_generation} = Server.detach(replacement, old_client)
-    assert {:error, :stale_generation} = Server.await_request(replacement, old_request, 100)
+    first_ids = Enum.map(Server.view(first_owner).history, & &1["id"])
+    second_ids = Enum.map(Server.view(second_owner).history, & &1["id"])
+    assert MapSet.disjoint?(MapSet.new(first_ids), MapSet.new(second_ids))
 
-    assert {:error, :stale_generation} =
-             Server.client_operation(replacement, old_handle_identity, :status)
+    send(first_bridge, :finish)
+    send(second_bridge, :finish)
+  end
 
-    before = Server.state(replacement)
+  test "status, history, remove, stale controls, and stale messages are deterministic", %{opts: opts} do
+    thread_id = "thread-controls"
+    {:ok, owner} = Server.ensure_started(thread_id, opts)
+    first = command(thread_id, 1)
+    second = command(thread_id, 2)
+
+    assert {:ok, _} = Server.command(owner, first)
+    assert_receive {:provider_started, ^thread_id, "request-1", bridge}
+    assert {:ok, %{status: :queued}} = Server.command(owner, second)
+
+    remove = Command.new!(id: "remove", type: :remove, thread_id: thread_id, queue_item_id: "command-2")
+    assert {:ok, :removed} = Server.command(owner, remove)
+    assert {:error, :thread_busy} = Server.stop(owner)
+
+    stale_cancel = Command.new!(id: "cancel", type: :cancel, thread_id: thread_id, request_id: "stale")
+    assert {:error, :stale_request} = Server.command(owner, stale_cancel)
+
+    stale_review =
+      Command.new!(id: "approve", type: :approve, thread_id: thread_id, request_id: "request-1", review_id: "stale")
+
+    assert {:error, :review_not_pending} = Server.command(owner, stale_review)
+
+    cross_thread = Command.new!(id: "status", type: :status, thread_id: "other")
+    assert {:error, :cross_thread_command} = Server.command(owner, cross_thread)
+
+    history = Command.new!(id: "history", type: :history, thread_id: thread_id, payload: %{limit: 10})
+    assert {:ok, %{events: events}} = Server.command(owner, history)
+    assert Enum.any?(events, &(&1.type == "prompt_removed"))
+
+    send(owner, :start_active)
+    send(owner, {:bridge_linked, self(), make_ref()})
+    send(owner, {:bridge_handle, self(), make_ref(), "stale", :handle})
+    send(owner, {:bridge_result, self(), make_ref(), "stale", :invalid})
+    send(owner, :unknown_message)
+    send(bridge, :finish)
+  end
+
+  test "cancel before a fake bridge handle is retained once", %{opts: opts} do
+    thread_id = "thread-early-cancel"
+    {:ok, owner} = Server.ensure_started(thread_id, opts)
+    assert {:ok, _} = Server.command(owner, command(thread_id, 1))
+    assert_receive {:provider_started, ^thread_id, "request-1", bridge}
+
+    cancel = Command.new!(id: "cancel", type: :cancel, thread_id: thread_id, request_id: "request-1")
+    assert {:ok, :requested} = Server.command(owner, cancel)
+    assert {:ok, :requested} = Server.command(owner, cancel)
+    send(bridge, :finish)
+  end
+
+  test "a normal bridge exit without a result stops the owner", %{opts: opts} do
+    opts = Keyword.put(opts, :bridge_module, NoResultBridge)
+    {:ok, owner} = Server.ensure_started("thread-missing-result", opts)
+    monitor = Process.monitor(owner)
+    assert {:ok, _} = Server.command(owner, command("thread-missing-result", 1))
+    assert_receive {:provider_started_without_result, bridge}
+    assert_receive {:DOWN, ^monitor, :process, ^owner, {:bridge_result_missing, ^bridge}}
+  end
+
+  test "unexpected hibernation and invalid bridge results close as failures", %{opts: opts} do
+    for {index, result_builder} <- [
+          {1, fn session -> {:hibernate, session, nil} end},
+          {2, fn _session -> :invalid_bridge_result end},
+          {3, fn session -> {:ok, session, %{answer: "done"}} end}
+        ] do
+      thread_id = "thread-result-#{index}"
+      {:ok, owner} = Server.ensure_started(thread_id, opts)
+      assert {:ok, _} = Server.command(owner, command(thread_id, index))
+      assert_receive {:provider_started, ^thread_id, request_id, bridge}
+      store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+      {:ok, session} = Jidoka.Session.Store.get_session(store, thread_id)
+      send(bridge, {:finish, result_builder.(session)})
+      assert_eventually(fn -> Server.view(owner).status == :idle end)
+      assert List.last(Server.view(owner).history)["request_id"] == request_id
+    end
+  end
+
+  test "resource failure creates one durable failure and starts no bridge", %{opts: opts} do
+    opts = Keyword.put(opts, :fail_resources, true)
+    {:ok, owner} = Server.ensure_started("thread-resource-failure", opts)
+
+    assert {:ok, _accepted} = Server.command(owner, command("thread-resource-failure", 1))
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
+    refute_received {:provider_started, _, _, _}
+    assert Enum.map(Server.view(owner).history, & &1["type"]) == ["prompt_queued", "prompt_failed"]
+  end
+
+  test "bridge creation failure becomes one durable failed outcome", %{opts: opts} do
+    opts = Keyword.put(opts, :tasks, :missing_thread_task_supervisor)
+    {:ok, owner} = Server.ensure_started("thread-bridge-start-failure", opts)
+
+    assert {:ok, _accepted} = Server.command(owner, command("thread-bridge-start-failure", 1))
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
+    refute_received {:provider_started, _, _, _}
+    assert Enum.map(Server.view(owner).history, & &1["type"]) == ["prompt_queued", "prompt_failed"]
+  end
+
+  test "a start-event write failure does not begin provider work", %{opts: opts, storage_pid: storage_pid} do
+    {:ok, owner} = Server.ensure_started("thread-start-write-failure", opts)
+    held = %{command("thread-start-write-failure", 1) | text: "hold-link"}
+    assert {:ok, _accepted} = Server.command(owner, held)
+    assert_receive {:bridge_waiting_to_link, bridge}
+
+    monitor = Process.monitor(storage_pid)
+    Process.unlink(storage_pid)
+    Process.exit(storage_pid, :shutdown)
+    assert_receive {:DOWN, ^monitor, :process, ^storage_pid, :shutdown}
+    send(bridge, :link_now)
+
+    assert_eventually(fn -> Server.view(owner).status == :unavailable end)
+    refute_received {:provider_started, _, _, _}
+    assert Enum.map(Server.view(owner).history, & &1["type"]) == ["prompt_queued"]
+  end
+
+  test "an attach survives setup failure and a later prompt retries setup", %{opts: opts} do
+    {:ok, attempts} = Agent.start_link(fn -> 0 end)
+    opts = Keyword.put(opts, :fail_resources_once, attempts)
+    {:ok, owner} = Server.ensure_started("thread-resource-retry", opts)
+
+    assert {:ok, %{view: %View{status: :idle}}} = Server.attach(owner)
+    assert {:ok, _accepted} = Server.command(owner, command("thread-resource-retry", 1))
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
+    refute_received {:provider_started, _, "request-1", _}
+
+    assert {:ok, _accepted} = Server.command(owner, command("thread-resource-retry", 2))
+    assert_receive {:resources_prepared, "thread-resource-retry", "prompt-2"}
+    assert_receive {:provider_started, "thread-resource-retry", "request-2", bridge}
+    send(bridge, :finish)
+  end
+
+  test "an abnormal bridge exit leaves a temporary gap and replacement interrupts old work", %{opts: opts} do
+    thread_id = "thread-crash"
+    {:ok, owner} = Server.ensure_started(thread_id, opts)
+    monitor = Process.monitor(owner)
+
+    assert {:ok, _accepted} = Server.command(owner, %{command(thread_id, 1) | text: "crash"})
+    assert_receive {:provider_started, ^thread_id, "request-1", _bridge}
+    assert_receive {:DOWN, ^monitor, :process, ^owner, {:bridge_exit, :provider_crash}}
+    assert {:error, :not_found} = Jido.Console.Session.Registry.lookup(thread_id, opts[:registry])
+
+    {:ok, replacement} = Server.ensure_started(thread_id, opts)
+    refute replacement == owner
+    assert Server.view(replacement).status == :idle
+
+    assert Enum.map(Server.view(replacement).history, & &1["type"]) ==
+             ["prompt_queued", "prompt_started", "prompt_interrupted"]
+  end
+
+  test "attach returns revision N and receives only later complete views", %{opts: opts} do
+    {:ok, owner} = Server.ensure_started("thread-view", opts)
+    assert {:ok, %{attachment_ref: attachment_ref, view: first}} = Server.attach(owner)
+    assert first.revision == 0
+
+    assert {:ok, _accepted} = Server.command(owner, command("thread-view", 1))
+    assert_receive {:jido_console_view, ^attachment_ref, %View{revision: revision} = later}
+    assert revision > first.revision
+    assert later.active["request_id"] == "request-1"
+  end
+
+  test "terminal transition flushes one ordered partial view before clearing it", %{opts: opts} do
+    thread_id = "thread-partial-flush"
+    opts = Keyword.put(opts, :partial_publish_interval_ms, 1_000)
+    {:ok, owner} = Server.ensure_started(thread_id, opts)
+    assert {:ok, _accepted} = Server.command(owner, command(thread_id, 1))
+    assert_receive {:provider_started, ^thread_id, "request-1", bridge}
+    assert {:ok, %{attachment_ref: attachment_ref}} = Server.attach(owner)
+
+    for sequence <- 1..3 do
+      send(
+        bridge,
+        {:emit,
+         Jidoka.Event.build(:llm_delta, [],
+           request_id: "request-1",
+           seq: sequence,
+           data: %{text: Integer.to_string(sequence)}
+         )}
+      )
+    end
+
+    send(bridge, :finish)
+
+    assert_receive {:jido_console_view, ^attachment_ref, %View{status: :running} = partial}
+    assert Enum.map(partial.partial, & &1.seq) == [1, 2, 3]
+    assert_receive {:jido_console_view, ^attachment_ref, %View{status: :idle, partial: []}}
+    refute_receive {:jido_console_view, ^attachment_ref, _view}, 50
+  end
+
+  test "real Jidoka cancellation closes the active item before the next FIFO item", %{opts: opts} do
+    test_pid = self()
+    {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+    llm = fn _intent, _journal, _context ->
+      call = Agent.get_and_update(calls, fn count -> {count, count + 1} end)
+      send(test_pid, {:real_llm_call, call, self()})
+
+      if call == 0 do
+        receive do
+          :release_cancelled_call -> {:ok, %{type: :final, content: "late"}}
+        end
+      else
+        {:ok, %{type: :final, content: "second completed"}}
+      end
+    end
+
+    opts = real_jidoka_opts(opts, llm: llm)
+    {:ok, owner} = Server.ensure_started("thread-cancel", opts)
+    assert {:ok, _} = Server.command(owner, command("thread-cancel", 1))
+    assert_receive {:real_llm_call, 0, _llm_pid}
+    assert {:ok, %{status: :queued}} = Server.command(owner, command("thread-cancel", 2))
+
+    cancel =
+      Command.new!(
+        id: "cancel-1",
+        type: :cancel,
+        thread_id: "thread-cancel",
+        request_id: "request-1"
+      )
+
+    assert {:ok, :requested} = Server.command(owner, cancel)
+    assert_receive {:real_llm_call, 1, _second_llm}
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
+
+    history = Server.view(owner).history
+
+    assert Enum.map(history, & &1["type"]) == [
+             "prompt_queued",
+             "prompt_started",
+             "prompt_queued",
+             "prompt_cancelled",
+             "prompt_started",
+             "prompt_succeeded"
+           ]
+  end
+
+  test "review pauses the FIFO and approval continues with a fresh fenced bridge", %{opts: opts} do
+    test_pid = self()
+    {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+    llm = fn _intent, _journal, _context ->
+      case rem(Agent.get_and_update(calls, fn count -> {count, count + 1} end), 2) do
+        0 -> {:ok, %{type: :operation, name: "review_lookup", arguments: %{"id" => "reviewed"}}}
+        1 -> {:ok, %{type: :final, content: "review approved"}}
+      end
+    end
+
+    operations = review_capability(test_pid)
+
+    spec =
+      Jidoka.Agent.Spec.new!(
+        id: "review-agent",
+        instructions: "Use review_lookup before the final answer.",
+        model: %{provider: :test, id: "model"},
+        operations: [
+          Jidoka.Agent.Spec.Operation.new!(
+            name: "review_lookup",
+            idempotency: :idempotent,
+            approval: %{required: true, reason: "test review"}
+          )
+        ],
+        runtime_defaults: %{max_model_turns: 4}
+      )
+
+    opts = real_jidoka_opts(opts, agent: spec, llm: llm, operations: operations)
+    {:ok, owner} = Server.ensure_started("thread-review", opts)
+    assert {:ok, _} = Server.command(owner, command("thread-review", 1))
+    assert_eventually(fn -> Server.view(owner).status == :review end)
+
+    review_view = Server.view(owner)
+    review_id = review_view.review["id"]
+    assert is_binary(review_id)
+
+    cancel =
+      Command.new!(id: "cancel-review", type: :cancel, thread_id: "thread-review", request_id: "request-1")
+
+    assert {:error, :review_pending} = Server.command(owner, cancel)
+    revision = review_view.revision
 
     send(
-      replacement,
-      {:delivery_ack_timeout, {session.generation, session.owner_instance_id}, old_attachment.id, make_ref()}
+      owner,
+      {:bridge_event, make_ref(), "request-1",
+       Jidoka.Event.build(:llm_delta, [text: "stale"], request_id: "request-1", seq: 99)}
     )
 
-    send(replacement, {:jidoka_turn_event, :old_runtime_event})
-    Process.sleep(10)
-    assert Server.state(replacement) == before
+    assert Server.view(owner).revision == revision
+
+    approve =
+      Command.new!(
+        id: "approve-review",
+        type: :approve,
+        thread_id: "thread-review",
+        request_id: "request-1",
+        review_id: review_id
+      )
+
+    stale_approve = %{approve | review_id: "stale-review"}
+    assert {:error, :stale_review} = Server.command(owner, stale_approve)
+
+    assert {:ok, :requested} = Server.command(owner, approve)
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
+    history = Server.view(owner).history
+
+    assert Enum.map(history, & &1["type"]) == [
+             "prompt_queued",
+             "prompt_started",
+             "review_presented",
+             "prompt_succeeded"
+           ]
+
+    assert_received {:review_lookup_called, "reviewed"}
+
+    assert {:ok, _} = Server.command(owner, command("thread-review", 2))
+    assert_eventually(fn -> Server.view(owner).status == :review end)
+    denied_review_id = Server.view(owner).review["id"]
+
+    deny =
+      Command.new!(
+        id: "deny-review",
+        type: :deny,
+        thread_id: "thread-review",
+        request_id: "request-2",
+        review_id: denied_review_id
+      )
+
+    assert {:ok, :requested} = Server.command(owner, deny)
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
+    refute_receive {:review_lookup_called, "reviewed"}, 50
+    assert List.last(Server.view(owner).history)["type"] == "prompt_failed"
   end
 
-  test "bounded attachments get one advisory and pull canonical batches", %{
-    server: server,
-    session: session
-  } do
-    client = identity(:client, session)
-
-    assert {:ok, %{attachment: attachment, snapshot: snapshot}} =
-             attach_bounded(server, client,
-               delivery_limits: %{ack_timeout_ms: 25},
-               token_secret: String.duplicate("t", 32)
-             )
-
-    assert snapshot["type"] == "attach_snapshot"
-    assert snapshot["payload"]["snapshot_sequence"] == 0
-    assert snapshot["payload"]["snapshot"]["sequence"] == 0
+  test "one prompt can present two distinct durable reviews", %{opts: opts} do
     test_pid = self()
+    {:ok, calls} = Agent.start_link(fn -> 0 end)
 
-    spec = [
-      start: fn _owner -> {:ok, %{request_id: "bounded-request"}} end,
-      await: fn _request ->
-        send(test_pid, {:bounded_await, self()})
-
-        receive do
-          :finish_bounded -> :done
-        end
+    llm = fn _intent, _journal, _context ->
+      case Agent.get_and_update(calls, fn count -> {count, count + 1} end) do
+        0 -> {:ok, %{type: :operation, name: "review_lookup", arguments: %{"id" => "first"}}}
+        1 -> {:ok, %{type: :operation, name: "review_lookup", arguments: %{"id" => "second"}}}
+        _count -> {:ok, %{type: :final, content: "both approved"}}
       end
-    ]
-
-    assert {:ok, request} = Server.start_operation(server, client.id, spec)
-    assert_receive {:bounded_await, worker}
-    assert_receive {:jido_console_session, attachment_id, :output_ready}
-    assert attachment_id == attachment.id
-    refute_receive {:jido_console_session, ^attachment_id, :output_ready}, 20
-
-    assert {:ok, durable_started} = History.rebuild(session.id)
-    assert durable_started.state.sequence == 1
-    assert Enum.map(durable_started.state.history, & &1["type"]) == ["run_started"]
-
-    assert {:ok, batch} = output(server, session, client, attachment.id)
-    assert batch["type"] == "output_batch"
-    assert Enum.map(batch["payload"]["events"], & &1["type"]) == ["run_started"]
-    token = batch["payload"]["acknowledgement_token"]
-
-    assert {:error, :ack_required} = output(server, session, client, attachment.id)
-
-    assert {:error, :delivery_identity_mismatch} =
-             output(server, session, client, "old_attachment")
-
-    assert {:ok, receipt} =
-             delivery(server, session, client, attachment.id, token)
-
-    assert receipt["through_sequence"] == 1
-
-    send(worker, :finish_bounded)
-    assert :done = Server.await_request(server, request, 1_000)
-    assert_receive {:jido_console_session, ^attachment_id, :output_ready}
-
-    assert {:ok, terminal_batch} = output(server, session, client, attachment.id)
-    assert Enum.map(terminal_batch["payload"]["events"], & &1["type"]) == ["run_completed"]
-
-    assert {:ok, durable_terminal} = History.rebuild(session.id)
-    assert durable_terminal.state.sequence == 2
-    assert durable_terminal.snapshot != nil
-
-    assert_receive {:jido_console_session, ^attachment_id, :output_ready}, 200
-    assert {:gap, gap} = output(server, session, client, attachment.id)
-    assert gap["payload"]["reason"] == "acknowledgement_timeout"
-
-    assert {:ok, measurements} = client_call(server, session, client, attachment.id, :delivery_measurements)
-    assert measurements.status == :gapped
-    assert measurements.advisory_count == 0
-  end
-
-  test "bounded recovery queues output and resumes incremental delivery", %{
-    server: server,
-    session: session
-  } do
-    client = identity(:client, session)
-
-    assert {:ok, %{attachment: attachment}} =
-             attach_bounded(server, client,
-               delivery_limits: %{ack_timeout_ms: 25},
-               token_secret: String.duplicate("r", 32)
-             )
-
-    test_pid = self()
-
-    spec = [
-      start: fn _owner -> {:ok, %{request_id: "recovery-request"}} end,
-      await: fn _request ->
-        send(test_pid, {:recovery_await, self()})
-
-        receive do
-          :finish_recovery -> :recovered
-        end
-      end
-    ]
-
-    assert {:ok, request} = Server.start_operation(server, client.id, spec)
-    assert_receive {:recovery_await, worker}
-    assert_receive {:jido_console_session, attachment_id, :output_ready}
-    assert attachment_id == attachment.id
-    assert {:ok, _batch} = output(server, session, client, attachment.id)
-
-    assert_receive {:jido_console_session, ^attachment_id, :output_ready}, 200
-    assert {:gap, gap} = output(server, session, client, attachment.id)
-
-    assert {:ok, snapshot} =
-             client_call(
-               server,
-               session,
-               client,
-               attachment.id,
-               {:recovery, :recover, gap["payload"]["gap_id"]}
-             )
-
-    send(worker, :finish_recovery)
-    assert :recovered = Server.await_request(server, request, 1_000)
-
-    assert {:error, :delivery_recovering} =
-             output(server, session, client, attachment.id)
-
-    assert {:ok, suffix} =
-             client_call(
-               server,
-               session,
-               client,
-               attachment.id,
-               {:recovery, :replay, snapshot["payload"]["recovery_token"]}
-             )
-
-    assert Enum.map(suffix["payload"]["events"], & &1["type"]) == ["run_completed"]
-
-    assert {:ok, receipt} =
-             client_call(
-               server,
-               session,
-               client,
-               attachment.id,
-               {:recovery, :resume, suffix["payload"]["completion_token"]}
-             )
-
-    assert receipt["payload"]["through_sequence"] == 2
-    assert :empty = output(server, session, client, attachment.id)
-
-    next_spec = [
-      start: fn _owner -> {:ok, %{request_id: "post-recovery-request"}} end,
-      await: fn _request -> :post_recovery_done end
-    ]
-
-    assert {:ok, next_request} = Server.start_operation(server, client.id, next_spec)
-    assert :post_recovery_done = Server.await_request(server, next_request, 1_000)
-    assert_receive {:jido_console_session, ^attachment_id, :output_ready}
-    assert {:ok, next_batch} = output(server, session, client, attachment.id)
-    assert Enum.map(next_batch["payload"]["events"], & &1["payload"]["sequence"]) == [3, 4]
-  end
-
-  test "stale, repeated, and cross-session results cannot resolve current work", %{server: server, session: session} do
-    live = identity(:request, session, id: "req_live")
-    assert {:ok, :done} = Server.admit_result(server, live, :done)
-    assert {:error, :repeated_result} = Server.admit_result(server, live, :again)
-
-    other = Identity.new!(:request, session_id: Identity.new!(:session).id, id: "req_other")
-    assert {:error, :cross_session_result} = Server.admit_result(server, other, :nope)
-  end
-
-  test "runtime configuration validates ownership and always closes replaced resources", %{
-    server: server,
-    session: session
-  } do
-    client = identity(:client, session)
-    foreign = Identity.new!(:client, session_id: Identity.new!(:session).id)
-
-    assert {:error, :cross_session_result} = attach_bounded(server, foreign)
-    assert {:error, :not_attached} = Server.detach(server, client)
-    assert {:error, :not_attached} = Server.runtime_info(server, client.id)
-    assert {:error, :not_attached} = Server.configure_runtime(server, client.id, FakeRuntime, :agent, [])
-
-    assert {:ok, _snapshot} = attach_bounded(server, client)
-    assert {:ok, %{configured?: false, active_request: nil}} = Server.runtime_info(server, client.id)
-    assert {:error, :invalid_runtime} = Server.configure_runtime(server, client.id, "runtime", :agent, [])
-
-    closer = {ResourceCloser, :close, [self()]}
-
-    assert :ok =
-             Server.configure_runtime(server, client.id, FakeRuntime, :first,
-               test_pid: self(),
-               value: :first,
-               client_setup: %{profile: "restricted"},
-               owned_resource: :first_resource,
-               resource_closer: closer
-             )
-
-    assert_receive {:runtime_start, :first, first_options}
-    refute Keyword.has_key?(first_options, :owned_resource)
-    assert {:ok, info} = Server.runtime_info(server, client.id)
-    assert info.configured?
-    assert info.active_request == nil
-    assert info.client_setup == %{profile: "restricted"}
-
-    assert :ok =
-             Server.configure_runtime(server, client.id, FakeRuntime, :second,
-               test_pid: self(),
-               value: :second
-             )
-
-    assert_receive {:runtime_closed, :first}
-    assert_receive {:resource_closed, :first_resource}
-
-    for start_result <- [:error, :invalid, :raise, :throw] do
-      resource = {:failed, start_result}
-
-      assert {:error, _reason} =
-               Server.configure_runtime(server, client.id, FakeRuntime, :failed,
-                 test_pid: self(),
-                 start_result: start_result,
-                 owned_resource: resource,
-                 resource_closer: closer
-               )
-
-      assert_receive {:resource_closed, ^resource}
     end
 
-    assert :ok = Server.stop(server)
-    assert_receive {:runtime_closed, :second}
-    assert :ok = Server.stop(server)
+    spec = review_spec(6)
+    opts = real_jidoka_opts(opts, agent: spec, llm: llm, operations: review_capability(test_pid))
+    thread_id = "thread-two-reviews"
+    {:ok, owner} = Server.ensure_started(thread_id, opts)
+    assert {:ok, _} = Server.command(owner, command(thread_id, 1))
+    assert_eventually(fn -> Server.view(owner).status == :review end)
+    first_review_id = Server.view(owner).review["id"]
+
+    assert {:ok, :requested} = Server.command(owner, approval(thread_id, first_review_id, 1))
+
+    assert_eventually(fn ->
+      view = Server.view(owner)
+      view.status == :review and view.review["id"] != first_review_id
+    end)
+
+    second_review_id = Server.view(owner).review["id"]
+    reviews = Enum.filter(Server.view(owner).history, &(&1["type"] == "review_presented"))
+    assert Enum.map(reviews, & &1["payload"]["review"]["id"]) == [first_review_id, second_review_id]
+    assert Enum.uniq(Enum.map(reviews, & &1["id"])) == Enum.map(reviews, & &1["id"])
+
+    assert {:ok, :requested} = Server.command(owner, approval(thread_id, second_review_id, 2))
+    assert_eventually(fn -> Server.view(owner).status == :idle end)
+    assert_received {:review_lookup_called, "first"}
+    assert_received {:review_lookup_called, "second"}
   end
 
-  test "caller operations have deterministic start, await, cancellation, and error paths", %{
-    server: server,
-    session: session
-  } do
-    client = identity(:client, session)
-    assert {:ok, _snapshot} = attach_bounded(server, client)
-    assert {:error, :idempotency_key_required} = Server.start_turn(server, client.id, "prompt", [])
+  test "a live lease blocks replacement work and a committed terminal state wins", %{opts: opts} do
+    thread_id = "thread-live-recovery"
+    store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+    _session = seed_open_thread(thread_id, opts)
+    request = Jidoka.Turn.Request.new!(input: "old work", request_id: "old-request")
 
-    assert {:error, :runtime_not_configured} =
-             Server.start_turn(server, client.id, "prompt", idempotency_key: "server-turn")
+    assert {:ok, claimed} =
+             Jidoka.Session.Store.claim_session(store, thread_id, request,
+               clock: fn -> 100 end,
+               lease_ttl_ms: 100,
+               owner_id: "old-owner"
+             )
 
-    assert {:error, :invalid_session_operation} = Server.start_operation(server, client.id, :invalid)
-    assert {:error, :invalid_session_operation} = Server.start_operation(server, client.id, start: fn _ -> :ok end)
+    owner_opts = Keyword.put(opts, :clock, fn -> 150 end)
+    {:ok, owner} = Server.ensure_started(thread_id, owner_opts)
+    assert Server.view(owner).status == :reconciling
+    assert {:error, :thread_reconciling} = Server.stop(owner)
+    send(owner, :reconcile)
+    assert_eventually(fn -> Server.view(owner).status == :reconciling end)
+    assert {:error, :thread_reconciling} = Server.command(owner, command(thread_id, 2))
 
-    for {start, expected} <- [
-          {fn _owner -> {:error, :start_failed} end, :start_failed},
-          {fn _owner -> :invalid end, {:invalid_runtime_request, :invalid}},
-          {fn _owner -> raise "start raised" end, %RuntimeError{message: "start raised"}},
-          {fn _owner -> throw(:start_threw) end, {:throw, :start_threw}}
+    interrupted = Jidoka.Session.Data.put_error(claimed, :provider_failed)
+
+    assert {:ok, _terminal} =
+             Jidoka.Session.Store.commit_session(store, thread_id, claimed.lease.lease_id, interrupted,
+               clock: fn -> 160 end
+             )
+
+    status = Command.new!(id: "status-live", type: :status, thread_id: thread_id)
+    assert {:ok, %View{status: :idle}} = Server.command(owner, status)
+
+    assert Enum.map(Server.view(owner).history, & &1["type"]) ==
+             ["prompt_queued", "prompt_started", "prompt_failed"]
+  end
+
+  test "an expired lease is interrupted and no old prompt resumes", %{opts: opts} do
+    thread_id = "thread-expired-recovery"
+    store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+    _session = seed_open_thread(thread_id, opts)
+    request = Jidoka.Turn.Request.new!(input: "old work", request_id: "old-request")
+
+    assert {:ok, claimed} =
+             Jidoka.Session.Store.claim_session(store, thread_id, request,
+               clock: fn -> 100 end,
+               lease_ttl_ms: 10,
+               owner_id: "old-owner"
+             )
+
+    {:ok, owner} = Server.ensure_started(thread_id, Keyword.put(opts, :clock, fn -> 110 end))
+    assert Server.view(owner).status == :idle
+    refute_received {:provider_started, _, _, _}
+
+    assert Enum.map(Server.view(owner).history, & &1["type"]) ==
+             ["prompt_queued", "prompt_started", "prompt_interrupted"]
+
+    assert {:error, {:stale_session_lease, ^thread_id, _lease_id}} =
+             Jidoka.Session.Store.commit_session(
+               store,
+               thread_id,
+               claimed.lease.lease_id,
+               Jidoka.Session.Data.put_error(claimed, :late),
+               clock: fn -> 111 end
+             )
+  end
+
+  test "recovery projects durable success and cancellation outcomes", %{opts: opts} do
+    for {suffix, finish, event_type} <- [
+          {"success", &successful_session/1, "prompt_succeeded"},
+          {"cancelled", &Jidoka.Session.Data.put_cancellation(&1, :cancelled_by_user), "prompt_cancelled"}
         ] do
-      assert {:error, ^expected} =
-               Server.start_operation(server, client.id,
-                 start: start,
-                 await: fn _request -> :unused end
+      thread_id = "thread-terminal-#{suffix}"
+      _session = seed_open_thread(thread_id, opts)
+      store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+      request = Jidoka.Turn.Request.new!(input: "old work", request_id: "old-request")
+
+      assert {:ok, claimed} =
+               Jidoka.Session.Store.claim_session(store, thread_id, request,
+                 clock: fn -> 100 end,
+                 lease_ttl_ms: 10,
+                 owner_id: "terminal-owner"
                )
-    end
 
-    test_pid = self()
+      terminal = finish.(claimed)
 
-    spec = [
-      start: fn owner ->
-        send(test_pid, {:operation_started, owner})
-        {:ok, %{sequence: %{request_id: "raw-request"}}}
-      end,
-      await: fn raw_request ->
-        send(test_pid, {:operation_awaiting, self(), raw_request})
+      assert {:ok, _} =
+               Jidoka.Session.Store.commit_session(store, thread_id, claimed.lease.lease_id, terminal,
+                 clock: fn -> 101 end
+               )
 
-        receive do
-          {:finish_operation, result} -> result
-        end
-      end,
-      cancel: fn raw_request, opts ->
-        send(test_pid, {:operation_cancelled, raw_request, opts})
-        {:ok, :cancelled}
-      end,
-      run_id: "run-fixed",
-      prompt: "prompt"
-    ]
-
-    assert {:ok, request} = Server.start_operation(server, client.id, spec)
-    assert request.request_id == "raw-request"
-    assert request.run_id == "run-fixed"
-    assert_receive {:operation_started, relay}
-    assert is_pid(relay)
-    refute relay == server
-    assert_receive {:operation_awaiting, await_worker, raw_request}
-    assert {:ok, %{active_request: ^request}} = Server.runtime_info(server, client.id)
-    assert {:error, :session_busy} = Server.start_operation(server, client.id, spec)
-    assert {:error, :session_busy} = Server.configure_runtime(server, client.id, FakeRuntime, :agent, [])
-
-    foreign = %{request | session_id: Identity.new!(:session).id}
-    stale = %{request | id: "stale"}
-    assert {:error, :cross_session_result} = Server.await_request(server, foreign, 100)
-    assert {:error, :stale_request} = Server.await_request(server, stale, 100)
-    assert {:error, :session_await_timeout} = Server.await_request(server, request, 0)
-    assert {:error, :invalid_review_decision} = Server.respond_review(server, client.id, :later, request, nil, [])
-    assert {:error, :review_not_pending} = Server.respond_review(server, client.id, :approve, request, nil, [])
-    assert {:error, :cross_session_result} = Server.respond_review(server, client.id, :approve, foreign, nil, [])
-
-    assert {:ok, :requested} = Server.cancel_request(server, client.id, request, reason: :user)
-    assert_receive {:operation_cancelled, ^raw_request, [reason: :user]}
-    assert {:ok, :cancelled} = Server.cancel_request_wait(server, client.id, request, [], 1_000)
-    assert_receive {:operation_cancelled, ^raw_request, []}
-
-    waiter = Task.async(fn -> Server.await_request(server, request, 1_000) end)
-    send(await_worker, {:finish_operation, {:error, :operation_failed}})
-    assert {:error, :operation_failed} = Task.await(waiter)
-    assert {:error, :operation_failed} = Server.await_request(server, request, 100)
-    assert {:error, :request_already_finished} = Server.cancel_request(server, client.id, request, [])
-
-    assert {:error, :request_already_finished} =
-             Server.respond_review(server, client.id, :approve, request, nil, [])
-
-    assert {:error, :not_attached} = Server.cancel_request(server, "missing", request, [])
-
-    assert :ok = Server.detach_async(server, client)
-    assert %{} = Server.state(server)
-    assert {:error, :not_attached} = Server.runtime_info(server, client.id)
-  end
-
-  test "review and cancellation waiters finish through monitored tasks", %{
-    server: server,
-    session: session
-  } do
-    client = identity(:client, session)
-    assert {:ok, _snapshot} = attach_bounded(server, client)
-    test_pid = self()
-
-    pending_spec = [
-      start: fn _owner -> {:ok, %{request_id: "pending-request"}} end,
-      await: fn raw_request ->
-        RuntimeResult.pending_review("pending-request", :runtime_session, raw_request, [%{id: "review"}])
-      end,
-      respond_review: fn decision, pending, review, opts, owner ->
-        send(test_pid, {:review_response, decision, pending, review, opts, owner})
-        :review_complete
-      end
-    ]
-
-    assert {:ok, request} = Server.start_operation(server, client.id, pending_spec)
-    assert %RuntimeResult{} = Server.await_request(server, request, 1_000)
-    assert {:ok, %{active_request: ^request}} = Server.runtime_info(server, client.id)
-
-    assert {:ok, :requested} =
-             Server.respond_review(server, client.id, :approve, request, %{id: "review"}, source: :test)
-
-    assert_receive {:review_response, :approve, %RuntimeResult{}, %{id: "review"}, [source: :test], relay}
-    assert is_pid(relay)
-    refute relay == server
-    assert :review_complete = Server.await_request(server, request, 1_000)
-
-    [requested, decided] =
-      server
-      |> Server.state()
-      |> Map.fetch!(:history)
-      |> Enum.filter(&(&1["type"] in ["permission_requested", "permission_decided"]))
-
-    assert requested["payload"]["approval_id"] == "review"
-    assert decided["payload"]["approval_id"] == requested["payload"]["approval_id"]
-
-    blocking_spec = [
-      start: fn _owner -> {:ok, %{request_id: "cancel-timeout"}} end,
-      await: fn _request ->
-        send(test_pid, {:await_waiting, self()})
-
-        receive do
-          :finish_wait -> :finished
-        end
-      end,
-      cancel: fn _request, _opts ->
-        send(test_pid, {:cancel_waiting, self()})
-
-        receive do
-          :finish_cancel -> {:ok, :cancelled}
-        end
-      end
-    ]
-
-    assert {:ok, request} = Server.start_operation(server, client.id, blocking_spec)
-    assert_receive {:await_waiting, await_worker}
-    assert {:error, :session_cancel_timeout} = Server.cancel_request_wait(server, client.id, request, [], 0)
-    assert_receive {:cancel_waiting, cancel_worker}
-
-    assert Enum.any?(Server.state(server).control_state, fn {_id, control} ->
-             control["control"] == "cancel" and control["status"] == "requested"
-           end)
-
-    send(cancel_worker, :finish_cancel)
-    send(await_worker, :finish_wait)
-    assert :finished = Server.await_request(server, request, 1_000)
-
-    assert Enum.any?(Server.state(server).control_state, fn {_id, control} ->
-             control["control"] == "cancel" and control["status"] == "terminal"
-           end)
-
-    no_cancel_spec = [
-      start: fn _owner -> {:ok, %{request_id: "no-cancel"}} end,
-      await: fn _request ->
-        send(test_pid, {:no_cancel_waiting, self()})
-
-        receive do
-          :finish_wait -> :finished
-        end
-      end
-    ]
-
-    assert {:ok, no_cancel_request} = Server.start_operation(server, client.id, no_cancel_spec)
-    assert_receive {:no_cancel_waiting, no_cancel_worker}
-
-    assert {:error, :cancel_unsupported} =
-             Server.cancel_request(server, client.id, no_cancel_request, [])
-
-    send(no_cancel_worker, :finish_wait)
-    assert :finished = Server.await_request(server, no_cancel_request, 1_000)
-  end
-
-  test "permission expiry commits from an injected clock and does not restore authority", %{
-    server: server,
-    session: session
-  } do
-    client = identity(:client, session)
-    assert {:ok, _snapshot} = attach_bounded(server, client)
-    test_pid = self()
-
-    spec = [
-      start: fn _owner -> {:ok, %{request_id: "expiring-request"}} end,
-      await: fn raw_request ->
-        RuntimeResult.pending_review("expiring-request", :runtime_session, raw_request, [
-          %{id: "expiring-review", expires_at_ms: 500}
-        ])
-      end,
-      respond_review: fn _decision, _pending, _review, _opts, _owner ->
-        send(test_pid, :expired_authority_used)
-        :unexpected
-      end
-    ]
-
-    assert {:ok, request} = Server.start_operation(server, client.id, spec)
-    assert %RuntimeResult{} = Server.await_request(server, request, 1_000)
-
-    assert {:error, :stale_result} =
-             Server.expire_permission(server, "missing-review", fn -> 500 end)
-
-    assert {:error, :invalid_durable_clock} =
-             Server.expire_permission(server, "expiring-review", String)
-
-    assert {:error, :permission_not_expired} =
-             Server.expire_permission(server, "expiring-review", fn -> 499 end)
-
-    assert {:ok, :expired} = Server.expire_permission(server, "expiring-review", fn -> 500 end)
-    assert {:ok, :expired} = Server.expire_permission(server, "expiring-review", fn -> 900 end)
-
-    assert {:error, :review_not_pending} =
-             Server.respond_review(server, client.id, :approve, request, %{id: "expiring-review"}, [])
-
-    refute_receive :expired_authority_used, 20
-    assert Server.state(server).permissions["expiring-review"]["decision"] == "expired"
-  end
-
-  defp attach_bounded(server, client) do
-    with {:ok, %{snapshot: snapshot}} <- Server.attach(server, client) do
-      {:ok, snapshot}
+      assert {:ok, owner} = Server.ensure_started(thread_id, opts)
+      assert Server.view(owner).status == :idle
+      assert List.last(Server.view(owner).history)["type"] == event_type
     end
   end
 
-  defp attach_bounded(server, client, opts), do: Server.attach(server, client, opts)
+  test "replacement interrupts every open FIFO item once and does not restart old work", %{opts: opts} do
+    thread_id = "thread-multi-interrupt"
+    seed_open_items(thread_id, 3, opts)
+    store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+    request = Jidoka.Turn.Request.new!(input: "old work 1", request_id: "old-request-1")
 
-  defp identity(kind, session, opts \\ []) do
-    Identity.new!(
-      kind,
-      opts ++
-        [
-          session_id: session.id,
-          generation: session.generation,
-          owner_instance_id: session.owner_instance_id
+    assert {:ok, _claimed} =
+             Jidoka.Session.Store.claim_session(store, thread_id, request,
+               clock: fn -> 100 end,
+               lease_ttl_ms: 10,
+               owner_id: "old-owner"
+             )
+
+    {:ok, owner} = Server.ensure_started(thread_id, Keyword.put(opts, :clock, fn -> 110 end))
+    assert Server.view(owner).status == :idle
+    assert_closes_open_items_once(owner, "prompt_interrupted", 3)
+    refute_received {:provider_started, ^thread_id, _, _}
+
+    assert :ok = Server.stop(owner)
+    {:ok, replacement} = Server.ensure_started(thread_id, opts)
+    assert_closes_open_items_once(replacement, "prompt_interrupted", 3)
+    refute_received {:provider_started, ^thread_id, _, _}
+  end
+
+  test "replacement keeps one durable terminal and interrupts queued FIFO items once", %{opts: opts} do
+    thread_id = "thread-multi-terminal"
+    seed_open_items(thread_id, 3, opts)
+    store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+    request = Jidoka.Turn.Request.new!(input: "old work 1", request_id: "old-request-1")
+
+    assert {:ok, claimed} =
+             Jidoka.Session.Store.claim_session(store, thread_id, request,
+               clock: fn -> 100 end,
+               lease_ttl_ms: 10,
+               owner_id: "old-owner"
+             )
+
+    assert {:ok, _terminal} =
+             Jidoka.Session.Store.commit_session(
+               store,
+               thread_id,
+               claimed.lease.lease_id,
+               successful_session(claimed, "old-request-1"),
+               clock: fn -> 101 end
+             )
+
+    {:ok, owner} = Server.ensure_started(thread_id, opts)
+    closing = Enum.filter(Server.view(owner).history, &Event.closing?(&1["type"]))
+    assert Enum.map(closing, & &1["type"]) == ["prompt_succeeded", "prompt_interrupted", "prompt_interrupted"]
+
+    assert Enum.frequencies_by(closing, & &1["queue_item_id"]) == %{
+             "#{thread_id}-old-item-1" => 1,
+             "#{thread_id}-old-item-2" => 1,
+             "#{thread_id}-old-item-3" => 1
+           }
+
+    refute_received {:provider_started, ^thread_id, _, _}
+  end
+
+  test "recovery rejects a running lease with a different product request", %{opts: opts} do
+    thread_id = "thread-recovery-mismatch"
+    _session = seed_open_thread(thread_id, opts)
+    store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+    request = Jidoka.Turn.Request.new!(input: "other work", request_id: "other-request")
+
+    assert {:ok, _claimed} =
+             Jidoka.Session.Store.claim_session(store, thread_id, request,
+               clock: fn -> 100 end,
+               lease_ttl_ms: 100,
+               owner_id: "other-owner"
+             )
+
+    assert {:error, {:recovery_request_mismatch, "old-request", "other-request"}} =
+             Server.ensure_started(thread_id, Keyword.put(opts, :clock, fn -> 110 end))
+  end
+
+  defp command(thread_id, index) do
+    Command.new!(
+      id: "command-#{index}",
+      type: :submit,
+      thread_id: thread_id,
+      queue_item_id: "command-#{index}",
+      request_id: "request-#{index}",
+      text: "prompt-#{index}",
+      payload: %{"context" => %{}}
+    )
+  end
+
+  defp approval(thread_id, review_id, index) do
+    Command.new!(
+      id: "approve-review-#{index}",
+      type: :approve,
+      thread_id: thread_id,
+      request_id: "request-1",
+      review_id: review_id
+    )
+  end
+
+  defp unique(label, suffix), do: String.to_atom("#{label}-#{suffix}")
+
+  defp real_jidoka_opts(opts, runtime_opts) do
+    opts
+    |> Keyword.delete(:resources_module)
+    |> Keyword.delete(:bridge_module)
+    |> Keyword.delete(:test_pid)
+    |> Keyword.put(:coding_pack, :disabled)
+    |> Keyword.put(:turn_opts, Keyword.take(runtime_opts, [:llm]))
+    |> Keyword.merge(Keyword.take(runtime_opts, [:agent, :operations]))
+  end
+
+  defp review_capability(test_pid) do
+    source =
+      Jidoka.Operation.Source.Local.new!(
+        operations: [
+          %{
+            name: "review_lookup",
+            handler: fn %{"id" => id}, _context ->
+              send(test_pid, {:review_lookup_called, id})
+              {:ok, %{id: id}}
+            end
+          }
         ]
+      )
+
+    {:ok, compiled} = Jidoka.Operation.Source.compile(source)
+    compiled.capability
+  end
+
+  defp review_spec(max_model_turns) do
+    Jidoka.Agent.Spec.new!(
+      id: "review-agent",
+      instructions: "Use review_lookup before the final answer.",
+      model: %{provider: :test, id: "model"},
+      operations: [
+        Jidoka.Agent.Spec.Operation.new!(
+          name: "review_lookup",
+          idempotency: :idempotent,
+          approval: %{required: true, reason: "test review"}
+        )
+      ],
+      runtime_defaults: %{max_model_turns: max_model_turns}
     )
   end
 
-  defp output(server, session, client, attachment_id),
-    do: client_call(server, session, client, attachment_id, :output)
-
-  defp delivery(server, session, client, attachment_id, token),
-    do: client_call(server, session, client, attachment_id, {:delivery, token})
-
-  defp client_call(server, session, client, attachment_id, operation) do
-    Server.client_operation(
-      server,
-      %{
-        session_id: session.id,
-        client_id: client.id,
-        attachment_id: attachment_id,
-        generation: session.generation,
-        owner_instance_id: session.owner_instance_id
-      },
-      operation
-    )
+  defp seed_open_thread(thread_id, opts) do
+    seed_open_items(thread_id, 1, opts)
   end
+
+  defp seed_open_items(thread_id, count, opts) do
+    spec =
+      Jidoka.Agent.Spec.new!(
+        id: "recovery-agent",
+        instructions: "Test recovery.",
+        model: %{provider: :test, id: "model"}
+      )
+
+    {:ok, session} = Jidoka.Session.Data.start(spec, session_id: thread_id)
+    store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+    assert {:ok, ^session} = Jidoka.Session.Store.put_session(store, session)
+
+    for index <- 1..count,
+        type <- if(index == 1, do: ["prompt_queued", "prompt_started"], else: ["prompt_queued"]) do
+      item_id = if(count == 1, do: "#{thread_id}-old-item", else: "#{thread_id}-old-item-#{index}")
+      request_id = if(count == 1, do: "old-request", else: "old-request-#{index}")
+
+      event =
+        Event.new!(
+          id: "#{thread_id}:#{item_id}:#{type}",
+          type: type,
+          session_id: thread_id,
+          queue_item_id: item_id,
+          request_id: request_id,
+          payload:
+            if(type == "prompt_queued",
+              do: %{"input" => "old work #{index}", "command_digest" => "old-#{index}"},
+              else: %{}
+            )
+        )
+
+      assert {:ok, _stored} = Storage.append_thread_event(event, writer: opts[:writer], deadline: 5_000)
+    end
+
+    session
+  end
+
+  defp successful_session(session) do
+    successful_session(session, "old-request")
+  end
+
+  defp successful_session(session, request_id) do
+    result =
+      Jidoka.Turn.Result.new!(
+        content: "done",
+        agent_state: session.conversation.agent_state,
+        journal: Jidoka.Effect.Journal.new!(),
+        metadata: %{debug: %{request_id: request_id}}
+      )
+
+    Jidoka.Session.Data.put_result(session, result)
+  end
+
+  defp assert_closes_open_items_once(owner, type, count) do
+    closing = Enum.filter(Server.view(owner).history, &Event.closing?(&1["type"]))
+    assert length(closing) == count
+    assert Enum.all?(closing, &(&1["type"] == type))
+    assert Enum.all?(closing, &String.starts_with?(&1["id"], Server.view(owner).thread_id <> ":"))
+    assert Enum.all?(Enum.frequencies_by(closing, & &1["queue_item_id"]), fn {_item, frequency} -> frequency == 1 end)
+  end
+
+  defp assert_eventually(fun, attempts \\ 50)
+
+  defp assert_eventually(fun, attempts) when attempts > 0 do
+    if fun.() do
+      assert true
+    else
+      receive do
+      after
+        10 -> :ok
+      end
+
+      assert_eventually(fun, attempts - 1)
+    end
+  end
+
+  defp assert_eventually(_fun, 0), do: flunk("condition did not become true")
 end

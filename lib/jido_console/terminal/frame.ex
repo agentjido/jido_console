@@ -2,6 +2,7 @@ defmodule Jido.Console.Terminal.Frame do
   @moduledoc "Pure full-screen frame data and rendering helpers."
 
   alias Jido.Console.Terminal.PlainText
+  alias TermUI.Renderer.DisplayWidth
 
   @schema Zoi.struct(
             __MODULE__,
@@ -45,23 +46,6 @@ defmodule Jido.Console.Terminal.Frame do
     }
   end
 
-  @doc "Converts a complete frame into ANSI output."
-  @spec to_iodata(t()) :: iodata()
-  def to_iodata(%__MODULE__{} = frame) do
-    cursor =
-      case frame.cursor do
-        {column, row} -> ["\e[", Integer.to_string(row), ";", Integer.to_string(column), "H\e[?25h"]
-        nil -> "\e[?25l"
-      end
-
-    [
-      "\e[?25l\e[H",
-      Enum.intersperse(frame.rows, "\e[K\r\n"),
-      "\e[J",
-      cursor
-    ]
-  end
-
   @doc "Fits text to one terminal row."
   @spec fit(iodata(), non_neg_integer()) :: String.t()
   def fit(_text, 0), do: ""
@@ -74,8 +58,8 @@ defmodule Jido.Console.Terminal.Frame do
       |> String.replace(["\r", "\n"], " ")
       |> String.replace("\t", "    ")
 
-    {content, content_width} = take_width(String.graphemes(text), width, [], 0)
-    IO.iodata_to_binary([content, String.duplicate(" ", width - content_width)])
+    {content, _content_width} = DisplayWidth.truncate(text, width)
+    DisplayWidth.pad(content, width)
   end
 
   @doc "Wraps plain text to a terminal width."
@@ -92,9 +76,7 @@ defmodule Jido.Console.Terminal.Frame do
   @spec width(String.t()) :: non_neg_integer()
   def width(text) when is_binary(text) do
     text = text |> PlainText.clean() |> String.replace(["\n", "\t"], "")
-    :shell.prompt_width(text, :unicode)
-  rescue
-    _exception -> String.length(text)
+    DisplayWidth.string_width(text)
   end
 
   defp wrap_line("", _width), do: [""]
@@ -112,18 +94,6 @@ defmodule Jido.Console.Terminal.Frame do
       end
     end)
     |> then(fn {lines, current, _current_width} -> Enum.reverse([current | lines]) end)
-  end
-
-  defp take_width([], _limit, content, width), do: {Enum.reverse(content), width}
-
-  defp take_width([grapheme | rest], limit, content, current_width) do
-    grapheme_width = width(grapheme)
-
-    if current_width + grapheme_width <= limit do
-      take_width(rest, limit, [grapheme | content], current_width + grapheme_width)
-    else
-      {Enum.reverse(content), current_width}
-    end
   end
 
   defp normalize_cursor(nil, _width, _height), do: nil

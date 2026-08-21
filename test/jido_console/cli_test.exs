@@ -118,6 +118,17 @@ defmodule Jido.ConsoleTest do
     refute_received {:trace, _pid, :call, {Application, :ensure_all_started, [:jido_console]}}
   end
 
+  test "main handles nested command help without starting command services" do
+    for args <- [
+          ["status", "--help"],
+          ["stop", "-h"],
+          ["auth", "status", "--help"],
+          ["models", "list", "-h"]
+        ] do
+      assert capture_io(fn -> assert :ok = Jido.Console.CLI.main(args) end) =~ "Usage:"
+    end
+  end
+
   test "formats TUI errors at the CLI boundary" do
     reasons = [
       {RuntimeError.exception("exception failure"), "exception failure"},
@@ -147,8 +158,7 @@ defmodule Jido.ConsoleTest do
       ["models", "--help"],
       ["models", "-h"],
       ["models", "list", "--help"],
-      ["models", "show", "--help"],
-      ["models", "test", "-h"]
+      ["models", "show", "--help"]
     ]
 
     Enum.each(help_commands, fn args ->
@@ -167,7 +177,7 @@ defmodule Jido.ConsoleTest do
       ["models", "list", "extra"],
       ["models", "show"],
       ["models", "show", "one", "two", "three"],
-      ["models", "test", "openai:gpt-4.1-mini", "--unknown"]
+      ["models", "test", "openai:gpt-4.1-mini"]
     ]
 
     Enum.each(invalid_commands, fn args ->
@@ -210,30 +220,49 @@ defmodule Jido.ConsoleTest do
 
     assert shown =~ "tier: supported"
     refute shown =~ "sk-"
+
+    single =
+      capture_io(fn ->
+        assert :ok = Jido.Console.run(["models", "show", "openai:gpt-4.1-mini"])
+      end)
+
+    assert single =~ "tier: supported"
   end
 
-  test "tests recorded contracts and denies offline or unsupported features" do
-    tested =
-      capture_io(fn ->
-        assert :ok = Jido.Console.run(["models", "test", "openai:gpt-4.1-mini"])
-      end)
+  test "reports and stops processes through CLI commands" do
+    root = Path.join(System.tmp_dir!(), "jido-cli-process-#{System.unique_integer([:positive])}")
+    name = String.to_atom("jido-cli-process-#{System.unique_integer([:positive])}")
+    opts = [jido_home: root, name: name]
+    {:ok, manager} = Jido.Console.Process.Supervisor.start_link(opts)
 
-    assert tested =~ "contract.streaming: pass"
+    on_exit(fn ->
+      if Process.alive?(manager) do
+        try do
+          GenServer.stop(manager)
+        catch
+          :exit, _reason -> :ok
+        end
+      end
 
-    offline =
-      capture_io(fn ->
-        assert {:error, 1} = Jido.Console.run(["models", "test", "openai", "gpt-4.1-mini", "--offline"])
-      end)
+      File.rm_rf(root)
+    end)
 
-    assert offline =~ "offline: deny"
+    assert capture_io(fn -> assert :ok = Jido.Console.run(["status"], opts) end) ==
+             "jido: no owned background processes\n"
 
-    denied =
-      capture_io(fn ->
-        assert {:error, 1} = Jido.Console.run(["models", "test", "ollama", "llama3.2", "--require", "streaming"])
-      end)
+    owner = spawn(fn -> Process.sleep(:infinity) end)
+    assert {:ok, _} = Jido.Console.Process.register(:interactive, owner, opts)
 
-    assert denied =~ "preflight: deny"
+    assert capture_io(fn -> assert :ok = Jido.Console.run(["status"], opts) end) =~ "interactive"
 
+    assert capture_io(fn -> assert :ok = Jido.Console.run(["stop", "--name", "interactive"], opts) end) =~
+             "interactive"
+
+    assert capture_io(fn -> assert :ok = Jido.Console.run(["stop"], opts) end) ==
+             "jido: no owned background processes\n"
+  end
+
+  test "returns a configuration error for an unknown model" do
     unknown =
       capture_io(:stderr, fn ->
         assert {:error, 64} = Jido.Console.run(["models", "show", "openai", "missing"])

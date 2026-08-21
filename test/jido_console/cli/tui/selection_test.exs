@@ -39,16 +39,14 @@ defmodule Jido.Console.Tui.SelectionTest do
            ]
   end
 
-  test "selects a model and trusted profile without applying silently" do
+  test "model and profile mutation commands require a new thread" do
     selection = Selection.init(catalog_entries: @entries)
-    assert {:command, next, notice} = Selection.handle("/model openai:gpt-4.1-mini", selection)
-    assert next.model == "openai:gpt-4.1-mini"
-    assert notice =~ "Selected openai:gpt-4.1-mini"
+    assert {:command, ^selection, notice} = Selection.handle("/model ollama:llama3.2", selection)
+    assert notice =~ "new thread"
 
-    assert {:command, trusted, warning} = Selection.handle("/profile coding.trusted-workspace", next)
-    assert trusted.profile_id == "coding.trusted-workspace"
+    assert {:command, ^selection, warning} = Selection.handle("/profile coding.trusted-workspace", selection)
+    assert warning =~ "new thread"
     assert warning =~ "not a sandbox"
-    assert Selection.label(trusted) =~ "not a sandbox"
   end
 
   test "rejects unavailable selections and blocks a turn" do
@@ -59,22 +57,22 @@ defmodule Jido.Console.Tui.SelectionTest do
     assert reason =~ "unavailable model"
   end
 
-  test "TUI slash commands change the visible run configuration" do
+  test "TUI mutation commands do not change the visible run configuration or start work" do
     state = State.new(:session, {80, 12}, catalog_entries: @entries)
+    initial = state.selection
     {state, []} = State.update(state, {:terminal, {:text, "/model ollama:llama3.2"}})
-    {state, [{:apply_selection, selection}]} = State.update(state, {:terminal, {:key, :enter}})
-    assert selection.model == "ollama:llama3.2"
-    assert state.selection.model == "ollama:llama3.2"
-    assert {:preparing, {:selection, _previous}} = state.activity
-    assert List.last(state.messages).content =~ "Selected ollama:llama3.2"
-    assert Enum.join(View.render(state).rows, "\n") =~ "ollama:llama3.2"
+    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    assert state.selection == initial
+    assert state.activity == :idle
+    assert List.last(state.messages).content =~ "new thread"
+    assert hd(View.render(state).rows) =~ "openai:gpt-4.1-mini"
 
-    {state, []} = State.update(state, {:runtime_ready, :session, []})
     {state, []} = State.update(state, {:terminal, {:text, "/profile coding.trusted-workspace"}})
-    {state, [{:apply_selection, trusted}]} = State.update(state, {:terminal, {:key, :enter}})
-    assert trusted.profile_id == "coding.trusted-workspace"
-    assert state.selection.profile_id == "coding.trusted-workspace"
-    assert Enum.join(View.render(state).rows, "\n") =~ "not a sandbox"
+    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    assert state.selection == initial
+    assert state.activity == :idle
+    assert List.last(state.messages).content =~ "new thread"
+    assert hd(View.render(state).rows) =~ "coding.restricted"
   end
 
   test "an unavailable model prevents the turn from starting" do

@@ -128,8 +128,7 @@ defmodule Jido.Console.Tui.Selection do
   defp select_model(selection, token) do
     case resolve_identity(token, selection.catalog_entries) do
       {:ok, entry} ->
-        next = %{selection | model: entry.identity, model_tier: entry.tier}
-        {:command, next, "Selected #{entry.identity} (#{entry.tier})"}
+        {:command, selection, "Model #{entry.identity} is available. Start a new thread to use it."}
 
       :error ->
         {:command, selection, "Unavailable model #{token}"}
@@ -139,8 +138,9 @@ defmodule Jido.Console.Tui.Selection do
   defp select_profile(selection, profile_id) do
     case resolve_profile(profile_id) do
       {:ok, profile} ->
-        next = %{selection | profile_id: profile.id, profile_warning: profile.warning}
-        {:command, next, profile_notice(next)}
+        notice = "Start a new thread to use profile #{profile.id}."
+        notice = if profile.warning, do: notice <> " " <> profile.warning, else: notice
+        {:command, selection, notice}
 
       {:error, _reason} ->
         {:command, selection, "Unavailable profile #{profile_id}"}
@@ -184,12 +184,6 @@ defmodule Jido.Console.Tui.Selection do
       do: :ok,
       else: {:error, "unavailable model #{selection.model}"}
   end
-
-  defp profile_notice(%{profile_warning: warning} = selection) when is_binary(warning) and warning != "" do
-    "Selected #{selection.profile_id}. #{warning}"
-  end
-
-  defp profile_notice(selection), do: "Selected #{selection.profile_id}"
 
   defp profile_available(selection) do
     case resolve_profile(selection.profile_id) do

@@ -239,12 +239,6 @@ defmodule Jido.Console.Tui.View do
   defp marker("interrupted"), do: "[interrupted]"
   defp marker(_status), do: "[failed]"
 
-  defp status_row(%State{activity: {:starting, {:runtime, :submit_when_ready}}}),
-    do: "starting runtime · prompt queued"
-
-  defp status_row(%State{activity: {:starting, {:runtime, :empty}}}),
-    do: "starting runtime · Enter queues"
-
   defp status_row(%State{activity: {:failed, :startup, _reason, error}}),
     do: "startup failed · Esc exits · #{SafeText.summary(error)}"
 
@@ -254,10 +248,19 @@ defmodule Jido.Console.Tui.View do
   defp status_row(%State{activity: :idle}),
     do: "idle · Enter sends · Ctrl-J newline · Esc exits"
 
-  defp status_row(%State{activity: {:preparing, {:prompt, _prompt}}}), do: "resolving file mentions"
-  defp status_row(%State{activity: {:preparing, {:selection, _previous}}}), do: "applying selection"
   defp status_row(%State{activity: {:starting, {:turn, _turn}}}), do: "starting turn · Ctrl-C cancels"
-  defp status_row(%State{activity: {:active, _request, _turn, _phase}}), do: "running · Ctrl-C cancels"
+
+  defp status_row(%State{activity: {:active, _request, _turn, _phase}} = state) do
+    queued =
+      case state.session do
+        %Jido.Console.Session.View{queue: []} -> ""
+        %Jido.Console.Session.View{queue: queue} -> " · #{length(queue)} queued"
+        _session -> ""
+      end
+
+    "running#{queued} · Enter queues · Ctrl-C cancels"
+  end
+
   defp status_row(%State{activity: {:cancelling, _turn, _target}}), do: "cancelling"
 
   defp status_row(%State{activity: {:review, _request, _turn, _result, :awaiting}}),
