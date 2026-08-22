@@ -211,10 +211,36 @@ defmodule Jido.Console.ProcessTest do
     assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} =
              Store.get(identity, opts)
 
-    File.write!(path, Jason.encode!(%{marker | "name" => "coding-runtime"}))
+    File.write!(path, Jason.encode!(%{Map.delete(marker, "id") | "name" => "coding-runtime"}))
 
     assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} =
              Store.get(identity, opts)
+  end
+
+  test "stop fails closed for a corrupt marker and stops a stale external owner", %{opts: opts} do
+    assert {:ok, _home} = Jido.Console.Home.ensure(opts)
+    assert {:ok, dir} = Jido.Console.Home.path(:run, opts)
+    path = Path.join(dir, "interactive.interactive.json")
+    File.write!(path, "{not-json")
+
+    assert {:error, {:process_marker_invalid, ^path, _reason}} =
+             Process.stop("interactive", opts)
+
+    File.rm!(path)
+
+    {:ok, external} =
+      Contract.restore(%{
+        kind: :interactive,
+        name: "interactive",
+        status: :running,
+        readiness: "ready",
+        failure: nil,
+        owner_os_pid: 2_147_483_647
+      })
+
+    assert {:ok, _record} = Store.put(external, opts)
+    assert {:ok, %{status: :stopped}} = Process.stop("interactive", opts)
+    assert {:ok, []} = Process.list(opts)
   end
 
   test "skips invalid process markers instead of crashing status", %{opts: opts} do
@@ -364,6 +390,57 @@ defmodule Jido.Console.ProcessTest do
     assert {:ok, [reaped]} = Process.reap(opts)
     assert reaped.name == "interactive"
     assert {:ok, []} = Process.list(opts)
+  end
+
+  test "stop-all reports a stale stored marker as stopped", %{opts: opts} do
+    {:ok, stale} =
+      Contract.restore(%{
+        kind: :interactive,
+        name: "interactive",
+        status: :running,
+        readiness: "ready",
+        failure: nil,
+        owner_os_pid: nil
+      })
+
+    assert {:ok, _} = Store.put(stale, opts)
+
+    assert {:ok, [%{name: "interactive", status: :stopped, readiness: "stopped"}]} =
+             Process.stop_all(opts)
+  end
+
+  test "registration removes its monitor when the marker cannot be stored", %{opts: opts} do
+    home = Keyword.fetch!(opts, :jido_home)
+    File.write!(home, "not a directory")
+    owner = spawn(fn -> Elixir.Process.sleep(:infinity) end)
+
+    assert {:error, {:home_path_not_directory, ^home, :regular}} =
+             Process.register(:interactive, owner, opts)
+
+    assert Elixir.Process.alive?(owner)
+    Elixir.Process.exit(owner, :kill)
+  end
+
+  test "rejects non-map contract restoration and non-atom marker fields", %{opts: opts} do
+    assert {:error, :invalid_process_marker} = Contract.restore(:invalid)
+    {:ok, dir} = Jido.Console.Home.path(:run, opts)
+    File.mkdir_p!(dir)
+    path = Path.join(dir, "interactive.interactive.json")
+
+    File.write!(
+      path,
+      Jason.encode!(%{
+        "failure" => nil,
+        "kind" => 42,
+        "name" => "interactive",
+        "owner_os_pid" => nil,
+        "readiness" => "ready",
+        "status" => "running"
+      })
+    )
+
+    assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} =
+             Store.get(Contract.identity(:interactive), opts)
   end
 
   test "jido status and stop use the process contract", %{opts: opts} do

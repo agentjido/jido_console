@@ -2,6 +2,7 @@ defmodule Jido.Console.ExtensionsTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Extensions
+  alias Jido.Console.Extensions.Record
   alias Jido.Console.Extensions.Setup
   alias Jido.Console.Extensions.Trust
   alias Jidoka.Agent
@@ -87,6 +88,45 @@ defmodule Jido.Console.ExtensionsTest do
                extension_record_files: [path],
                project_root: root
              )
+  end
+
+  test "rejects missing records, invalid record files, and missing built-in resolvers", %{root: root} do
+    request = Request.new!(id: "acme.fixture")
+
+    assert {:error, {:unknown_extension_record, "acme.fixture"}} =
+             Extensions.resolve([request], project_root: root)
+
+    missing = Path.join(root, "missing.json")
+
+    assert {:error, {:invalid_extension_record_file, ^missing, _reason}} =
+             Extensions.resolve([request], extension_record_files: [missing], project_root: root)
+
+    records = Path.join(root, "extensions.json")
+    write_records(records, [built_in_record("acme.fixture")])
+
+    assert {:error, {:built_in_extension_unavailable, "acme.fixture", false}} =
+             Extensions.resolve([request], extension_record_files: [records], project_root: root)
+  end
+
+  test "validates launch commands at the record boundary", %{root: root} do
+    record_path = Path.join(root, "records/extensions.json")
+    built_in = built_in_record("acme.built-in")
+
+    assert {:error, {:invalid_extension_record, ^record_path, {:error, :built_in_command_forbidden}}} =
+             Record.new(Map.put(built_in, "command", ["tool"]), record_path)
+
+    process =
+      built_in
+      |> Map.put("id", "acme.process")
+      |> Map.put("source", "process")
+
+    assert {:error, {:invalid_extension_record, ^record_path, {:error, :process_command_required}}} =
+             Record.new(process, record_path)
+
+    assert {:ok, normalized} =
+             Record.new(Map.put(process, "command", ["bin/tool", "--safe"]), record_path)
+
+    assert normalized.command == [Path.join(root, "records/bin/tool"), "--safe"]
   end
 
   test "requires canonical project trust and verifies a process executable pin", %{root: root} do
@@ -318,6 +358,44 @@ defmodule Jido.Console.ExtensionsTest do
     {:ok, session} = Jidoka.Session.Data.start(spec, session_id: "extension-conflict")
     assert {:error, _reason} = Extensions.open(session, [request], setup)
     assert_receive :conflict_closed
+  end
+
+  test "requires one matching project trust record", %{root: root} do
+    {:ok, canonical_root} = Trust.canonical_path(root)
+    identity = %{root: canonical_root, repository_id: "repo:test"}
+    trust = Path.join(root, "trust.json")
+
+    assert {:error, {:untrusted_extension_project, ^canonical_root, "repo:test"}} =
+             Trust.trusted_extensions(identity, [])
+
+    File.write!(
+      trust,
+      Jason.encode!(%{
+        "projects" => [
+          %{"root" => Path.join(root, "missing"), "extensions" => %{}},
+          %{"root" => root, "repository_id" => "repo:other", "extensions" => %{}}
+        ]
+      })
+    )
+
+    assert {:error, {:invalid_extension_trust, ^trust, {:error, :project_not_trusted}}} =
+             Trust.trusted_extensions(identity, extension_trust_file: trust)
+
+    project = %{"root" => root, "repository_id" => "repo:test", "extensions" => %{}}
+    File.write!(trust, Jason.encode!(%{"projects" => [project, project]}))
+
+    assert {:error, {:invalid_extension_trust, ^trust, {:error, :duplicate_project_trust}}} =
+             Trust.trusted_extensions(identity, extension_trust_file: trust)
+  end
+
+  test "derives the default project identity from a canonical Git path", %{root: root} do
+    git = Path.join(root, ".git")
+    File.mkdir_p!(git)
+
+    assert {:ok, identity} = Trust.project_identity(root)
+    assert {:ok, identity.root} == Trust.canonical_path(root)
+    assert String.starts_with?(identity.repository_id, "sha256:")
+    assert byte_size(identity.repository_id) == 71
   end
 
   defp built_in_record(id) do

@@ -17,6 +17,14 @@ defmodule Jido.Console.Session.ServerTest do
     end
   end
 
+  defmodule FailingStore do
+    @behaviour Jidoka.Session.Store
+
+    def put_session(_session, _opts), do: {:error, :store_failed}
+    def get_session(_session_id, _opts), do: {:error, :store_failed}
+    def list_sessions(_opts), do: {:ok, []}
+  end
+
   setup do
     suffix = System.unique_integer([:positive])
     root = Path.join(System.tmp_dir!(), "jido-thread-owner-#{suffix}")
@@ -153,6 +161,41 @@ defmodule Jido.Console.Session.ServerTest do
     assert {:ok, %{duplicate: true, status: :closed}} = Server.command(owner, command)
     assert {:error, :command_conflict} = Server.command(owner, %{command | text: "changed after close"})
     refute_receive {:provider_started, ^thread_id, "request-1", _other}, 50
+  end
+
+  test "a full queue checks durable history before returning queue_full", %{opts: opts} do
+    opts = Keyword.put(opts, :queue_limit, 1)
+    thread_id = "thread-full"
+    {:ok, owner} = Server.ensure_started(thread_id, opts)
+
+    assert {:ok, _accepted} = Server.command(owner, command(thread_id, 1))
+    assert_receive {:provider_started, ^thread_id, "request-1", bridge}
+    assert {:ok, %{status: :queued}} = Server.command(owner, command(thread_id, 2))
+    assert {:error, :queue_full} = Server.command(owner, command(thread_id, 3))
+    send(bridge, :finish)
+  end
+
+  test "reconciliation storage failures make the owner unavailable or stop it", %{opts: opts} do
+    {:ok, command_owner} = Server.ensure_started("thread-reconcile-command", opts)
+
+    :sys.replace_state(command_owner, fn state ->
+      %{state | status: :reconciling, store: {FailingStore, []}}
+    end)
+
+    status = Command.new!(id: "status", type: :status, thread_id: "thread-reconcile-command")
+    assert {:error, :store_failed} = Server.command(command_owner, status)
+    assert Server.view(command_owner).status == :unavailable
+
+    {:ok, wake_owner} = Server.ensure_started("thread-reconcile-wake", opts)
+    monitor = Process.monitor(wake_owner)
+
+    :sys.replace_state(wake_owner, fn state ->
+      %{state | status: :reconciling, store: {FailingStore, []}}
+    end)
+
+    send(wake_owner, :reconcile)
+
+    assert_receive {:DOWN, ^monitor, :process, ^wake_owner, {:reconciliation_failed, :store_failed}}
   end
 
   test "two threads can use the same queue item and request IDs", %{opts: opts} do

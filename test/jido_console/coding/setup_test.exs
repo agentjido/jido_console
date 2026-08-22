@@ -78,6 +78,11 @@ defmodule Jido.Console.Coding.SetupTest do
     assert {:ok, "Keep @literal", %{"coding" => %{"status" => "disabled"}}} =
              Setup.prepare_prompt(disabled, "Keep \\@literal")
 
+    assert {:ok, "Keep @client", %{"coding" => %{"status" => "disabled"}}} =
+             disabled
+             |> Setup.client_setup()
+             |> Setup.prepare_prompt("Keep \\@client")
+
     assert ExtensionSetup.projection(disabled.extension_setup) == %{
              "status" => "disabled",
              "other_extensions" => %{"status" => "not_requested"}
@@ -96,6 +101,59 @@ defmodule Jido.Console.Coding.SetupTest do
 
     assert replacement.pack_id == "acme.coding_pack"
     assert Map.has_key?(ExtensionSetup.registry(replacement.extension_setup), "acme.coding_pack")
+  end
+
+  test "closes local resources when coding-pack configuration is rejected", %{root: root} do
+    {:links, before_links} = Process.info(self(), :links)
+
+    assert {:error, %Jidoka.CodingPack.Error{code: :coding_tool_entries_invalid}} =
+             Setup.prepare(Jido.Console.DefaultAgent,
+               project_root: root,
+               coding_replace_tools: "invalid"
+             )
+
+    {:links, after_links} = Process.info(self(), :links)
+    assert MapSet.new(after_links) == MapSet.new(before_links)
+  end
+
+  test "closes local resources when an extension resolver raises or throws", %{root: root} do
+    request = Jidoka.Extension.Request.new!(id: "acme.failure")
+    base = Jido.Console.DefaultAgent.spec()
+
+    {:ok, agent} =
+      Jidoka.Agent.Spec.new(%{
+        base
+        | extensions: [request | Enum.reject(base.extensions, &(&1.id == request.id))]
+      })
+
+    opts = [project_root: root, extension_record_files: [record(root, "acme.failure")]]
+
+    {:links, before_raise} = Process.info(self(), :links)
+
+    assert_raise RuntimeError, "resolver failed", fn ->
+      Setup.prepare(
+        agent,
+        Keyword.put(opts, :built_in_extension_resolver, fn _id, _context ->
+          raise "resolver failed"
+        end)
+      )
+    end
+
+    {:links, after_raise} = Process.info(self(), :links)
+    assert MapSet.new(after_raise) == MapSet.new(before_raise)
+
+    assert :resolver_threw =
+             catch_throw(
+               Setup.prepare(
+                 agent,
+                 Keyword.put(opts, :built_in_extension_resolver, fn _id, _context ->
+                   throw(:resolver_threw)
+                 end)
+               )
+             )
+
+    {:links, after_throw} = Process.info(self(), :links)
+    assert MapSet.new(after_throw) == MapSet.new(before_raise)
   end
 
   test "can disable or replace each default tool through trusted host options", %{root: root} do
@@ -166,6 +224,25 @@ defmodule Jido.Console.Coding.SetupTest do
                coding_profile: "missing",
                coding_profile_resolver: resolver
              )
+  end
+
+  test "keeps restricted coding available when local executables are absent", %{root: root} do
+    original_path = System.get_env("PATH")
+    System.put_env("PATH", "")
+
+    try do
+      assert {:ok, setup} =
+               Setup.prepare(Jido.Console.DefaultAgent,
+                 project_root: root,
+                 jido_home: Path.join(root, "home-without-local-tools")
+               )
+
+      assert setup.profile_id == "coding.restricted"
+      assert setup.local_resources == nil
+      assert :ok = Setup.close(setup)
+    after
+      if original_path, do: System.put_env("PATH", original_path), else: System.delete_env("PATH")
+    end
   end
 
   test "resolves exact and unique file mentions and keeps escaped literals", %{root: root} do

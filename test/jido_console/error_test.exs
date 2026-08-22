@@ -188,6 +188,38 @@ defmodule Jido.Console.ErrorTest do
       assert Enum.map(aggregate.errors, &Exception.message/1) == ["first", "second"]
       assert Enum.all?(aggregate.errors, &Error.splode_error?/1)
     end
+
+    test "builds a redacted project leaf through the shared error macro" do
+      module = Module.concat(__MODULE__, "DynamicLeaf#{System.unique_integer([:positive])}")
+
+      Code.compile_string("""
+      defmodule #{inspect(module)} do
+        use Jido.Console.Error.Type,
+          class: :execution,
+          fields: [message: nil, details: %{}],
+          default_message: "Dynamic failure"
+      end
+      """)
+
+      error = module.exception(details: %{api_key: "private"})
+      assert Exception.message(error) == "Dynamic failure"
+      assert error.details == %{api_key: "[REDACTED]"}
+    end
+
+    test "accepts bare field names in the shared error macro" do
+      module = Module.concat(__MODULE__, "BareFieldLeaf#{System.unique_integer([:positive])}")
+
+      Code.compile_string("""
+      defmodule #{inspect(module)} do
+        use Jido.Console.Error.Type,
+          class: :execution,
+          fields: [:message, details: %{}],
+          default_message: "Bare field failure"
+      end
+      """)
+
+      assert Exception.message(module.exception([])) == "Bare field failure"
+    end
   end
 
   describe "redaction and portable errors" do
@@ -247,6 +279,74 @@ defmodule Jido.Console.ErrorTest do
 
       refute Map.has_key?(mapped, :details)
       refute Map.has_key?(mapped, :phase)
+    end
+
+    test "omits empty list fields and handles unusual portable causes" do
+      mapped =
+        Error.ExecutionFailureError.exception(
+          message: "failed",
+          phase: [],
+          details: %{cause: %{type: "tuple", values: [42]}, attempts: []}
+        )
+        |> Error.to_map()
+
+      refute Map.has_key?(mapped, :phase)
+      assert mapped.details == %{cause: %{type: "tuple", values: [42]}, attempts: []}
+
+      reason =
+        Jidoka.Error.ExecutionError.exception(
+          message: "Jidoka execution failed",
+          details: %{cause: 42, operation: :operation}
+        )
+
+      assert Error.message(reason) == "Jidoka execution failed"
+    end
+
+    test "finds storage configuration failures inside lists" do
+      path = "/private/jido/state/console.sqlite3"
+      backup = path <> ".schema-1-backup"
+
+      assert %Error.ConfigurationError{} =
+               Error.normalize([:shutdown, {:storage_schema_backup_exists, path, backup}])
+    end
+
+    test "contains malformed dependency error fields" do
+      malformed_details =
+        Jidoka.Error.ExecutionError.exception(
+          message: "Jidoka execution failed",
+          details: [:not_a_map]
+        )
+
+      assert %Error.Internal.UnknownError{} = Error.normalize(malformed_details)
+
+      malformed_message =
+        %{Jidoka.Error.ExecutionError.exception(message: "Jidoka execution failed") | message: 42}
+
+      assert %Error.ExecutionFailureError{} = Error.normalize(malformed_message)
+    end
+
+    test "contains an improper list at the error boundary" do
+      normalized = Error.normalize([:failure | :invalid_tail])
+
+      assert %Error.ExecutionFailureError{} = normalized
+      assert Exception.message(normalized) =~ "invalid_tail"
+      assert normalized.details.reason == Exception.message(normalized)
+    end
+
+    test "serializes a project leaf that owns a nested errors field" do
+      module = Module.concat(__MODULE__, "NestedFieldLeaf#{System.unique_integer([:positive])}")
+
+      Code.compile_string("""
+      defmodule #{inspect(module)} do
+        use Jido.Console.Error.Type,
+          class: :execution,
+          fields: [message: nil, errors: [], details: %{}],
+          default_message: "Nested field failure"
+      end
+      """)
+
+      assert %{category: :execution, message: "Nested field failure"} =
+               module.exception(errors: ["nested"]) |> Error.to_map()
     end
   end
 end

@@ -82,6 +82,12 @@ defmodule Jido.Console.Models.CatalogTest do
     assert {:error, {:unknown_tier, :gold, "openai:gpt-test"}} =
              Catalog.validate([Map.put(base, :tier, :gold)])
 
+    assert {:error, {:unknown_tier, :invalid, "openai:gpt-test"}} =
+             Catalog.validate([Map.put(base, :tier, 42)])
+
+    assert {:error, {:unknown_tier, :invalid, "openai:gpt-test"}} =
+             Catalog.validate([Map.put(base, :tier, "tier-that-does-not-exist")])
+
     assert {:error, {:duplicate_identity, "openai:gpt-test"}} =
              Catalog.validate([base, base])
 
@@ -123,6 +129,17 @@ defmodule Jido.Console.Models.CatalogTest do
     assert {:error, {:duplicate_capability, :streaming, "openai:gpt-test"}} =
              Catalog.validate([mixed])
 
+    unknown_string =
+      entry
+      |> update_in([:capabilities], fn capabilities ->
+        capabilities
+        |> Map.delete(:streaming)
+        |> Map.put("not-a-capability", feature)
+      end)
+
+    assert {:error, {:unknown_capability, "not-a-capability", "openai:gpt-test"}} =
+             Catalog.validate([unknown_string])
+
     policy = Map.put(valid_policy("openai:gpt-test"), :contract_note, "old form")
     model = executable_model("gpt-test")
 
@@ -137,6 +154,7 @@ defmodule Jido.Console.Models.CatalogTest do
     assert Catalog.revision() == "jido.models.v0.1"
     assert {:ok, %{entries: [_entry]}} = Catalog.load(entries: [base])
     assert {:error, :invalid_catalog} = Catalog.validate(:invalid)
+    assert {:error, :invalid_catalog_entry} = Catalog.validate([:invalid])
     assert Catalog.claimed_features(base) == []
 
     invalid_entries = [
@@ -221,6 +239,20 @@ defmodule Jido.Console.Models.CatalogTest do
       assert {:error, {^reason, "openai:gpt-test"}} =
                Catalog.load(model_policy: [policy], model_resolver: fn _identity -> {:ok, unavailable} end)
     end
+  end
+
+  test "describes deprecated metadata when lifecycle labels are absent" do
+    policy = valid_policy("openai:gpt-test")
+
+    model =
+      executable_model("gpt-test")
+      |> Map.put(:deprecated, true)
+      |> Map.put(:lifecycle, nil)
+
+    assert {:ok, %{entries: [entry]}} =
+             Catalog.load(model_policy: [policy], model_resolver: fn _identity -> {:ok, model} end)
+
+    assert entry.known_gaps == ["LLMDB marks this model deprecated"]
   end
 
   test "list and show consume the same validated catalog" do

@@ -106,4 +106,11 @@ defmodule Jido.Console.AuthTest do
 
     Enum.each(values, &refute(diagnostics =~ &1))
   end
+
+  test "exposes the credential contract and rejects unknown providers" do
+    assert Auth.sources()["openai"] == [%{variable: "OPENAI_API_KEY", required: true}]
+    assert {:ok, []} = Auth.sources_for("ollama")
+    assert {:error, {:unknown_provider, "missing"}} = Auth.sources_for("missing")
+    assert {:error, :invalid_provider} = Auth.status(provider: :openai)
+  end
 end

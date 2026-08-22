@@ -100,6 +100,13 @@ defmodule Jido.Console.HomeTest do
 
     assert {:error, {:home_path_not_directory, ^state, :regular}} =
              Home.ensure(jido_home: home_root)
+
+    blocked = Path.join(root, "blocked")
+    unavailable = Path.join(blocked, "home")
+    File.write!(blocked, "not a directory")
+
+    assert {:error, {:home_directory_unavailable, ^unavailable, :enotdir}} =
+             Home.ensure(jido_home: unavailable)
   end
 
   test "production local product paths resolve through the home contract" do

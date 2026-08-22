@@ -72,6 +72,8 @@ defmodule Jido.Console.Session.EventTest do
     }
 
     assert {:ok, %Event{} = event} = Event.new(attrs)
+    assert {:ok, %Event{}} = Event.validate(attrs)
+    assert {:error, :invalid_thread_event} = Event.new(Map.put(attrs, "future_field", "ignored"))
     assert event.sequence == 3
     assert event.committed_at_ms == 4
     assert {:error, :invalid_thread_event} = Event.new(:invalid)

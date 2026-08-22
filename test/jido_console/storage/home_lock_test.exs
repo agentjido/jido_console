@@ -43,5 +43,19 @@ defmodule Jido.Console.Storage.HomeLockTest do
     assert {:ok, %{type: :symlink}} = File.lstat(path)
   end
 
+  test "rejects a nonregular SQLite lock sidecar", %{root: root} do
+    assert {:ok, _home} = Home.ensure(jido_home: root)
+    sidecar = Path.join(root, "state/console-lock.sqlite3-shm")
+    File.mkdir!(sidecar)
+
+    previous = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+
+    assert {:error, {:unsafe_home_lock, ^sidecar, :directory}} =
+             HomeLock.start_link(jido_home: root, name: unique(:unsafe_sidecar_lock))
+
+    assert File.dir?(sidecar)
+  end
+
   defp unique(label), do: String.to_atom("#{label}-#{System.unique_integer([:positive])}")
 end

@@ -93,6 +93,19 @@ defmodule Jido.Console.EnvTest do
     end)
   end
 
+  test "treats a missing file as optional and rejects invalid dotenv syntax", %{root: root} do
+    assert :ok = Env.load_provider_credentials(root)
+
+    path = Path.join(root, ".env")
+    File.write!(path, "NOT VALID DOTENV SYNTAX\n")
+    File.chmod!(path, 0o600)
+
+    assert {:error, {:dotenv_load_failed, :invalid_file}} = Env.load_provider_credentials(root)
+
+    assert {:error, {:dotenv_stat_failed, _, :enoent}} =
+             Jido.Console.Credentials.read_private_env_file(path <> ".missing")
+  end
+
   defp write_env(path, mode) do
     File.write!(path, "OPENAI_API_KEY=file-secret\n")
     File.chmod!(path, mode)

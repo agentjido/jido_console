@@ -362,6 +362,24 @@ defmodule Jido.Console.Coding.LocalTest do
     assert Bitwise.band(mode, 0o777) == 0o640
   end
 
+  test "checkpoint restore rejects a file-to-directory conflict", %{root: root} do
+    path = Path.join(root, "conflict")
+    File.write!(path, "original")
+    workspace = Workspace.new!(root: root, access: [:read, :write])
+    {:ok, state} = Agent.start_link(fn -> %{snapshots: %{}, snapshot_bytes: 0} end)
+    on_exit(fn -> if Process.alive?(state), do: Agent.stop(state) end)
+    opts = [state: state, profile_digest: "sha256:" <> String.duplicate("c", 64)]
+
+    assert {:ok, checkpoint, _evidence} = MutationBackend.checkpoint(workspace, opts)
+    File.rm!(path)
+    File.mkdir!(path)
+    File.write!(Path.join(path, "created"), "new")
+
+    assert {:error, reason} = MutationBackend.restore(workspace, checkpoint, opts)
+    assert reason in [:eisdir, :eexist]
+    assert File.dir?(path)
+  end
+
   test "checkpoint skips ignored and nonregular paths and rejects an unknown reference", %{root: root} do
     ignored = Path.join(root, "ignored.txt")
     target = Path.join(root, "target.txt")

@@ -6,6 +6,14 @@ defmodule Jido.Console.Session.ClientTest do
   alias Jido.Console.Storage.Supervisor, as: StorageSupervisor
   alias Jido.Console.Test.{ThreadBridge, ThreadResources}
 
+  defmodule RejectingDynamicSupervisor do
+    use GenServer
+
+    def start_link, do: GenServer.start_link(__MODULE__, :ok)
+    def init(:ok), do: {:ok, nil}
+    def handle_call({:start_child, _child}, _from, state), do: {:reply, {:error, :session_start_failed}, state}
+  end
+
   setup do
     suffix = System.unique_integer([:positive])
     root = Path.join(System.tmp_dir!(), "jido-client-#{suffix}")
@@ -127,6 +135,7 @@ defmodule Jido.Console.Session.ClientTest do
     assert {:error, :review_not_pending} = Client.approve(handle, "request", "review")
     assert {:error, :review_not_pending} = Client.deny(handle, "request", "review")
     assert {:ok, :removed} = Client.remove(handle, "missing")
+    assert {:ok, %{events: []}} = Client.history(handle, limit: 10)
     assert {:ok, %{events: []}} = Client.history(handle, limit: 10, before_sequence: 20)
     assert :ok = Client.stop(handle)
   end
@@ -144,6 +153,39 @@ defmodule Jido.Console.Session.ClientTest do
 
     other = Command.new!(id: "status", type: :status, thread_id: "other")
     assert {:error, :cross_thread_command} = Client.run(replacement, other)
+  end
+
+  test "missing session infrastructure is a clean detached state" do
+    suffix = System.unique_integer([:positive])
+
+    handle = %Client{
+      thread_id: "missing-infrastructure",
+      attachment_ref: make_ref(),
+      owner_options: [
+        registry: unique(:missing_registry, suffix),
+        supervisor: unique(:missing_supervisor, suffix)
+      ]
+    }
+
+    assert TUI.observe(handle) == []
+    assert :ok = Client.detach(handle)
+  end
+
+  test "detach reports a session supervisor refusal" do
+    suffix = System.unique_integer([:positive])
+    {:ok, rejecting} = RejectingDynamicSupervisor.start_link()
+
+    handle = %Client{
+      thread_id: "rejected-infrastructure",
+      attachment_ref: make_ref(),
+      owner_options: [
+        registry: unique(:missing_registry, suffix),
+        supervisor: rejecting
+      ]
+    }
+
+    assert {:error, :session_start_failed} = Client.detach(handle)
+    GenServer.stop(rejecting)
   end
 
   defp runtime_value?(value) when is_pid(value) or is_reference(value) or is_port(value) or is_function(value), do: true

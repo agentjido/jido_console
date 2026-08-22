@@ -63,6 +63,16 @@ defmodule Jido.Console.Coding.NetworkTest do
     assert files.outcome == :allow
   end
 
+  test "malformed destination syntax does not become network authority" do
+    for destination <- ["https://", "example.invalid:not-a-port"] do
+      assert {:ok, decision} = Network.check(destination, [])
+      assert decision.class == :none
+    end
+
+    assert {:error, {:network_denied, bracketed}} = Network.check("[::1]", [])
+    assert bracketed.class == :loopback
+  end
+
   test "does not treat timeout or port numbers as destinations" do
     assert {:error, {:network_denied, loopback}} =
              Network.admit(%{"args" => ["-w", "1", "-z", "127.0.0.1", "9"]})
@@ -119,6 +129,12 @@ defmodule Jido.Console.Coding.NetworkTest do
 
     assert {:error, {:invalid_network_allowlist, :not_a_list}} =
              Network.policy(network_allowlist: %{})
+
+    assert {:error, {:invalid_network_allowlist, 0, :one_selector_required}} =
+             Network.policy(network_allowlist: [%{"host" => "other.invalid", host: "example.invalid", port: 443}])
+
+    assert {:error, {:invalid_network_allowlist, 0, :invalid_port}} =
+             Network.policy(network_allowlist: [%{"port" => 8443, host: "example.invalid", port: 443}])
   end
 
   test "keeps normalized allowlist selectors out of evidence" do

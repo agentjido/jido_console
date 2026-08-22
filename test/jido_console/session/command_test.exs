@@ -7,6 +7,10 @@ defmodule Jido.Console.Session.CommandTest do
     assert %Zoi.Types.Struct{} = Command.schema()
     assert {:error, :invalid_command} = Command.new(:invalid)
     assert {:error, :invalid_command} = Command.new(%{})
+
+    assert {:error, :invalid_command} =
+             Command.new(id: "command", thread_id: "thread", type: :cancel)
+
     assert_raise ArgumentError, fn -> Command.new!(%{}) end
 
     base = [id: "command", thread_id: "thread"]

@@ -10,6 +10,7 @@ defmodule Jido.Console.Session.QueueContractTest do
     assert {:ok, queue} = Queue.push(queue, %{id: "three", input: "third"})
 
     assert Enum.map(Queue.to_list(queue), & &1.id) == ~w(one two three)
+    assert Queue.size(queue) == 3
     assert Queue.full?(queue)
 
     assert {:ok, %{id: "one"}, queue} = Queue.pop(queue)

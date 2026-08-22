@@ -364,4 +364,48 @@ defmodule Jido.ConsoleTest do
 
     assert unknown =~ "unknown_model"
   end
+
+  test "classifies command configuration and service failures" do
+    unknown_provider =
+      capture_io(:stderr, fn ->
+        assert {:error, 64} =
+                 Jido.Console.run(["auth", "status", "--provider", "missing"])
+      end)
+
+    assert unknown_provider =~ "unknown_provider"
+
+    root = Path.join(System.tmp_dir!(), "jido-cli-config-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    on_exit(fn -> File.rm_rf!(root) end)
+    env_file = Path.join(root, ".env")
+    File.write!(env_file, "OPENAI_API_KEY=private\n")
+    File.chmod!(env_file, 0o644)
+
+    open_env =
+      capture_io(:stderr, fn ->
+        assert {:error, 64} =
+                 Jido.Console.run(["auth", "status", "--env-file", env_file])
+      end)
+
+    assert open_env =~ "dotenv_permissions_too_open"
+
+    home = Path.join(root, "broken-home")
+    File.mkdir!(home)
+    File.chmod!(home, 0o700)
+    File.write!(Path.join(home, "run"), "not a directory")
+
+    unavailable_store =
+      capture_io(:stderr, fn ->
+        assert {:error, 1} = Jido.Console.run(["status"], jido_home: home)
+      end)
+
+    assert unavailable_store =~ "process_store_unavailable"
+
+    catalog_failure =
+      capture_io(:stderr, fn ->
+        assert {:error, 1} = Jido.Console.run(["models", "list"], model_policy: [])
+      end)
+
+    assert catalog_failure =~ "empty_model_policy"
+  end
 end

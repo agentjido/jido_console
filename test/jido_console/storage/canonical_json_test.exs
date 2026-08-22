@@ -31,5 +31,13 @@ defmodule Jido.Console.Storage.CanonicalJSONTest do
     end
 
     assert {:error, :non_string_json_key} = CanonicalJSON.encode([%{1 => "invalid"}])
+
+    port = Port.open({:spawn_executable, ~c"/bin/cat"}, [:binary])
+
+    try do
+      assert {:error, {:forbidden_runtime_value, :port}} = CanonicalJSON.encode(port)
+    after
+      Port.close(port)
+    end
   end
 end

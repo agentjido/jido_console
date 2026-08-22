@@ -181,14 +181,14 @@ defmodule Jido.Console.Models.Catalog do
   end
 
   defp reject_unknown_tiers(entries) do
-    case Enum.find(entries, fn entry -> entry_tier(entry) not in @tiers end) do
+    case Enum.find(entries, fn entry -> is_map(entry) and entry_tier(entry) not in @tiers end) do
       nil -> :ok
       entry -> {:error, {:unknown_tier, entry_tier(entry), identity_of(entry)}}
     end
   end
 
   defp reject_duplicate_identities(entries) do
-    identities = Enum.map(entries, &identity_of/1)
+    identities = entries |> Enum.filter(&is_map/1) |> Enum.map(&identity_of/1)
 
     case identities -- Enum.uniq(identities) do
       [] -> :ok

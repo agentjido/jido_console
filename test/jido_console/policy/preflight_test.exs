@@ -44,6 +44,28 @@ defmodule Jido.Console.Policy.PreflightTest do
     assert denied.model == "gpt-test"
     assert denied.reason =~ "tools"
     assert denied.reason =~ "openai:gpt-test"
+    assert Preflight.to_jidoka(allowed).outcome == :allow
+    assert Preflight.to_jidoka(denied).outcome == :deny
+  end
+
+  test "denies a required feature that is absent from the supplied catalog entry" do
+    entry = %{
+      provider: "openai",
+      model: "gpt-test",
+      identity: "openai:gpt-test",
+      capabilities: %{}
+    }
+
+    assert {:error, denied} =
+             Preflight.check(
+               provider: "openai",
+               model: "gpt-test",
+               required_features: [:tools],
+               entry: entry
+             )
+
+    assert denied.rule_id == "jido.policy.capability_denied"
+    assert denied.reason == "openai:gpt-test cannot provide tools: missing from catalog"
   end
 
   test "uses the built-in catalog for missing and unknown models" do

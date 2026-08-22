@@ -198,7 +198,9 @@ defmodule Jido.Console.Error do
       :error -> reason |> Jidoka.normalize_error(operation: :jido_console) |> normalize_exception()
     end
   rescue
-    _error -> ExecutionFailureError.exception(message: fallback_message(reason), details: %{reason: reason})
+    _error ->
+      message = fallback_message(reason)
+      ExecutionFailureError.exception(message: message, details: %{reason: message})
   end
 
   @doc "Returns a stable, redacted message for a reason."
@@ -502,7 +504,7 @@ defmodule Jido.Console.Error do
     |> Jidoka.Error.format()
     |> redact()
   rescue
-    _error -> reason |> redact() |> inspect()
+    _error -> reason |> inspect() |> redact()
   end
 
   defp error_map(%module{errors: errors} = error) do

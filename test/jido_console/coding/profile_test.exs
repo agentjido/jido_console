@@ -1,5 +1,5 @@
 defmodule Jido.Console.Coding.ProfileTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Jido.Console.Coding.Profile
   alias Jidoka.ExecutionEnvironment.RestrictedContract
@@ -65,5 +65,28 @@ defmodule Jido.Console.Coding.ProfileTest do
              )
 
     assert :ok = RestrictedContract.compatible?(contract)
+  end
+
+  test "exposes trusted and disabled profile projections", %{opts: opts} do
+    assert Profile.trusted_id() == "coding.trusted-workspace"
+    assert Profile.restricted_passed?(%{class: :restricted, enforcement: :reported})
+
+    assert {:ok, disabled} = Profile.resolve(nil, opts)
+    assert Profile.to_map(disabled)["environment"] == %{}
+  end
+
+  test "recognizes an application-level explicit profile choice", %{opts: opts} do
+    previous = Application.get_env(:jido_console, :coding_profile)
+    Application.put_env(:jido_console, :coding_profile, "coding.local")
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:jido_console, :coding_profile),
+        else: Application.put_env(:jido_console, :coding_profile, previous)
+    end)
+
+    assert Profile.explicit_choice?([])
+    assert {:ok, profile} = Profile.resolve("coding.local", opts)
+    assert profile.explicit?
   end
 end

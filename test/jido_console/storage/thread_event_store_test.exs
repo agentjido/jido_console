@@ -124,6 +124,9 @@ defmodule Jido.Console.Storage.ThreadEventStoreTest do
   end
 
   test "rejects every invalid lifecycle edge and caller-owned storage fields", context do
+    assert {:error, :invalid_thread_event} =
+             SQLite.append_thread_event(context.opts[:writer], :invalid)
+
     assert {:error, {:invalid_thread_event_lifecycle, "missing", "prompt_started", :missing_queued}} =
              Storage.append_thread_event(
                event("missing-start", "missing", "missing-request", "prompt_started"),
@@ -367,6 +370,71 @@ defmodule Jido.Console.Storage.ThreadEventStoreTest do
     assert :ok = update(conn, "UPDATE thread_events SET encoded_bytes=encoded_bytes+1 WHERE event_id=?", ["row-event"])
     assert :ok = Sqlite3.close(conn)
     assert {:error, {:thread_event_integrity_failed, _row}} = Storage.inspect_store(context.store_opts)
+  end
+
+  test "detects duplicate event rows after live schema drift", context do
+    path = Path.join(context.root, "state/console.sqlite3")
+    assert {:ok, conn} = Sqlite3.open(path)
+    assert :ok = Sqlite3.execute(conn, "DROP TABLE thread_events")
+
+    assert :ok =
+             Sqlite3.execute(
+               conn,
+               """
+               CREATE TABLE thread_events(
+                 thread_id TEXT,
+                 sequence INTEGER,
+                 event_id TEXT,
+                 queue_item_id TEXT,
+                 request_id TEXT,
+                 event_type TEXT,
+                 event_schema_version INTEGER,
+                 jidoka_revision INTEGER,
+                 payload_digest TEXT,
+                 encoded_bytes INTEGER,
+                 payload_json BLOB,
+                 committed_at_ms INTEGER
+               ) STRICT
+               """
+             )
+
+    payload = "{}"
+
+    for sequence <- 1..2 do
+      assert :ok =
+               update(conn, "INSERT INTO thread_events VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [
+                 "thread-one",
+                 sequence,
+                 "duplicate-event",
+                 "item-#{sequence}",
+                 "request-#{sequence}",
+                 "prompt_queued",
+                 1,
+                 nil,
+                 Digest.portable(payload),
+                 byte_size(payload),
+                 {:blob, payload},
+                 0
+               ])
+    end
+
+    assert :ok = Sqlite3.close(conn)
+
+    assert {:error, {:thread_event_integrity_failed, "duplicate-event", :duplicate_rows}} =
+             Storage.append_thread_event(
+               event("duplicate-event", "new-item", "new-request", "prompt_queued"),
+               context.store_opts
+             )
+  end
+
+  test "inspection rejects an unexpected extra table", context do
+    path = Path.join(context.root, "state/console.sqlite3")
+    assert {:ok, conn} = Sqlite3.open(path)
+    assert :ok = Sqlite3.execute(conn, "CREATE TABLE unexpected(value TEXT) STRICT")
+    assert :ok = Sqlite3.close(conn)
+
+    assert {:error, {:sqlite_integrity_failed, ["sessions", "thread_events", "unexpected"]}} =
+             Storage.inspect_store(context.store_opts)
   end
 
   defp event(id, item_id, request_id, type, payload \\ %{}, jidoka_revision \\ nil) do

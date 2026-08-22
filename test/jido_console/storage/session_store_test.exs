@@ -222,6 +222,105 @@ defmodule Jido.Console.Storage.SessionStoreTest do
              Store.get_session(context.store, damaged.session_id)
   end
 
+  test "rejects undecodable and structurally damaged session rows", context do
+    undecodable = session("undecodable-session")
+    invalid_row = session("invalid-session-row")
+    assert {:ok, ^undecodable} = Store.put_session(context.store, undecodable)
+    assert {:ok, ^invalid_row} = Store.put_session(context.store, invalid_row)
+
+    path = Path.join(context.root, "state/console.sqlite3")
+    assert {:ok, conn} = Sqlite3.open(path)
+
+    assert :ok =
+             update(conn, "UPDATE sessions SET encoded_bytes=?, session_term=? WHERE session_id=?", [
+               1,
+               {:blob, <<131>>},
+               undecodable.session_id
+             ])
+
+    assert :ok =
+             update(conn, "UPDATE sessions SET encoded_bytes=encoded_bytes+1 WHERE session_id=?", [
+               invalid_row.session_id
+             ])
+
+    assert :ok = Sqlite3.close(conn)
+
+    assert {:error, {:session_integrity_failed, "undecodable-session", {:session_decode_failed, _message}}} =
+             Store.get_session(context.store, undecodable.session_id)
+
+    assert {:error, {:session_integrity_failed, "invalid-session-row", :invalid_row}} =
+             Store.get_session(context.store, invalid_row.session_id)
+
+    assert {:error, {:session_integrity_failed, _, _}} = Store.list_sessions(context.store)
+  end
+
+  test "requires an explicit valid writer for direct session store calls" do
+    assert_raise ArgumentError, ~r/requires :pid/, fn ->
+      SQLite.get_session("missing", [])
+    end
+
+    assert_raise ArgumentError, ~r/invalid SQLite session store pid/, fn ->
+      SQLite.get_session("missing", pid: 42)
+    end
+  end
+
+  test "detects duplicate session rows in a schema-drifted store", context do
+    source = session("duplicate-session")
+    Supervisor.stop(context.supervisor)
+    path = Path.join(context.root, "state/console.sqlite3")
+    assert {:ok, conn} = Sqlite3.open(path)
+    recreate_session_tables(conn, "")
+
+    encoded = :erlang.term_to_binary({:jido_console_session, 1, source}, compressed: 6, minor_version: 2)
+
+    for _duplicate <- 1..2 do
+      assert :ok =
+               update(
+                 conn,
+                 "INSERT INTO sessions VALUES(?,?,?,?,?,?,?,?)",
+                 [
+                   source.session_id,
+                   source.revision,
+                   Atom.to_string(source.status),
+                   source.schema_version,
+                   1,
+                   byte_size(encoded),
+                   {:blob, encoded},
+                   0
+                 ]
+               )
+    end
+
+    assert :ok = Sqlite3.close(conn)
+    assert {:ok, _replacement} = StorageSupervisor.start_link(context.opts)
+    store = Storage.session_store(writer: context.opts[:writer])
+
+    assert {:error, {:session_integrity_failed, "duplicate-session", :duplicate_rows}} =
+             Store.get_session(store, source.session_id)
+  end
+
+  test "normalizes a SQLite constraint failure after schema drift", context do
+    path = Path.join(context.root, "state/console.sqlite3")
+    assert {:ok, conn} = Sqlite3.open(path)
+    recreate_session_tables(conn, ", UNIQUE(session_id), CHECK(revision < 0)")
+    assert :ok = Sqlite3.close(conn)
+
+    assert {:error, {:sqlite_error, reason}} = Store.put_session(context.store, session("rejected-session"))
+    assert reason =~ "CHECK constraint failed"
+  end
+
+  test "propagates a missing live session table without crashing the writer", context do
+    path = Path.join(context.root, "state/console.sqlite3")
+    assert {:ok, conn} = Sqlite3.open(path)
+    assert :ok = Sqlite3.execute(conn, "DROP TABLE thread_events")
+    assert :ok = Sqlite3.execute(conn, "DROP TABLE sessions")
+    assert :ok = Sqlite3.close(conn)
+
+    assert {:error, reason} = Store.put_session(context.store, session("missing-table"))
+    assert inspect(reason) =~ "no such table"
+    assert Process.alive?(context.opts[:writer] |> Process.whereis())
+  end
+
   defp session(id) do
     {:ok, session} = Data.start(spec(), session_id: id)
     session
@@ -250,6 +349,32 @@ defmodule Jido.Console.Storage.SessionStoreTest do
 
   defp id_generator(id), do: fn "lease" -> id end
   defp unique(label), do: String.to_atom("#{label}-#{System.unique_integer([:positive])}")
+
+  defp recreate_session_tables(conn, constraints) do
+    assert :ok = Sqlite3.execute(conn, "DROP TABLE thread_events")
+    assert :ok = Sqlite3.execute(conn, "DROP TABLE sessions")
+
+    assert :ok =
+             Sqlite3.execute(
+               conn,
+               """
+               CREATE TABLE sessions(
+                 session_id TEXT,
+                 revision INTEGER,
+                 status TEXT,
+                 schema_version INTEGER,
+                 codec_version INTEGER,
+                 encoded_bytes INTEGER,
+                 session_term BLOB,
+                 updated_at_ms INTEGER
+                 #{constraints}
+               ) STRICT
+               """
+             )
+
+    assert :ok = Sqlite3.execute(conn, "CREATE TABLE thread_events(placeholder TEXT) STRICT")
+    assert :ok = Sqlite3.execute(conn, "PRAGMA user_version=2")
+  end
 
   defp update(conn, sql, params) do
     with {:ok, statement} <- Sqlite3.prepare(conn, sql),

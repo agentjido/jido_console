@@ -31,6 +31,18 @@ defmodule Jido.Console.Session.ThreadResourcesTest do
     end
   end
 
+  defmodule FailingSetup do
+    def prepare(_agent, _opts), do: {:error, :setup_failed}
+  end
+
+  defmodule RaisingSetup do
+    def prepare(_agent, _opts), do: raise("setup failed")
+  end
+
+  defmodule ThrowingSetup do
+    def prepare(_agent, _opts), do: throw(:setup_failed)
+  end
+
   test "two threads get distinct private resources and close independently" do
     shared_home = Path.join(System.tmp_dir!(), "jido-thread-resources-shared")
     opts = [setup_module: PrivateSetup, test_pid: self(), jido_home: shared_home]
@@ -58,5 +70,54 @@ defmodule Jido.Console.Session.ThreadResourcesTest do
     assert Process.alive?(second_manager)
     assert :ok = ThreadResources.close(second)
     refute Process.alive?(second_manager)
+  end
+
+  test "keeps an unprepared handle private and reports setup failures" do
+    assert {:ok, resources} =
+             ThreadResources.new("thread-unprepared", Jido.Console.DefaultAgent, setup_module: FailingSetup)
+
+    assert ThreadResources.status(resources) == %{"status" => "not_prepared"}
+    assert {:error, :resources_not_prepared} = ThreadResources.prepare_prompt(resources, "prompt", %{})
+    assert {:error, :setup_failed} = ThreadResources.prepare(resources, session(resources))
+    assert :ok = ThreadResources.close(resources)
+
+    for {module, expected} <- [
+          {RaisingSetup, RuntimeError},
+          {ThrowingSetup, {:throw, :setup_failed}}
+        ] do
+      assert {:ok, failing} =
+               ThreadResources.new("thread-failing", Jido.Console.DefaultAgent, setup_module: module)
+
+      assert {:error, reason} = ThreadResources.prepare(failing, session(failing))
+
+      case expected do
+        exception when is_atom(exception) -> assert %{__struct__: ^exception} = reason
+        tuple -> assert reason == tuple
+      end
+    end
+  end
+
+  test "reuses prepared resources and includes a caller operation boundary" do
+    operations = fn _intent, _journal, _context -> {:ok, :handled} end
+
+    assert {:ok, resources} =
+             ThreadResources.new("thread-operations", Jido.Console.DefaultAgent,
+               setup_module: PrivateSetup,
+               test_pid: self(),
+               operations: operations
+             )
+
+    source = session(resources)
+    assert {:ok, prepared, prepared_session} = ThreadResources.prepare(resources, source)
+    assert_receive {:private_setup, "thread-operations", manager}
+    assert ThreadResources.runtime_opts(prepared)[:operations] == operations
+    assert {:ok, ^prepared, ^prepared_session} = ThreadResources.prepare(prepared, prepared_session)
+    assert :ok = ThreadResources.close(prepared)
+    refute Process.alive?(manager)
+  end
+
+  defp session(resources) do
+    {:ok, session} = Data.start(ThreadResources.base_spec(resources), session_id: resources.thread_id)
+    session
   end
 end

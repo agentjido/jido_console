@@ -135,6 +135,103 @@ defmodule Jido.Console.BootstrapTest do
     assert_receive :started
   end
 
+  test "normalizes logger filter installation outcomes" do
+    priv = Path.join(System.tmp_dir!(), "jido-bootstrap-filter-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(priv)
+    on_exit(fn -> File.rm_rf!(priv) end)
+
+    base = [
+      priv_dir: fn :time_zone_info -> String.to_charlist(priv) end,
+      ensure_all_started: fn :jido_console -> {:ok, [:jido_console]} end
+    ]
+
+    assert :ok =
+             Bootstrap.start_applications(
+               Keyword.put(base, :add_primary_logger_filter, fn id, _filter ->
+                 {:error, {:already_exist, id}}
+               end)
+             )
+
+    assert {:error, {:logger_filter_install_failed, :not_supported}} =
+             Bootstrap.start_applications(
+               Keyword.put(base, :add_primary_logger_filter, fn _id, _filter ->
+                 {:error, :not_supported}
+               end)
+             )
+  end
+
+  test "rejects invalid progress and an archive without code paths", %{root: root, script: script} do
+    base = [
+      priv_dir: fn :time_zone_info -> {:error, :bad_name} end,
+      script_name: fn -> script end,
+      cache_root: Path.join(root, "cache"),
+      version: "test",
+      otp_release: "test",
+      extract: fn _path, [] -> {:ok, archive: :fixture} end
+    ]
+
+    assert {:error, :invalid_bootstrap_progress} =
+             Bootstrap.make_priv_files_accessible(Keyword.put(base, :progress, :invalid))
+
+    assert {:error, :escript_cache_has_no_code_paths} =
+             Bootstrap.make_priv_files_accessible(Keyword.put(base, :unzip, fn :fixture, _opts -> {:ok, []} end))
+  end
+
+  test "rejects unsafe or incomplete cache filesystem state", %{root: root, script: script} do
+    opts = [
+      priv_dir: fn :time_zone_info -> {:error, :bad_name} end,
+      script_name: fn -> script end,
+      cache_root: Path.join(root, "cache"),
+      version: "test",
+      otp_release: "test",
+      extract: fn _path, [] -> {:ok, archive: :fixture} end,
+      unzip: fixture_unzip(self())
+    ]
+
+    assert :ok = Bootstrap.make_priv_files_accessible(opts)
+    assert_receive :unzipped
+    [cache] = Path.wildcard(Path.join(root, "cache/escript/test-otp-test-*"))
+    [digest | _paths] = cache |> Path.join(".complete") |> File.read!() |> String.split("\n", trim: true)
+
+    File.rm_rf!(cache)
+    File.write!(cache, "unsafe")
+    assert {:error, :escript_cache_is_not_a_directory} = Bootstrap.make_priv_files_accessible(opts)
+
+    File.rm!(cache)
+    File.mkdir!(cache)
+    File.chmod!(cache, 0o755)
+    assert {:error, :escript_cache_is_not_private_or_complete} = Bootstrap.make_priv_files_accessible(opts)
+
+    File.chmod!(cache, 0o700)
+    marker = Path.join(cache, ".complete")
+    File.mkdir!(marker)
+    assert {:error, :escript_cache_is_not_a_directory} = Bootstrap.make_priv_files_accessible(opts)
+
+    File.rmdir!(marker)
+
+    assert {:error, {:escript_cache_invalid, :enoent}} =
+             Bootstrap.make_priv_files_accessible(opts)
+
+    File.write!(marker, digest <> "\nfixture/ebin\n")
+    File.chmod!(marker, 0o600)
+    assert {:error, :escript_cache_is_not_private_or_complete} = Bootstrap.make_priv_files_accessible(opts)
+  end
+
+  test "reports an unavailable cache path below a regular file", %{root: root, script: script} do
+    blocked = Path.join(root, "blocked")
+    cache_root = Path.join(blocked, "cache")
+    File.write!(blocked, "not a directory")
+
+    assert {:error, {:cache_directory_unavailable, ^cache_root, :enotdir}} =
+             Bootstrap.make_priv_files_accessible(
+               priv_dir: fn :time_zone_info -> {:error, :bad_name} end,
+               script_name: fn -> script end,
+               cache_root: cache_root,
+               version: "test",
+               otp_release: "test"
+             )
+  end
+
   defp extractous_load_warning do
     %{
       level: :warning,

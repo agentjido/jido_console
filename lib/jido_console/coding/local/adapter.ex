@@ -460,7 +460,11 @@ defmodule Jido.Console.Coding.Local.Adapter do
 
   defp output(chunks), do: chunks |> Enum.reverse() |> IO.iodata_to_binary() |> utf8_prefix()
 
-  defp cap(value, limit) when byte_size(value) <= limit, do: {utf8_prefix(value), false}
+  defp cap(value, limit) when byte_size(value) <= limit do
+    prefix = utf8_prefix(value)
+    {prefix, byte_size(prefix) != byte_size(value)}
+  end
+
   defp cap(value, limit), do: {utf8_prefix(value, limit), true}
 
   defp utf8_prefix(value) do

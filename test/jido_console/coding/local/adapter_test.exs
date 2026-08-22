@@ -165,6 +165,70 @@ defmodule Jido.Console.Coding.Local.AdapterTest do
              )
   end
 
+  test "stops a running command after deterministic cancellation", context do
+    sandbox = fake_sandbox(context.root)
+    token = Jidoka.Cancellation.Token.new()
+    :ok = Jidoka.Cancellation.Token.request(token)
+
+    opts = [
+      environment_contract: context.contract,
+      workspace: context.workspace,
+      network_allowlist: [],
+      cancellation: token,
+      executables: %{
+        "git" => System.find_executable("sleep"),
+        "sandbox-exec" => sandbox
+      }
+    ]
+
+    assert {:ok, %{"status" => "cancelled", "exit_status" => nil}, evidence} =
+             Adapter.execute(nil, %{request("git") | "args" => ["1"], "timeout_ms" => 5_000}, opts)
+
+    assert evidence.facts["cancellation"]
+  end
+
+  test "uses the Mix sandbox profile for a bounded local command", context do
+    sandbox = fake_sandbox(context.root)
+
+    opts = [
+      environment_contract: context.contract,
+      workspace: context.workspace,
+      network_allowlist: [],
+      executables: %{
+        "mix" => System.find_executable("echo"),
+        "sandbox-exec" => sandbox
+      }
+    ]
+
+    assert {:ok, %{"status" => "ok", "stdout" => "mix-profile\n"}, _evidence} =
+             Adapter.execute(
+               nil,
+               %{request("mix") | "args" => ["mix-profile"], "command_class" => "verify", "timeout_ms" => 5_000},
+               opts
+             )
+  end
+
+  test "does not return partial invalid UTF-8 from bounded output", context do
+    sandbox = fake_sandbox(context.root)
+    executable = Path.join(context.root, "invalid-utf8")
+    File.write!(executable, "#!/bin/sh\nprintf '\\377'\n")
+    File.chmod!(executable, 0o700)
+
+    opts = [
+      environment_contract: context.contract,
+      workspace: context.workspace,
+      network_allowlist: [],
+      executables: %{"git" => executable, "sandbox-exec" => sandbox}
+    ]
+
+    assert {:ok, %{"status" => "error", "stdout" => "", "stdout_truncated" => true}, _evidence} =
+             Adapter.execute(
+               nil,
+               %{request("git") | "max_output_bytes" => 1, "timeout_ms" => 5_000},
+               opts
+             )
+  end
+
   defp request(command) do
     %{
       "command" => command,

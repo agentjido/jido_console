@@ -73,6 +73,20 @@ defmodule Jido.Console.Session.SupervisorTest do
     assert {:error, :not_found} = Registry.lookup("missing-thread", unique(:missing_registry, 0))
   end
 
+  test "ensure_started returns an invalid child configuration error" do
+    suffix = System.unique_integer([:positive])
+    previous = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+
+    assert {:error, {:shutdown, {:failed_to_start_child, 42, _reason}}} =
+             Supervisor.ensure_started(
+               name: unique(:invalid_session_supervisor, suffix),
+               registry: 42,
+               sessions: unique(:invalid_sessions, suffix),
+               tasks: unique(:invalid_tasks, suffix)
+             )
+  end
+
   test "temporary owners are not restarted", context do
     opts = [thread_id: "temporary-thread", registry: context.registry, supervisor: context.sessions]
     {:ok, owner} = DynamicSupervisor.start_session(TemporaryOwner, opts)

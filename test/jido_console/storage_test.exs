@@ -227,6 +227,118 @@ defmodule Jido.Console.StorageTest do
     Process.flag(:trap_exit, previous)
   end
 
+  test "rejects multiple interrupted schema backups", context do
+    Supervisor.stop(context.supervisor)
+    previous = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+    path = database_path(context.root)
+
+    backups =
+      for version <- [1, 3] do
+        backup = path <> ".schema-#{version}-backup"
+        File.mkdir!(backup)
+        File.chmod!(backup, Home.directory_mode())
+        File.write!(Path.join(backup, ".in-progress"), "in-progress\n")
+        File.chmod!(Path.join(backup, ".in-progress"), Home.file_mode())
+        backup
+      end
+
+    assert {:error, reason} = StorageSupervisor.start_link(context.opts)
+    assert inspect(reason) =~ "multiple_incomplete_backups"
+    assert Enum.all?(backups, &File.dir?/1)
+    assert File.regular?(path)
+  end
+
+  test "rejects unsafe interrupted backup metadata without following links", context do
+    Supervisor.stop(context.supervisor)
+    previous = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+    path = database_path(context.root)
+    backup = path <> ".schema-1-backup"
+    marker = Path.join(backup, ".in-progress")
+
+    File.mkdir!(backup)
+    File.chmod!(backup, Home.directory_mode())
+    File.mkdir!(marker)
+
+    assert {:error, marker_reason} = StorageSupervisor.start_link(context.opts)
+    assert inspect(marker_reason) =~ "unsafe_store_file"
+    assert inspect(marker_reason) =~ ".in-progress"
+
+    File.rm_rf!(backup)
+    target = Path.join(context.root, "backup-link-target")
+    File.write!(target, "keep")
+    File.chmod!(target, Home.file_mode())
+    assert :ok = File.ln_s(target, backup)
+
+    assert {:error, link_reason} = StorageSupervisor.start_link(context.opts)
+    assert inspect(link_reason) =~ "unsafe_store_file"
+    assert File.read!(target) == "keep"
+    assert {:ok, %{type: :symlink}} = File.lstat(backup)
+  end
+
+  test "rejects an interrupted backup when source and target both exist", context do
+    Supervisor.stop(context.supervisor)
+    previous = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+    path = database_path(context.root)
+    backup = path <> ".schema-1-backup"
+    backup_database = Path.join(backup, "console.sqlite3")
+
+    File.mkdir!(backup)
+    File.chmod!(backup, Home.directory_mode())
+    File.cp!(path, backup_database)
+    File.chmod!(backup_database, Home.file_mode())
+    File.write!(Path.join(backup, ".in-progress"), "in-progress\n")
+    File.chmod!(Path.join(backup, ".in-progress"), Home.file_mode())
+
+    assert {:error, reason} = StorageSupervisor.start_link(context.opts)
+    assert inspect(reason) =~ "store_backup_recovery_conflict"
+    assert File.regular?(path)
+    assert File.regular?(backup_database)
+  end
+
+  test "rejects an interrupted backup that has no database copy", context do
+    Supervisor.stop(context.supervisor)
+    previous = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+    path = database_path(context.root)
+    backup = path <> ".schema-1-backup"
+
+    File.rm!(path)
+    File.mkdir!(backup)
+    File.chmod!(backup, Home.directory_mode())
+    File.write!(Path.join(backup, ".in-progress"), "in-progress\n")
+    File.chmod!(Path.join(backup, ".in-progress"), Home.file_mode())
+
+    assert {:error, reason} = StorageSupervisor.start_link(context.opts)
+    assert inspect(reason) =~ "store_backup_recovery_missing"
+    refute File.exists?(path)
+  end
+
+  test "rejects an unsafe source sidecar while resuming a backup", context do
+    Supervisor.stop(context.supervisor)
+    previous = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous) end)
+    path = database_path(context.root)
+    backup = path <> ".schema-1-backup"
+    backup_database = Path.join(backup, "console.sqlite3")
+
+    File.mkdir!(backup)
+    File.chmod!(backup, Home.directory_mode())
+    File.rename!(path, backup_database)
+    File.chmod!(backup_database, Home.file_mode())
+    File.write!(Path.join(backup, ".in-progress"), "in-progress\n")
+    File.chmod!(Path.join(backup, ".in-progress"), Home.file_mode())
+    File.mkdir!(path <> "-wal")
+
+    assert {:error, reason} = StorageSupervisor.start_link(context.opts)
+    assert inspect(reason) =~ "unsafe_store_file"
+    assert inspect(reason) =~ "console.sqlite3-wal"
+    assert File.dir?(path <> "-wal")
+    assert File.regular?(backup_database)
+  end
+
   test "denies a second writer for the same home", context do
     previous = Process.flag(:trap_exit, true)
 
