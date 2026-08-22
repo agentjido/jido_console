@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-22T14:28:21Z",
+  "description": "Keep the enforced CI minimum at 90 percent and add meaningful deterministic tests that raise measured coverage toward a 95 percent working target. Focus on production failure behavior in storage, sessions, local execution, error handling, trust, and process lifecycle. Run focused tests, mix precommit, and the exact CI coverage command.",
+  "id": "jido_console-0j8",
+  "labels": [],
+  "priority": 2,
+  "status": "open",
+  "title": "Raise working coverage to 95 percent",
+  "type": "task",
+  "updated_at": "2026-08-22T14:28:21Z"
+}
