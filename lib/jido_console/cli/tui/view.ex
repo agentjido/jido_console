@@ -395,6 +395,15 @@ defmodule Jido.Console.Tui.View do
   defp status_row(%State{activity: {:failed, :startup, _reason, error}}),
     do: "startup failed · Esc exits · #{SafeText.summary(error)}"
 
+  defp status_row(%State{startup: :starting, activity: {:starting, {:turn, _turn}}}),
+    do: "prompt queued · starting runtime · Esc exits"
+
+  defp status_row(%State{startup: :starting, activity: {:cancelling, _turn, :before_start}}),
+    do: "prompt cancelled · starting runtime · Esc exits"
+
+  defp status_row(%State{startup: :starting}),
+    do: "starting runtime · Enter queues prompt · Esc exits"
+
   defp status_row(%State{scroll_offset: offset}) when offset > 0,
     do: "scroll #{offset} · PgDn follows output"
 

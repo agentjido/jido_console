@@ -25,6 +25,7 @@ defmodule Jido.Console.Tui.State do
               scroll_offset: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0),
               turn_limit: Zoi.integer() |> Zoi.positive() |> Zoi.optional() |> Zoi.default(@default_turn_limit),
               messages: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
+              startup: Zoi.enum([:starting, :ready]) |> Zoi.optional() |> Zoi.default(:ready),
               activity: Zoi.any() |> Zoi.optional() |> Zoi.default(:idle),
               project_instructions: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
               coding_reviews: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
@@ -55,6 +56,7 @@ defmodule Jido.Console.Tui.State do
       session: session,
       session_client: Keyword.get(opts, :session_client),
       size: size,
+      startup: Keyword.get(opts, :startup, :ready),
       activity: Keyword.get(opts, :activity, :idle),
       project_instructions: Keyword.get(opts, :project_instructions, []),
       history_limit: positive_limit(opts, :history_limit, @default_history_limit),
@@ -64,6 +66,32 @@ defmodule Jido.Console.Tui.State do
 
     state
   end
+
+  @doc false
+  @spec runtime_ready(t(), term(), SessionView.t()) :: {t(), [effect()]}
+  def runtime_ready(%__MODULE__{} = state, session_client, %SessionView{} = view) do
+    queued_prompt = queued_prompt(state)
+
+    state =
+      state
+      |> Map.put(:startup, :ready)
+      |> Map.put(:session_client, session_client)
+      |> restore_view(view)
+
+    case {queued_prompt, startup_failure(state)} do
+      {_prompt, {:ok, _reason}} ->
+        {state, []}
+
+      {prompt, :none} when is_binary(prompt) ->
+        start_selected_turn(state, prompt)
+
+      {nil, :none} ->
+        {state, []}
+    end
+  end
+
+  defp queued_prompt(%__MODULE__{activity: {:starting, {:turn, %Turn{prompt: prompt}}}}), do: prompt
+  defp queued_prompt(%__MODULE__{}), do: nil
 
   @doc "Replaces renderer state from one complete Session.View."
   @spec restore_view(t(), SessionView.t()) :: t()

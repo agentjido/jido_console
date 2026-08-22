@@ -11,18 +11,28 @@ defmodule Jido.Console.Tui.App do
   @impl TermUI.Elm
   def init(opts) do
     tui_opts = Keyword.fetch!(opts, :tui_opts)
-    {tui, registered?} = boot(tui_opts, Keyword.fetch!(opts, :dimensions))
 
-    %{
+    tui =
+      State.new(nil, Keyword.fetch!(opts, :dimensions),
+        startup: :starting,
+        model: Keyword.get(tui_opts, :model),
+        coding_profile: Keyword.get(tui_opts, :coding_profile),
+        catalog_entries: Keyword.get(tui_opts, :catalog_entries, [])
+      )
+
+    state = %{
       tui: tui,
       opts: tui_opts,
       result_owner: Keyword.fetch!(opts, :result_owner),
       result_ref: Keyword.fetch!(opts, :result_ref),
       workers: %{},
-      registered?: registered?,
+      registered?: false,
       closing?: false,
       result_sent?: false
     }
+
+    command = Command.async(fn -> Jido.Console.RuntimeStartup.invoke(tui_opts) end, &{:startup_complete, &1})
+    {state, [command]}
   end
 
   @impl TermUI.Elm
@@ -36,6 +46,8 @@ defmodule Jido.Console.Tui.App do
 
   @impl TermUI.Elm
   def update(:stop, state), do: {state, [Command.shutdown()]}
+
+  def update({:startup_complete, result}, state), do: complete_startup(result, state)
 
   def update({:terminal, event}, state) do
     state.tui
@@ -105,7 +117,13 @@ defmodule Jido.Console.Tui.App do
   end
 
   defp dispatch({tui, effects}, state) do
+    effects =
+      if tui.startup == :starting,
+        do: Enum.reject(effects, &match?({:start_turn, _prompt}, &1)),
+        else: effects
+
     state = %{state | tui: tui}
+
     {clipboard_effects, effects} = Enum.split_with(effects, &match?({:copy, _text}, &1))
     commands = Enum.map(clipboard_effects, fn {:copy, text} -> Clipboard.copy(text) end)
 
@@ -128,47 +146,40 @@ defmodule Jido.Console.Tui.App do
      [Command.send(state.result_owner, message), Command.timer(0, :stop)]}
   end
 
-  defp boot(opts, size) do
-    with :ok <- Jido.Console.RuntimeStartup.invoke(opts),
-         {:ok, %{handle: handle, view: session_view}} <- attach(opts) do
-      tui = session_state(handle, session_view, size, opts)
-
-      case register_interactive(opts) do
-        {:ok, _record} -> {tui, true}
-        {:error, reason} -> {failure_state(reason, size, opts, tui), false}
-      end
-    else
-      {:error, reason} -> {failure_state(reason, size, opts), false}
+  defp complete_startup({:ok, :ok}, state) do
+    case attach(state.opts, self()) do
+      {:ok, %{handle: handle, view: view}} -> complete_attachment(handle, view, state)
+      {:error, reason} -> startup_failed(reason, state)
     end
   end
 
-  defp session_state(handle, session_view, size, opts) do
-    State.new(session_view, size,
-      session_client: handle,
-      activity: :idle,
-      model: Keyword.get(opts, :model),
-      coding_profile: Keyword.get(opts, :coding_profile),
-      catalog_entries: Keyword.get(opts, :catalog_entries, [])
-    )
-    |> State.restore_view(session_view)
-  end
+  defp complete_startup({:ok, {:error, reason}}, state), do: startup_failed(reason, state)
+  defp complete_startup({:error, reason}, state), do: startup_failed(reason, state)
+  defp complete_startup(other, state), do: startup_failed({:invalid_startup_result, other}, state)
 
-  defp failure_state(reason, size, opts, state \\ nil) do
-    case state do
-      %State{} ->
-        %{state | activity: {:failed, :startup, reason, Jido.Console.Error.message(reason)}}
+  defp complete_attachment(handle, view, state) do
+    {tui, effects} = State.runtime_ready(state.tui, handle, view)
+    state = %{state | tui: tui}
 
-      nil ->
-        State.new(nil, size,
-          activity: {:failed, :startup, reason, Jido.Console.Error.message(reason)},
-          model: Keyword.get(opts, :model),
-          coding_profile: Keyword.get(opts, :coding_profile),
-          catalog_entries: Keyword.get(opts, :catalog_entries, [])
-        )
+    case register_interactive(state.opts) do
+      {:ok, _record} -> dispatch({tui, effects}, %{state | registered?: true})
+      {:error, reason} -> {%{state | tui: failure_state(reason, tui)}, []}
     end
   end
 
-  defp attach(opts) do
+  defp startup_failed(reason, state) do
+    {%{state | tui: failure_state(reason, state.tui)}, []}
+  end
+
+  defp failure_state(reason, %State{} = state) do
+    %{
+      state
+      | startup: :ready,
+        activity: {:failed, :startup, reason, Jido.Console.Error.message(reason)}
+    }
+  end
+
+  defp attach(opts, subscriber) do
     supervisor_opts = Keyword.take(opts, [:name, :registry, :tasks, :sessions])
     _ = Jido.Console.Session.Supervisor.ensure_started(supervisor_opts)
     thread_id = Keyword.get_lazy(opts, :session_id, fn -> Jidoka.Id.generate!("thread") end)
@@ -180,6 +191,7 @@ defmodule Jido.Console.Tui.App do
         Keyword.get(opts, :sessions, Keyword.get(opts, :supervisor, Jido.Console.Session.DynamicSupervisor))
       )
       |> Keyword.put(:agent, Keyword.get(opts, :agent, Jido.Console.DefaultAgent))
+      |> Keyword.put(:subscriber, subscriber)
 
     case SessionTUI.attach(thread_id, owner_opts) do
       {:ok, attached} -> {:ok, attached}

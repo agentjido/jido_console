@@ -215,6 +215,17 @@ defmodule Jido.Console.Tui.StateTest do
     assert Editor.value(state.editor) == ""
   end
 
+  test "does not replay a queued prompt when the restored View reports startup failure" do
+    state = State.new(nil, {80, 24}, startup: :starting)
+    {state, []} = State.update(state, {:terminal, {:text, "queued during startup"}})
+    {state, [{:start_turn, "queued during startup"}]} = State.update(state, {:terminal, {:key, :enter}})
+
+    {state, effects} = State.runtime_ready(state, :session_client, reconciling_view())
+
+    assert effects == []
+    assert {:ok, :thread_reconciling} = State.startup_failure(state)
+  end
+
   test "keeps TermUI modifiers and returns selected text for clipboard output" do
     state = State.new(nil, {80, 24})
     {state, []} = State.update(state, {:terminal, TermUI.Event.text("hello")})
@@ -292,6 +303,23 @@ defmodule Jido.Console.Tui.StateTest do
       resources: %{"status" => "ready"},
       error: nil,
       revision: 2
+    )
+  end
+
+  defp reconciling_view do
+    View.new!(
+      thread_id: "thread-1",
+      status: :reconciling,
+      transcript: [],
+      history: [],
+      history_truncated?: false,
+      partial: [],
+      active: nil,
+      review: nil,
+      queue: [],
+      resources: %{"status" => "recovering"},
+      error: nil,
+      revision: 1
     )
   end
 

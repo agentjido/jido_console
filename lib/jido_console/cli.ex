@@ -74,21 +74,12 @@ defmodule Jido.Console.CLI do
   end
 
   defp start_and_run(args, opts) do
-    opts =
-      opts
-      |> Keyword.put_new(:application_startup, &start_runtime/0)
-      |> Keyword.put(:eager_application_startup, true)
-
-    handle_run_result(run(args, opts))
+    handle_run_result(run(args, Keyword.put_new(opts, :application_startup, &start_runtime/0)))
   end
 
   defp start_runtime do
     with :ok <- Jido.Console.Env.load_provider_credentials(),
-         do: Jido.Console.Bootstrap.start_applications(progress: &startup_progress/1)
-  end
-
-  defp startup_progress(:extracting_escript) do
-    IO.puts(:stderr, "jido: preparing the local runtime. This can take a few seconds...")
+         do: Jido.Console.Bootstrap.start_applications()
   end
 
   defp handle_run_result(:ok), do: :ok
@@ -365,26 +356,9 @@ defmodule Jido.Console.CLI do
     opts = Keyword.put_new(opts, :application_startup, &start_runtime/0)
     opts = Keyword.merge(opts, interactive)
 
-    case run_tui(tui, opts) do
+    case tui.run(opts) do
       :ok -> :ok
       {:error, reason} -> interactive_error(reason)
-    end
-  end
-
-  defp run_tui(tui, opts) do
-    if Keyword.get(opts, :eager_application_startup, false) do
-      IO.puts(:stderr, "jido: starting...")
-
-      with :ok <- Jido.Console.RuntimeStartup.invoke(opts) do
-        opts =
-          opts
-          |> Keyword.delete(:eager_application_startup)
-          |> Keyword.put(:application_startup, fn -> :ok end)
-
-        tui.run(opts)
-      end
-    else
-      tui.run(opts)
     end
   end
 

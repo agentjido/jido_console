@@ -85,6 +85,88 @@ defmodule Jido.Console.TuiTest do
     assert_receive :terminal_closed
   end
 
+  test "paints and queues input before application startup completes", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    test_pid = self()
+
+    startup = fn ->
+      send(test_pid, {:application_startup_waiting, self()})
+
+      receive do
+        :continue_startup -> :ok
+      after
+        2_000 -> {:error, :startup_test_timeout}
+      end
+    end
+
+    opts =
+      opts
+      |> Keyword.put(:application_startup, startup)
+      |> Keyword.put(:session_id, "paint-first-thread")
+
+    task = Task.async(fn -> Tui.run(opts) end)
+    assert_receive {:term_ui_started, runtime}
+    assert await_frame("starting runtime") =~ "Enter queues prompt"
+    assert_receive {:application_startup_waiting, startup_pid}
+
+    send_event(event_queue, TermUI.Event.paste("typed during startup"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+
+    assert await_frame("prompt queued") =~ "starting runtime"
+    refute_receive {:provider_started, "paint-first-thread", _request_id, _bridge}, 100
+
+    send(startup_pid, :continue_startup)
+    assert_receive {:provider_started, "paint-first-thread", _request_id, bridge}, 2_000
+    send(bridge, :finish)
+    assert await_frame("idle · Enter sends")
+
+    TermUI.Runtime.shutdown(runtime)
+    assert :ok = Task.await(task, 2_000)
+    assert_receive :terminal_closed
+  end
+
+  test "does not submit a queued prompt cancelled during application startup", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    test_pid = self()
+
+    startup = fn ->
+      send(test_pid, {:application_startup_waiting, self()})
+
+      receive do
+        :continue_startup -> :ok
+      after
+        2_000 -> {:error, :startup_test_timeout}
+      end
+    end
+
+    opts =
+      opts
+      |> Keyword.put(:application_startup, startup)
+      |> Keyword.put(:session_id, "cancelled-startup-thread")
+
+    task = Task.async(fn -> Tui.run(opts) end)
+    assert_receive {:term_ui_started, runtime}
+    assert_receive {:application_startup_waiting, startup_pid}
+
+    send_event(event_queue, TermUI.Event.paste("cancel during startup"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert await_frame("prompt queued")
+    send_event(event_queue, TermUI.Event.key("c", modifiers: [:ctrl]))
+    assert await_frame("prompt cancelled")
+
+    send(startup_pid, :continue_startup)
+    assert await_frame("idle · Enter sends")
+    refute_receive {:provider_started, "cancelled-startup-thread", _request_id, _bridge}, 100
+
+    TermUI.Runtime.shutdown(runtime)
+    assert :ok = Task.await(task, 2_000)
+    assert_receive :terminal_closed
+  end
+
   test "reports process registration failure and waits for explicit exit", %{
     opts: opts,
     event_queue: event_queue
@@ -92,7 +174,7 @@ defmodule Jido.Console.TuiTest do
     opts = Keyword.put(opts, :process_register, fn _kind, _pid, _opts -> {:error, :busy} end)
     task = Task.async(fn -> Tui.run(opts) end)
     assert_receive {:term_ui_started, _runtime}
-    assert_receive {:frame, frame}
+    frame = await_frame("startup failed")
     assert frame =~ "startup failed"
     send_event(event_queue, TermUI.Event.key(:escape))
     assert {:error, {:process_register_failed, :busy}} = Task.await(task, 2_000)
@@ -125,7 +207,7 @@ defmodule Jido.Console.TuiTest do
 
     task = Task.async(fn -> Tui.run(opts) end)
     assert_receive {:term_ui_started, _runtime}
-    assert_receive {:frame, frame}
+    frame = await_frame("startup failed")
     assert frame =~ "startup failed"
     assert frame =~ "Old Jido database backup already exists"
     send_event(event_queue, TermUI.Event.key(:escape))
@@ -194,5 +276,23 @@ defmodule Jido.Console.TuiTest do
 
   defp send_event(queue, event) do
     Agent.update(queue, &:queue.in(event, &1))
+  end
+
+  defp await_frame(expected, timeout \\ 2_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    await_frame_until(expected, deadline, "")
+  end
+
+  defp await_frame_until(expected, deadline, latest) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:frame, frame} ->
+        if String.contains?(frame, expected),
+          do: frame,
+          else: await_frame_until(expected, deadline, frame)
+    after
+      remaining -> flunk("frame did not contain #{inspect(expected)}; latest frame: #{inspect(latest)}")
+    end
   end
 end

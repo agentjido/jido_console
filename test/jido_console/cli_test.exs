@@ -44,7 +44,7 @@ defmodule Jido.ConsoleTest do
     assert_received :tui_started
   end
 
-  test "main reports and completes startup before the TUI starts" do
+  test "main opens the TUI before application startup" do
     test_pid = self()
 
     output =
@@ -60,26 +60,12 @@ defmodule Jido.ConsoleTest do
                  )
       end)
 
-    assert output == "jido: starting...\n"
-    assert_receive :application_started
+    assert output == ""
     assert_receive :tui_started
     refute_receive :application_started
-  end
 
-  test "eager startup reports a failure without opening the TUI" do
-    output =
-      capture_io(:stderr, fn ->
-        assert {:error, 1} =
-                 Jido.Console.run([],
-                   tui: FakeTui,
-                   test_pid: self(),
-                   eager_application_startup: true,
-                   application_startup: fn -> {:error, "startup failed"} end
-                 )
-      end)
-
-    assert output == "jido: starting...\njido: startup failed\n"
-    refute_receive :tui_started
+    assert_received {:tui_options, options}
+    assert is_function(options[:application_startup], 0)
   end
 
   test "parses trusted interactive coding selections" do
