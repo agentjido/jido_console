@@ -75,6 +75,9 @@ defmodule Jido.Console.Coding.SetupTest do
 
     assert disabled.pack_id == nil
 
+    assert {:ok, "Keep @literal", %{"coding" => %{"status" => "disabled"}}} =
+             Setup.prepare_prompt(disabled, "Keep \\@literal")
+
     assert ExtensionSetup.projection(disabled.extension_setup) == %{
              "status" => "disabled",
              "other_extensions" => %{"status" => "not_requested"}
@@ -147,6 +150,8 @@ defmodule Jido.Console.Coding.SetupTest do
   end
 
   test "rejects raw module names, malformed config, and unknown profiles", %{root: root} do
+    assert {:error, :invalid_coding_agent} = Setup.prepare(%{}, project_root: root)
+
     assert {:error, :coding_module_name_forbidden} =
              Setup.prepare(Jido.Console.DefaultAgent, project_root: root, coding_pack: "Elixir.Raw.Module")
 
@@ -174,6 +179,24 @@ defmodule Jido.Console.Coding.SetupTest do
 
     assert {:ok, "Review value.ex", unique_context} = Setup.prepare_prompt(setup, "Review @value.ex")
     assert [%{"path" => "lib/value.ex"}] = unique_context["coding"]["files"]
+  end
+
+  test "projects only bounded client setup data and resolves client file mentions", %{root: root} do
+    setup = prepared(project_root: root)
+    client = Setup.client_setup(setup)
+
+    assert client.workspace == setup.workspace
+    assert client.instructions == setup.instructions
+    assert client.context == setup.context
+    assert client.await_timeout_ms == setup.await_timeout_ms
+    assert client.turn_opts == setup.turn_opts
+    refute Map.has_key?(Map.from_struct(client), :local_resources)
+
+    assert {:ok, "Review lib/value.ex", context} =
+             Setup.prepare_prompt(client, "Review @lib/value.ex")
+
+    assert [%{"path" => "lib/value.ex", "content" => content}] = context["coding"]["files"]
+    assert content =~ "defmodule Value"
   end
 
   test "uses exact mention boundaries and supports quoted paths", %{root: root} do

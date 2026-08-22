@@ -2,8 +2,10 @@ defmodule Jido.Console.Coding.LocalTest do
   use ExUnit.Case, async: false
 
   alias Jido.Console.Coding.{Local, Setup}
+  alias Jido.Console.Coding.Local.MutationBackend
   alias Jido.Console.Extensions.Setup, as: ExtensionSetup
   alias Jidoka.CodingPack.{Edit, Verify, Workspace}
+  alias Jidoka.ExecutionEnvironment.Manager
 
   setup do
     root = Path.join(System.tmp_dir!(), "jido-local-coding-#{System.unique_integer([:positive])}")
@@ -45,6 +47,40 @@ defmodule Jido.Console.Coding.LocalTest do
       assert setup.local_resources
       assert ExtensionSetup.recover_coding_errors?(setup.extension_setup)
     end
+  end
+
+  test "local policy validates allowed requests and denies unsupported lifecycle actions", %{root: root} do
+    workspace =
+      Workspace.new!(
+        root: root,
+        access: [:read, :write, :shell, :git, :verify],
+        execution_profile: Local.profile_id()
+      )
+
+    assert {:ok, local} = Local.prepare(workspace, environment_contract(root))
+    resources = local.resources
+    manager = resources.manager
+    mutation_state = resources.mutation_state
+
+    assert {:ok, handle, _evidence} = Manager.acquire(manager, resources.binding)
+
+    assert {:error, %Jidoka.ExecutionEnvironment.Error{}} =
+             Manager.execute(manager, handle, %{
+               "command" => "git",
+               "mutation" => "read",
+               "network" => false
+             })
+
+    assert {:ok, _evidence} = Manager.close(manager, handle)
+    assert {:ok, handle, _evidence} = Manager.acquire(manager, resources.binding)
+
+    assert {:error, %Jidoka.ExecutionEnvironment.Error{}} =
+             Manager.checkpoint(manager, handle, resources.binding)
+
+    assert :ok = Local.close(resources)
+    refute Process.alive?(manager)
+    refute Process.alive?(mutation_state)
+    assert :ok = Local.close(resources)
   end
 
   @tag :darwin
@@ -253,6 +289,39 @@ defmodule Jido.Console.Coding.LocalTest do
              Jido.Console.Coding.Local.MutationBackend.inspect_file(workspace, "large.txt", [])
   end
 
+  test "inspects existing, missing, and nonregular file states", %{root: root} do
+    workspace = Workspace.new!(root: root, access: [:read])
+
+    assert {:ok, state, evidence} = MutationBackend.inspect_file(workspace, "lib/value.ex", [])
+    assert state.exists?
+    assert state.content =~ "defmodule Value"
+    assert state.size == byte_size(state.content)
+    assert state.sha256 =~ "sha256:"
+    assert evidence.facts["operation"] == "read"
+
+    assert {:ok, %{exists?: false, content: nil, sha256: nil, size: 0}, _evidence} =
+             MutationBackend.inspect_file(workspace, "missing.ex", [])
+
+    assert {:error, :not_regular_file} = MutationBackend.inspect_file(workspace, "lib", [])
+  end
+
+  test "creates new files atomically and rejects a directory replacement", %{root: root} do
+    workspace = Workspace.new!(root: root, access: [:read, :write])
+    created = Path.join(root, "nested/new.txt")
+
+    assert {:ok, %{method: :atomic_replace, final_state: final_state}, evidence} =
+             MutationBackend.replace_file(workspace, "nested/new.txt", "new content", [])
+
+    assert File.read!(created) == "new content"
+    assert final_state.content == "new content"
+    assert final_state.exists?
+    assert evidence.facts["operation"] == "write"
+    assert Path.wildcard(created <> ".jido-*") == []
+
+    assert {:error, :not_regular_file} =
+             MutationBackend.replace_file(workspace, "lib", "replacement", [])
+  end
+
   test "atomic replacement preserves file mode and removes its temporary file", %{root: root} do
     path = Path.join(root, "script")
     File.write!(path, "old")
@@ -291,6 +360,31 @@ defmodule Jido.Console.Coding.LocalTest do
     refute File.exists?(created)
     assert {:ok, %{mode: mode}} = File.stat(path)
     assert Bitwise.band(mode, 0o777) == 0o640
+  end
+
+  test "checkpoint skips ignored and nonregular paths and rejects an unknown reference", %{root: root} do
+    ignored = Path.join(root, "ignored.txt")
+    target = Path.join(root, "target.txt")
+    link = Path.join(root, "linked.txt")
+    File.write!(Path.join(root, ".gitignore"), "ignored.txt\n")
+    File.write!(ignored, "before")
+    File.write!(target, "target")
+    File.ln_s!(target, link)
+
+    workspace = Workspace.new!(root: root, access: [:read, :write])
+    {:ok, state} = Agent.start_link(fn -> %{snapshots: %{}, snapshot_bytes: 0} end)
+    on_exit(fn -> if Process.alive?(state), do: Agent.stop(state) end)
+    opts = [state: state, profile_digest: "sha256:" <> String.duplicate("b", 64)]
+
+    assert {:ok, checkpoint, _evidence} = MutationBackend.checkpoint(workspace, opts)
+    File.write!(ignored, "after")
+
+    assert {:ok, _evidence} = MutationBackend.restore(workspace, checkpoint, opts)
+    assert File.read!(ignored) == "after"
+    assert {:ok, %{type: :symlink}} = File.lstat(link)
+
+    missing = %{checkpoint | checkpoint_ref: "local-checkpoint-missing"}
+    assert {:error, :checkpoint_not_found} = MutationBackend.restore(workspace, missing, opts)
   end
 
   @tag :darwin

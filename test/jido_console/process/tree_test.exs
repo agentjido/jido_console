@@ -6,6 +6,7 @@ defmodule Jido.Console.Process.TreeTest do
   test "stops a grandchild left behind by the group leader" do
     {leader, child} = spawn_group_with_child!()
     assert Tree.alive?(child)
+    assert child in Tree.members(leader)
 
     assert {:ok, result} = Tree.stop(leader)
     assert result.status == :stopped
@@ -50,6 +51,43 @@ defmodule Jido.Console.Process.TreeTest do
     File.mkdir_p!(Path.join(root, "state"))
     assert :ok = Tree.cleanup_temp(root)
     refute File.dir?(root)
+  end
+
+  test "reports a permission failure while removing temporary state" do
+    root = Path.join(System.tmp_dir!(), "jido-tree-blocked-#{System.unique_integer([:positive])}")
+    blocked = Path.join(root, "blocked")
+    child = Path.join(blocked, "child")
+    File.mkdir_p!(child)
+    File.chmod!(blocked, 0)
+
+    on_exit(fn ->
+      File.chmod(blocked, 0o700)
+      File.rm_rf!(root)
+    end)
+
+    assert {:error, {:temp_cleanup_failed, :eacces}} = Tree.cleanup_temp(child)
+  end
+
+  test "escalates to KILL when a process group ignores TERM" do
+    {:ok, {perl, args}} =
+      Tree.wrap_leader("/bin/sh", [
+        "-c",
+        "trap '' TERM; printf 'ready\\n'; while :; do sleep 1; done"
+      ])
+
+    port =
+      Port.open(
+        {:spawn_executable, String.to_charlist(perl)},
+        [:binary, :exit_status, :hide, args: args]
+      )
+
+    {:os_pid, leader} = Port.info(port, :os_pid)
+    on_exit(fn -> Tree.stop(leader) end)
+    assert_receive {^port, {:data, "ready\n"}}, 1_000
+    assert Tree.alive?(leader)
+
+    assert {:ok, %{status: :stopped, leftover: 0}} = Tree.stop(leader)
+    refute Tree.alive?(leader)
   end
 
   defp spawn_group_with_child!(opts \\ []) do

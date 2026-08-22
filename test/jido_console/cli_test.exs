@@ -175,10 +175,16 @@ defmodule Jido.ConsoleTest do
   end
 
   test "main runs local status without starting the full application" do
+    root = Path.join(System.tmp_dir!(), "jido-cli-status-#{System.unique_integer([:positive])}")
     startup = fn -> flunk("local status started the full application") end
+    on_exit(fn -> File.rm_rf!(root) end)
 
     assert capture_io(fn ->
-             assert :ok = Jido.Console.CLI.main(["status"], application_startup: startup)
+             assert :ok =
+                      Jido.Console.CLI.main(["status"],
+                        application_startup: startup,
+                        jido_home: root
+                      )
            end) =~ "jido:"
   end
 
