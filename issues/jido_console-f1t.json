@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-22T14:12:45Z",
+  "description": "The exact CI command mix coveralls --exclude darwin --exclude expect --exclude flaky passes its tests but fails the 90 percent coverage gate. Add meaningful deterministic tests that raise total coverage above 90 percent without lowering the threshold, weakening exclusions, ignoring production modules, or adding trivial line-touch tests. Acceptance: precommit passes; the exact CI command passes above 90 percent; the fix is committed and pushed to main.",
+  "id": "jido_console-f1t",
+  "labels": [],
+  "priority": 0,
+  "status": "open",
+  "title": "Restore CI coverage above 90 percent",
+  "type": "bug",
+  "updated_at": "2026-08-22T14:12:45Z"
+}
