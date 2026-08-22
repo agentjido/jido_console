@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-08-22T14:12:45Z",
+  "description": "During an active assistant turn, the footer shows stable running text. Replace or supplement it with a clear animated spinner that updates while work is active, remains accessible in limited terminal modes, stops reliably on success, failure, or cancellation, and does not cause unbounded redraw work. Add deterministic TUI state and rendering tests.",
+  "id": "jido_console-eu6",
+  "labels": [],
+  "priority": 2,
+  "status": "open",
+  "title": "Animate the TUI running indicator",
+  "type": "bug",
+  "updated_at": "2026-08-22T14:12:45Z"
+}
