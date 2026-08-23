@@ -554,7 +554,7 @@ defmodule Jido.Console.Tui.State do
       effects = for {:copy, text} <- messages, do: {:copy, text}
       {%{state | editor: editor} |> recompute_completion(), effects}
     else
-      {recompute_completion(state), []}
+      {state, []}
     end
   end
 

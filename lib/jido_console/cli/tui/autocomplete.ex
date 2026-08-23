@@ -55,8 +55,11 @@ defmodule Jido.Console.Tui.Autocomplete do
     selectable = Enum.filter(candidates, &Map.get(&1, :selectable?, false))
 
     case selectable do
-      [] -> state
-      _models -> focus_at(state, clamp_index(index + direction_delta(direction), length(selectable)))
+      [] ->
+        state
+
+      _models ->
+        focus_at(state, selectable, clamp_index(index + direction_delta(direction), length(selectable)))
     end
   end
 
@@ -95,11 +98,20 @@ defmodule Jido.Console.Tui.Autocomplete do
     do: %{rows: [], offset: 0, selected_index: nil, interactive?: false}
 
   defp derive_context(input, selection, focused_identity) do
-    case model_context(input) do
-      {:ok, leading, prefix} -> derive_models(leading, prefix, selection, focused_identity)
-      :error -> derive_commands(input, focused_identity)
+    case argument_context(input) do
+      {:ok, command, leading, prefix} ->
+        derive_arguments(command.argument_source, command, leading, prefix, selection, focused_identity)
+
+      :error ->
+        derive_commands(input, focused_identity)
     end
   end
+
+  defp derive_arguments(:models, command, leading, prefix, selection, focused_identity),
+    do: derive_models(command.name, leading, prefix, selection, focused_identity)
+
+  defp derive_arguments(_source, _command, _leading, _prefix, _selection, _focused_identity),
+    do: inactive()
 
   defp derive_commands(input, focused_identity) do
     case command_context(input) do
@@ -114,13 +126,15 @@ defmodule Jido.Console.Tui.Autocomplete do
     end
   end
 
-  defp derive_models(leading, prefix, selection, focused_identity) do
+  defp derive_models(command_name, leading, prefix, selection, focused_identity) do
     case Selection.selectable_models(selection) do
       {:ok, models} ->
+        prefix = String.downcase(prefix)
+
         candidates =
           models
           |> Enum.filter(&model_match?(&1, prefix))
-          |> Enum.map(&model_candidate(&1, leading))
+          |> Enum.map(&model_candidate(&1, command_name, leading))
 
         case candidates do
           [] -> feedback(:no_match, "No matching models")
@@ -150,7 +164,7 @@ defmodule Jido.Console.Tui.Autocomplete do
     end)
   end
 
-  defp model_candidate(model, leading) do
+  defp model_candidate(model, command_name, leading) do
     %{
       kind: :model,
       identity: model.identity,
@@ -158,14 +172,12 @@ defmodule Jido.Console.Tui.Autocomplete do
       model: model.model,
       tier: model.tier,
       current?: model.current?,
-      completion: leading <> "/model " <> model.identity,
+      completion: leading <> "/" <> command_name <> " " <> model.identity,
       selectable?: true
     }
   end
 
   defp model_match?(model, prefix) do
-    prefix = String.downcase(prefix)
-
     Enum.any?([model.provider, model.model, model.identity], fn field ->
       field |> String.downcase() |> String.starts_with?(prefix)
     end)
@@ -199,11 +211,8 @@ defmodule Jido.Console.Tui.Autocomplete do
     }
   end
 
-  defp focus_at(state, index) do
-    candidate =
-      state.candidates
-      |> Enum.filter(&Map.get(&1, :selectable?, false))
-      |> Enum.at(index)
+  defp focus_at(state, selectable, index) do
+    candidate = Enum.at(selectable, index)
 
     %{
       state
@@ -218,10 +227,16 @@ defmodule Jido.Console.Tui.Autocomplete do
       not String.contains?(input, ["\n", "\r"])
   end
 
-  defp model_context(input) do
-    case Regex.run(~r/\A([ \t]*)\/model[ \t]+([^ \t]*)\z/u, input, capture: :all_but_first) do
-      [leading, prefix] -> {:ok, leading, prefix}
-      _other -> :error
+  defp argument_context(input) do
+    case Regex.run(~r/\A([ \t]*)\/([a-z0-9_-]+)[ \t]+([^ \t]*)\z/u, input, capture: :all_but_first) do
+      [leading, name, prefix] ->
+        case Enum.find(Command.registry(), &(&1.name == name and Map.has_key?(&1, :argument_source))) do
+          nil -> :error
+          command -> {:ok, command, leading, prefix}
+        end
+
+      _other ->
+        :error
     end
   end
 
