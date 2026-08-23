@@ -89,7 +89,7 @@ defmodule Jido.Console.Session.RecoveryTest do
 
     {:ok, running} =
       Transitions.claim(new_session(), request,
-        clock: fn -> 100 end,
+        now_ms: 100,
         lease_ttl_ms: 10,
         owner_id: "old-owner",
         id_generator: fn "lease" -> "lease-1" end

@@ -1201,8 +1201,11 @@ defmodule Jido.Console.Storage.SQLite do
 
   defp event_opts(opts), do: Keyword.take(opts, [:clock])
 
-  defp transition_opts(opts),
-    do: Keyword.take(opts, [:clock, :lease_ttl_ms, :id_generator, :owner_id])
+  defp transition_opts(opts) do
+    opts
+    |> Keyword.take([:lease_ttl_ms, :id_generator, :owner_id])
+    |> Keyword.put(:now_ms, clock_ms(opts))
+  end
 
   defp call(opts, message) do
     opts

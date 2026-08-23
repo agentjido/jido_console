@@ -1,7 +1,7 @@
 defmodule Jido.Console.TermUIDependencyTest do
   use ExUnit.Case, async: true
 
-  @term_ui_ref "4314b8302c5fce7f2ac486ff319731bb1ddf147f"
+  @term_ui_ref "e994f757239bab9bff0ebdca62289d21dc6eaf02"
 
   test "uses either the immutable TermUI pin or the explicit local checkout" do
     {_app, options} =

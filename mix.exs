@@ -6,8 +6,8 @@ defmodule Jido.Console.MixProject do
   @version "0.1.0"
   @source_url "https://github.com/agentjido/jido_console"
   @description "Interactive terminal harness for the Jidoka agent framework."
-  @jidoka_ref "caef68851df6812bf97c1ff2d815da610ab78c62"
-  @term_ui_ref "4314b8302c5fce7f2ac486ff319731bb1ddf147f"
+  @jidoka_ref "e339996a52fc6f90cb4f67481cd4eb874f6b68d0"
+  @term_ui_ref "e994f757239bab9bff0ebdca62289d21dc6eaf02"
   @documented_modules [Jido.Console, Jido.Console.Error]
 
   def project do

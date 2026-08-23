@@ -82,6 +82,6 @@ defmodule Jido.Console.Release.CrossRepoTest do
   end
 
   test "reads one immutable GitHub Jidoka pin from the lock" do
-    assert CrossRepo.pinned_ref!() == "caef68851df6812bf97c1ff2d815da610ab78c62"
+    assert CrossRepo.pinned_ref!() == "e339996a52fc6f90cb4f67481cd4eb874f6b68d0"
   end
 end

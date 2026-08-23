@@ -5,7 +5,7 @@ defmodule Jido.Console.JidokaCompatibilityTest do
   alias Jidoka.ExecutionEnvironment.RestrictedContract
   alias Jidoka.Policy.Decision
 
-  @jidoka_ref "caef68851df6812bf97c1ff2d815da610ab78c62"
+  @jidoka_ref "e339996a52fc6f90cb4f67481cd4eb874f6b68d0"
 
   test "production uses the immutable pin and the compatibility gate uses its explicit checkout" do
     {_app, options} =
