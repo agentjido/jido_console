@@ -582,7 +582,7 @@ defmodule Jido.Console.Tui.State do
         |> recompute_completion()
 
       completion =
-        if context == :command and state.completion.context == :model,
+        if context == :command and state.completion.context in [:model, :no_match],
           do: state.completion,
           else: %Autocomplete{}
 

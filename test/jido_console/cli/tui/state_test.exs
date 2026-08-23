@@ -336,6 +336,18 @@ defmodule Jido.Console.Tui.StateTest do
     refute highlighted == "/model o"
   end
 
+  test "Tab keeps invalid catalog feedback after completing the model command" do
+    state = State.new(nil, {80, 24}, catalog_entries: :invalid, session_client: :client)
+    {state, []} = State.update(state, {:terminal, TermUI.Event.text("/model")})
+    assert state.completion.context == :command
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:tab)})
+
+    assert Editor.value(state.editor) == "/model "
+    assert state.completion.context == :no_match
+    assert [%{message: "Model catalog is unavailable"}] = State.completion_slice(state).rows
+  end
+
   test "plain arrows move and clamp a visible completion before editor history" do
     state = %{completion_state("/") | history: ["older prompt"]}
     assert state.completion.selected_index == 0
