@@ -90,6 +90,34 @@ defmodule Jido.Console.TuiTest do
     assert_receive :terminal_closed
   end
 
+  test "closes command completion before the existing idle exit", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    task = Task.async(fn -> Tui.run(Keyword.put(opts, :session_id, "completion-escape-thread")) end)
+    assert_receive {:term_ui_started, runtime}, 2_000
+    on_exit(fn -> ensure_tui_stopped(runtime, task) end)
+    assert await_frame("INPUT · Enter send")
+
+    send_event(event_queue, TermUI.Event.paste("/"))
+    assert await_frame("> /help · Show slash commands")
+
+    send_event(event_queue, TermUI.Event.key(:escape))
+
+    dismissed =
+      await_matching_frame(fn frame ->
+        String.contains?(frame, "> /") and
+          not String.contains?(frame, "/help · Show slash commands")
+      end)
+
+    assert dismissed =~ "> /"
+    refute Task.yield(task, 100)
+
+    send_event(event_queue, TermUI.Event.key(:escape))
+    assert :ok = Task.await(task, 2_000)
+    assert_receive :terminal_closed
+  end
+
   test "streams safe operation lifecycle states into the supervised timeline", %{
     opts: opts,
     event_queue: event_queue
@@ -369,6 +397,40 @@ defmodule Jido.Console.TuiTest do
           else: await_frame_until(expected, deadline, frame)
     after
       remaining -> flunk("frame did not contain #{inspect(expected)}; latest frame: #{inspect(latest)}")
+    end
+  end
+
+  defp await_matching_frame(predicate, timeout \\ 2_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    await_matching_frame_until(predicate, deadline, "")
+  end
+
+  defp await_matching_frame_until(predicate, deadline, latest) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:frame, frame} ->
+        if predicate.(frame),
+          do: frame,
+          else: await_matching_frame_until(predicate, deadline, frame)
+    after
+      remaining -> flunk("no frame matched before timeout; latest frame: #{inspect(latest)}")
+    end
+  end
+
+  defp ensure_tui_stopped(runtime, task) do
+    if Process.alive?(task.pid) do
+      TermUI.Runtime.shutdown(runtime)
+      ref = Process.monitor(task.pid)
+
+      receive do
+        {:DOWN, ^ref, :process, _pid, _reason} -> :ok
+      after
+        2_000 ->
+          Process.demonitor(ref, [:flush])
+          Process.unlink(task.pid)
+          Process.exit(task.pid, :kill)
+      end
     end
   end
 end

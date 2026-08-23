@@ -21,6 +21,32 @@ Malformed or unknown slash commands show local feedback. They do not become
 prompts. A command must use one line. Model selection accepts one exact
 `provider:model` identity and no extra arguments.
 
+## Command Completion
+
+Type `/` to show the available slash commands. Type a lower-case command prefix
+to filter the list. Type `/model `, with a space, to show selectable models.
+Text after that space filters the provider, model name, or full
+`provider:model` identity. `/provider` is not a command.
+
+Use these keys while suggestions are visible:
+
+| Key | Result |
+| --- | --- |
+| `Up` | Move to the prior suggestion. |
+| `Down` | Move to the next suggestion. |
+| `Tab` | Put the selected command or model in the prompt. Do not run it. |
+| `Enter` | Submit the prompt through the normal command path. |
+| `Escape` | Close the suggestions and keep the prompt text. A later `Escape` uses the normal terminal behavior. |
+
+The model list shows the support tier. It also marks the effective model as
+`current`. The marker uses text, so it does not depend on terminal color.
+
+Completion is local and advisory. It does not call a provider. It does not add
+data to the transcript, prompt history, thread events, or model context. The
+live session owner still validates the model, support tier, startup state, and
+model lock after you press `Enter`. Thus, the owner can reject a model that was
+in a local suggestion.
+
 ## Model Selection
 
 Only models in the `supported` or `beta` tier are selectable. Models in the
