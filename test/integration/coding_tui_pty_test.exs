@@ -61,7 +61,13 @@ defmodule Jido.Console.CodingTuiPtyTest do
       process_register: fn _kind, _pid, _opts -> {:ok, %{}} end,
       process_stop: fn _id, _opts -> :ok end,
       catalog_entries: [
-        %{identity: "test:model", provider: "test", model: "model", tier: :supported}
+        %{
+          identity: "openai:gpt-4.1-mini",
+          provider: "openai",
+          model: "gpt-4.1-mini",
+          tier: :supported
+        },
+        %{identity: "ollama:llama3.2", provider: "ollama", model: "llama3.2", tier: :beta}
       ]
     ]
 
@@ -69,9 +75,25 @@ defmodule Jido.Console.CodingTuiPtyTest do
     assert_receive {:term_ui_started, runtime}, 2_000
     assert_frame("INPUT · Enter send")
 
+    send_event(event_queue, TermUI.Event.paste("/help"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert_frame("/model [provider:model]")
+
+    send_event(event_queue, TermUI.Event.paste("/model"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert_frame("openai:gpt-4.1-mini supported current")
+
+    send_event(event_queue, TermUI.Event.paste("/model ollama:llama3.2"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert_frame("Selected model ollama:llama3.2 (beta)", 10_000)
+
     send_event(event_queue, TermUI.Event.paste("Inspect this project."))
     send_event(event_queue, TermUI.Event.key(:enter))
     assert_frame("Provider-free answer.", 5_000)
+
+    send_event(event_queue, TermUI.Event.paste("/model openai:gpt-4.1-mini"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert_frame("locked after the first prompt")
 
     TermUI.Runtime.shutdown(runtime)
     assert :ok = Task.await(task, 2_000)
@@ -80,6 +102,9 @@ defmodule Jido.Console.CodingTuiPtyTest do
     assert {:ok, %{handle: handle, view: view}} = Client.attach(thread_id, opts)
     assert Enum.map(view.history, & &1["type"]) == ["prompt_queued", "prompt_started", "prompt_succeeded"]
     assert Enum.any?(view.transcript, &(Map.get(&1, :content, Map.get(&1, "content")) == "Provider-free answer."))
+    assert view.model == %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => true}
+    refute inspect(view.transcript) =~ "/model"
+    refute inspect(view.history) =~ "/model"
     assert :ok = Client.detach(handle)
     assert :ok = Client.stop(handle)
   end

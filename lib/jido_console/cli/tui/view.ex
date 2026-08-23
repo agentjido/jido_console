@@ -127,6 +127,7 @@ defmodule Jido.Console.Tui.View do
 
   defp command_notice_rows(notices, width, limit) do
     notices
+    |> Enum.take(-1)
     |> Enum.map(&%{role: :command, content: &1})
     |> recent_rows(limit, &message_rows([&1], width, limit))
   end
