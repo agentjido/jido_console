@@ -19,6 +19,14 @@ defmodule Jido.Console.Tui.Effects do
       {:start_turn, prompt}, {:continue, workers} ->
         {:cont, {:continue, start_turn(workers, state.session_client, client, opts, prompt, %{})}}
 
+      {:select_model, identity}, {:continue, workers} ->
+        workers =
+          Workers.start(workers, :session_select_model, fn ->
+            client.select_model(state.session_client, identity)
+          end)
+
+        {:cont, {:continue, workers}}
+
       {:cancel_turn, request}, {:continue, workers} ->
         workers =
           Workers.start(workers, :session_cancel, fn -> client.cancel(state.session_client, request_id(request)) end)
@@ -46,6 +54,15 @@ defmodule Jido.Console.Tui.Effects do
       {:ok, {:error, reason}} -> {:event, {:turn_result, {:error, reason}}}
       {:crash, reason} -> {:event, {:turn_result, {:error, reason}}}
       {:ok, other} -> {:event, {:turn_result, {:error, {:invalid_submit_result, other}}}}
+    end
+  end
+
+  def complete(%Worker{kind: :session_select_model}, outcome) do
+    case outcome do
+      {:ok, {:ok, model}} when is_map(model) -> {:event, {:model_selected, model}}
+      {:ok, {:error, reason}} -> {:event, {:command_error, reason}}
+      {:crash, reason} -> {:event, {:command_error, reason}}
+      {:ok, other} -> {:event, {:command_error, {:invalid_model_selection_result, other}}}
     end
   end
 

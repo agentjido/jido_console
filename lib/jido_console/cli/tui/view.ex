@@ -87,7 +87,7 @@ defmodule Jido.Console.Tui.View do
 
   defp transcript_alignment(%State{} = state) do
     if state.turns == [] and is_nil(State.active_turn(state)) and state.messages == [] and
-         state.project_instructions == [],
+         state.project_instructions == [] and state.command_notices == [],
        do: :welcome,
        else: :bottom
   end
@@ -99,6 +99,13 @@ defmodule Jido.Console.Tui.View do
   end
 
   defp transcript_rows(state, width, row_limit) do
+    rows = conversation_rows(state, width, row_limit)
+
+    (rows ++ command_notice_rows(state.command_notices, width, row_limit))
+    |> Enum.take(-row_limit)
+  end
+
+  defp conversation_rows(state, width, row_limit) do
     active_turn = State.active_turn(state)
 
     if state.turns == [] and is_nil(active_turn) do
@@ -116,6 +123,13 @@ defmodule Jido.Console.Tui.View do
       |> recent_rows(row_limit, &turn_rows(&1, width, row_limit))
       |> prepend_instructions(state.project_instructions, width, row_limit)
     end
+  end
+
+  defp command_notice_rows(notices, width, limit) do
+    notices
+    |> Enum.take(-1)
+    |> Enum.map(&%{role: :command, content: &1})
+    |> recent_rows(limit, &message_rows([&1], width, limit))
   end
 
   defp welcome_rows(state, width, row_limit) do
@@ -378,6 +392,7 @@ defmodule Jido.Console.Tui.View do
   defp role(:user), do: "YOU"
   defp role(:project), do: "PROJECT"
   defp role(:system), do: "SYSTEM"
+  defp role(:command), do: "COMMAND"
   defp role(_role), do: "JIDO"
 
   defp title(state) do

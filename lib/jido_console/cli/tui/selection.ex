@@ -4,6 +4,7 @@ defmodule Jido.Console.Tui.Selection do
   """
 
   alias Jido.Console.Coding.Profile
+  alias Jido.Console.Error
   alias Jido.Console.Models.Commands
 
   @profiles [Profile.restricted_id(), Profile.trusted_id()]
@@ -13,6 +14,7 @@ defmodule Jido.Console.Tui.Selection do
           catalog_entries: [map()],
           model: String.t() | nil,
           model_tier: atom() | nil,
+          model_locked?: boolean(),
           profile_id: String.t(),
           profile_warning: String.t() | nil
         }
@@ -28,21 +30,50 @@ defmodule Jido.Console.Tui.Selection do
       catalog_entries: entries,
       model: model,
       model_tier: tier,
+      model_locked?: false,
       profile_id: profile_id,
       profile_warning: warning
     }
   end
 
-  @doc "Handles a slash command or reports that the prompt is not a command."
-  @spec handle(String.t(), t()) :: {:command, t(), String.t()} | :not_command
-  def handle(prompt, selection) when is_binary(prompt) do
-    case String.split(String.trim(prompt), ~r/\s+/, trim: true) do
-      ["/model"] -> {:command, selection, list_models(selection)}
-      ["/model" | rest] -> select_model(selection, Enum.join(rest, " "))
-      ["/profile"] -> {:command, selection, list_profiles()}
-      ["/profile", profile_id] -> select_profile(selection, profile_id)
-      ["/" <> _command | _rest] -> {:command, selection, "Unknown command. Use /model or /profile."}
-      _other -> :not_command
+  @doc "Lists supported and beta models and marks the current model."
+  @spec list_models(t()) :: {:ok, String.t()} | {:error, Exception.t()}
+  def list_models(selection) do
+    with :ok <- validate_catalog(selection.catalog_entries) do
+      rows =
+        selection.catalog_entries
+        |> Enum.filter(&selectable?/1)
+        |> Enum.sort_by(& &1.identity)
+        |> Enum.map_join("\n", fn entry ->
+          current = if entry.identity == selection.model, do: " current", else: ""
+          "#{entry.identity} #{entry.tier}#{current}"
+        end)
+
+      {:ok, "Models:\n" <> rows}
+    end
+  end
+
+  @doc "Resolves one exact selectable model identity from the local catalog."
+  @spec resolve_model(String.t(), t()) :: {:ok, map()} | {:error, Exception.t()}
+  def resolve_model(identity, selection) when is_binary(identity) do
+    with :ok <- validate_catalog(selection.catalog_entries),
+         {:ok, provider, model} <- Commands.parse_identity(identity),
+         entry when not is_nil(entry) <-
+           Enum.find(selection.catalog_entries, fn entry ->
+             entry.identity == identity and entry.provider == provider and entry.model == model and
+               selectable?(entry)
+           end) do
+      {:ok, entry}
+    else
+      {:error, %_{} = error} ->
+        {:error, error}
+
+      _other ->
+        {:error,
+         Error.validation_error("Unavailable model #{identity}", %{
+           identity: identity,
+           selectable_tiers: [:supported, :beta]
+         })}
     end
   end
 
@@ -66,6 +97,23 @@ defmodule Jido.Console.Tui.Selection do
   @doc "Returns the allowed local profiles."
   @spec profiles() :: [String.t()]
   def profiles, do: @profiles
+
+  @doc "Lists the existing profile compatibility options."
+  @spec list_profiles() :: String.t()
+  def list_profiles, do: "Profiles:\n" <> Enum.join(@profiles, "\n")
+
+  @doc "Returns compatibility feedback for one profile identity."
+  @spec profile_notice(String.t()) :: String.t()
+  def profile_notice(profile_id) do
+    case resolve_profile(profile_id) do
+      {:ok, profile} ->
+        notice = "Start a new thread to use profile #{profile.id}."
+        if profile.warning, do: notice <> " " <> profile.warning, else: notice
+
+      {:error, _reason} ->
+        "Unavailable profile #{profile_id}"
+    end
+  end
 
   defp catalog_entries(opts) do
     opts
@@ -125,41 +173,6 @@ defmodule Jido.Console.Tui.Selection do
     end
   end
 
-  defp select_model(selection, token) do
-    case resolve_identity(token, selection.catalog_entries) do
-      {:ok, entry} ->
-        {:command, selection, "Model #{entry.identity} is available. Start a new thread to use it."}
-
-      :error ->
-        {:command, selection, "Unavailable model #{token}"}
-    end
-  end
-
-  defp select_profile(selection, profile_id) do
-    case resolve_profile(profile_id) do
-      {:ok, profile} ->
-        notice = "Start a new thread to use profile #{profile.id}."
-        notice = if profile.warning, do: notice <> " " <> profile.warning, else: notice
-        {:command, selection, notice}
-
-      {:error, _reason} ->
-        {:command, selection, "Unavailable profile #{profile_id}"}
-    end
-  end
-
-  defp list_models(selection) do
-    rows =
-      selection.catalog_entries
-      |> Enum.sort_by(& &1.identity)
-      |> Enum.map_join("\n", fn entry -> "#{entry.identity} #{entry.tier}" end)
-
-    "Models:\n" <> rows
-  end
-
-  defp list_profiles do
-    "Profiles:\n" <> Enum.join(@profiles, "\n")
-  end
-
   defp resolve_identity(token, entries) do
     identity =
       case Commands.parse_identity(token) do
@@ -193,4 +206,27 @@ defmodule Jido.Console.Tui.Selection do
   end
 
   defp resolve_profile(profile_id), do: Profile.resolve(profile_id, coding_profile: profile_id)
+
+  defp validate_catalog([]),
+    do: {:error, Error.config_error("Model catalog is empty", %{source: :model_catalog})}
+
+  defp validate_catalog(entries) when is_list(entries) do
+    if Enum.all?(entries, &valid_entry?/1) and Enum.any?(entries, &selectable?/1) do
+      :ok
+    else
+      {:error, Error.config_error("Model catalog is invalid", %{source: :model_catalog})}
+    end
+  end
+
+  defp validate_catalog(_entries),
+    do: {:error, Error.config_error("Model catalog is invalid", %{source: :model_catalog})}
+
+  defp valid_entry?(entry) when is_map(entry) do
+    is_binary(Map.get(entry, :identity)) and is_binary(Map.get(entry, :provider)) and
+      is_binary(Map.get(entry, :model)) and Map.get(entry, :tier) in @model_tiers and
+      Map.get(entry, :identity) == Map.get(entry, :provider) <> ":" <> Map.get(entry, :model)
+  end
+
+  defp valid_entry?(_entry), do: false
+  defp selectable?(entry), do: Map.get(entry, :tier) in [:supported, :beta]
 end

@@ -39,6 +39,7 @@ defmodule Jido.Console.Test.ThreadResources do
   end
 
   def runtime_opts(resources), do: [test_pid: resources.test_pid]
+  def configure_model(resources, identity), do: {:ok, Map.put(resources, :model, identity)}
   def status(%__MODULE__{fail_resources?: true}), do: %{"status" => "not_prepared"}
   def status(%__MODULE__{}), do: %{"status" => "ready"}
 

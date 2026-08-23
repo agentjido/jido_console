@@ -10,6 +10,7 @@ defmodule Jido.Console.Session.ThreadTest do
     end
 
     def base_spec(resources), do: resources.spec
+    def configure_model(resources, identity), do: {:ok, Map.put(resources, :model, identity)}
     def status(_resources), do: %{"status" => "ready"}
     def close(_resources), do: :ok
   end
@@ -159,6 +160,7 @@ defmodule Jido.Console.Session.ThreadTest do
              |> then(&Thread.command(command, &1))
 
     assert unchanged.active == nil
+    refute unchanged.model_locked?
 
     {:ok, full_queue} = Queue.push(Queue.new(1), item("queued", "queued-request"))
 
@@ -227,6 +229,9 @@ defmodule Jido.Console.Session.ThreadTest do
       queue: Queue.new(),
       resources_module: Resources,
       resources: %{},
+      model_catalog: [],
+      model: %{identity: "openai:gpt-4.1-mini", tier: :supported},
+      model_locked?: false,
       error: nil,
       subscribers: %{},
       monitors: %{},

@@ -18,7 +18,7 @@ defmodule Jido.Console.Tui.App do
         project_root: Keyword.get(tui_opts, :project_root) || current_directory(),
         model: Keyword.get(tui_opts, :model),
         coding_profile: Keyword.get(tui_opts, :coding_profile),
-        catalog_entries: Keyword.get(tui_opts, :catalog_entries, [])
+        catalog_entries: Keyword.get(tui_opts, :tui_catalog_entries, [])
       )
 
     state = %{

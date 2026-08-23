@@ -20,6 +20,7 @@ defmodule Jido.Console.Session.View do
               review: Zoi.map() |> Zoi.optional() |> Zoi.default(nil),
               queue: Zoi.array(Zoi.map()) |> Zoi.default([]),
               resources: Zoi.map() |> Zoi.default(%{"status" => "not_prepared"}),
+              model: Zoi.map() |> Zoi.optional() |> Zoi.default(nil),
               error: Zoi.any() |> Zoi.optional() |> Zoi.default(nil)
             },
             coerce: true,
@@ -129,6 +130,7 @@ defmodule Jido.Console.Session.View do
       review: review(state.review),
       queue: Enum.map(Queue.to_list(state.queue), &item/1),
       resources: state.resources_module.status(state.resources),
+      model: model(state),
       error: state.error
     )
   end
@@ -137,4 +139,14 @@ defmodule Jido.Console.Session.View do
   defp review(%{data: data}), do: data
   defp item(nil), do: nil
   defp item(value), do: %{"queue_item_id" => value.id, "request_id" => value.request_id, "input" => value.text}
+
+  defp model(%{model: %{identity: identity, tier: tier}} = state) do
+    %{
+      "identity" => identity,
+      "tier" => Atom.to_string(tier),
+      "locked" => Map.get(state, :model_locked?, false)
+    }
+  end
+
+  defp model(_state), do: nil
 end

@@ -57,7 +57,8 @@ defmodule Jido.Console.Tui do
     selection = Selection.init(opts)
 
     opts
-    |> Keyword.put(:catalog_entries, selection.catalog_entries)
+    |> Keyword.delete(:catalog_entries)
+    |> Keyword.put(:tui_catalog_entries, selection.catalog_entries)
     |> Keyword.put(:model, selection.model)
     |> Keyword.put(:coding_profile, selection.profile_id)
   end

@@ -70,6 +70,15 @@ defmodule Jido.Console.Tui.ViewTest do
     refute text =~ "Jido is ready"
   end
 
+  test "renders client-local command feedback without transcript messages" do
+    state = %{State.new(nil, {60, 12}) | command_notices: ["Models:\nopenai:gpt-4.1-mini supported current"]}
+    text = state |> View.render() |> frame_text()
+
+    assert text =~ "COMMAND"
+    assert text =~ "openai:gpt-4.1-mini supported current"
+    assert state.messages == []
+  end
+
   test "places a short transcript below the title instead of above the prompt" do
     state = %{State.new(nil, {40, 16}) | messages: [%{role: :assistant, content: "Short answer"}]}
     frame = View.render(state)

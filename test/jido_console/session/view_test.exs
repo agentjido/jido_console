@@ -40,6 +40,7 @@ defmodule Jido.Console.Session.ViewTest do
     assert view.review == %{"id" => "review"}
     assert hd(view.queue)["queue_item_id"] == "queued"
     assert view.resources == %{"status" => "ready"}
+    assert view.model == %{"identity" => "openai:gpt-4.1-mini", "tier" => "supported", "locked" => false}
   end
 
   defp state do
@@ -59,6 +60,8 @@ defmodule Jido.Console.Session.ViewTest do
       queue: Queue.new(),
       resources_module: Resources,
       resources: %{},
+      model: %{identity: "openai:gpt-4.1-mini", tier: :supported},
+      model_locked?: false,
       error: nil,
       subscribers: %{},
       monitors: %{}

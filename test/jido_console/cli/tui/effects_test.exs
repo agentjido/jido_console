@@ -24,6 +24,24 @@ defmodule Jido.Console.Tui.EffectsTest do
       send(handle, {:reviewed, :deny, request_id, review_id})
       {:ok, :requested}
     end
+
+    def select_model(handle, identity) do
+      send(handle, {:selected_model, identity})
+      {:ok, %{"identity" => identity, "tier" => "beta", "locked" => false}}
+    end
+  end
+
+  test "dispatches model selection through the session client" do
+    state = State.new(nil, {80, 24}, session_client: self())
+    opts = [session_client_module: Client]
+
+    assert {:continue, workers} =
+             Effects.dispatch(state, [{:select_model, "ollama:llama3.2"}], :unused, opts, %{})
+
+    assert_receive {:selected_model, "ollama:llama3.2"}
+
+    assert {:event, {:model_selected, %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => false}}} =
+             complete_one(workers)
   end
 
   test "dispatches current submit and control commands" do

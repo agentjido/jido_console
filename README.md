@@ -111,6 +111,18 @@ Explain what Jido Console does in three sentences.
 Press `Enter` to send a prompt. Press `Ctrl-J` to add a line. Press `Ctrl-C` to
 cancel a running turn. Press `Esc` to exit.
 
+The prompt also accepts slash commands. Use `/help` to show the current command
+list. Use `/model` to show selectable models and the current model. Before the
+first prompt is accepted, use an exact identity to select a model:
+
+```text
+/model ollama:llama3.2
+```
+
+Model selection applies to the current live session only. It locks after the
+first prompt is accepted. See the [Jido Console guide](guides/jido-console.md)
+for command behavior and model support tiers.
+
 ### Explore The Repository
 
 Start the default read-only coding session from the repository root:

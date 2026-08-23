@@ -120,6 +120,85 @@ defmodule Jido.Console.Session.ClientTest do
     send(bridge, :finish)
   end
 
+  test "model selection is shared and locks after the first durable prompt", %{opts: opts} do
+    {:ok, %{handle: first}} = Client.attach("shared-model", opts)
+    {:ok, %{handle: second}} = Client.attach("shared-model", opts)
+
+    assert {:ok, selected} = Client.select_model(first, "ollama:llama3.2")
+    assert selected == %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => false}
+    assert {:ok, %View{model: ^selected}} = Client.status(second)
+
+    assert {:ok, _accepted} =
+             Client.submit(first, "hello", command_id: "model-command", request_id: "model-request")
+
+    assert {:error, error} = Client.select_model(second, "openai:gpt-4.1-mini")
+    assert Exception.message(error) =~ "locked"
+    assert {:ok, %View{model: %{"locked" => true}}} = Client.status(second)
+    assert_receive {:provider_started, "shared-model", "model-request", bridge}
+    send(bridge, :finish)
+  end
+
+  test "malformed model selection returns an error tuple", %{opts: opts} do
+    {:ok, %{handle: handle}} = Client.attach("malformed-model", opts)
+
+    assert {:error, :invalid_command} = Client.select_model(handle, "ollama")
+  end
+
+  test "replacement owner resets to the configured default model", %{opts: opts, registry: registry} do
+    opts = Keyword.put(opts, :model, "openai:gpt-4.1-mini")
+    {:ok, %{handle: handle}} = Client.attach("replacement-model", opts)
+    assert {:ok, _selected} = Client.select_model(handle, "ollama:llama3.2")
+
+    {:ok, owner} = Registry.lookup("replacement-model", registry)
+    monitor = Process.monitor(owner)
+    Process.exit(owner, :kill)
+    assert_receive {:DOWN, ^monitor, :process, ^owner, :killed}
+
+    assert {:ok, %View{model: model}} = Client.status(handle)
+    assert model == %{"identity" => "openai:gpt-4.1-mini", "tier" => "supported", "locked" => false}
+  end
+
+  test "concurrent selection and submit use one serialized model outcome", %{opts: opts} do
+    {:ok, %{handle: handle}} = Client.attach("model-race", opts)
+    parent = self()
+
+    select =
+      Task.async(fn ->
+        send(parent, {:ready, self()})
+        receive do: (:go -> Client.select_model(handle, "ollama:llama3.2"))
+      end)
+
+    submit =
+      Task.async(fn ->
+        send(parent, {:ready, self()})
+
+        receive do
+          :go -> Client.submit(handle, "race", command_id: "race-command", request_id: "race-request")
+        end
+      end)
+
+    assert_receive {:ready, select_pid}
+    assert_receive {:ready, submit_pid}
+    send(select_pid, :go)
+    send(submit_pid, :go)
+
+    select_result = Task.await(select)
+    assert {:ok, _accepted} = Task.await(submit)
+    assert {:ok, %View{model: model}} = Client.status(handle)
+
+    case select_result do
+      {:ok, %{"identity" => "ollama:llama3.2"}} ->
+        assert model == %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => true}
+
+      {:error, error} ->
+        assert Exception.message(error) =~ "locked"
+        assert model == %{"identity" => "openai:gpt-4.1-mini", "tier" => "supported", "locked" => true}
+    end
+
+    assert_receive {:provider_started, "model-race", "race-request", bridge}
+    send(bridge, :finish)
+  end
+
   test "Command and View contain no process or framework runtime values", %{opts: opts} do
     {:ok, %{handle: handle, view: view}} = Client.attach("portable-thread", opts)
     {:ok, command} = Client.submit_command(handle, "portable", command_id: "portable", request_id: "request")
