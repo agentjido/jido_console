@@ -39,19 +39,44 @@ defmodule Jido.Console.Tui.Selection do
   @doc "Lists supported and beta models and marks the current model."
   @spec list_models(t()) :: {:ok, String.t()} | {:error, Exception.t()}
   def list_models(selection) do
-    with :ok <- validate_catalog(selection.catalog_entries) do
+    with :ok <- validate_catalog(selection.catalog_entries),
+         {:ok, models} <- selectable_models(selection) do
       rows =
-        selection.catalog_entries
-        |> Enum.filter(&selectable?/1)
-        |> Enum.sort_by(& &1.identity)
-        |> Enum.map_join("\n", fn entry ->
-          current = if entry.identity == selection.model, do: " current", else: ""
+        Enum.map_join(models, "\n", fn entry ->
+          current = if entry.current?, do: " current", else: ""
           "#{entry.identity} #{entry.tier}#{current}"
         end)
 
       {:ok, "Models:\n" <> rows}
     end
   end
+
+  @doc "Returns valid selectable models in stable identity order for local discovery."
+  @spec selectable_models(t() | map()) :: {:ok, [map()]} | {:error, Exception.t()}
+  def selectable_models(%{catalog_entries: entries} = selection) when is_list(entries) do
+    models =
+      entries
+      |> Enum.filter(&(valid_entry?(&1) and selectable?(&1)))
+      |> Enum.sort_by(& &1.identity)
+      |> Enum.uniq_by(& &1.identity)
+      |> Enum.map(fn entry ->
+        %{
+          identity: entry.identity,
+          provider: entry.provider,
+          model: entry.model,
+          tier: entry.tier,
+          current?: entry.identity == Map.get(selection, :model)
+        }
+      end)
+
+    case {entries, models} do
+      {[], _models} -> {:error, empty_catalog_error()}
+      {_entries, []} -> {:error, invalid_catalog_error()}
+      {_entries, models} -> {:ok, models}
+    end
+  end
+
+  def selectable_models(_selection), do: {:error, invalid_catalog_error()}
 
   @doc "Resolves one exact selectable model identity from the local catalog."
   @spec resolve_model(String.t(), t()) :: {:ok, map()} | {:error, Exception.t()}
@@ -150,19 +175,23 @@ defmodule Jido.Console.Tui.Selection do
 
   defp policy_entry(_policy), do: :error
 
-  defp initial_model(nil, entries) do
-    case Enum.find(entries, &(&1.tier == :supported)) do
+  defp initial_model(nil, entries) when is_list(entries) do
+    case Enum.find(entries, &(valid_entry?(&1) and Map.get(&1, :tier) == :supported)) do
       nil -> {nil, nil}
-      entry -> {entry.identity, entry.tier}
+      entry -> {Map.get(entry, :identity), Map.get(entry, :tier)}
     end
   end
 
-  defp initial_model(identity, entries) when is_binary(identity) do
+  defp initial_model(nil, _entries), do: {nil, nil}
+
+  defp initial_model(identity, entries) when is_binary(identity) and is_list(entries) do
     case resolve_identity(identity, entries) do
       {:ok, entry} -> {entry.identity, entry.tier}
       :error -> {identity, nil}
     end
   end
+
+  defp initial_model(identity, _entries) when is_binary(identity), do: {identity, nil}
 
   defp initial_profile(nil), do: {Profile.restricted_id(), nil}
 
@@ -180,15 +209,47 @@ defmodule Jido.Console.Tui.Selection do
         {:error, _reason} -> token
       end
 
-    case Enum.find(entries, &(&1.identity == identity)) do
+    case Enum.find(entries, &(valid_entry?(&1) and Map.get(&1, :identity) == identity)) do
       nil -> :error
       entry -> {:ok, entry}
     end
   end
 
-  defp find_model(selection, identity) do
-    Enum.find(selection.catalog_entries, &(&1.identity == identity))
+  defp find_model(%{catalog_entries: entries}, identity) when is_list(entries) do
+    Enum.find(entries, &(is_map(&1) and Map.get(&1, :identity) == identity))
   end
+
+  defp find_model(_selection, _identity), do: nil
+
+  defp validate_catalog([]), do: {:error, empty_catalog_error()}
+
+  defp validate_catalog(entries) when is_list(entries) do
+    if Enum.all?(entries, &valid_entry?/1) and Enum.any?(entries, &selectable?/1) do
+      :ok
+    else
+      {:error, invalid_catalog_error()}
+    end
+  end
+
+  defp validate_catalog(_entries), do: {:error, invalid_catalog_error()}
+
+  defp empty_catalog_error,
+    do: Error.config_error("Model catalog is empty", %{source: :model_catalog})
+
+  defp invalid_catalog_error,
+    do: Error.config_error("Model catalog is invalid", %{source: :model_catalog})
+
+  defp valid_entry?(entry) when is_map(entry) do
+    identity = Map.get(entry, :identity)
+    provider = Map.get(entry, :provider)
+    model = Map.get(entry, :model)
+
+    Enum.all?([identity, provider, model], &(is_binary(&1) and String.valid?(&1))) and
+      Map.get(entry, :tier) in @model_tiers and identity == provider <> ":" <> model
+  end
+
+  defp valid_entry?(_entry), do: false
+  defp selectable?(entry), do: Map.get(entry, :tier) in [:supported, :beta]
 
   defp model_available(%{model: nil}), do: {:error, "select a catalog model with /model before starting work"}
 
@@ -206,27 +267,4 @@ defmodule Jido.Console.Tui.Selection do
   end
 
   defp resolve_profile(profile_id), do: Profile.resolve(profile_id, coding_profile: profile_id)
-
-  defp validate_catalog([]),
-    do: {:error, Error.config_error("Model catalog is empty", %{source: :model_catalog})}
-
-  defp validate_catalog(entries) when is_list(entries) do
-    if Enum.all?(entries, &valid_entry?/1) and Enum.any?(entries, &selectable?/1) do
-      :ok
-    else
-      {:error, Error.config_error("Model catalog is invalid", %{source: :model_catalog})}
-    end
-  end
-
-  defp validate_catalog(_entries),
-    do: {:error, Error.config_error("Model catalog is invalid", %{source: :model_catalog})}
-
-  defp valid_entry?(entry) when is_map(entry) do
-    is_binary(Map.get(entry, :identity)) and is_binary(Map.get(entry, :provider)) and
-      is_binary(Map.get(entry, :model)) and Map.get(entry, :tier) in @model_tiers and
-      Map.get(entry, :identity) == Map.get(entry, :provider) <> ":" <> Map.get(entry, :model)
-  end
-
-  defp valid_entry?(_entry), do: false
-  defp selectable?(entry), do: Map.get(entry, :tier) in [:supported, :beta]
 end
