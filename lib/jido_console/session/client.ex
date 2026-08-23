@@ -120,7 +120,16 @@ defmodule Jido.Console.Session.Client do
   @doc "Selects one exact model before the first prompt is durably accepted."
   @spec select_model(t(), String.t()) :: {:ok, map()} | {:error, term()}
   def select_model(%__MODULE__{} = handle, identity) when is_binary(identity) do
-    run(handle, control(handle, :select_model, text: identity))
+    with {:ok, command} <-
+           Command.new(
+             id: Jidoka.Id.generate!("command"),
+             type: :select_model,
+             thread_id: handle.thread_id,
+             text: identity,
+             payload: %{}
+           ) do
+      run(handle, command)
+    end
   end
 
   @doc "Returns the current complete view."

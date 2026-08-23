@@ -3,7 +3,6 @@ defmodule Jido.Console.Session.Thread do
 
   alias Jido.Console.Error
   alias Jido.Console.Models
-  alias Jido.Console.Models.Catalog
   alias Jido.Console.Models.Commands, as: ModelCommands
   alias Jido.Console.Session.{Command, Event, JidokaBridge, Queue, Recovery, ThreadResources, View}
   alias Jido.Console.Storage
@@ -535,45 +534,24 @@ defmodule Jido.Console.Session.Thread do
   defp initial_model(opts) do
     requested = Keyword.get(opts, :model)
 
-    case Keyword.fetch(opts, :catalog_entries) do
-      {:ok, _entries} ->
-        injected_initial_model(opts, requested)
+    case Keyword.fetch(opts, :validated_model_catalog_entries) do
+      {:ok, entries} ->
+        load_initial_model(Keyword.put(opts, :entries, entries), requested)
 
       :error ->
-        with {:ok, entries} <- Models.list(opts),
-             {:ok, model} <- choose_initial_model(entries, requested) do
-          {:ok, entries, model}
-        else
-          {:error, %_{} = error} -> {:error, error}
-          {:error, reason} -> {:error, initial_model_error(reason)}
-        end
+        load_initial_model(Keyword.delete(opts, :entries), requested)
     end
   end
 
-  defp injected_initial_model(opts, requested) do
-    entries = Keyword.get(opts, :catalog_entries, [])
-
-    if valid_injected_catalog?(entries) do
-      with {:ok, model} <- choose_initial_model(entries, requested) do
-        {:ok, entries, model}
-      else
-        {:error, reason} -> {:error, initial_model_error(reason)}
-      end
+  defp load_initial_model(opts, requested) do
+    with {:ok, entries} <- Models.list(opts),
+         {:ok, model} <- choose_initial_model(entries, requested) do
+      {:ok, entries, model}
     else
-      {:error, initial_model_error(:invalid_catalog_entries)}
+      {:error, %_{} = error} -> {:error, error}
+      {:error, reason} -> {:error, initial_model_error(reason)}
     end
   end
-
-  defp valid_injected_catalog?(entries) when is_list(entries) and entries != [] do
-    Enum.all?(entries, fn entry ->
-      is_map(entry) and is_binary(Map.get(entry, :identity)) and
-        is_binary(Map.get(entry, :provider)) and is_binary(Map.get(entry, :model)) and
-        Map.get(entry, :tier) in Catalog.tiers() and
-        entry.identity == entry.provider <> ":" <> entry.model
-    end)
-  end
-
-  defp valid_injected_catalog?(_entries), do: false
 
   defp choose_initial_model(entries, nil) do
     case Enum.find(entries, &(&1.tier == :supported)) do

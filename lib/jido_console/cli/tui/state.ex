@@ -1,6 +1,7 @@
 defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
+  alias Jido.Console.Error
   alias Jido.Console.Tui.{Activity, Command, Editor, SafeText, Selection, Turn}
   alias Jido.Console.Session.View, as: SessionView
   alias TermUI.Event
@@ -347,10 +348,9 @@ defmodule Jido.Console.Tui.State do
   end
 
   def update(%__MODULE__{} = state, {:model_selected, model}) when is_map(model) do
-    selection = restore_model_selection(state.selection, model)
     identity = Map.get(model, "identity", Map.get(model, :identity, "unknown"))
     tier = Map.get(model, "tier", Map.get(model, :tier, "unknown"))
-    notice(state, "Selected model #{identity} (#{tier})", selection)
+    notice(state, "Selected model #{identity} (#{tier})")
   end
 
   def update(%__MODULE__{} = state, {:command_error, reason}) do
@@ -393,10 +393,18 @@ defmodule Jido.Console.Tui.State do
   defp submit_command(state, {:select_model, identity}) do
     cond do
       state.selection.model_locked? ->
-        notice(state, "Model selection is locked after the first prompt is accepted")
+        invalid_command_notice(
+          state,
+          "Model selection is locked after the first prompt is accepted",
+          %{command: "model", reason: :model_locked}
+        )
 
       is_nil(state.session_client) ->
-        notice(state, "Jido is still starting. Try the model command again when it is ready.")
+        invalid_command_notice(
+          state,
+          "Jido is still starting. Try the model command again when it is ready.",
+          %{command: "model", reason: :session_not_ready}
+        )
 
       true ->
         {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:select_model, identity}]}
@@ -608,9 +616,14 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp format_error(reason) do
-    Jido.Console.Error.message(reason)
+    Error.message(reason)
   rescue
     _exception -> inspect(reason)
+  end
+
+  defp invalid_command_notice(state, message, details) do
+    state
+    |> notice(format_error(Error.validation_error(message, details)))
   end
 
   defp view_message(message) do

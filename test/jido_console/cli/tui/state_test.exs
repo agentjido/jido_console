@@ -320,8 +320,9 @@ defmodule Jido.Console.Tui.StateTest do
     assert state.messages == []
   end
 
-  test "dispatches model selection and applies owner feedback without transcript data" do
+  test "dispatches model selection and shows owner feedback without transcript data" do
     state = State.new(nil, {80, 24}, catalog_entries: @catalog_entries, session_client: :client)
+    initial_selection = state.selection
     {state, [{:select_model, "ollama:llama3.2"}]} = enter(state, "/model ollama:llama3.2")
     assert state.messages == []
     assert state.history == []
@@ -329,8 +330,28 @@ defmodule Jido.Console.Tui.StateTest do
     model = %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => false}
     {state, []} = State.update(state, {:model_selected, model})
 
-    assert state.selection.model == "ollama:llama3.2"
-    assert state.selection.model_tier == :beta
+    assert state.selection == initial_selection
+    assert List.last(state.command_notices) =~ "Selected model ollama:llama3.2 (beta)"
+  end
+
+  test "a stale model selection completion does not overwrite a newer owner View" do
+    state = State.new(nil, {80, 24}, catalog_entries: @catalog_entries)
+
+    view =
+      View.new!(
+        thread_id: "thread-model",
+        status: :idle,
+        revision: 2,
+        model: %{"identity" => "openai:gpt-4.1-mini", "tier" => "supported", "locked" => true}
+      )
+
+    state = State.restore_view(state, view)
+    stale_model = %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => false}
+    {state, []} = State.update(state, {:model_selected, stale_model})
+
+    assert state.selection.model == "openai:gpt-4.1-mini"
+    assert state.selection.model_tier == :supported
+    assert state.selection.model_locked?
     assert List.last(state.command_notices) =~ "Selected model ollama:llama3.2 (beta)"
   end
 

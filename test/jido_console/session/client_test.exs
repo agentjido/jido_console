@@ -138,6 +138,12 @@ defmodule Jido.Console.Session.ClientTest do
     send(bridge, :finish)
   end
 
+  test "malformed model selection returns an error tuple", %{opts: opts} do
+    {:ok, %{handle: handle}} = Client.attach("malformed-model", opts)
+
+    assert {:error, :invalid_command} = Client.select_model(handle, "ollama")
+  end
+
   test "replacement owner resets to the configured default model", %{opts: opts, registry: registry} do
     opts = Keyword.put(opts, :model, "openai:gpt-4.1-mini")
     {:ok, %{handle: handle}} = Client.attach("replacement-model", opts)

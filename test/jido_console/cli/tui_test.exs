@@ -48,7 +48,12 @@ defmodule Jido.Console.TuiTest do
       process_register: fn _kind, _pid, _opts -> {:ok, %{}} end,
       process_stop: fn _id, _opts -> :ok end,
       catalog_entries: [
-        %{identity: "test:model", provider: "test", model: "model", tier: :supported}
+        %{
+          identity: "openai:gpt-4.1-mini",
+          provider: "openai",
+          model: "gpt-4.1-mini",
+          tier: :supported
+        }
       ]
     ]
 
@@ -225,6 +230,30 @@ defmodule Jido.Console.TuiTest do
     assert frame =~ "STARTUP FAILED"
     send_event(event_queue, TermUI.Event.key(:escape))
     assert {:error, {:process_register_failed, :busy}} = Task.await(task, 2_000)
+    assert_receive :terminal_closed
+  end
+
+  test "rejects a display policy that fails canonical catalog validation", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    incomplete_policy = [%{identity: "openai:gpt-4.1-mini", tier: :supported}]
+
+    opts =
+      opts
+      |> Keyword.put(:session_id, "invalid-catalog-thread")
+      |> Keyword.put(:model_policy, incomplete_policy)
+
+    task = Task.async(fn -> Tui.run(opts) end)
+    assert_receive {:term_ui_started, _runtime}
+    assert await_frame("STARTUP FAILED") =~ "Unable to configure the session model"
+
+    send_event(event_queue, TermUI.Event.key(:escape))
+
+    assert {:error, {:session_attach_failed, %Jido.Console.Error.ConfigurationError{details: details}}} =
+             Task.await(task, 2_000)
+
+    assert details.reason =~ "invalid_model_policy_field"
     assert_receive :terminal_closed
   end
 

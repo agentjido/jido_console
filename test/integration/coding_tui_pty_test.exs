@@ -43,6 +43,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
   test "runs a provider-free Jidoka turn and restores its durable View", context do
     thread_id = "coding-tui-thread"
     {:ok, event_queue} = Agent.start_link(fn -> :queue.new() end)
+    {:ok, validated_catalog} = Jido.Console.Models.list()
     llm = fn _intent, _journal, _context -> {:ok, %{type: :final, content: "Provider-free answer."}} end
 
     opts = [
@@ -60,6 +61,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
       application_startup: fn -> :ok end,
       process_register: fn _kind, _pid, _opts -> {:ok, %{}} end,
       process_stop: fn _id, _opts -> :ok end,
+      validated_model_catalog_entries: validated_catalog,
       catalog_entries: [
         %{
           identity: "openai:gpt-4.1-mini",
