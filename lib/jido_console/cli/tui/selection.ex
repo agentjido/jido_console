@@ -15,6 +15,7 @@ defmodule Jido.Console.Tui.Selection do
           catalog_entries: [map()],
           model: String.t() | nil,
           model_tier: atom() | nil,
+          model_locked?: boolean(),
           profile_id: String.t(),
           profile_warning: String.t() | nil
         }
@@ -30,6 +31,7 @@ defmodule Jido.Console.Tui.Selection do
       catalog_entries: entries,
       model: model,
       model_tier: tier,
+      model_locked?: false,
       profile_id: profile_id,
       profile_warning: warning
     }

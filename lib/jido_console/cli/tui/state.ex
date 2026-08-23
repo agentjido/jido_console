@@ -1,7 +1,7 @@
 defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
-  alias Jido.Console.Tui.{Activity, Editor, SafeText, Selection, Turn}
+  alias Jido.Console.Tui.{Activity, Command, Editor, SafeText, Selection, Turn}
   alias Jido.Console.Session.View, as: SessionView
   alias TermUI.Event
   alias TermUI.Widget.TextArea
@@ -9,6 +9,7 @@ defmodule Jido.Console.Tui.State do
   @default_history_limit 100
   @default_turn_limit 100
   @review_limit 100
+  @command_notice_limit 20
   @max_scroll_offset 1_000_000
 
   @schema Zoi.struct(
@@ -25,6 +26,7 @@ defmodule Jido.Console.Tui.State do
               scroll_offset: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0),
               turn_limit: Zoi.integer() |> Zoi.positive() |> Zoi.optional() |> Zoi.default(@default_turn_limit),
               messages: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
+              command_notices: Zoi.array(Zoi.string()) |> Zoi.optional() |> Zoi.default([]),
               startup: Zoi.enum([:starting, :ready]) |> Zoi.optional() |> Zoi.default(:ready),
               activity: Zoi.any() |> Zoi.optional() |> Zoi.default(:idle),
               project_root: Zoi.string() |> Zoi.nullish(),
@@ -42,6 +44,7 @@ defmodule Jido.Console.Tui.State do
 
   @type effect ::
           {:start_turn, String.t()}
+          | {:select_model, String.t()}
           | {:cancel_turn, term()}
           | {:copy, String.t()}
           | {:respond_review, :approve | :deny, map(), term(), term()}
@@ -106,6 +109,7 @@ defmodule Jido.Console.Tui.State do
     %{
       state
       | session: view,
+        selection: restore_model_selection(state.selection, view.model),
         messages: messages,
         turns: turns,
         next_turn_id: length(turns) + active_turn_count,
@@ -244,8 +248,7 @@ defmodule Jido.Console.Tui.State do
     if prompt == "" do
       {state, []}
     else
-      state = remember_prompt(state, prompt)
-      {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:start_turn, prompt}]}
+      submit_prompt(state, prompt)
     end
   end
 
@@ -343,6 +346,17 @@ defmodule Jido.Console.Tui.State do
     changed(state, coding_reviews: changes)
   end
 
+  def update(%__MODULE__{} = state, {:model_selected, model}) when is_map(model) do
+    selection = restore_model_selection(state.selection, model)
+    identity = Map.get(model, "identity", Map.get(model, :identity, "unknown"))
+    tier = Map.get(model, "tier", Map.get(model, :tier, "unknown"))
+    notice(state, "Selected model #{identity} (#{tier})", selection)
+  end
+
+  def update(%__MODULE__{} = state, {:command_error, reason}) do
+    notice(state, format_error(reason))
+  end
+
   def update(%__MODULE__{} = state, _event), do: {state, []}
 
   defp apply_turn_result(state, {:error, reason}) do
@@ -353,12 +367,49 @@ defmodule Jido.Console.Tui.State do
   defp apply_turn_result(state, _result), do: {state, []}
 
   defp submit_prompt(state, prompt) do
-    case Selection.handle(prompt, state.selection) do
-      {:command, next, notice} ->
-        apply_command(state, next, notice)
+    case Command.parse(prompt) do
+      :prompt -> submit_regular_prompt(state, prompt)
+      {:command, action} -> submit_command(state, action)
+      {:error, error} -> notice(state, Exception.message(error))
+    end
+  end
 
-      :not_command ->
-        start_selected_turn(state, prompt)
+  defp submit_regular_prompt(%__MODULE__{activity: {:active, _, _, _}} = state, prompt) do
+    state = remember_prompt(state, prompt)
+    {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:start_turn, prompt}]}
+  end
+
+  defp submit_regular_prompt(state, prompt), do: start_selected_turn(state, prompt)
+
+  defp submit_command(state, :help), do: notice(state, Command.help())
+
+  defp submit_command(state, :list_models) do
+    case Selection.list_models(state.selection) do
+      {:ok, models} -> notice(state, models)
+      {:error, error} -> notice(state, Exception.message(error))
+    end
+  end
+
+  defp submit_command(state, {:select_model, identity}) do
+    if is_nil(state.session_client) do
+      notice(state, "Jido is still starting. Try the model command again when it is ready.")
+    else
+      {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:select_model, identity}]}
+    end
+  end
+
+  defp submit_command(state, action) when action in [:list_profiles] do
+    legacy_command(state, "/profile")
+  end
+
+  defp submit_command(state, {:select_profile, profile_id}) do
+    legacy_command(state, "/profile " <> profile_id)
+  end
+
+  defp legacy_command(state, input) do
+    case Selection.handle(input, state.selection) do
+      {:command, selection, message} -> notice(state, message, selection)
+      :not_command -> notice(state, "Unknown command")
     end
   end
 
@@ -792,15 +843,38 @@ defmodule Jido.Console.Tui.State do
     end
   end
 
-  defp apply_command(state, selection, notice) do
+  defp notice(state, message, selection \\ nil) do
+    notices = retain(state.command_notices ++ [SafeText.clean(message)], @command_notice_limit)
+
     state = %{
       state
-      | selection: selection,
+      | selection: selection || state.selection,
         editor: Editor.clear(state.editor),
-        messages: state.messages ++ [%{role: :system, content: notice}],
-        activity: :idle
+        command_notices: notices,
+        scroll_offset: 0
     }
 
     {state, []}
   end
+
+  defp restore_model_selection(selection, nil), do: selection
+
+  defp restore_model_selection(selection, model) do
+    identity = Map.get(model, "identity", Map.get(model, :identity))
+    tier = Map.get(model, "tier", Map.get(model, :tier))
+    locked? = Map.get(model, "locked", Map.get(model, :locked, false))
+    tier = normalize_model_tier(tier)
+
+    selection
+    |> Map.put(:model, identity)
+    |> Map.put(:model_tier, tier)
+    |> Map.put(:model_locked?, locked?)
+  end
+
+  defp normalize_model_tier("supported"), do: :supported
+  defp normalize_model_tier("beta"), do: :beta
+  defp normalize_model_tier("available"), do: :available
+  defp normalize_model_tier("unsupported"), do: :unsupported
+  defp normalize_model_tier(tier) when is_atom(tier), do: tier
+  defp normalize_model_tier(_tier), do: nil
 end

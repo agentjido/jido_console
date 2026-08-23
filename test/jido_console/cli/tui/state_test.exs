@@ -4,6 +4,11 @@ defmodule Jido.Console.Tui.StateTest do
   alias Jido.Console.Session.View
   alias Jido.Console.Tui.{Editor, State, Turn}
 
+  @catalog_entries [
+    %{identity: "openai:gpt-4.1-mini", provider: "openai", model: "gpt-4.1-mini", tier: :supported},
+    %{identity: "ollama:llama3.2", provider: "ollama", model: "llama3.2", tier: :beta}
+  ]
+
   test "restores all renderer state from one complete View" do
     view =
       View.new!(
@@ -297,6 +302,71 @@ defmodule Jido.Console.Tui.StateTest do
     assert Editor.value(state.editor) == ""
   end
 
+  test "handles slash commands before idle or active prompt submission" do
+    state = State.new(nil, {80, 24}, catalog_entries: @catalog_entries, session_client: :client)
+
+    {state, []} = enter(state, "/help")
+    assert List.last(state.command_notices) =~ "/model [provider:model]"
+    assert state.messages == []
+    assert state.history == []
+
+    request = %{queue_item_id: "active", request_id: "request-1"}
+    turn = Turn.new(0, "active") |> Turn.put_request(request)
+    state = %{state | activity: {:active, request, turn, :streaming}}
+
+    {state, []} = enter(state, "/MODEL")
+    assert List.last(state.command_notices) =~ "Unknown command"
+    assert Editor.value(state.editor) == ""
+    assert state.messages == []
+  end
+
+  test "dispatches model selection and applies owner feedback without transcript data" do
+    state = State.new(nil, {80, 24}, catalog_entries: @catalog_entries, session_client: :client)
+    {state, [{:select_model, "ollama:llama3.2"}]} = enter(state, "/model ollama:llama3.2")
+    assert state.messages == []
+    assert state.history == []
+
+    model = %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => false}
+    {state, []} = State.update(state, {:model_selected, model})
+
+    assert state.selection.model == "ollama:llama3.2"
+    assert state.selection.model_tier == :beta
+    assert List.last(state.command_notices) =~ "Selected model ollama:llama3.2 (beta)"
+  end
+
+  test "keeps bounded command notices across complete view refreshes" do
+    state = State.new(nil, {80, 24}, catalog_entries: @catalog_entries)
+
+    state =
+      Enum.reduce(1..25, state, fn index, state ->
+        {state, []} = State.update(state, {:command_error, "notice #{index}"})
+        state
+      end)
+
+    assert length(state.command_notices) == 20
+    refute "notice 1" in state.command_notices
+
+    restored = State.restore_view(state, closed_view("prompt_failed", %{"error" => "failed"}, transcript: []))
+    assert restored.command_notices == state.command_notices
+  end
+
+  test "uses the model projection from the session owner" do
+    state = State.new(nil, {80, 24}, catalog_entries: @catalog_entries)
+
+    view =
+      View.new!(
+        thread_id: "thread-model",
+        status: :idle,
+        revision: 1,
+        model: %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => true}
+      )
+
+    state = State.restore_view(state, view)
+    assert state.selection.model == "ollama:llama3.2"
+    assert state.selection.model_tier == :beta
+    assert state.selection.model_locked?
+  end
+
   test "does not replay a queued prompt when the restored View reports startup failure" do
     state = State.new(nil, {80, 24}, startup: :starting)
     {state, []} = State.update(state, {:terminal, {:text, "queued during startup"}})
@@ -416,6 +486,11 @@ defmodule Jido.Console.Tui.StateTest do
       "payload" => payload,
       "committed_at_ms" => sequence
     }
+  end
+
+  defp enter(state, text) do
+    {state, []} = State.update(state, {:terminal, {:text, text}})
+    State.update(state, {:terminal, {:key, :enter}})
   end
 
   defp stream_projection(sequence, event, effect_id, operation) do

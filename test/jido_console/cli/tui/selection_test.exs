@@ -102,21 +102,22 @@ defmodule Jido.Console.Tui.SelectionTest do
     assert reason =~ "unavailable model"
   end
 
-  test "TUI mutation commands do not change the visible run configuration or start work" do
+  test "TUI mutation commands dispatch owner selection without starting work" do
     state = State.new(:session, {80, 12}, catalog_entries: @entries)
     initial = state.selection
     {state, []} = State.update(state, {:terminal, {:text, "/model ollama:llama3.2"}})
-    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    {state, effects} = State.update(state, {:terminal, {:key, :enter}})
     assert state.selection == initial
     assert state.activity == :idle
-    assert List.last(state.messages).content =~ "new thread"
+    assert effects == []
+    assert List.last(state.command_notices) =~ "still starting"
     assert Frame.row_text(View.render(state), 1) =~ "openai:gpt-4.1-mini"
 
     {state, []} = State.update(state, {:terminal, {:text, "/profile coding.trusted-workspace"}})
     {state, []} = State.update(state, {:terminal, {:key, :enter}})
     assert state.selection == initial
     assert state.activity == :idle
-    assert List.last(state.messages).content =~ "new thread"
+    assert List.last(state.command_notices) =~ "new thread"
     assert Frame.row_text(View.render(state), 1) =~ "coding.restricted"
   end
 

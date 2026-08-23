@@ -3,6 +3,7 @@ defmodule Jido.Console.Session.Thread do
 
   alias Jido.Console.Error
   alias Jido.Console.Models
+  alias Jido.Console.Models.Commands, as: ModelCommands
   alias Jido.Console.Session.{Command, Event, JidokaBridge, Queue, Recovery, ThreadResources, View}
   alias Jido.Console.Storage
   alias Jidoka.Session.{Data, Store}
@@ -351,25 +352,18 @@ defmodule Jido.Console.Session.Thread do
   end
 
   defp select_model(%Command{text: identity}, state) do
-    case Enum.find(state.model_catalog, &(&1.identity == identity)) do
-      %{tier: tier} = entry when tier in [:supported, :beta] ->
-        case configure_resources(state.resources_module, state.resources, identity) do
-          {:ok, resources} ->
-            state = View.publish(%{state | resources: resources, model: entry})
-            {:reply, {:ok, View.from_thread(state).model}, state}
-
-          {:error, reason} ->
-            {:reply, {:error, Error.normalize(reason)}, state}
-        end
-
-      _other ->
-        error =
-          Error.validation_error("Unavailable model #{identity}", %{
-            identity: identity,
-            selectable_tiers: [:supported, :beta]
-          })
-
-        {:reply, {:error, error}, state}
+    with %{tier: declared_tier} when declared_tier in [:supported, :beta] <-
+           Enum.find(state.model_catalog, &(&1.identity == identity)),
+         {:ok, provider, model} <- ModelCommands.parse_identity(identity),
+         {:ok, %{tier: validated_tier} = entry} when validated_tier in [:supported, :beta] <-
+           Models.show(provider, model, state.options),
+         {:ok, resources} <- configure_resources(state.resources_module, state.resources, identity) do
+      state = View.publish(%{state | resources: resources, model: entry})
+      {:reply, {:ok, View.from_thread(state).model}, state}
+    else
+      {:error, %_{} = error} -> {:reply, {:error, error}, state}
+      {:error, reason} -> {:reply, {:error, model_selection_error(identity, reason)}, state}
+      _other -> {:reply, {:error, model_selection_error(identity, :not_selectable)}, state}
     end
   end
 
@@ -538,21 +532,47 @@ defmodule Jido.Console.Session.Thread do
   end
 
   defp initial_model(opts) do
-    with {:ok, entries} <- Models.list(opts),
-         {:ok, model} <- choose_initial_model(entries, Keyword.get(opts, :model)) do
-      {:ok, entries, model}
-    else
-      {:error, %_{} = error} ->
-        {:error, error}
+    requested = Keyword.get(opts, :model)
 
-      {:error, reason} ->
-        {:error,
-         Error.config_error("Unable to configure the session model", %{
-           source: :model_catalog,
-           reason: inspect(reason)
-         })}
+    case Keyword.fetch(opts, :catalog_entries) do
+      {:ok, _entries} ->
+        injected_initial_model(opts, requested)
+
+      :error ->
+        with {:ok, entries} <- Models.list(opts),
+             {:ok, model} <- choose_initial_model(entries, requested) do
+          {:ok, entries, model}
+        else
+          {:error, %_{} = error} -> {:error, error}
+          {:error, reason} -> {:error, initial_model_error(reason)}
+        end
     end
   end
+
+  defp injected_initial_model(opts, requested) do
+    entries = Keyword.get(opts, :catalog_entries, [])
+
+    if valid_injected_catalog?(entries) do
+      with {:ok, model} <- choose_initial_model(entries, requested) do
+        {:ok, entries, model}
+      else
+        {:error, reason} -> {:error, initial_model_error(reason)}
+      end
+    else
+      {:error, initial_model_error(:invalid_catalog_entries)}
+    end
+  end
+
+  defp valid_injected_catalog?(entries) when is_list(entries) and entries != [] do
+    Enum.all?(entries, fn entry ->
+      is_map(entry) and is_binary(Map.get(entry, :identity)) and
+        is_binary(Map.get(entry, :provider)) and is_binary(Map.get(entry, :model)) and
+        Map.get(entry, :tier) in [:supported, :beta, :available, :unsupported] and
+        entry.identity == entry.provider <> ":" <> entry.model
+    end)
+  end
+
+  defp valid_injected_catalog?(_entries), do: false
 
   defp choose_initial_model(entries, nil) do
     case Enum.find(entries, &(&1.tier == :supported)) do
@@ -566,6 +586,21 @@ defmodule Jido.Console.Session.Thread do
       nil -> {:error, {:unavailable_model, identity}}
       entry -> {:ok, entry}
     end
+  end
+
+  defp initial_model_error(reason) do
+    Error.config_error("Unable to configure the session model", %{
+      source: :model_catalog,
+      reason: inspect(reason)
+    })
+  end
+
+  defp model_selection_error(identity, reason) do
+    Error.validation_error("Unavailable model #{identity}", %{
+      identity: identity,
+      reason: inspect(reason),
+      selectable_tiers: [:supported, :beta]
+    })
   end
 
   defp configure_resources(module, resources, identity) do
