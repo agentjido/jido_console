@@ -106,6 +106,99 @@ defmodule Jido.Console.Tui.ViewTest do
     assert Enum.any?(frame.cells, fn {_position, cell} -> :reverse in cell.attrs end)
   end
 
+  test "renders command completion details, result count, and key help" do
+    frame = "/" |> completion_state(size: {100, 12}) |> View.render()
+    text = frame_text(frame)
+    selected_row = selected_row_number(frame, "/help")
+
+    assert text =~ "/help · Show slash commands"
+    assert text =~ "/model [provider:model] · List or select a model"
+    assert text =~ "3 results"
+    assert text =~ "↑↓ move · Tab complete · Esc close"
+    assert String.starts_with?(Frame.row_text(frame, selected_row), "> ")
+    assert styled_row?(frame, selected_row, :reverse)
+    assert styled_row?(frame, selected_row, :bold)
+  end
+
+  test "renders model identity, tier, and current state as text" do
+    entries = [
+      model_entry("anthropic", "claude-sonnet", :beta),
+      model_entry("openai", "gpt-4.1-mini", :supported)
+    ]
+
+    frame =
+      "/model "
+      |> completion_state(size: {110, 12}, catalog_entries: entries, model: "anthropic:claude-sonnet")
+      |> View.render()
+
+    text = frame_text(frame)
+    selected_row = selected_row_number(frame, "anthropic:claude-sonnet")
+
+    assert text =~ "anthropic:claude-sonnet · beta · current"
+    assert text =~ "openai:gpt-4.1-mini · supported"
+    assert text =~ "2 results"
+    assert String.starts_with?(Frame.row_text(frame, selected_row), "> ")
+    assert styled_row?(frame, selected_row, :reverse)
+  end
+
+  test "keeps a late model highlight in the bounded visible slice" do
+    entries = Enum.map(1..8, &model_entry("provider", "model#{&1}", :supported))
+    state = completion_state("/model ", size: {100, 10}, catalog_entries: entries)
+
+    state =
+      Enum.reduce(1..7, state, fn _step, current ->
+        {current, []} = State.update(current, {:terminal, TermUI.Event.key(:down)})
+        current
+      end)
+
+    frame = View.render(state)
+    text = frame_text(frame)
+    visible_models = Enum.filter(1..frame.height, &(Frame.row_text(frame, &1) =~ "provider:model"))
+    selected_row = selected_row_number(frame, "provider:model8")
+
+    assert text =~ "provider:model8"
+    refute text =~ "provider:model1 ·"
+    assert length(visible_models) <= 5
+    assert text =~ "8 results"
+    assert String.starts_with?(Frame.row_text(frame, selected_row), "> ")
+    assert styled_row?(frame, selected_row, :reverse)
+    assert_cursor_inside(frame)
+  end
+
+  test "renders no-match feedback without selectable styling" do
+    frame =
+      "/model missing"
+      |> completion_state(catalog_entries: [model_entry("openai", "gpt-4.1-mini", :supported)])
+      |> View.render()
+
+    feedback_row = row_number(frame, "No matching models")
+    feedback = Frame.row_text(frame, feedback_row)
+
+    assert feedback =~ "No matching models"
+    refute String.starts_with?(feedback, "> ")
+    refute styled_row?(frame, feedback_row, :reverse)
+    refute frame_text(frame) =~ "Tab complete"
+  end
+
+  test "keeps narrow, short, and wrapped editor completion frames valid" do
+    entries = [model_entry("openai", "gpt-4.1-mini", :supported)]
+
+    states = [
+      completion_state("/", size: {12, 5}),
+      completion_state("/model openai", size: {18, 8}, catalog_entries: entries),
+      completion_state("/", size: {11, 4})
+    ]
+
+    for state <- states do
+      frame = View.render(state)
+      assert {frame.width, frame.height} == state.size
+
+      if frame.width < 12 or frame.height < 5,
+        do: assert(is_nil(frame.cursor)),
+        else: assert_cursor_inside(frame)
+    end
+  end
+
   test "renders assistant Markdown through MDEx" do
     state = %{
       State.new(nil, {40, 14})
@@ -246,6 +339,45 @@ defmodule Jido.Console.Tui.ViewTest do
 
   defp frame_text(frame) do
     Enum.map_join(1..frame.height, "\n", &Frame.row_text(frame, &1))
+  end
+
+  defp completion_state(text, opts) do
+    size = Keyword.get(opts, :size, {80, 24})
+    entries = Keyword.get(opts, :catalog_entries, [model_entry("openai", "gpt-4.1-mini", :supported)])
+
+    state =
+      State.new(nil, size,
+        catalog_entries: entries,
+        model: Keyword.get(opts, :model)
+      )
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.text(text)})
+    state
+  end
+
+  defp model_entry(provider, model, tier) do
+    %{identity: provider <> ":" <> model, provider: provider, model: model, tier: tier}
+  end
+
+  defp row_number(frame, content) do
+    Enum.find(1..frame.height, &(Frame.row_text(frame, &1) =~ content)) ||
+      flunk("expected frame row containing #{inspect(content)}")
+  end
+
+  defp selected_row_number(frame, content) do
+    Enum.find(1..frame.height, fn row ->
+      text = Frame.row_text(frame, row)
+      String.starts_with?(text, "> ") and text =~ content
+    end) || flunk("expected selected frame row containing #{inspect(content)}")
+  end
+
+  defp styled_row?(frame, row, attribute) do
+    Enum.any?(1..frame.width, fn column -> attribute in Frame.cell(frame, row, column).attrs end)
+  end
+
+  defp assert_cursor_inside(%Frame{cursor: {column, row}} = frame) do
+    assert column in 1..frame.width
+    assert row in 1..frame.height
   end
 
   defp tool_projection(sequence, effect_id, operation, event) do
