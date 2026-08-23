@@ -192,7 +192,22 @@ defmodule Jido.Console.Error do
     )
   end
 
+  def normalize({:invalid_operation_arguments, operation, validation}) when is_binary(operation) do
+    invalid_operation_error(operation, validation)
+  end
+
+  def normalize(%{} = reason) do
+    case legacy_invalid_operation(reason) do
+      {:ok, operation, validation} -> invalid_operation_error(operation, validation)
+      :error -> normalize_other(reason)
+    end
+  end
+
   def normalize(reason) do
+    normalize_other(reason)
+  end
+
+  defp normalize_other(reason) do
     case find_storage_configuration_reason(reason) do
       {:ok, storage_reason} -> normalize_storage_configuration(storage_reason)
       :error -> reason |> Jidoka.normalize_error(operation: :jido_console) |> normalize_exception()
@@ -202,6 +217,44 @@ defmodule Jido.Console.Error do
       message = fallback_message(reason)
       ExecutionFailureError.exception(message: message, details: %{reason: message})
   end
+
+  defp legacy_invalid_operation(reason) do
+    case fetch(reason, :message) do
+      message when is_binary(message) ->
+        case Regex.run(~r/:invalid_operation_arguments,\s+"([^"]+)"/, message) do
+          [_match, operation] -> {:ok, operation, message}
+          _no_match -> :error
+        end
+
+      _message ->
+        :error
+    end
+  end
+
+  defp invalid_operation_error(operation, validation) do
+    execution_error(
+      invalid_operation_message(operation, validation),
+      %{operation: operation, reason: :invalid_operation_arguments}
+    )
+  end
+
+  defp invalid_operation_message("coding.read", validation) do
+    validation = validation_message(validation)
+
+    if String.contains?(validation, "#/start_line") and String.contains?(validation, "minimum 1") do
+      "The coding.read tool requires start_line to be 1 or greater. Try the task again."
+    else
+      "The coding.read tool received invalid arguments. Try the task again."
+    end
+  end
+
+  defp invalid_operation_message(_operation, _validation),
+    do: "A coding tool received invalid arguments. Try the task again."
+
+  defp validation_message(%{message: message}) when is_binary(message), do: message
+  defp validation_message(%{"message" => message}) when is_binary(message), do: message
+  defp validation_message(message) when is_binary(message), do: message
+  defp validation_message(validation), do: inspect(validation, limit: 20, printable_limit: 500)
 
   @doc "Returns a stable, redacted message for a reason."
   @spec message(term()) :: String.t()
@@ -437,6 +490,9 @@ defmodule Jido.Console.Error do
 
   defp find_storage_configuration_reason(reason)
 
+  defp find_storage_configuration_reason({:home_locked, path} = reason) when is_binary(path),
+    do: {:ok, reason}
+
   defp find_storage_configuration_reason({:storage_schema_backup_exists, path, backup} = reason)
        when is_binary(path) and is_binary(backup),
        do: {:ok, reason}
@@ -473,6 +529,14 @@ defmodule Jido.Console.Error do
     config_error(
       "Old Jido database backup already exists at #{backup}. Move it before startup.",
       %{backup: backup, reason: :storage_schema_backup_exists}
+    )
+  end
+
+  defp normalize_storage_configuration({:home_locked, path}) do
+    config_error(
+      "Another Jido process is using the local console database at #{path}. " <>
+        "Close the other Jido session, or set JIDO_HOME to a different directory.",
+      %{database: path, reason: :home_locked}
     )
   end
 

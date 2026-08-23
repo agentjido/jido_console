@@ -67,7 +67,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
 
     task = Task.async(fn -> Tui.run(opts) end)
     assert_receive {:term_ui_started, runtime}, 2_000
-    assert_frame("idle · Enter sends")
+    assert_frame("INPUT · Enter send")
 
     send_event(event_queue, TermUI.Event.paste("Inspect this project."))
     send_event(event_queue, TermUI.Event.key(:enter))

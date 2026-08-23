@@ -177,6 +177,52 @@ defmodule Jido.Console.Tui.Turn do
     end
   end
 
+  @doc "Applies safe, portable Jidoka stream projections to one live turn."
+  @spec apply_stream(t(), [map()]) :: t()
+  def apply_stream(%__MODULE__{} = turn, projections) when is_list(projections) do
+    projections
+    |> Enum.with_index()
+    |> Enum.reduce(turn, fn {projection, index}, turn ->
+      projection = normalize_stream_projection(projection, turn, index)
+
+      with {:ok, timeline_event} <- timeline_event(projection),
+           {:ok, turn} <- apply_event(turn, timeline_event) do
+        turn
+      else
+        {:ignore, _reason} -> turn
+      end
+    end)
+  end
+
+  def apply_stream(%__MODULE__{} = turn, _projections), do: turn
+
+  @doc "Restores safe tool identities from one durable assistant message."
+  @spec restore_tool_calls(t(), [map()]) :: t()
+  def restore_tool_calls(%__MODULE__{} = turn, calls) when is_list(calls) do
+    calls
+    |> Enum.with_index()
+    |> Enum.reduce(turn, fn {call, index}, turn -> restore_tool_call(turn, call, index) end)
+  end
+
+  def restore_tool_calls(%__MODULE__{} = turn, _calls), do: turn
+
+  @doc "Marks one durable tool-result identity complete without retaining its result."
+  @spec restore_tool_result(t(), map()) :: t()
+  def restore_tool_result(%__MODULE__{} = turn, message) when is_map(message) do
+    tool_call_id = map_get(message, :tool_call_id)
+    operation = map_get(message, :operation)
+
+    case restored_tool_id(turn, tool_call_id, operation) do
+      nil ->
+        restore_completed_tool(turn, operation)
+
+      id ->
+        update_tool_status(turn, id, :completed)
+    end
+  end
+
+  def restore_tool_result(%__MODULE__{} = turn, _message), do: turn
+
   @spec finish(t(), atom(), String.t() | nil, keyword()) :: t()
   def finish(%__MODULE__{} = turn, outcome, content, opts \\ []) do
     assistant =
@@ -187,6 +233,7 @@ defmodule Jido.Console.Tui.Turn do
     %{
       turn
       | assistant: assistant,
+        tools: finalize_tools(turn.tools, outcome),
         reviews: opts |> Keyword.get(:reviews, turn.reviews) |> normalize_records() |> retain(@record_limit),
         changes: opts |> Keyword.get(:changes, turn.changes) |> normalize_records() |> retain(@record_limit),
         outcome: %{
@@ -231,7 +278,7 @@ defmodule Jido.Console.Tui.Turn do
             | operation: data.operation || tool.operation,
               status: data.status,
               events: retain(tool.events ++ [event], @tool_event_limit),
-              summary: data.summary,
+              summary: data.summary || tool.summary,
               error: data.error || tool.error,
               loop_index: data.loop_index || tool.loop_index
           }
@@ -253,6 +300,119 @@ defmodule Jido.Console.Tui.Turn do
 
   defp apply_projection(turn, _projection), do: turn
 
+  defp timeline_event(projection) when is_map(projection) do
+    request_id = map_get(projection, :request_id)
+    sequence = map_get(projection, :seq)
+    event = map_get(projection, :event)
+
+    if is_binary(request_id) and is_integer(sequence) and is_binary(event) do
+      timeline_event(projection, request_id, sequence, event)
+    else
+      {:ignore, :invalid_projection}
+    end
+  end
+
+  defp timeline_event(_projection), do: {:ignore, :invalid_projection}
+
+  defp timeline_event(projection, request_id, sequence, "llm_delta") do
+    case assistant_delta(map_get(projection, :data, %{})) do
+      "" ->
+        {:ignore, :non_content_delta}
+
+      text ->
+        {:ok,
+         %{
+           id: timeline_event_id(projection, request_id, sequence, "llm_delta"),
+           request_id: request_id,
+           seq: sequence,
+           event: "llm_delta",
+           kind: :assistant_delta,
+           data: %{text: text}
+         }}
+    end
+  end
+
+  defp timeline_event(projection, request_id, sequence, event)
+       when event in ~w(effect_planned effect_started effect_replayed effect_completed effect_failed) do
+    if map_get(projection, :effect_kind) == "operation" do
+      operation = safe_operation(map_get(projection, :operation))
+      effect_id = map_get(projection, :effect_id) || {:operation, map_get(projection, :loop_index), operation}
+
+      {:ok,
+       %{
+         id: timeline_event_id(projection, request_id, sequence, event),
+         request_id: request_id,
+         seq: sequence,
+         event: event,
+         kind: :tool,
+         data: %{
+           id: effect_id,
+           operation: operation,
+           status: tool_status(event),
+           summary: nil,
+           error: nil,
+           loop_index: map_get(projection, :loop_index)
+         }
+       }}
+    else
+      {:ignore, :non_operation_effect}
+    end
+  end
+
+  defp timeline_event(_projection, _request_id, _sequence, _event), do: {:ignore, :unrendered_event}
+
+  defp normalize_stream_projection(projection, turn, index) when is_map(projection) do
+    projection
+    |> put_missing(:request_id, turn.request_id)
+    |> put_missing(:seq, index)
+    |> put_legacy_delta_event()
+  end
+
+  defp normalize_stream_projection(projection, _turn, _index), do: projection
+
+  defp put_legacy_delta_event(projection) do
+    if is_nil(map_get(projection, :event)) and assistant_delta(map_get(projection, :data, %{})) != "",
+      do: Map.put(projection, :event, "llm_delta"),
+      else: projection
+  end
+
+  defp put_missing(map, key, value) do
+    if is_nil(map_get(map, key)) and not is_nil(value), do: Map.put(map, key, value), else: map
+  end
+
+  defp timeline_event_id(projection, request_id, sequence, event) do
+    {request_id, sequence, event, map_get(projection, :effect_id)}
+  end
+
+  defp assistant_delta(data) when is_map(data) do
+    chunk_type = map_get(data, :chunk_type)
+    type = map_get(data, :type)
+
+    if chunk_type in [nil, "content"] and type not in ["reasoning_delta", "thinking"] do
+      [:text, :delta, :content]
+      |> Enum.find_value("", fn key ->
+        case map_get(data, key) do
+          value when is_binary(value) -> value
+          _other -> nil
+        end
+      end)
+      |> SafeText.clean()
+    else
+      ""
+    end
+  end
+
+  defp assistant_delta(_data), do: ""
+
+  defp tool_status("effect_planned"), do: :planned
+  defp tool_status("effect_started"), do: :running
+  defp tool_status("effect_replayed"), do: :replayed
+  defp tool_status("effect_completed"), do: :completed
+  defp tool_status("effect_failed"), do: :failed
+
+  defp safe_operation(operation) when is_binary(operation), do: SafeText.summary(operation)
+  defp safe_operation(_operation), do: nil
+
   defp record_event(turn, projection) do
     event = %{id: projection.id, seq: projection.seq, event: projection.event, kind: projection.kind}
     events = retain(turn.events ++ [event], @event_limit)
@@ -264,6 +424,88 @@ defmodule Jido.Console.Tui.Turn do
         events: events
     }
   end
+
+  defp restore_tool_call(turn, call, index) when is_map(call) do
+    operation = safe_operation(map_get(call, :name, map_get(call, :operation)))
+
+    if is_binary(operation) and operation != "" do
+      id = map_get(call, :provider_call_id, map_get(call, :id)) || {:transcript, turn.id, index}
+
+      tool = %Tool{
+        id: id,
+        operation: operation,
+        status: :planned,
+        events: [],
+        summary: nil,
+        error: nil,
+        loop_index: nil
+      }
+
+      put_restored_tool(turn, tool)
+    else
+      turn
+    end
+  end
+
+  defp restore_tool_call(turn, _call, _index), do: turn
+
+  defp put_restored_tool(turn, %Tool{id: id} = tool) do
+    order = if Map.has_key?(turn.tools, id), do: turn.tool_order, else: turn.tool_order ++ [id]
+    {tools, order} = retain_tools(Map.put(turn.tools, id, tool), order)
+    %{turn | tools: tools, tool_order: order}
+  end
+
+  defp restored_tool_id(turn, tool_call_id, _operation)
+       when not is_nil(tool_call_id) and is_map_key(turn.tools, tool_call_id),
+       do: tool_call_id
+
+  defp restored_tool_id(turn, _tool_call_id, operation) when is_binary(operation) do
+    Enum.find(turn.tool_order, fn id ->
+      tool = Map.fetch!(turn.tools, id)
+      tool.operation == operation and tool.status in [:planned, :running]
+    end)
+  end
+
+  defp restored_tool_id(_turn, _tool_call_id, _operation), do: nil
+
+  defp restore_completed_tool(turn, operation) when is_binary(operation) and operation != "" do
+    index = length(turn.tool_order)
+
+    put_restored_tool(turn, %Tool{
+      id: {:transcript_result, turn.id, index},
+      operation: SafeText.summary(operation),
+      status: :completed,
+      events: [],
+      summary: nil,
+      error: nil,
+      loop_index: nil
+    })
+  end
+
+  defp restore_completed_tool(turn, _operation), do: turn
+
+  defp update_tool_status(turn, id, status) do
+    %{turn | tools: Map.update!(turn.tools, id, &%{&1 | status: status})}
+  end
+
+  defp finalize_tools(tools, outcome) do
+    Map.new(tools, fn {id, tool} -> {id, finalize_tool(tool, outcome)} end)
+  end
+
+  defp finalize_tool(%Tool{status: status} = tool, outcome) when status in [:planned, :running] do
+    status =
+      case outcome do
+        :completed -> :completed
+        :cancelled -> :cancelled
+        :interrupted -> :cancelled
+        :failed -> :failed
+        _other -> status
+      end
+
+    %{tool | status: status}
+  end
+
+  defp finalize_tool(%Tool{} = tool, _outcome), do: tool
 
   defp attachments(context) do
     context
@@ -370,4 +612,7 @@ defmodule Jido.Console.Tui.Turn do
 
   defp safe_optional(nil), do: nil
   defp safe_optional(value), do: SafeText.summary(value)
+
+  defp map_get(map, key, default \\ nil)
+  defp map_get(map, key, default) when is_map(map), do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
 end

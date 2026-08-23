@@ -56,6 +56,30 @@ defmodule Jido.Console.ErrorTest do
                Error.normalize({:unknown_runtime_profile, "trusted"})
     end
 
+    test "turns coding tool validation details into a concise recovery message" do
+      validation = %{
+        message:
+          "json schema validation failed\n\nat: \"#/start_line\"\nerrors:\n" <>
+            "  - value 0 is lower than minimum 1"
+      }
+
+      direct = Error.normalize({:invalid_operation_arguments, "coding.read", validation})
+
+      legacy =
+        Error.normalize(%{
+          "category" => "unknown",
+          "message" =>
+            ~s(%{type: "tuple", values: [:invalid_operation_arguments, "coding.read", %{message: "#{validation.message}"}]})
+        })
+
+      for error <- [direct, legacy] do
+        assert %Error.ExecutionFailureError{} = error
+
+        assert Exception.message(error) ==
+                 "The coding.read tool requires start_line to be 1 or greater. Try the task again."
+      end
+    end
+
     test "finds a storage backup failure inside an OTP application startup error" do
       database = "/private/jido/state/console.sqlite3"
       backup = database <> ".schema-1-backup"
@@ -72,6 +96,19 @@ defmodule Jido.Console.ErrorTest do
 
       assert Exception.message(normalized) ==
                "Old Jido database backup already exists at #{backup}. Move it before startup."
+    end
+
+    test "explains a database lock held by another Jido process" do
+      database = "/private/jido/state/console-lock.sqlite3"
+      reason = {:jido_console, {:shutdown, {:failed_to_start_child, :storage, {:home_locked, database}}}}
+
+      assert %Error.ConfigurationError{} = normalized = Error.normalize(reason)
+      message = Exception.message(normalized)
+
+      assert message =~ "Another Jido process is using the local console database"
+      assert message =~ database
+      assert message =~ "Close the other Jido session"
+      assert message =~ "JIDO_HOME"
     end
 
     test "gives clear messages for other storage schema startup failures" do

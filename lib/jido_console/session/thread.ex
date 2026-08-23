@@ -1,6 +1,7 @@
 defmodule Jido.Console.Session.Thread do
   @moduledoc "State transitions and effects for one live thread owner."
 
+  alias Jido.Console.Error
   alias Jido.Console.Session.{Command, Event, JidokaBridge, Queue, Recovery, ThreadResources, View}
   alias Jido.Console.Storage
   alias Jidoka.Session.{Data, Store}
@@ -199,7 +200,7 @@ defmodule Jido.Console.Session.Thread do
   @doc "Moves the thread to an unavailable state and publishes its View."
   @spec unavailable(map(), term()) :: map()
   def unavailable(state, reason),
-    do: View.publish(%{state | status: :unavailable, error: Event.json(Jidoka.error_to_map(reason))})
+    do: View.publish(%{state | status: :unavailable, error: Event.json(Error.to_map(reason))})
 
   defp submit(command, state) do
     digest = Command.digest(command)
@@ -390,7 +391,7 @@ defmodule Jido.Console.Session.Thread do
 
       {:error, reason} ->
         finish_terminal(%{state | session: session}, "prompt_failed", %{
-          "error" => Event.json(Jidoka.error_to_map(reason))
+          "error" => Event.json(Error.to_map(reason))
         })
     end
   end
@@ -400,13 +401,13 @@ defmodule Jido.Console.Session.Thread do
       finish_terminal(%{state | session: session}, "prompt_succeeded", %{"result" => Event.json(Jidoka.project(result))})
 
   defp finish_result(state, {:cancelled, cancellation}),
-    do: finish_loaded(state, "prompt_cancelled", %{"error" => Event.json(Jidoka.error_to_map(cancellation))})
+    do: finish_loaded(state, "prompt_cancelled", %{"error" => Event.json(Error.to_map(cancellation))})
 
   defp finish_result(state, {:error, reason}),
-    do: finish_loaded(state, "prompt_failed", %{"error" => Event.json(Jidoka.error_to_map(reason))})
+    do: finish_loaded(state, "prompt_failed", %{"error" => Event.json(Error.to_map(reason))})
 
   defp finish_result(state, result),
-    do: finish_loaded(state, "prompt_failed", %{"error" => Event.json(Jidoka.error_to_map({:invalid_result, result}))})
+    do: finish_loaded(state, "prompt_failed", %{"error" => Event.json(Error.to_map({:invalid_result, result}))})
 
   defp present_review(state, review) do
     projected = review |> Jidoka.project() |> Event.json()
@@ -464,7 +465,7 @@ defmodule Jido.Console.Session.Thread do
   defp fail_start(state, reason, true), do: unavailable(%{state | status: :finishing}, reason)
 
   defp fail_start(state, reason, false),
-    do: finish_terminal(state, "prompt_failed", %{"error" => Event.json(Jidoka.error_to_map(reason))})
+    do: finish_terminal(state, "prompt_failed", %{"error" => Event.json(Error.to_map(reason))})
 
   defp start_next(state) do
     case Queue.pop(state.queue) do

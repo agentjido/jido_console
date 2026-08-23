@@ -85,6 +85,53 @@ defmodule Jido.Console.TuiTest do
     assert_receive :terminal_closed
   end
 
+  test "streams safe operation lifecycle states into the supervised timeline", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    task = Task.async(fn -> Tui.run(Keyword.put(opts, :session_id, "timeline-thread")) end)
+    assert_receive {:term_ui_started, runtime}
+    assert_receive {:frame, _initial}
+
+    send_event(event_queue, TermUI.Event.paste("inspect"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert_receive {:provider_started, "timeline-thread", request_id, bridge}, 2_000
+
+    started =
+      Jidoka.Event.build(:effect_started, [],
+        request_id: request_id,
+        seq: 0,
+        effect_id: "effect-1",
+        effect_kind: :operation,
+        operation: "coding.read",
+        data: %{reason: "must-not-render"}
+      )
+
+    send(bridge, {:emit, started})
+    running = await_frame("● RUNNING  coding.read")
+    refute running =~ "must-not-render"
+
+    completed =
+      Jidoka.Event.build(:effect_completed, [],
+        request_id: request_id,
+        seq: 1,
+        effect_id: "effect-1",
+        effect_kind: :operation,
+        operation: "coding.read",
+        data: %{reason: "must-not-render"}
+      )
+
+    send(bridge, {:emit, completed})
+    assert await_frame("✓ DONE  coding.read")
+
+    send(bridge, :finish)
+    assert await_frame("✗ FAILED")
+
+    TermUI.Runtime.shutdown(runtime)
+    assert :ok = Task.await(task, 2_000)
+    assert_receive :terminal_closed
+  end
+
   test "paints and queues input before application startup completes", %{
     opts: opts,
     event_queue: event_queue
@@ -108,19 +155,19 @@ defmodule Jido.Console.TuiTest do
 
     task = Task.async(fn -> Tui.run(opts) end)
     assert_receive {:term_ui_started, runtime}
-    assert await_frame("starting runtime") =~ "Enter queues prompt"
+    assert await_frame("STARTING · Enter queue") =~ "Enter queue"
     assert_receive {:application_startup_waiting, startup_pid}
 
     send_event(event_queue, TermUI.Event.paste("typed during startup"))
     send_event(event_queue, TermUI.Event.key(:enter))
 
-    assert await_frame("prompt queued") =~ "starting runtime"
+    assert await_frame("STARTING · prompt queued") =~ "prompt queued"
     refute_receive {:provider_started, "paint-first-thread", _request_id, _bridge}, 100
 
     send(startup_pid, :continue_startup)
     assert_receive {:provider_started, "paint-first-thread", _request_id, bridge}, 2_000
     send(bridge, :finish)
-    assert await_frame("idle · Enter sends")
+    assert await_frame("INPUT · Enter send")
 
     TermUI.Runtime.shutdown(runtime)
     assert :ok = Task.await(task, 2_000)
@@ -159,7 +206,7 @@ defmodule Jido.Console.TuiTest do
     assert await_frame("prompt cancelled")
 
     send(startup_pid, :continue_startup)
-    assert await_frame("idle · Enter sends")
+    assert await_frame("INPUT · Enter send")
     refute_receive {:provider_started, "cancelled-startup-thread", _request_id, _bridge}, 100
 
     TermUI.Runtime.shutdown(runtime)
@@ -174,8 +221,8 @@ defmodule Jido.Console.TuiTest do
     opts = Keyword.put(opts, :process_register, fn _kind, _pid, _opts -> {:error, :busy} end)
     task = Task.async(fn -> Tui.run(opts) end)
     assert_receive {:term_ui_started, _runtime}
-    frame = await_frame("startup failed")
-    assert frame =~ "startup failed"
+    frame = await_frame("STARTUP FAILED")
+    assert frame =~ "STARTUP FAILED"
     send_event(event_queue, TermUI.Event.key(:escape))
     assert {:error, {:process_register_failed, :busy}} = Task.await(task, 2_000)
     assert_receive :terminal_closed
@@ -207,8 +254,8 @@ defmodule Jido.Console.TuiTest do
 
     task = Task.async(fn -> Tui.run(opts) end)
     assert_receive {:term_ui_started, _runtime}
-    frame = await_frame("startup failed")
-    assert frame =~ "startup failed"
+    frame = await_frame("STARTUP FAILED")
+    assert frame =~ "STARTUP FAILED"
     assert frame =~ "Old Jido database backup already exists"
     send_event(event_queue, TermUI.Event.key(:escape))
     assert {:error, ^reason} = Task.await(task, 2_000)

@@ -72,6 +72,7 @@ defmodule Jido.Console.Coding.ProviderOptions do
     For a repository overview, inspect the repository instead of answering from project instructions alone.
     Start with a root path search, then read the README and the main build manifest when they exist.
     For a normal text read, omit byte offsets and lengths unless you continue a truncated result.
+    Line ranges are one-based. The first valid start_line or end_line value is 1.
     """
 
     Map.update!(attrs, :instructions, &(&1 <> local_instructions))

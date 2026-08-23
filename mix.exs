@@ -7,6 +7,7 @@ defmodule Jido.Console.MixProject do
   @source_url "https://github.com/agentjido/jido_console"
   @description "Interactive terminal harness for the Jidoka agent framework."
   @jidoka_ref "caef68851df6812bf97c1ff2d815da610ab78c62"
+  @term_ui_ref "4314b8302c5fce7f2ac486ff319731bb1ddf147f"
   @documented_modules [Jido.Console, Jido.Console.Error]
 
   def project do
@@ -157,7 +158,17 @@ defmodule Jido.Console.MixProject do
   end
 
   defp term_ui_dep do
-    {:term_ui, github: "mikehostetler/term_ui", ref: "4314b8302c5fce7f2ac486ff319731bb1ddf147f"}
+    case System.get_env("JIDO_CONSOLE_TERM_UI_PATH") do
+      nil ->
+        {:term_ui, github: "mikehostetler/term_ui", ref: @term_ui_ref}
+
+      path ->
+        if Mix.env() in [:dev, :test] do
+          {:term_ui, path: Path.expand(path)}
+        else
+          raise "JIDO_CONSOLE_TERM_UI_PATH is permitted only in development and test"
+        end
+    end
   end
 
   # ReqLLM owns llm_db as an included application. The explicit release mode

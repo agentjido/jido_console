@@ -18,6 +18,7 @@ defmodule Jido.Console.Coding.ProviderOptionsTest do
 
       assert tuned.generation.params == expected
       assert tuned.runtime_defaults.max_model_turns == 12
+      assert tuned.instructions =~ "The first valid start_line or end_line value is 1."
     end
 
     assert ProviderOptions.turn_opts("coding.local", "anthropic:claude-test") ==

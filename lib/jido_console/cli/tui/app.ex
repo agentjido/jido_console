@@ -15,6 +15,7 @@ defmodule Jido.Console.Tui.App do
     tui =
       State.new(nil, Keyword.fetch!(opts, :dimensions),
         startup: :starting,
+        project_root: Keyword.get(tui_opts, :project_root) || current_directory(),
         model: Keyword.get(tui_opts, :model),
         coding_profile: Keyword.get(tui_opts, :coding_profile),
         catalog_entries: Keyword.get(tui_opts, :catalog_entries, [])
@@ -240,4 +241,11 @@ defmodule Jido.Console.Tui.App do
   end
 
   defp process_opts(opts), do: Keyword.take(opts, [:name, :jido_home])
+
+  defp current_directory do
+    case File.cwd() do
+      {:ok, path} -> path
+      {:error, _reason} -> nil
+    end
+  end
 end

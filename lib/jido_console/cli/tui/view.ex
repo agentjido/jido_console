@@ -4,7 +4,7 @@ defmodule Jido.Console.Tui.View do
   alias Jido.Console.Tui.{Activity, Editor, SafeText, Selection, State}
   alias Jido.Console.Tui.Turn.Tool
   alias Jido.Console.Terminal.TextLayout
-  alias TermUI.{Frame, Markdown, Style}
+  alias TermUI.{DisplayWidth, Frame, Markdown, Style}
   alias TermUI.Widget.DiffViewer
 
   @max_rendered_turns 200
@@ -36,7 +36,15 @@ defmodule Jido.Console.Tui.View do
     review = review_rows(state.coding_reviews, width, min(div(height, 2), body_height))
     transcript_height = max(body_height - length(review), 0)
     row_limit = min(transcript_height + state.scroll_offset, @max_transcript_rows)
-    transcript = transcript_viewport(transcript_rows(state, width, row_limit), transcript_height, state.scroll_offset)
+
+    transcript =
+      transcript_viewport(
+        transcript_rows(state, width, row_limit),
+        transcript_height,
+        state.scroll_offset,
+        transcript_alignment(state)
+      )
+
     divider = String.duplicate("─", width)
     status = status_row(state)
 
@@ -49,24 +57,57 @@ defmodule Jido.Console.Tui.View do
     |> Frame.overlay(editor, 3, prompt_start)
   end
 
-  defp transcript_viewport(_rows, 0, _offset), do: []
+  defp transcript_viewport(_rows, 0, _offset, _alignment), do: []
 
-  defp transcript_viewport(rows, height, offset) do
-    offset = min(offset, max(length(rows) - height, 0))
-    stop = length(rows) - offset
-    start = max(stop - height, 0)
-    visible = Enum.slice(rows, start, height)
-    List.duplicate("", height - length(visible)) ++ visible
+  defp transcript_viewport(rows, height, _offset, :welcome) do
+    rows = Enum.take(rows, height)
+    open_rows = height - length(rows)
+    top = div(open_rows, 3)
+    List.duplicate("", top) ++ rows ++ List.duplicate("", open_rows - top)
+  end
+
+  defp transcript_viewport(rows, height, _offset, :top) do
+    rows = Enum.take(rows, height)
+    rows ++ List.duplicate("", height - length(rows))
+  end
+
+  defp transcript_viewport(rows, height, offset, :bottom) do
+    if offset == 0 and length(rows) <= height do
+      rows ++ List.duplicate("", height - length(rows))
+    else
+      offset = min(offset, max(length(rows) - height, 0))
+      stop = length(rows) - offset
+      start = max(stop - height, 0)
+      visible = Enum.slice(rows, start, height)
+      List.duplicate("", height - length(visible)) ++ visible
+    end
+  end
+
+  defp transcript_alignment(%State{activity: {:failed, :startup, _reason, _error}}), do: :top
+
+  defp transcript_alignment(%State{} = state) do
+    if state.turns == [] and is_nil(State.active_turn(state)) and state.messages == [] and
+         state.project_instructions == [],
+       do: :welcome,
+       else: :bottom
   end
 
   defp transcript_rows(_state, _width, 0), do: []
+
+  defp transcript_rows(%State{activity: {:failed, :startup, _reason, error}}, width, row_limit) do
+    startup_failure_rows(error, width, row_limit)
+  end
 
   defp transcript_rows(state, width, row_limit) do
     active_turn = State.active_turn(state)
 
     if state.turns == [] and is_nil(active_turn) do
-      recent_rows(state.messages, row_limit, &message_rows([&1], width, row_limit))
-      |> prepend_instructions(state.project_instructions, width, row_limit)
+      if state.messages == [] and state.project_instructions == [] do
+        welcome_rows(state, width, row_limit)
+      else
+        recent_rows(state.messages, row_limit, &message_rows([&1], width, row_limit))
+        |> prepend_instructions(state.project_instructions, width, row_limit)
+      end
     else
       turns = state.turns ++ if(active_turn, do: [active_turn], else: [])
 
@@ -76,6 +117,55 @@ defmodule Jido.Console.Tui.View do
       |> prepend_instructions(state.project_instructions, width, row_limit)
     end
   end
+
+  defp welcome_rows(state, width, row_limit) do
+    selection = state.selection || %{}
+    model = Map.get(selection, :model) || "not selected"
+    tier = Map.get(selection, :model_tier)
+    model = if tier, do: "#{model} (#{tier})", else: model
+    profile = Map.get(selection, :profile_id) || "not selected"
+    workspace = state.project_root || "current directory"
+
+    action =
+      if state.startup == :starting,
+        do: "You can type now. Enter queues the task while Jido starts.",
+        else: "Type a task below and press Enter."
+
+    title = if state.startup == :starting, do: "Starting Jido", else: "Jido is ready"
+
+    [
+      title,
+      "",
+      action,
+      "",
+      "Model     #{SafeText.summary(model)}",
+      "Profile   #{SafeText.summary(profile)}",
+      "Workspace #{SafeText.summary(workspace)}",
+      "",
+      "Try: Explain this project and suggest the next small change."
+    ]
+    |> fit_priority_rows(width, row_limit)
+  end
+
+  defp startup_failure_rows(error, width, row_limit) do
+    rows =
+      ["Jido could not start", ""] ++
+        TextLayout.wrap(SafeText.clean(error), width) ++
+        ["", "Fix the error above, then start Jido again.", "Press Esc to exit."]
+
+    rows
+    |> Enum.take(row_limit)
+    |> Enum.map(&TextLayout.fit(&1, width))
+  end
+
+  defp fit_priority_rows(rows, width, row_limit) when row_limit < length(rows) do
+    rows
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.take(row_limit)
+    |> Enum.map(&TextLayout.fit(&1, width))
+  end
+
+  defp fit_priority_rows(rows, width, _row_limit), do: Enum.map(rows, &TextLayout.fit(&1, width))
 
   defp recent_rows(items, limit, render) do
     items
@@ -118,76 +208,129 @@ defmodule Jido.Console.Tui.View do
 
   defp message_block(message, width, limit) do
     case role(message.role) do
-      "Assistant" -> markdown_rows("Assistant", message.content, width, limit)
+      "JIDO" -> markdown_rows("JIDO", message.content, width, limit)
       label -> content_rows(label, message.content, width, limit)
     end
   end
 
   defp turn_rows(turn, width, limit) do
-    user = content_rows("User", turn.prompt, width, limit)
+    user = content_rows("YOU", turn.prompt, width, limit)
 
     attachments =
       Enum.map(turn.attachments, fn attachment ->
         TextLayout.fit("  @#{attachment["path"]} · #{attachment["size"] || 0} bytes", width)
       end)
 
-    tools = Enum.flat_map(turn.tool_order, &tool_rows(Map.fetch!(turn.tools, &1), width))
-    assistant = markdown_rows(assistant_role(turn), turn.assistant, width, limit)
+    tools =
+      turn.tool_order
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {id, index} ->
+        tool_rows(Map.fetch!(turn.tools, id), width, index == length(turn.tool_order) - 1)
+      end)
+
+    assistant = markdown_body_rows(turn.assistant, width, limit)
     reviews = Enum.flat_map(turn.reviews, &approval_rows(&1, width))
     error = error_rows(turn.outcome, width)
+    agent_body = tools ++ assistant ++ reviews ++ error
 
-    (user ++ attachments ++ tools ++ assistant ++ reviews ++ error)
+    agent =
+      if agent_body == [] do
+        []
+      else
+        [role_row(assistant_role(turn))] ++ agent_body ++ [""]
+      end
+
+    (user ++ attachments ++ agent)
     |> Enum.take(-limit)
   end
 
   defp error_rows(%{status: :failed, error: error}, width) when is_binary(error) and error != "",
-    do: content_rows("Error", error, width)
+    do: timeline_notice_rows("✗ FAILED", error, width, :failed)
 
   defp error_rows(_outcome, _width), do: []
 
   defp assistant_role(%{outcome: %{status: :failed}, assistant: assistant}) when assistant != "",
-    do: "Assistant (partial)"
+    do: "JIDO · PARTIAL"
 
-  defp assistant_role(_turn), do: "Assistant"
-
-  defp content_rows(_role, "", _width), do: []
-  defp content_rows(role, content, width), do: [role | TextLayout.wrap(content, width)] ++ [""]
+  defp assistant_role(_turn), do: "JIDO"
 
   defp content_rows(_role, "", _width, _limit), do: []
 
   defp content_rows(role, content, width, limit) do
-    ([role] ++ TextLayout.wrap_tail(content, width, max(limit - 2, 1)) ++ [""])
+    rows = TextLayout.wrap_tail(content, max(width - 2, 1), max(limit - 2, 1))
+
+    ([role_row(role)] ++ indent_text_rows(rows, width) ++ [""])
     |> Enum.take(-limit)
   end
 
   defp markdown_rows(_role, "", _width, _limit), do: []
 
   defp markdown_rows(role, content, width, limit) do
-    byte_limit = min(@max_markdown_bytes, max(limit * width * 8, 4_096))
-
-    rendered =
-      content
-      |> TextLayout.retain_tail(byte_limit)
-      |> Markdown.render(width)
-      |> Enum.take(-max(limit - 2, 1))
-
-    ([role] ++ rendered ++ [""])
+    ([role_row(role)] ++ markdown_body_rows(content, width, limit) ++ [""])
     |> Enum.take(-limit)
   end
 
-  defp tool_rows(%Tool{} = tool, width) do
-    operation = SafeText.summary(tool.operation || "tool")
-    header = "#{tool_marker(tool.status)} #{operation}"
+  defp markdown_body_rows("", _width, _limit), do: []
 
-    detail =
-      if tool.summary in [nil, "", operation] do
-        []
-      else
-        ["  #{SafeText.summary(tool.summary)}"]
-      end
+  defp markdown_body_rows(content, width, limit) do
+    byte_limit = min(@max_markdown_bytes, max(limit * width * 8, 4_096))
+    inner_width = max(width - 2, 1)
 
-    Enum.map([header | detail], &TextLayout.fit(&1, width))
+    content
+    |> TextLayout.retain_tail(byte_limit)
+    |> Markdown.render(inner_width)
+    |> Enum.take(-max(limit - 1, 1))
+    |> Enum.map(&[{"  ", Style.new()} | &1])
   end
+
+  defp indent_text_rows(rows, width) do
+    Enum.map(rows, &TextLayout.fit("  " <> &1, width))
+  end
+
+  defp role_row("YOU"), do: [{"YOU", Style.new(fg: :cyan, attrs: [:bold])}]
+  defp role_row("JIDO"), do: [{"JIDO", Style.new(attrs: [:bold])}]
+  defp role_row("JIDO · PARTIAL"), do: [{"JIDO · PARTIAL", Style.new(fg: :cyan, attrs: [:bold])}]
+  defp role_row(role), do: [{role, Style.new(fg: :bright_black, attrs: [:bold])}]
+
+  defp timeline_notice_rows(label, content, width, status) do
+    [
+      [{"  #{label}", timeline_status_style(status)}]
+      | indent_text_rows(TextLayout.wrap(content, max(width - 4, 1)), width)
+    ]
+  end
+
+  defp tool_rows(%Tool{} = tool, width, last?) do
+    operation = SafeText.summary(tool.operation || "tool")
+    connector = if(last?, do: "└─", else: "├─")
+    {symbol, label, style} = tool_status(tool.status)
+    prefix = "  #{connector} #{symbol} #{label}  "
+    available = max(width - DisplayWidth.string_width(prefix), 0)
+    {operation, _operation_width} = DisplayWidth.truncate(operation, available)
+
+    [
+      [
+        {"  #{connector} ", Style.new(fg: :bright_black)},
+        {"#{symbol} #{label}", style},
+        {"  #{operation}", Style.new()}
+      ]
+    ]
+  end
+
+  defp tool_status(:planned), do: {"○", "PLANNED", timeline_status_style(:planned)}
+  defp tool_status(:running), do: {"●", "RUNNING", timeline_status_style(:running)}
+  defp tool_status(:completed), do: {"✓", "DONE", timeline_status_style(:completed)}
+  defp tool_status(:failed), do: {"✗", "FAILED", timeline_status_style(:failed)}
+  defp tool_status(:cancelled), do: {"■", "CANCELLED", timeline_status_style(:cancelled)}
+  defp tool_status(:replayed), do: {"↻", "REPLAYED", timeline_status_style(:replayed)}
+  defp tool_status(status), do: {"•", status |> to_string() |> String.upcase(), timeline_status_style(:planned)}
+
+  defp timeline_status_style(:planned), do: Style.new(fg: :bright_black)
+  defp timeline_status_style(:running), do: Style.new(fg: :cyan, attrs: [:bold])
+  defp timeline_status_style(:completed), do: Style.new(fg: :green)
+  defp timeline_status_style(:failed), do: Style.new(fg: :red, attrs: [:bold])
+  defp timeline_status_style(:cancelled), do: Style.new(fg: :yellow)
+  defp timeline_status_style(:replayed), do: Style.new(fg: :blue)
+  defp timeline_status_style(:review), do: Style.new(fg: :yellow, attrs: [:bold])
 
   defp approval_rows(review, width) do
     operation = review |> Map.get(:operation, Map.get(review, "operation")) |> then(&SafeText.summary(&1 || "tool"))
@@ -198,7 +341,11 @@ defmodule Jido.Console.Tui.View do
     rows =
       case status do
         :pending ->
-          ["Review required", "  #{operation}#{arguments_suffix(arguments)}", "  A approve · D deny"]
+          [
+            [{"  ◆ REVIEW REQUIRED", timeline_status_style(:review)}],
+            TextLayout.fit("    #{operation}#{arguments_suffix(arguments)}", width),
+            TextLayout.fit("    A approve · D deny", width)
+          ]
 
         :approved ->
           ["[approved] #{operation}#{arguments_suffix(arguments)}"]
@@ -219,31 +366,70 @@ defmodule Jido.Console.Tui.View do
           ["[review #{status}] #{operation}#{arguments_suffix(arguments)}"]
       end
 
-    Enum.map(rows, &TextLayout.fit(&1, width))
+    Enum.map(rows, fn
+      row when is_binary(row) -> TextLayout.fit(row, width)
+      row -> row
+    end)
   end
 
   defp arguments_suffix(arguments) when arguments in [nil, "", "%{}"], do: ""
   defp arguments_suffix(arguments), do: " · #{arguments}"
 
-  defp tool_marker(:planned), do: "[planned]"
-  defp tool_marker(:running), do: "[running]"
-  defp tool_marker(:completed), do: "[done]"
-  defp tool_marker(:failed), do: "[failed]"
-  defp tool_marker(:retried), do: "[retried]"
-  defp tool_marker(status), do: "[#{status}]"
-
-  defp role(:user), do: "User"
-  defp role(:project), do: "Project"
-  defp role(:system), do: "System"
-  defp role(_role), do: "Assistant"
+  defp role(:user), do: "YOU"
+  defp role(:project), do: "PROJECT"
+  defp role(:system), do: "SYSTEM"
+  defp role(_role), do: "JIDO"
 
   defp title(state) do
     {width, _height} = state.size
-    TextLayout.fit(title_prefix(state.selection) <> String.duplicate("─", width), width)
+    prefix = title_prefix(state.selection)
+    {symbol, status, style} = header_status(state)
+    suffix = " #{symbol} #{status} "
+    suffix_width = DisplayWidth.string_width(suffix)
+
+    if suffix_width >= width do
+      TextLayout.fit("JIDO", width)
+    else
+      available = width - suffix_width
+      {prefix, prefix_width} = DisplayWidth.truncate(prefix, available)
+      divider = String.duplicate("─", max(available - prefix_width, 0))
+
+      [
+        {prefix, Style.new(attrs: [:bold])},
+        {divider, Style.new(fg: :bright_black)},
+        {suffix, style}
+      ]
+    end
   end
 
-  defp title_prefix(nil), do: " Jido "
-  defp title_prefix(selection), do: " Jido · #{Selection.label(selection)} "
+  defp title_prefix(nil), do: " JIDO "
+  defp title_prefix(selection), do: " JIDO · #{Selection.label(selection)} "
+
+  defp header_status(%State{activity: {:failed, :startup, _reason, _error}}),
+    do: {"✗", "STARTUP FAILED", timeline_status_style(:failed)}
+
+  defp header_status(%State{startup: :starting}),
+    do: {"○", "STARTING", timeline_status_style(:running)}
+
+  defp header_status(%State{activity: :idle}),
+    do: {"●", "READY", timeline_status_style(:completed)}
+
+  defp header_status(%State{activity: {:review, _, _, _, _}}),
+    do: {"◆", "REVIEW", timeline_status_style(:review)}
+
+  defp header_status(%State{activity: {:failed, _, _, _}}),
+    do: {"✗", "FAILED", timeline_status_style(:failed)}
+
+  defp header_status(%State{activity: {:cancelling, _, _}}),
+    do: {"■", "CANCELLING", timeline_status_style(:cancelled)}
+
+  defp header_status(%State{activity: {:active, _, _, _}}),
+    do: {"●", "RUNNING", timeline_status_style(:running)}
+
+  defp header_status(%State{activity: {:starting, _}}),
+    do: {"○", "STARTING", timeline_status_style(:running)}
+
+  defp header_status(_state), do: {"●", "READY", timeline_status_style(:completed)}
 
   defp review_rows([], _width, _limit), do: []
   defp review_rows(_reviews, _width, 0), do: []
@@ -392,25 +578,26 @@ defmodule Jido.Console.Tui.View do
   defp marker("interrupted"), do: "[interrupted]"
   defp marker(_status), do: "[failed]"
 
-  defp status_row(%State{activity: {:failed, :startup, _reason, error}}),
-    do: "startup failed · Esc exits · #{SafeText.summary(error)}"
+  defp status_row(%State{activity: {:failed, :startup, _reason, _error}}),
+    do: "ERROR · Esc exit"
 
   defp status_row(%State{startup: :starting, activity: {:starting, {:turn, _turn}}}),
-    do: "prompt queued · starting runtime · Esc exits"
+    do: "STARTING · prompt queued · Esc exit"
 
   defp status_row(%State{startup: :starting, activity: {:cancelling, _turn, :before_start}}),
-    do: "prompt cancelled · starting runtime · Esc exits"
+    do: "STARTING · prompt cancelled · Esc exit"
 
   defp status_row(%State{startup: :starting}),
-    do: "starting runtime · Enter queues prompt · Esc exits"
+    do: "STARTING · Enter queue · Esc exit"
 
   defp status_row(%State{scroll_offset: offset}) when offset > 0,
-    do: "scroll #{offset} · PgDn follows output"
+    do: "HISTORY · #{offset} rows back · PgDn latest"
 
   defp status_row(%State{activity: :idle}),
-    do: "idle · Enter sends · Ctrl-J newline · Esc exits"
+    do: "INPUT · Enter send · Ctrl-J newline · Esc exit"
 
-  defp status_row(%State{activity: {:starting, {:turn, _turn}}}), do: "starting turn · Ctrl-C cancels"
+  defp status_row(%State{activity: {:starting, {:turn, _turn}}}),
+    do: "WORK · starting turn · Ctrl-C cancel"
 
   defp status_row(%State{activity: {:active, _request, _turn, _phase}} = state) do
     queued =
@@ -420,22 +607,22 @@ defmodule Jido.Console.Tui.View do
         _session -> ""
       end
 
-    "running#{queued} · Enter queues · Ctrl-C cancels"
+    "INPUT · Enter queue#{queued} · Ctrl-J newline · Ctrl-C cancel"
   end
 
-  defp status_row(%State{activity: {:cancelling, _turn, _target}}), do: "cancelling"
+  defp status_row(%State{activity: {:cancelling, _turn, _target}}), do: "WORK · cancelling"
 
   defp status_row(%State{activity: {:review, _request, _turn, _result, :awaiting}}),
-    do: "review required · A approves · D denies"
+    do: "REVIEW · A approve · D deny · Ctrl-C cancel"
 
   defp status_row(%State{activity: {:review, _request, _turn, _result, {:responding, _decision}}}),
-    do: "sending review decision"
+    do: "REVIEW · sending decision"
 
   defp status_row(%State{activity: {:failed, :hibernated, _reason, error}}),
     do: SafeText.summary(error)
 
   defp status_row(%State{activity: {:failed, _kind, _reason, error}}),
-    do: "error · #{SafeText.summary(error)}"
+    do: "ERROR · #{SafeText.summary(error)}"
 
   defp status_row(%State{activity: activity}), do: Activity.tag(activity) |> Atom.to_string()
 end

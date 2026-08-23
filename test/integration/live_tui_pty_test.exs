@@ -54,7 +54,11 @@ defmodule Jido.Console.LiveTuiPtyTest do
       {output, status} =
         System.cmd("mix", ["escript.build"],
           cd: @project_root,
-          env: [{"MIX_ENV", "prod"}, {"JIDO_CONSOLE_JIDOKA_PATH", nil}],
+          env: [
+            {"MIX_ENV", "prod"},
+            {"JIDO_CONSOLE_JIDOKA_PATH", nil},
+            {"JIDO_CONSOLE_TERM_UI_PATH", nil}
+          ],
           stderr_to_stdout: true
         )
 
@@ -129,8 +133,8 @@ defmodule Jido.Console.LiveTuiPtyTest do
     spawn -noecho $env(JIDO_BIN)
 
     expect {
-      -re {idle .* Enter sends} {}
-      -re {startup failed .*} {fail_live "live_pty=startup_error" 2}
+      -re {INPUT .* Enter send} {}
+      -re {STARTUP FAILED.*} {fail_live "live_pty=startup_error" 2}
       timeout {fail_live "live_pty=initial_timeout" 3}
       eof {puts "live_pty=early_exit"; exit 4}
     }
@@ -160,7 +164,7 @@ defmodule Jido.Console.LiveTuiPtyTest do
       -re {coding\.git_status} {fail_live "live_pty=wrong_tool" 13}
       -re {Jidoka execution failed} {fail_live "live_pty=generic_error" 14}
       -re {error .*} {fail_live "live_pty=request_error" 15}
-      -re {idle .* Enter sends} {}
+      -re {INPUT .* Enter send} {}
       timeout {fail_live "live_pty=completion_timeout" 16}
       eof {puts "live_pty=completion_exit"; exit 17}
     }

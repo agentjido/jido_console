@@ -27,6 +27,7 @@ defmodule Jido.Console.Tui.State do
               messages: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
               startup: Zoi.enum([:starting, :ready]) |> Zoi.optional() |> Zoi.default(:ready),
               activity: Zoi.any() |> Zoi.optional() |> Zoi.default(:idle),
+              project_root: Zoi.string() |> Zoi.nullish(),
               project_instructions: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
               coding_reviews: Zoi.array(Zoi.map()) |> Zoi.optional() |> Zoi.default([]),
               turns: Zoi.array() |> Zoi.optional() |> Zoi.default([]),
@@ -58,6 +59,7 @@ defmodule Jido.Console.Tui.State do
       size: size,
       startup: Keyword.get(opts, :startup, :ready),
       activity: Keyword.get(opts, :activity, :idle),
+      project_root: Keyword.get(opts, :project_root),
       project_instructions: Keyword.get(opts, :project_instructions, []),
       history_limit: positive_limit(opts, :history_limit, @default_history_limit),
       turn_limit: positive_limit(opts, :turn_limit, @default_turn_limit),
@@ -565,11 +567,21 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp view_message(message) do
+    role = message |> map_get(:role, :assistant) |> normalize_role()
+
     %{
-      role: map_get(message, :role, :assistant) |> normalize_role(),
-      content: map_get(message, :content, "") |> SafeText.clean(),
-      tool_calls: map_get(message, :tool_calls, [])
+      role: role,
+      content: safe_message_content(message, role),
+      tool_calls: message |> map_get(:tool_calls, []) |> safe_tool_calls(),
+      operation: message |> map_get(:operation) |> safe_optional_text(),
+      tool_call_id: message |> map_get(:tool_call_id) |> safe_optional_text()
     }
+  end
+
+  defp safe_message_content(_message, :tool), do: ""
+
+  defp safe_message_content(message, _role) do
+    message |> map_get(:content, "") |> SafeText.clean()
   end
 
   defp transcript_turns(messages, limit) do
@@ -579,8 +591,12 @@ defmodule Jido.Console.Tui.State do
           turns = finish_pending(turns, pending)
           {turns, Turn.new(id, content), id + 1}
 
-        %{role: :assistant, tool_calls: tool_calls}, acc when tool_calls != [] ->
-          acc
+        %{role: :assistant, tool_calls: tool_calls}, {turns, %Turn{} = pending, id}
+        when tool_calls != [] ->
+          {turns, Turn.restore_tool_calls(pending, tool_calls), id}
+
+        %{role: :tool} = message, {turns, %Turn{} = pending, id} ->
+          {turns, Turn.restore_tool_result(pending, message), id}
 
         %{role: :assistant, content: content}, {turns, %Turn{} = pending, id} ->
           {turns ++ [Turn.finish(pending, :completed, content)], nil, id}
@@ -673,11 +689,14 @@ defmodule Jido.Console.Tui.State do
   defp history_content(_record, assistant), do: assistant
 
   defp history_outcome("prompt_succeeded", _payload), do: {:completed, nil}
-  defp history_outcome("prompt_failed", payload), do: {:failed, map_get(payload, :error)}
-  defp history_outcome("prompt_cancelled", payload), do: {:cancelled, map_get(payload, :error)}
+  defp history_outcome("prompt_failed", payload), do: {:failed, payload |> map_get(:error) |> history_error()}
+  defp history_outcome("prompt_cancelled", payload), do: {:cancelled, payload |> map_get(:error) |> history_error()}
 
   defp history_outcome("prompt_interrupted", payload),
-    do: {:interrupted, map_get(payload, :error, map_get(payload, :reason))}
+    do: {:interrupted, payload |> map_get(:error, map_get(payload, :reason)) |> history_error()}
+
+  defp history_error(nil), do: nil
+  defp history_error(reason), do: format_error(reason)
 
   defp view_activity(%SessionView{active: nil, status: :unavailable, error: error}, _id),
     do: {{:failed, :turn, error, format_error(error)}, []}
@@ -697,7 +716,7 @@ defmodule Jido.Console.Tui.State do
       id
       |> Turn.new(active_input(view.active))
       |> Turn.put_request(request)
-      |> Map.put(:assistant, partial_text(view.partial))
+      |> Turn.apply_stream(view.partial)
 
     if view.status == :review and is_map(view.review) do
       review = normalize_view_review(view.review)
@@ -707,23 +726,6 @@ defmodule Jido.Console.Tui.State do
       phase = if(view.status == :finishing, do: :finishing, else: :streaming)
       {{:active, request, turn, phase}, []}
     end
-  end
-
-  defp partial_text(partial) do
-    partial
-    |> Enum.map(fn projection ->
-      data = map_get(projection, :data, %{})
-
-      Enum.find_value([:text, :delta, :content], "", fn key ->
-        case map_get(data, key) do
-          value when is_binary(value) -> value
-          _other -> nil
-        end
-      end)
-    end)
-    |> Enum.filter(&is_binary/1)
-    |> Enum.join()
-    |> SafeText.clean()
   end
 
   defp active_input(active) do
@@ -748,6 +750,33 @@ defmodule Jido.Console.Tui.State do
   defp normalize_role(role) when role in [:tool, "tool"], do: :tool
   defp normalize_role(role) when role in [:system, "system"], do: :system
   defp normalize_role(_role), do: :system
+
+  defp safe_tool_calls(calls) when is_list(calls) do
+    calls
+    |> Enum.flat_map(fn
+      call when is_map(call) ->
+        name = map_get(call, :name, map_get(call, :operation))
+
+        if is_binary(name) and name != "" do
+          [
+            %{
+              name: SafeText.summary(name),
+              provider_call_id: call |> map_get(:provider_call_id, map_get(call, :id)) |> safe_optional_text()
+            }
+          ]
+        else
+          []
+        end
+
+      _call ->
+        []
+    end)
+  end
+
+  defp safe_tool_calls(_calls), do: []
+
+  defp safe_optional_text(value) when is_binary(value), do: SafeText.summary(value)
+  defp safe_optional_text(_value), do: nil
 
   defp map_get(map, key, default \\ nil)
   defp map_get(map, key, default) when is_map(map), do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
