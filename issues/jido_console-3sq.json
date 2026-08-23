@@ -4,13 +4,14 @@
     "jido_console-f1t"
   ],
   "blocks": [],
+  "closed_at": "2026-08-23T18:15:31Z",
   "created": "2026-08-22T14:12:45Z",
   "description": "During a real coding session, the assistant answer appears only at completion and active tool calls are not visible. Project tool-call lifecycle events into the TUI so the user can see tool name and active, completed, failed, or cancelled state while the turn runs. Preserve semantic event ownership, avoid exposing sensitive arguments or results, and add deterministic streaming and rendering tests.",
   "id": "jido_console-3sq",
   "labels": [],
   "priority": 1,
-  "status": "in_progress",
+  "status": "closed",
   "title": "Show active tool calls in the TUI transcript",
   "type": "bug",
-  "updated_at": "2026-08-22T19:42:12Z"
+  "updated_at": "2026-08-23T18:15:31Z"
 }
