@@ -6,7 +6,6 @@ defmodule Jido.Console.Tui.Selection do
   alias Jido.Console.Coding.Profile
   alias Jido.Console.Error
   alias Jido.Console.Models.Commands
-  alias Jido.Console.Tui.Command
 
   @profiles [Profile.restricted_id(), Profile.trusted_id()]
   @model_tiers [:supported, :beta, :available, :unsupported]
@@ -35,20 +34,6 @@ defmodule Jido.Console.Tui.Selection do
       profile_id: profile_id,
       profile_warning: warning
     }
-  end
-
-  @doc "Handles a slash command or reports that the prompt is not a command."
-  @spec handle(String.t(), t()) :: {:command, t(), String.t()} | :not_command
-  def handle(prompt, selection) when is_binary(prompt) do
-    case Command.parse(prompt) do
-      :prompt -> :not_command
-      {:command, :help} -> {:command, selection, Command.help()}
-      {:command, :list_models} -> command_result(selection, list_models(selection))
-      {:command, {:select_model, identity}} -> legacy_select_model(selection, identity)
-      {:command, :list_profiles} -> {:command, selection, list_profiles()}
-      {:command, {:select_profile, profile_id}} -> select_profile(selection, profile_id)
-      {:error, error} -> {:command, selection, Exception.message(error)}
-    end
   end
 
   @doc "Lists supported and beta models and marks the current model."
@@ -113,6 +98,23 @@ defmodule Jido.Console.Tui.Selection do
   @spec profiles() :: [String.t()]
   def profiles, do: @profiles
 
+  @doc "Lists the existing profile compatibility options."
+  @spec list_profiles() :: String.t()
+  def list_profiles, do: "Profiles:\n" <> Enum.join(@profiles, "\n")
+
+  @doc "Returns compatibility feedback for one profile identity."
+  @spec profile_notice(String.t()) :: String.t()
+  def profile_notice(profile_id) do
+    case resolve_profile(profile_id) do
+      {:ok, profile} ->
+        notice = "Start a new thread to use profile #{profile.id}."
+        if profile.warning, do: notice <> " " <> profile.warning, else: notice
+
+      {:error, _reason} ->
+        "Unavailable profile #{profile_id}"
+    end
+  end
+
   defp catalog_entries(opts) do
     opts
     |> Keyword.get(:model_policy, Application.get_env(:jido_console, :model_policy, []))
@@ -171,32 +173,6 @@ defmodule Jido.Console.Tui.Selection do
     end
   end
 
-  defp legacy_select_model(selection, token) do
-    case resolve_model(token, selection) do
-      {:ok, entry} ->
-        {:command, selection, "Model #{entry.identity} is available. Start a new thread to use it."}
-
-      {:error, error} ->
-        {:command, selection, Exception.message(error)}
-    end
-  end
-
-  defp select_profile(selection, profile_id) do
-    case resolve_profile(profile_id) do
-      {:ok, profile} ->
-        notice = "Start a new thread to use profile #{profile.id}."
-        notice = if profile.warning, do: notice <> " " <> profile.warning, else: notice
-        {:command, selection, notice}
-
-      {:error, _reason} ->
-        {:command, selection, "Unavailable profile #{profile_id}"}
-    end
-  end
-
-  defp list_profiles do
-    "Profiles:\n" <> Enum.join(@profiles, "\n")
-  end
-
   defp resolve_identity(token, entries) do
     identity =
       case Commands.parse_identity(token) do
@@ -230,9 +206,6 @@ defmodule Jido.Console.Tui.Selection do
   end
 
   defp resolve_profile(profile_id), do: Profile.resolve(profile_id, coding_profile: profile_id)
-
-  defp command_result(selection, {:ok, message}), do: {:command, selection, message}
-  defp command_result(selection, {:error, error}), do: {:command, selection, Exception.message(error)}
 
   defp validate_catalog([]),
     do: {:error, Error.config_error("Model catalog is empty", %{source: :model_catalog})}

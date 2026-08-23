@@ -10,6 +10,7 @@ defmodule Jido.Console.Session.ThreadTest do
     end
 
     def base_spec(resources), do: resources.spec
+    def configure_model(resources, identity), do: {:ok, Map.put(resources, :model, identity)}
     def status(_resources), do: %{"status" => "ready"}
     def close(_resources), do: :ok
   end

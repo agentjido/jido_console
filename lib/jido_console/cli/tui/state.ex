@@ -391,26 +391,22 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp submit_command(state, {:select_model, identity}) do
-    if is_nil(state.session_client) do
-      notice(state, "Jido is still starting. Try the model command again when it is ready.")
-    else
-      {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:select_model, identity}]}
+    cond do
+      state.selection.model_locked? ->
+        notice(state, "Model selection is locked after the first prompt is accepted")
+
+      is_nil(state.session_client) ->
+        notice(state, "Jido is still starting. Try the model command again when it is ready.")
+
+      true ->
+        {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:select_model, identity}]}
     end
   end
 
-  defp submit_command(state, action) when action in [:list_profiles] do
-    legacy_command(state, "/profile")
-  end
+  defp submit_command(state, :list_profiles), do: notice(state, Selection.list_profiles())
 
   defp submit_command(state, {:select_profile, profile_id}) do
-    legacy_command(state, "/profile " <> profile_id)
-  end
-
-  defp legacy_command(state, input) do
-    case Selection.handle(input, state.selection) do
-      {:command, selection, message} -> notice(state, message, selection)
-      :not_command -> notice(state, "Unknown command")
-    end
+    notice(state, Selection.profile_notice(profile_id))
   end
 
   defp start_selected_turn(state, prompt) do

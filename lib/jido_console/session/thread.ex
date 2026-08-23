@@ -3,6 +3,7 @@ defmodule Jido.Console.Session.Thread do
 
   alias Jido.Console.Error
   alias Jido.Console.Models
+  alias Jido.Console.Models.Catalog
   alias Jido.Console.Models.Commands, as: ModelCommands
   alias Jido.Console.Session.{Command, Event, JidokaBridge, Queue, Recovery, ThreadResources, View}
   alias Jido.Console.Storage
@@ -359,7 +360,7 @@ defmodule Jido.Console.Session.Thread do
            Models.show(provider, model, state.options),
          {:ok, resources} <- configure_resources(state.resources_module, state.resources, identity) do
       state = View.publish(%{state | resources: resources, model: entry})
-      {:reply, {:ok, View.from_thread(state).model}, state}
+      {:reply, {:ok, model_projection(entry, state.model_locked?)}, state}
     else
       {:error, %_{} = error} -> {:reply, {:error, error}, state}
       {:error, reason} -> {:reply, {:error, model_selection_error(identity, reason)}, state}
@@ -567,7 +568,7 @@ defmodule Jido.Console.Session.Thread do
     Enum.all?(entries, fn entry ->
       is_map(entry) and is_binary(Map.get(entry, :identity)) and
         is_binary(Map.get(entry, :provider)) and is_binary(Map.get(entry, :model)) and
-        Map.get(entry, :tier) in [:supported, :beta, :available, :unsupported] and
+        Map.get(entry, :tier) in Catalog.tiers() and
         entry.identity == entry.provider <> ":" <> entry.model
     end)
   end
@@ -604,9 +605,19 @@ defmodule Jido.Console.Session.Thread do
   end
 
   defp configure_resources(module, resources, identity) do
-    if function_exported?(module, :configure_model, 2),
-      do: module.configure_model(resources, identity),
-      else: {:ok, resources}
+    if function_exported?(module, :configure_model, 2) do
+      module.configure_model(resources, identity)
+    else
+      {:error,
+       Error.config_error("Session resources cannot configure a model", %{
+         module: inspect(module),
+         source: :session_model
+       })}
+    end
+  end
+
+  defp model_projection(entry, locked?) do
+    %{"identity" => entry.identity, "tier" => Atom.to_string(entry.tier), "locked" => locked?}
   end
 
   defp lock_model(%{model_locked?: true} = state), do: state

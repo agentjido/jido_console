@@ -17,7 +17,7 @@ defmodule Jido.Console.Tui.SelectionTest do
     assert models =~ "current"
     refute models =~ "sk-"
 
-    assert {:command, ^selection, profiles} = Selection.handle("/profile", selection)
+    profiles = Selection.list_profiles()
     assert profiles =~ "coding.restricted"
     assert profiles =~ "coding.trusted-workspace"
   end
@@ -84,20 +84,18 @@ defmodule Jido.Console.Tui.SelectionTest do
            ]
   end
 
-  test "model and profile mutation commands require a new thread" do
+  test "profile mutation commands require a new thread" do
     selection = Selection.init(catalog_entries: @entries)
-    assert {:command, ^selection, notice} = Selection.handle("/model ollama:llama3.2", selection)
-    assert notice =~ "new thread"
-
-    assert {:command, ^selection, warning} = Selection.handle("/profile coding.trusted-workspace", selection)
+    assert selection.model == "openai:gpt-4.1-mini"
+    warning = Selection.profile_notice("coding.trusted-workspace")
     assert warning =~ "new thread"
     assert warning =~ "not a sandbox"
   end
 
   test "rejects unavailable selections and blocks a turn" do
     selection = Selection.init(catalog_entries: @entries, model: "missing:model")
-    assert {:command, ^selection, notice} = Selection.handle("/model missing:model", selection)
-    assert notice =~ "Unavailable"
+    assert {:error, error} = Selection.resolve_model("missing:model", selection)
+    assert Exception.message(error) =~ "Unavailable"
     assert {:error, reason} = Selection.admit(selection)
     assert reason =~ "unavailable model"
   end
