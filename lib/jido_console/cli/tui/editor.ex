@@ -42,6 +42,10 @@ defmodule Jido.Console.Tui.Editor do
   @spec clear(t()) :: t()
   def clear(%TextArea{} = editor), do: TextArea.set_value(editor, "")
 
+  @spec replace(t(), String.t()) :: t()
+  def replace(%TextArea{} = editor, text) when is_binary(text),
+    do: TextArea.set_value(editor, sanitize(text))
+
   @spec from_text(String.t()) :: t()
   def from_text(text) when is_binary(text) do
     TextArea.init(value: sanitize(text), max_length: @max_graphemes)
@@ -49,6 +53,9 @@ defmodule Jido.Console.Tui.Editor do
 
   @spec value(t()) :: String.t()
   def value(%TextArea{} = editor), do: TextArea.value(editor)
+
+  @spec cursor(t()) :: non_neg_integer()
+  def cursor(%TextArea{} = editor), do: editor.cursor
 
   @spec selection?(t()) :: boolean()
   def selection?(%TextArea{} = editor), do: not Selection.empty?(editor.selection)

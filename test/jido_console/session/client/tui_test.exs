@@ -3,7 +3,7 @@ defmodule Jido.Console.Session.Client.TUITest do
 
   alias Jido.Console.Session.{Client, View}
   alias Jido.Console.Session.Client.TUI
-  alias Jido.Console.Tui.State
+  alias Jido.Console.Tui.{Editor, State}
 
   test "applies the same complete View used by a non-TUI caller" do
     handle = %Client{thread_id: "tui-thread", owner_options: [], attachment_ref: make_ref()}
@@ -33,5 +33,30 @@ defmodule Jido.Console.Session.Client.TUITest do
     state = State.new(nil, {80, 24})
     view = View.new!(thread_id: "two", status: :idle, revision: 0)
     assert {:error, :cross_thread_view, ^state} = TUI.apply_view(handle, state, view)
+  end
+
+  test "a complete View keeps unfinished completion text and focused model identity" do
+    entries = [
+      %{identity: "ollama:llama3.2", provider: "ollama", model: "llama3.2", tier: :beta},
+      %{identity: "openai:gpt-4.1-mini", provider: "openai", model: "gpt-4.1-mini", tier: :supported}
+    ]
+
+    handle = %Client{thread_id: "tui-thread", owner_options: [], attachment_ref: make_ref()}
+    state = State.new(nil, {80, 24}, session_client: handle, catalog_entries: entries)
+    {state, []} = State.update(state, {:terminal, TermUI.Event.text("/model ")})
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:down)})
+
+    view =
+      View.new!(
+        thread_id: "tui-thread",
+        status: :idle,
+        revision: 5,
+        model: %{"identity" => "openai:gpt-4.1-mini", "tier" => "supported", "locked" => true}
+      )
+
+    assert {:ok, restored} = TUI.apply_view(handle, state, view)
+    assert Editor.value(restored.editor) == "/model "
+    assert restored.completion.focused_identity == "openai:gpt-4.1-mini"
+    assert Enum.find(restored.completion.candidates, & &1.current?).identity == "openai:gpt-4.1-mini"
   end
 end

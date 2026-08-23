@@ -2,7 +2,7 @@ defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
   alias Jido.Console.Error
-  alias Jido.Console.Tui.{Activity, Command, Editor, SafeText, Selection, Turn}
+  alias Jido.Console.Tui.{Activity, Autocomplete, Command, Editor, SafeText, Selection, Turn}
   alias Jido.Console.Session.View, as: SessionView
   alias TermUI.Event
   alias TermUI.Widget.TextArea
@@ -11,6 +11,7 @@ defmodule Jido.Console.Tui.State do
   @default_turn_limit 100
   @review_limit 100
   @command_notice_limit 20
+  @completion_row_limit 5
   @max_scroll_offset 1_000_000
 
   @schema Zoi.struct(
@@ -20,6 +21,7 @@ defmodule Jido.Console.Tui.State do
               size: Zoi.tuple({Zoi.integer() |> Zoi.positive(), Zoi.integer() |> Zoi.positive()}),
               session_client: Zoi.any() |> Zoi.nullish(),
               editor: Zoi.struct(TextArea) |> Zoi.optional() |> Zoi.default(Editor.new()),
+              completion: Zoi.struct(Autocomplete) |> Zoi.optional() |> Zoi.default(%Autocomplete{}),
               history: Zoi.array(Zoi.string()) |> Zoi.optional() |> Zoi.default([]),
               history_index: Zoi.integer() |> Zoi.gte(0) |> Zoi.nullish(),
               history_draft: Zoi.string() |> Zoi.nullish(),
@@ -70,7 +72,7 @@ defmodule Jido.Console.Tui.State do
       selection: selection
     }
 
-    state
+    recompute_completion(state)
   end
 
   @doc false
@@ -117,6 +119,22 @@ defmodule Jido.Console.Tui.State do
         activity: activity,
         coding_reviews: reviews
     }
+    |> recompute_completion()
+  end
+
+  @doc "Returns the completion rows that fit the current normal layout."
+  @spec completion_slice(t()) :: %{
+          rows: [Autocomplete.candidate()],
+          offset: non_neg_integer(),
+          selected_index: non_neg_integer() | nil,
+          interactive?: boolean()
+        }
+  def completion_slice(%__MODULE__{} = state) do
+    if review?(state) do
+      Autocomplete.visible_slice(%Autocomplete{}, 0)
+    else
+      Autocomplete.visible_slice(state.completion, completion_capacity(state))
+    end
   end
 
   @spec active_request(t()) :: map() | nil
@@ -151,6 +169,9 @@ defmodule Jido.Console.Tui.State do
   def update(%__MODULE__{activity: {:review, _, _, _, _}} = state, {:terminal, %Event.Key{key: :enter}}),
     do: {state, []}
 
+  def update(%__MODULE__{activity: {:review, _, _, _, _}} = state, {:terminal, %Event.Key{key: :tab}}),
+    do: {state, []}
+
   def update(%__MODULE__{} = state, {:terminal, %Event.Text{} = event}),
     do: editor_event(state, event)
 
@@ -174,16 +195,29 @@ defmodule Jido.Console.Tui.State do
       when key in ["a", "x", :backspace, :delete, :left, :right, :home, :end],
       do: editor_event(state, event)
 
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: :tab, modifiers: []}}),
+    do: update(state, {:terminal, {:key, :tab}})
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: :tab}}), do: {state, []}
+
   def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: key, modifiers: modifiers} = event})
       when key in [:up, :down] do
-    if :shift in modifiers,
-      do: editor_event(state, event),
-      else: update(state, {:terminal, {:key, key}})
+    cond do
+      modifiers == [] -> update(state, {:terminal, {:key, key}})
+      :shift in modifiers -> editor_event(state, event)
+      true -> move_editor_or_history(state, key)
+    end
   end
 
   def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: key}})
-      when key in [:page_up, :page_down, :escape],
+      when key in [:page_up, :page_down],
       do: update(state, {:terminal, {:key, key}})
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: :escape, modifiers: []}}),
+    do: update(state, {:terminal, {:key, :escape}})
+
+  def update(%__MODULE__{} = state, {:terminal, %Event.Key{key: :escape}}),
+    do: existing_escape(state)
 
   def update(%__MODULE__{} = state, {:terminal, %Event.Mouse{} = event}),
     do: editor_mouse(state, event)
@@ -220,16 +254,25 @@ defmodule Jido.Console.Tui.State do
     do: edit(state, Editor.backspace(state.editor))
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :left}}),
-    do: changed(state, editor: Editor.left(state.editor))
+    do: replace_editor(state, Editor.left(state.editor))
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :right}}),
-    do: changed(state, editor: Editor.right(state.editor))
+    do: replace_editor(state, Editor.right(state.editor))
+
+  def update(%__MODULE__{} = state, {:terminal, {:key, key}})
+      when key in [:delete, :home, :end],
+      do: editor_event(state, Event.key(key))
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :newline}}),
     do: edit(state, Editor.newline(state.editor))
 
-  def update(%__MODULE__{} = state, {:terminal, {:key, :up}}), do: move_up(state)
-  def update(%__MODULE__{} = state, {:terminal, {:key, :down}}), do: move_down(state)
+  def update(%__MODULE__{} = state, {:terminal, {:key, :tab}}), do: complete(state)
+
+  def update(%__MODULE__{} = state, {:terminal, {:key, :up}}),
+    do: move_completion_or_editor(state, :up)
+
+  def update(%__MODULE__{} = state, {:terminal, {:key, :down}}),
+    do: move_completion_or_editor(state, :down)
 
   def update(%__MODULE__{} = state, {:terminal, {:key, :page_up}}) do
     offset = min(state.scroll_offset + scroll_page(state), @max_scroll_offset)
@@ -271,12 +314,14 @@ defmodule Jido.Console.Tui.State do
     {%{state | activity: {:cancelling, turn, :before_start}}, []}
   end
 
-  def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, :escape}})
-      when activity == :idle or elem(activity, 0) in [:starting, :failed],
-      do: {state, [:exit]}
+  def update(%__MODULE__{} = state, {:terminal, {:key, :escape}}) do
+    if completion_visible?(state) and not review?(state),
+      do: {%{state | completion: %Autocomplete{}}, []},
+      else: existing_escape(state)
+  end
 
-  def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, key}})
-      when key in [:escape, :ctrl_c] and (activity == :idle or elem(activity, 0) == :failed),
+  def update(%__MODULE__{activity: activity} = state, {:terminal, {:key, :ctrl_c}})
+      when activity == :idle or elem(activity, 0) == :failed,
       do: {state, [:exit]}
 
   def update(%__MODULE__{activity: {:cancelling, _, _}} = state, {:terminal, {:key, :ctrl_c}}),
@@ -292,11 +337,13 @@ defmodule Jido.Console.Tui.State do
     end
   end
 
-  def update(%__MODULE__{} = state, {:terminal, {:key, :escape}}), do: {state, []}
   def update(%__MODULE__{} = state, {:terminal, :eof}), do: {state, [:exit]}
 
   def update(%__MODULE__{} = state, {:terminal, {:resize, columns, rows}}) do
-    changed(state, size: {columns, rows})
+    state
+    |> struct!(size: {columns, rows})
+    |> recompute_completion()
+    |> unchanged()
   end
 
   def update(
@@ -376,7 +423,14 @@ defmodule Jido.Console.Tui.State do
 
   defp submit_regular_prompt(%__MODULE__{activity: {:active, _, _, _}} = state, prompt) do
     state = remember_prompt(state, prompt)
-    {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:start_turn, prompt}]}
+
+    state =
+      state
+      |> Map.put(:editor, Editor.clear(state.editor))
+      |> Map.put(:scroll_offset, 0)
+      |> recompute_completion()
+
+    {state, [{:start_turn, prompt}]}
   end
 
   defp submit_regular_prompt(state, prompt), do: start_selected_turn(state, prompt)
@@ -407,7 +461,13 @@ defmodule Jido.Console.Tui.State do
         )
 
       true ->
-        {%{state | editor: Editor.clear(state.editor), scroll_offset: 0}, [{:select_model, identity}]}
+        state =
+          state
+          |> Map.put(:editor, Editor.clear(state.editor))
+          |> Map.put(:scroll_offset, 0)
+          |> recompute_completion()
+
+        {state, [{:select_model, identity}]}
     end
   end
 
@@ -432,14 +492,16 @@ defmodule Jido.Console.Tui.State do
 
     state = remember_prompt(state, prompt)
 
-    state = %{
-      state
-      | editor: Editor.clear(state.editor),
-        scroll_offset: 0,
-        messages: state.messages ++ [%{role: :user, content: turn.prompt}],
-        activity: {:starting, {:turn, turn}},
-        next_turn_id: state.next_turn_id + 1
-    }
+    state =
+      %{
+        state
+        | editor: Editor.clear(state.editor),
+          scroll_offset: 0,
+          messages: state.messages ++ [%{role: :user, content: turn.prompt}],
+          activity: {:starting, {:turn, turn}},
+          next_turn_id: state.next_turn_id + 1
+      }
+      |> recompute_completion()
 
     {state, [{:start_turn, turn.prompt}]}
   end
@@ -449,12 +511,20 @@ defmodule Jido.Console.Tui.State do
     {state, []}
   end
 
+  defp unchanged(state), do: {state, []}
+
+  defp replace_editor(state, editor) do
+    state
+    |> struct!(editor: editor)
+    |> recompute_completion()
+    |> unchanged()
+  end
+
   defp edit(state, editor) do
-    changed(state,
-      editor: editor,
-      history_index: nil,
-      history_draft: nil
-    )
+    state
+    |> struct!(editor: editor, history_index: nil, history_draft: nil)
+    |> recompute_completion()
+    |> unchanged()
   end
 
   defp editor_event(state, event) do
@@ -469,7 +539,7 @@ defmodule Jido.Console.Tui.State do
         %{state | editor: editor}
       end
 
-    {state, effects}
+    {recompute_completion(state), effects}
   end
 
   defp editor_mouse(state, event) do
@@ -482,7 +552,41 @@ defmodule Jido.Console.Tui.State do
       local = %{event | x: event.x - 2, y: event.y - prompt_y}
       {editor, messages} = Editor.mouse(state.editor, local, {width, height})
       effects = for {:copy, text} <- messages, do: {:copy, text}
-      {%{state | editor: editor}, effects}
+      {%{state | editor: editor} |> recompute_completion(), effects}
+    else
+      {recompute_completion(state), []}
+    end
+  end
+
+  defp move_completion_or_editor(%__MODULE__{} = state, direction) do
+    if completion_interactive?(state) and not review?(state),
+      do: {%{state | completion: Autocomplete.move(state.completion, direction)}, []},
+      else: move_editor_or_history(state, direction)
+  end
+
+  defp move_editor_or_history(state, :up), do: move_up(state)
+  defp move_editor_or_history(state, :down), do: move_down(state)
+
+  defp complete(%__MODULE__{} = state) do
+    if completion_interactive?(state) and not review?(state) and
+         is_binary(state.completion.completion) do
+      context = state.completion.context
+
+      state =
+        state
+        |> struct!(
+          editor: Editor.replace(state.editor, state.completion.completion),
+          history_index: nil,
+          history_draft: nil
+        )
+        |> recompute_completion()
+
+      completion =
+        if context == :command and state.completion.context == :model,
+          do: state.completion,
+          else: %Autocomplete{}
+
+      {%{state | completion: completion}, []}
     else
       {state, []}
     end
@@ -490,12 +594,18 @@ defmodule Jido.Console.Tui.State do
 
   defp move_up(state) do
     editor = Editor.up(state.editor)
-    if editor == state.editor, do: previous_history(state), else: changed(state, editor: editor)
+
+    if editor == state.editor,
+      do: previous_history(state),
+      else: state |> struct!(editor: editor) |> recompute_completion() |> unchanged()
   end
 
   defp move_down(state) do
     editor = Editor.down(state.editor)
-    if editor == state.editor, do: next_history(state), else: changed(state, editor: editor)
+
+    if editor == state.editor,
+      do: next_history(state),
+      else: state |> struct!(editor: editor) |> recompute_completion() |> unchanged()
   end
 
   defp previous_history(%__MODULE__{history: []} = state), do: {state, []}
@@ -503,16 +613,23 @@ defmodule Jido.Console.Tui.State do
   defp previous_history(%__MODULE__{history_index: nil} = state) do
     index = length(state.history) - 1
 
-    changed(state,
+    state
+    |> struct!(
       editor: state.history |> Enum.at(index) |> Editor.from_text(),
       history_index: index,
       history_draft: Editor.value(state.editor)
     )
+    |> recompute_completion()
+    |> unchanged()
   end
 
   defp previous_history(%__MODULE__{history_index: index} = state) do
     index = max(index - 1, 0)
-    changed(state, editor: state.history |> Enum.at(index) |> Editor.from_text(), history_index: index)
+
+    state
+    |> struct!(editor: state.history |> Enum.at(index) |> Editor.from_text(), history_index: index)
+    |> recompute_completion()
+    |> unchanged()
   end
 
   defp next_history(%__MODULE__{history_index: nil} = state), do: {state, []}
@@ -521,15 +638,17 @@ defmodule Jido.Console.Tui.State do
     index = state.history_index + 1
 
     if index < length(state.history) do
-      changed(state, editor: state.history |> Enum.at(index) |> Editor.from_text(), history_index: index)
+      state
+      |> struct!(editor: state.history |> Enum.at(index) |> Editor.from_text(), history_index: index)
+      |> recompute_completion()
+      |> unchanged()
     else
       history_draft = if is_nil(state.history_draft), do: "", else: state.history_draft
 
-      changed(state,
-        editor: Editor.from_text(history_draft),
-        history_index: nil,
-        history_draft: nil
-      )
+      state
+      |> struct!(editor: Editor.from_text(history_draft), history_index: nil, history_draft: nil)
+      |> recompute_completion()
+      |> unchanged()
     end
   end
 
@@ -539,6 +658,50 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp scroll_page(%__MODULE__{size: {_columns, rows}}), do: max(rows - 4, 1)
+
+  defp recompute_completion(%__MODULE__{} = state) do
+    completion =
+      if completion_capacity(state) > 0 do
+        Autocomplete.derive(
+          Editor.value(state.editor),
+          Editor.cursor(state.editor),
+          state.selection,
+          state.completion.focused_identity
+        )
+      else
+        %Autocomplete{}
+      end
+
+    %{state | completion: completion}
+  end
+
+  defp completion_capacity(%__MODULE__{size: {width, height}} = state)
+       when width >= 12 and height >= 5 do
+    prompt_limit = min(5, max(height - 4, 1))
+    editor_height = Editor.frame(state.editor, max(width - 2, 1), prompt_limit).height
+
+    height
+    |> Kernel.-(3 + editor_height)
+    |> max(0)
+    |> min(@completion_row_limit)
+  end
+
+  defp completion_capacity(%__MODULE__{}), do: 0
+
+  defp completion_visible?(%__MODULE__{} = state),
+    do: completion_slice(state).rows != []
+
+  defp completion_interactive?(%__MODULE__{} = state),
+    do: completion_slice(state).interactive?
+
+  defp review?(%__MODULE__{activity: {:review, _, _, _, _}}), do: true
+  defp review?(%__MODULE__{}), do: false
+
+  defp existing_escape(%__MODULE__{activity: activity} = state)
+       when activity == :idle or elem(activity, 0) in [:starting, :failed],
+       do: {state, [:exit]}
+
+  defp existing_escape(%__MODULE__{} = state), do: {state, []}
 
   defp finish(state, session, content, next_activity, opts) do
     error = Activity.error(next_activity)
@@ -863,7 +1026,7 @@ defmodule Jido.Console.Tui.State do
         scroll_offset: 0
     }
 
-    {state, []}
+    {recompute_completion(state), []}
   end
 
   defp restore_model_selection(selection, nil), do: selection

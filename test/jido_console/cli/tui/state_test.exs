@@ -2,7 +2,7 @@ defmodule Jido.Console.Tui.StateTest do
   use ExUnit.Case, async: true
 
   alias Jido.Console.Session.View
-  alias Jido.Console.Tui.{Editor, State, Turn}
+  alias Jido.Console.Tui.{Autocomplete, Editor, State, Turn}
 
   @catalog_entries [
     %{identity: "openai:gpt-4.1-mini", provider: "openai", model: "gpt-4.1-mini", tier: :supported},
@@ -302,6 +302,240 @@ defmodule Jido.Console.Tui.StateTest do
     assert Editor.value(state.editor) == ""
   end
 
+  test "Tab completes commands and models without effects while Enter submits editor text" do
+    submitted = completion_state("/mo")
+    {submitted, []} = State.update(submitted, {:terminal, TermUI.Event.key(:enter)})
+    assert List.last(submitted.command_notices) =~ "Unknown command"
+    assert Editor.value(submitted.editor) == ""
+    assert submitted.completion.context == :inactive
+
+    state = completion_state("/mo")
+    assert %Autocomplete{context: :command, completion: "/model "} = state.completion
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:tab)})
+    assert Editor.value(state.editor) == "/model "
+    assert Editor.cursor(state.editor) == 7
+    assert %Autocomplete{context: :model} = state.completion
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.text("oll")})
+    assert state.completion.focused_identity == "ollama:llama3.2"
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:tab)})
+    assert Editor.value(state.editor) == "/model ollama:llama3.2"
+    assert state.completion.context == :inactive
+
+    assert {_state, [{:select_model, "ollama:llama3.2"}]} =
+             State.update(state, {:terminal, TermUI.Event.key(:enter)})
+
+    state = completion_state("/model o")
+    highlighted = state.completion.completion
+
+    assert {_state, [{:select_model, "o"}]} =
+             State.update(state, {:terminal, TermUI.Event.key(:enter)})
+
+    refute highlighted == "/model o"
+  end
+
+  test "plain arrows move and clamp a visible completion before editor history" do
+    state = %{completion_state("/") | history: ["older prompt"]}
+    assert state.completion.selected_index == 0
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:up)})
+    assert state.completion.selected_index == 0
+    assert state.history_index == nil
+    assert Editor.value(state.editor) == "/"
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:down)})
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:down)})
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:down)})
+    assert state.completion.selected_index == 2
+    assert state.history_index == nil
+    assert Editor.value(state.editor) == "/"
+  end
+
+  test "feedback is dismissible but does not own selection or Tab" do
+    state = completion_state("/model missing")
+    assert %Autocomplete{context: :no_match, selected_index: nil} = state.completion
+
+    for key <- [:up, :down, :tab] do
+      assert {^state, []} = State.update(state, {:terminal, TermUI.Event.key(key)})
+    end
+
+    {dismissed, []} = State.update(state, {:terminal, TermUI.Event.key(:escape)})
+    assert Editor.value(dismissed.editor) == "/model missing"
+    assert dismissed.completion.context == :inactive
+    assert {^dismissed, [:exit]} = State.update(dismissed, {:terminal, TermUI.Event.key(:escape)})
+  end
+
+  test "modified completion keys retain their editor behavior" do
+    state = completion_state("/")
+
+    for event <- [
+          TermUI.Event.key(:tab, modifiers: [:shift]),
+          TermUI.Event.key(:up, modifiers: [:shift]),
+          TermUI.Event.key(:down, modifiers: [:shift])
+        ] do
+      assert {next, []} = State.update(state, {:terminal, event})
+      assert Editor.value(next.editor) == "/"
+      assert next.completion.focused_identity == state.completion.focused_identity
+    end
+  end
+
+  test "editor value and cursor changes deterministically recompute completion" do
+    state = completion_state("/mo")
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:left)})
+    assert state.completion.context == :inactive
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:right)})
+    assert state.completion.context == :command
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:home)})
+    assert state.completion.context == :inactive
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:end)})
+    assert state.completion.context == :command
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.paste("\nnext")})
+    assert state.completion.context == :inactive
+
+    state = completion_state("/mx")
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:left)})
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:delete)})
+    assert Editor.value(state.editor) == "/m"
+    assert state.completion.context == :command
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:backspace)})
+    assert Editor.value(state.editor) == "/"
+    assert state.completion.context == :command
+
+    {state, []} = State.update(state, {:terminal, {:key, :newline}})
+    assert state.completion.context == :inactive
+  end
+
+  test "mouse placement, history recall, and resize recompute completion" do
+    state = completion_state("/mo", size: {30, 12})
+    prompt_y = 12 - 5
+
+    {state, []} =
+      State.update(state, {:terminal, TermUI.Event.mouse(:press, :left, 3, prompt_y)})
+
+    assert state.completion.context == :inactive
+
+    {state, []} =
+      State.update(state, {:terminal, TermUI.Event.mouse(:press, :left, 5, prompt_y)})
+
+    assert state.completion.context == :command
+
+    recalled = %{State.new(nil, {80, 24}, catalog_entries: @catalog_entries) | history: ["/mo"]}
+    {recalled, []} = State.update(recalled, {:terminal, TermUI.Event.key(:up)})
+    assert Editor.value(recalled.editor) == "/mo"
+    assert recalled.completion.context == :command
+
+    {recalled, []} = State.update(recalled, {:terminal, TermUI.Event.key(:escape)})
+    {recalled, []} = State.update(recalled, {:terminal, TermUI.Event.key(:down)})
+    assert Editor.value(recalled.editor) == ""
+    assert recalled.completion.context == :inactive
+
+    {small, []} = State.update(state, {:terminal, TermUI.Event.resize(11, 4)})
+    assert small.completion.context == :inactive
+    assert {^small, []} = State.update(small, {:terminal, TermUI.Event.key(:tab)})
+    assert {^small, [:exit]} = State.update(small, {:terminal, TermUI.Event.key(:escape)})
+
+    small_with_history = %{small | editor: Editor.from_text("/mo"), history: ["older prompt"]}
+    {small_with_history, []} = State.update(small_with_history, {:terminal, TermUI.Event.key(:up)})
+    assert Editor.value(small_with_history.editor) == "older prompt"
+    assert small_with_history.completion.context == :inactive
+
+    {small_with_history, []} =
+      State.update(small_with_history, {:terminal, TermUI.Event.key(:down)})
+
+    assert Editor.value(small_with_history.editor) == "/mo"
+    assert small_with_history.completion.context == :inactive
+
+    {large, []} = State.update(small, {:terminal, TermUI.Event.resize(80, 24)})
+    assert large.completion.context == :command
+  end
+
+  test "Escape dismisses completion before each existing activity action" do
+    turn = Turn.new(0, "queued")
+
+    for {activity, second_effects} <- [
+          {:idle, [:exit]},
+          {{:starting, {:turn, turn}}, [:exit]},
+          {{:failed, :selection, :unavailable, "unavailable"}, [:exit]},
+          {{:active, %{request_id: "request-1"}, turn, :streaming}, []}
+        ] do
+      state = %{completion_state("/mo") | activity: activity}
+      {dismissed, []} = State.update(state, {:terminal, TermUI.Event.key(:escape)})
+
+      assert dismissed.activity == activity
+      assert Editor.value(dismissed.editor) == "/mo"
+      assert dismissed.completion.context == :inactive
+      assert {unchanged, ^second_effects} = State.update(dismissed, {:terminal, TermUI.Event.key(:escape)})
+      assert unchanged.activity == activity
+    end
+  end
+
+  test "a complete owner View preserves editor focus and refreshes current model advice" do
+    state = completion_state("/model ")
+    {state, []} = State.update(state, {:terminal, TermUI.Event.key(:down)})
+    assert state.completion.focused_identity == "openai:gpt-4.1-mini"
+
+    view =
+      View.new!(
+        thread_id: "thread-model",
+        status: :idle,
+        revision: 2,
+        model: %{"identity" => "openai:gpt-4.1-mini", "tier" => "supported", "locked" => true}
+      )
+
+    restored = State.restore_view(state, view)
+    assert Editor.value(restored.editor) == "/model "
+    assert restored.completion.focused_identity == "openai:gpt-4.1-mini"
+    assert Enum.find(restored.completion.candidates, & &1.current?).identity == "openai:gpt-4.1-mini"
+    assert restored.selection.model_locked?
+  end
+
+  test "completion stays advisory under review, startup, active, lock, and invalid catalog states" do
+    review_state = completion_state("/mo") |> State.restore_view(review_view())
+    review_completion = review_state.completion
+    assert %{rows: [], interactive?: false} = State.completion_slice(review_state)
+
+    for key <- [:tab, :up, :down, :escape, :enter] do
+      {next, []} = State.update(review_state, {:terminal, TermUI.Event.key(key)})
+      assert next.completion == review_completion
+      assert Editor.value(next.editor) == "/mo"
+    end
+
+    starting = completion_state("/model oll", session_client: nil)
+    {starting, []} = State.update(starting, {:terminal, TermUI.Event.key(:tab)})
+    {starting, []} = State.update(starting, {:terminal, TermUI.Event.key(:enter)})
+    assert List.last(starting.command_notices) =~ "still starting"
+
+    locked = completion_state("/model oll")
+    locked = put_in(locked.selection.model_locked?, true)
+    effective_model = locked.selection.model
+    {locked, []} = State.update(locked, {:terminal, TermUI.Event.key(:tab)})
+    {locked, []} = State.update(locked, {:terminal, TermUI.Event.key(:enter)})
+    assert locked.selection.model == effective_model
+    assert List.last(locked.command_notices) =~ "locked"
+
+    invalid =
+      State.new(nil, {80, 24}, catalog_entries: :invalid, session_client: :client)
+      |> then(fn state -> elem(State.update(state, {:terminal, TermUI.Event.text("/model ")}), 0) end)
+
+    assert invalid.completion.context == :no_match
+    assert {^invalid, []} = State.update(invalid, {:terminal, TermUI.Event.key(:tab)})
+
+    request = %{queue_item_id: "active", request_id: "request-1"}
+    turn = Turn.new(0, "active") |> Turn.put_request(request)
+    active = %{completion_state("/mo") | activity: {:active, request, turn, :streaming}}
+    assert {active, []} = State.update(active, {:terminal, TermUI.Event.key(:tab)})
+    assert active.activity == {:active, request, turn, :streaming}
+    assert Editor.value(active.editor) == "/model "
+  end
+
   test "handles slash commands before idle or active prompt submission" do
     state = State.new(nil, {80, 24}, catalog_entries: @catalog_entries, session_client: :client)
 
@@ -512,6 +746,19 @@ defmodule Jido.Console.Tui.StateTest do
   defp enter(state, text) do
     {state, []} = State.update(state, {:terminal, {:text, text}})
     State.update(state, {:terminal, {:key, :enter}})
+  end
+
+  defp completion_state(text, opts \\ []) do
+    size = Keyword.get(opts, :size, {80, 24})
+
+    state =
+      State.new(nil, size,
+        catalog_entries: @catalog_entries,
+        session_client: Keyword.get(opts, :session_client, :client)
+      )
+
+    {state, []} = State.update(state, {:terminal, TermUI.Event.text(text)})
+    state
   end
 
   defp stream_projection(sequence, event, effect_id, operation) do
