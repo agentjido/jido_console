@@ -11,14 +11,58 @@ defmodule Jido.Console.Tui.SelectionTest do
 
   test "lists catalog models and allowed profiles" do
     selection = Selection.init(catalog_entries: @entries)
-    assert {:command, ^selection, models} = Selection.handle("/model", selection)
+    assert {:ok, models} = Selection.list_models(selection)
     assert models =~ "openai:gpt-4.1-mini supported"
     assert models =~ "ollama:llama3.2 beta"
+    assert models =~ "current"
     refute models =~ "sk-"
 
     assert {:command, ^selection, profiles} = Selection.handle("/profile", selection)
     assert profiles =~ "coding.restricted"
     assert profiles =~ "coding.trusted-workspace"
+  end
+
+  test "lists only selectable tiers in stable identity order" do
+    entries = [
+      %{identity: "z:last", provider: "z", model: "last", tier: :unsupported},
+      %{identity: "b:beta", provider: "b", model: "beta", tier: :beta},
+      %{identity: "a:available", provider: "a", model: "available", tier: :available},
+      %{identity: "a:supported", provider: "a", model: "supported", tier: :supported}
+    ]
+
+    selection = Selection.init(catalog_entries: entries, model: "b:beta")
+    assert {:ok, models} = Selection.list_models(selection)
+
+    assert String.split(models, "\n") == [
+             "Models:",
+             "a:supported supported",
+             "b:beta beta current"
+           ]
+  end
+
+  test "selects exact supported and beta identities only" do
+    entries = [
+      %{identity: "a:supported", provider: "a", model: "supported", tier: :supported},
+      %{identity: "b:beta", provider: "b", model: "beta", tier: :beta},
+      %{identity: "c:available", provider: "c", model: "available", tier: :available},
+      %{identity: "d:unsupported", provider: "d", model: "unsupported", tier: :unsupported}
+    ]
+
+    selection = Selection.init(catalog_entries: entries)
+    assert {:ok, beta} = Selection.resolve_model("b:beta", selection)
+    assert beta.tier == :beta
+
+    for identity <- ["missing:model", "c:available", "d:unsupported", "supported"] do
+      assert {:error, error} = Selection.resolve_model(identity, selection)
+      assert Exception.message(error) =~ identity
+    end
+  end
+
+  test "returns a configuration error for an empty or invalid catalog" do
+    for entries <- [[], [%{identity: "bad", tier: :supported}]] do
+      selection = Selection.init(catalog_entries: entries)
+      assert {:error, %Jido.Console.Error.ConfigurationError{}} = Selection.list_models(selection)
+    end
   end
 
   test "builds the startup selection without resolving model metadata" do
