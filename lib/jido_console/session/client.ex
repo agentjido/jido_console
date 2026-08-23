@@ -117,6 +117,12 @@ defmodule Jido.Console.Session.Client do
     run(handle, control(handle, :remove, queue_item_id: queue_item_id))
   end
 
+  @doc "Selects one exact model before the first prompt is durably accepted."
+  @spec select_model(t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def select_model(%__MODULE__{} = handle, identity) when is_binary(identity) do
+    run(handle, control(handle, :select_model, text: identity))
+  end
+
   @doc "Returns the current complete view."
   @spec status(t()) :: {:ok, View.t()} | {:error, term()}
   def status(%__MODULE__{} = handle), do: run(handle, control(handle, :status))

@@ -2,9 +2,10 @@ defmodule Jido.Console.Session.Command do
   @moduledoc "One validated command for a Console thread owner."
 
   alias Jido.Console.Digest
+  alias Jido.Console.Models.Commands, as: ModelCommands
   alias Jido.Console.Session.Queue
 
-  @types [:submit, :cancel, :approve, :deny, :remove, :status, :history, :stop]
+  @types [:submit, :cancel, :approve, :deny, :remove, :select_model, :status, :history, :stop]
 
   @schema Zoi.struct(
             __MODULE__,
@@ -116,6 +117,14 @@ defmodule Jido.Console.Session.Command do
        do: :ok
 
   defp validate_shape(%__MODULE__{type: :remove, queue_item_id: id}) when is_binary(id), do: :ok
+
+  defp validate_shape(%__MODULE__{type: :select_model, text: identity}) when is_binary(identity) do
+    case ModelCommands.parse_identity(identity) do
+      {:ok, _provider, _model} -> :ok
+      {:error, _reason} -> {:error, :invalid_command_shape}
+    end
+  end
+
   defp validate_shape(%__MODULE__{type: type}) when type in [:status, :history, :stop], do: :ok
   defp validate_shape(_command), do: {:error, :invalid_command_shape}
 end

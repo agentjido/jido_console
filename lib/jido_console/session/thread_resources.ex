@@ -2,6 +2,7 @@ defmodule Jido.Console.Session.ThreadResources do
   @moduledoc "Private coding and extension resources for one thread."
 
   alias Jido.Console.Coding.Setup
+  alias Jido.Console.Error
   alias Jido.Console.Extensions
   alias Jidoka.Session.Data
 
@@ -46,6 +47,19 @@ defmodule Jido.Console.Session.ThreadResources do
   @doc "Returns the specification that is safe to store before resource setup."
   @spec base_spec(t()) :: Jidoka.Agent.Spec.t()
   def base_spec(%__MODULE__{base_spec: spec}), do: spec
+
+  @doc "Configures the model while the private resource handle is unprepared."
+  @spec configure_model(t(), String.t()) :: {:ok, t()} | {:error, term()}
+  def configure_model(%__MODULE__{setup: nil} = resources, identity) when is_binary(identity) do
+    {:ok, %{resources | options: Keyword.put(resources.options, :model, identity)}}
+  end
+
+  def configure_model(%__MODULE__{}, _identity) do
+    {:error,
+     Error.validation_error("Model selection is locked after resources are prepared", %{
+       source: :session_model
+     })}
+  end
 
   @doc "Prepares resources and binds them to the current durable session."
   @spec prepare(t(), Data.t()) :: {:ok, t(), Data.t()} | {:error, term()}

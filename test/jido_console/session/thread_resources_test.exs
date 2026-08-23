@@ -97,6 +97,24 @@ defmodule Jido.Console.Session.ThreadResourcesTest do
     end
   end
 
+  test "configures a model only before resources are prepared" do
+    assert {:ok, resources} =
+             ThreadResources.new("thread-model", Jido.Console.DefaultAgent,
+               setup_module: PrivateSetup,
+               test_pid: self()
+             )
+
+    assert {:ok, configured} = ThreadResources.configure_model(resources, "ollama:llama3.2")
+    assert configured.options[:model] == "ollama:llama3.2"
+
+    assert {:ok, prepared, _session} = ThreadResources.prepare(configured, session(configured))
+    assert_receive {:private_setup, "thread-model", manager}
+    assert {:error, error} = ThreadResources.configure_model(prepared, "openai:gpt-4.1-mini")
+    assert Exception.message(error) =~ "locked"
+    assert :ok = ThreadResources.close(prepared)
+    refute Process.alive?(manager)
+  end
+
   test "reuses prepared resources and includes a caller operation boundary" do
     operations = fn _intent, _journal, _context -> {:ok, :handled} end
 

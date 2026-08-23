@@ -159,6 +159,7 @@ defmodule Jido.Console.Session.ThreadTest do
              |> then(&Thread.command(command, &1))
 
     assert unchanged.active == nil
+    refute unchanged.model_locked?
 
     {:ok, full_queue} = Queue.push(Queue.new(1), item("queued", "queued-request"))
 
@@ -227,6 +228,9 @@ defmodule Jido.Console.Session.ThreadTest do
       queue: Queue.new(),
       resources_module: Resources,
       resources: %{},
+      model_catalog: [],
+      model: %{identity: "openai:gpt-4.1-mini", tier: :supported},
+      model_locked?: false,
       error: nil,
       subscribers: %{},
       monitors: %{},

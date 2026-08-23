@@ -2,6 +2,7 @@ defmodule Jido.Console.Session.Thread do
   @moduledoc "State transitions and effects for one live thread owner."
 
   alias Jido.Console.Error
+  alias Jido.Console.Models
   alias Jido.Console.Session.{Command, Event, JidokaBridge, Queue, Recovery, ThreadResources, View}
   alias Jido.Console.Storage
   alias Jidoka.Session.{Data, Store}
@@ -15,6 +16,8 @@ defmodule Jido.Console.Session.Thread do
     store = Keyword.get(opts, :store, Storage.session_store(storage_opts))
 
     with {:ok, resources} <- resources_module.new(thread_id, Keyword.get(opts, :agent, Jido.Console.DefaultAgent), opts),
+         {:ok, model_catalog, model} <- initial_model(opts),
+         {:ok, resources} <- configure_resources(resources_module, resources, model.identity),
          {:ok, session} <- ensure_session(thread_id, resources_module.base_spec(resources), store),
          {:ok, open} <- Storage.open_thread_items(thread_id, storage_opts),
          {:ok, session, status, wake_at} <-
@@ -28,6 +31,9 @@ defmodule Jido.Console.Session.Thread do
         bridge_module: Keyword.get(opts, :bridge_module, JidokaBridge),
         resources_module: resources_module,
         resources: resources,
+        model_catalog: model_catalog,
+        model: model,
+        model_locked?: false,
         options: opts,
         status: status,
         session: session,
@@ -58,6 +64,7 @@ defmodule Jido.Console.Session.Thread do
   def command(%Command{type: :cancel} = command, state), do: cancel(command, state)
   def command(%Command{type: type} = command, state) when type in [:approve, :deny], do: decide(command, state)
   def command(%Command{type: :remove} = command, state), do: remove(command, state)
+  def command(%Command{type: :select_model} = command, state), do: select_model(command, state)
   def command(%Command{type: :status}, state), do: {:reply, {:ok, View.from_thread(state)}, state}
 
   def command(%Command{type: :history, payload: payload}, state) do
@@ -225,9 +232,11 @@ defmodule Jido.Console.Session.Thread do
 
     case append_event(state, queued) do
       {:ok, state, %{duplicate: true}} ->
-        retry_closed(Command.from_item(item, state.thread_id), item.digest, state)
+        retry_closed(Command.from_item(item, state.thread_id), item.digest, lock_model(state))
 
       {:ok, state, %{duplicate: false}} when not is_nil(state.active) ->
+        state = lock_model(state)
+
         case Queue.push(state.queue, item) do
           {:ok, queue} ->
             {:reply, {:ok, Command.acceptance(item, false, state)}, View.publish(%{state | queue: queue})}
@@ -237,7 +246,7 @@ defmodule Jido.Console.Session.Thread do
         end
 
       {:ok, state, %{duplicate: false}} ->
-        state = View.publish(%{state | active: item, status: :idle})
+        state = View.publish(%{lock_model(state) | active: item, status: :idle})
         send(self(), :start_active)
         {:reply, {:ok, Command.acceptance(item, false, state)}, state}
 
@@ -329,6 +338,38 @@ defmodule Jido.Console.Session.Thread do
           {:ok, state, _event} -> {:reply, {:ok, :removed}, View.publish(%{state | queue: queue})}
           {:error, reason, state} -> {:reply, {:error, reason}, state}
         end
+    end
+  end
+
+  defp select_model(_command, %{model_locked?: true} = state) do
+    error =
+      Error.validation_error("Model selection is locked after the first prompt is accepted", %{
+        source: :session_model
+      })
+
+    {:reply, {:error, error}, state}
+  end
+
+  defp select_model(%Command{text: identity}, state) do
+    case Enum.find(state.model_catalog, &(&1.identity == identity)) do
+      %{tier: tier} = entry when tier in [:supported, :beta] ->
+        case configure_resources(state.resources_module, state.resources, identity) do
+          {:ok, resources} ->
+            state = View.publish(%{state | resources: resources, model: entry})
+            {:reply, {:ok, View.from_thread(state).model}, state}
+
+          {:error, reason} ->
+            {:reply, {:error, Error.normalize(reason)}, state}
+        end
+
+      _other ->
+        error =
+          Error.validation_error("Unavailable model #{identity}", %{
+            identity: identity,
+            selectable_tiers: [:supported, :beta]
+          })
+
+        {:reply, {:error, error}, state}
     end
   end
 
@@ -495,6 +536,46 @@ defmodule Jido.Console.Session.Thread do
         {:error, reason, state}
     end
   end
+
+  defp initial_model(opts) do
+    with {:ok, entries} <- Models.list(opts),
+         {:ok, model} <- choose_initial_model(entries, Keyword.get(opts, :model)) do
+      {:ok, entries, model}
+    else
+      {:error, %_{} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error,
+         Error.config_error("Unable to configure the session model", %{
+           source: :model_catalog,
+           reason: inspect(reason)
+         })}
+    end
+  end
+
+  defp choose_initial_model(entries, nil) do
+    case Enum.find(entries, &(&1.tier == :supported)) do
+      nil -> {:error, :no_supported_model}
+      entry -> {:ok, entry}
+    end
+  end
+
+  defp choose_initial_model(entries, identity) do
+    case Enum.find(entries, &(&1.identity == identity and &1.tier in [:supported, :beta])) do
+      nil -> {:error, {:unavailable_model, identity}}
+      entry -> {:ok, entry}
+    end
+  end
+
+  defp configure_resources(module, resources, identity) do
+    if function_exported?(module, :configure_model, 2),
+      do: module.configure_model(resources, identity),
+      else: {:ok, resources}
+  end
+
+  defp lock_model(%{model_locked?: true} = state), do: state
+  defp lock_model(state), do: %{state | model_locked?: true}
 
   defp schedule_partial_publish(%{partial_publish_token: nil} = state, run_ref) do
     token = make_ref()

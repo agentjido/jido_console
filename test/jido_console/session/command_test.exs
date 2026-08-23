@@ -23,6 +23,11 @@ defmodule Jido.Console.Session.CommandTest do
     assert {:ok, %Command{}} = Command.new(base ++ [type: :deny, request_id: "request", review_id: "review"])
     assert {:ok, %Command{}} = Command.new(base ++ [type: :remove, queue_item_id: "item"])
 
+    assert {:ok, %Command{type: :select_model, text: "ollama:llama3.2"}} =
+             Command.new(base ++ [type: :select_model, text: "ollama:llama3.2"])
+
+    assert {:error, :invalid_command} = Command.new(base ++ [type: :select_model, text: "ollama"])
+
     for type <- [:status, :history, :stop] do
       assert {:ok, %Command{type: ^type}} = Command.new(base ++ [type: type])
     end
