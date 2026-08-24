@@ -133,7 +133,7 @@ defmodule Jido.Console.Session.ThreadResources do
     kind, reason -> {:error, {kind, reason}}
   end
 
-  defp open_runtime(resources, setup, session, opts) do
+  defp open_runtime(%__MODULE__{} = resources, setup, session, opts) do
     with {:ok, session} <- put_spec(session, setup.spec),
          {:ok, extension} <-
            Extensions.open(session, session.spec.extensions, setup.extension_setup,
