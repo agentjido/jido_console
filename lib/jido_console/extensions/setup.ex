@@ -103,9 +103,8 @@ defmodule Jido.Console.Extensions.Setup do
   end
 
   def runtime_definition_fingerprint(definition) do
-    with {:ok, portable} <- portable(definition, []) do
-      {:ok, Digest.semantic(:runtime_definition, portable)}
-    else
+    case portable(definition, []) do
+      {:ok, portable} -> {:ok, Digest.semantic(:runtime_definition, portable)}
       {:error, reason} -> {:error, {:nonportable_runtime_definition, reason}}
     end
   end

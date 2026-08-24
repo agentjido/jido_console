@@ -146,4 +146,93 @@ defmodule Jido.Console.Session.SelectionTest do
     assert {:ok, conflict} = BindingRequest.from_options(model: "ollama:llama3.2")
     assert {:error, {:binding_conflict, :model}} = Selection.match_request(locked, conflict)
   end
+
+  test "validates public binding options before keyword data is lost" do
+    assert {:ok, request} =
+             BindingRequest.from_options(
+               agent_source: "builtin:jido",
+               execution_policy: "coding.local",
+               execution_policy_resolver: fn _id -> :ok end
+             )
+
+    assert request.agent_source == "builtin:jido"
+    assert request.execution_policy == "coding.trusted-workspace"
+
+    assert {:error, :conflicting_execution_policy_inputs} =
+             BindingRequest.from_options(
+               execution_policy: "coding.restricted",
+               coding_profile: "coding.restricted"
+             )
+
+    assert {:error, :repeated_execution_policy_input} =
+             BindingRequest.from_options(
+               execution_policy: "coding.restricted",
+               execution_policy: "coding.restricted"
+             )
+
+    assert {:error, {:repeated_binding_input, :agent_source}} =
+             BindingRequest.from_options(agent_source: "one", agent_source: "two")
+
+    assert {:error, :repeated_execution_policy_resolver_input} =
+             BindingRequest.from_options(
+               execution_policy_resolver: fn _id -> :ok end,
+               execution_policy_resolver: fn _id -> :ok end
+             )
+
+    assert {:error, :execution_policy_consent_origin_forbidden} =
+             BindingRequest.from_options(
+               execution_policy: "coding.restricted",
+               execution_policy_origin: :cli
+             )
+
+    assert {:error, :invalid_execution_policy_resolver} =
+             BindingRequest.from_options(execution_policy_resolver: :invalid)
+
+    assert {:error, :invalid_binding_request_options} = BindingRequest.from_options(:invalid)
+    assert {:error, :invalid_binding_request_options} = BindingRequest.from_options([:invalid])
+
+    assert {:error, :invalid_execution_policy_resolver} =
+             BindingRequest.from_options(execution_policy_resolver: 1)
+
+    assert {:error, {:invalid_execution_policy_input, ""}} =
+             BindingRequest.from_options(execution_policy: "")
+
+    assert {:error, {:invalid_binding_request_value, 1}} = BindingRequest.from_options(model: 1)
+    assert {:error, {:invalid_binding_request_value, ""}} = BindingRequest.from_options(project_root: "")
+
+    assert {:ok, empty} = BindingRequest.from_options([])
+    refute BindingRequest.explicit?(empty)
+    assert {:ok, explicit} = BindingRequest.from_options(model: "openai:gpt-4.1-mini")
+    assert BindingRequest.explicit?(explicit)
+  end
+
+  test "applies the canonical trusted policy resolver", %{root: root} do
+    resolver = fn id -> if id == "coding.trusted-workspace", do: {:error, :blocked}, else: :ok end
+
+    assert {:error, {:unknown_execution_policy, "coding.trusted-workspace", :blocked}} =
+             Selection.new(
+               execution_policy: "coding.trusted-workspace",
+               execution_policy_resolver: resolver,
+               project_root: root
+             )
+  end
+
+  test "keeps CLI and API consent origins at their direct boundaries", %{root: root} do
+    assert {:ok, cli_options} =
+             Jido.Console.InteractiveOptions.parse(
+               execution_policy: "coding.trusted-workspace",
+               project_root: root
+             )
+
+    assert {:ok, cli} = Selection.new(Map.to_list(cli_options))
+    assert cli.policy.origin == :cli
+
+    assert {:ok, api} =
+             Selection.new(
+               execution_policy: "coding.trusted-workspace",
+               project_root: root
+             )
+
+    assert api.policy.origin == :api
+  end
 end

@@ -255,9 +255,6 @@ defmodule Jido.Console.Session.Binding do
     end
   end
 
-  defp clamp_default(_defaults, key, _maximum),
-    do: {:error, {:invalid_agent_runtime_default, key}}
-
   defp apply_memory_caps(%Spec{memory: nil} = spec, _opts), do: {:ok, spec}
 
   defp apply_memory_caps(%Spec{memory: %Memory{} = memory} = spec, opts) do

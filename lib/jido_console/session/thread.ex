@@ -203,46 +203,61 @@ defmodule Jido.Console.Session.Thread do
     with {:ok, session} <- Store.get_session(state.store, state.thread_id),
          {:ok, events} <-
            Storage.request_events(state.thread_id, pending.item.request_id, state.storage_opts) do
-      manifest = BindingManifest.fetch(session)
-      queued = Enum.find(events, &(&1.id == pending.event.id))
-
-      case {manifest, queued} do
-        {{:ok, stored_manifest}, %Event{} = event}
-        when stored_manifest == pending.selection.manifest ->
-          if Event.identity(event) == Event.identity(pending.event) do
-            case Storage.thread_events(state.thread_id, state.storage_opts) do
-              {:ok, history} ->
-                state =
-                  state
-                  |> install_locked_selection(pending.selection, session)
-                  |> Map.merge(%{
-                    active: pending.item,
-                    status: :idle,
-                    history: history.events,
-                    history_truncated?: history.history_truncated?
-                  })
-                  |> View.publish()
-
-                send(self(), :start_active)
-                {:ok, state}
-
-              {:error, reason} ->
-                {:error, reason, state}
-            end
-          else
-            {:error, {:binding_lock_integrity_failed, pending.operation_id}, state}
-          end
-
-        {{:ok, %{"lock_state" => "draft"}}, nil} ->
-          {:ok, View.publish(%{state | pending_lock: nil, status: :idle, error: nil})}
-
-        _other ->
-          {:error, {:binding_lock_integrity_failed, pending.operation_id}, state}
-      end
+      reconcile_lock_evidence(state, pending, session, events)
     else
       {:error, reason} -> {:error, reason, state}
     end
   end
+
+  defp reconcile_lock_evidence(state, pending, session, events) do
+    manifest = BindingManifest.fetch(session)
+    queued = Enum.find(events, &(&1.id == pending.event.id))
+
+    case {manifest, queued} do
+      {{:ok, stored_manifest}, %Event{} = event}
+      when stored_manifest == pending.selection.manifest ->
+        reconcile_locked_event(state, pending, session, event)
+
+      {{:ok, %{"lock_state" => "draft"}}, nil} ->
+        {:ok, View.publish(%{state | pending_lock: nil, status: :idle, error: nil})}
+
+      _other ->
+        lock_integrity_error(state, pending)
+    end
+  end
+
+  defp reconcile_locked_event(state, pending, session, event) do
+    if Event.identity(event) == Event.identity(pending.event) do
+      restore_locked_history(state, pending, session)
+    else
+      lock_integrity_error(state, pending)
+    end
+  end
+
+  defp restore_locked_history(state, pending, session) do
+    case Storage.thread_events(state.thread_id, state.storage_opts) do
+      {:ok, history} ->
+        state =
+          state
+          |> install_locked_selection(pending.selection, session)
+          |> Map.merge(%{
+            active: pending.item,
+            status: :idle,
+            history: history.events,
+            history_truncated?: history.history_truncated?
+          })
+          |> View.publish()
+
+        send(self(), :start_active)
+        {:ok, state}
+
+      {:error, reason} ->
+        {:error, reason, state}
+    end
+  end
+
+  defp lock_integrity_error(state, pending),
+    do: {:error, {:binding_lock_integrity_failed, pending.operation_id}, state}
 
   @doc "Closes resources owned by this thread."
   @spec close(map()) :: term()
@@ -252,7 +267,7 @@ defmodule Jido.Console.Session.Thread do
   @doc "Moves the thread to an unavailable state and publishes its View."
   @spec unavailable(map(), term()) :: map()
   def unavailable(state, reason),
-    do: View.publish(%{state | status: :unavailable, error: Event.json(Error.to_map(reason))})
+    do: View.publish(%{state | status: :unavailable, error: Event.json(Jido.Console.SafeDisplay.to_map(reason))})
 
   defp init_new(thread_id, resources_module, store, storage_opts, opts) do
     opts = Keyword.put(opts, :thread_id, thread_id)
@@ -263,18 +278,20 @@ defmodule Jido.Console.Session.Thread do
          {:ok, model_catalog, model} <- model_catalog(selection, opts) do
       state =
         base_state(
-          thread_id,
-          resources_module,
-          resources,
-          store,
-          storage_opts,
-          opts,
-          selection,
-          session,
-          [],
-          false,
-          model_catalog,
-          model
+          %{
+            thread_id: thread_id,
+            resources_module: resources_module,
+            resources: resources,
+            store: store,
+            storage_opts: storage_opts,
+            selection: selection,
+            session: session,
+            history: [],
+            history_truncated?: false,
+            model_catalog: model_catalog,
+            model: model
+          },
+          opts
         )
 
       {:ok, %{state | session_persisted?: persisted?}}
@@ -326,18 +343,20 @@ defmodule Jido.Console.Session.Thread do
          {:ok, history} <- Storage.thread_events(session.session_id, storage_opts) do
       state =
         base_state(
-          session.session_id,
-          resources_module,
-          resources,
-          store,
-          storage_opts,
-          opts,
-          selection,
-          session,
-          history.events,
-          history.history_truncated?,
-          model_catalog,
-          model
+          %{
+            thread_id: session.session_id,
+            resources_module: resources_module,
+            resources: resources,
+            store: store,
+            storage_opts: storage_opts,
+            selection: selection,
+            session: session,
+            history: history.events,
+            history_truncated?: history.history_truncated?,
+            model_catalog: model_catalog,
+            model: model
+          },
+          opts
         )
         |> Map.merge(%{status: status, active: active, queue: queue, session_persisted?: true})
         |> schedule_recovery(wake_at)
@@ -350,18 +369,20 @@ defmodule Jido.Console.Session.Thread do
   defp init_blocked(session, history, selection, resources_module, store, storage_opts, opts) do
     state =
       base_state(
-        session.session_id,
-        resources_module,
-        nil,
-        store,
-        storage_opts,
-        opts,
-        selection,
-        session,
-        history.events,
-        history.history_truncated?,
-        [],
-        nil
+        %{
+          thread_id: session.session_id,
+          resources_module: resources_module,
+          resources: nil,
+          store: store,
+          storage_opts: storage_opts,
+          selection: selection,
+          session: session,
+          history: history.events,
+          history_truncated?: history.history_truncated?,
+          model_catalog: [],
+          model: nil
+        },
+        opts
       )
 
     {:ok,
@@ -369,44 +390,31 @@ defmodule Jido.Console.Session.Thread do
        state
        | status: :unavailable,
          session_persisted?: true,
-         error: Event.json(Error.to_map({:resume_blocked, selection.blocked_reason}))
+         error: Event.json(Jido.Console.SafeDisplay.to_map({:resume_blocked, selection.blocked_reason}))
      }}
   end
 
-  defp base_state(
-         thread_id,
-         resources_module,
-         resources,
-         store,
-         storage_opts,
-         opts,
-         selection,
-         session,
-         history,
-         history_truncated?,
-         model_catalog,
-         model
-       ) do
+  defp base_state(input, opts) do
     %{
-      thread_id: thread_id,
-      store: store,
-      storage_opts: storage_opts,
+      thread_id: input.thread_id,
+      store: input.store,
+      storage_opts: input.storage_opts,
       task_supervisor: Keyword.get(opts, :tasks, Jido.Console.Session.TaskSupervisor),
       bridge_module: Keyword.get(opts, :bridge_module, JidokaBridge),
-      resources_module: resources_module,
-      resources: resources,
-      selection: selection,
-      binding_state: Selection.state(selection),
+      resources_module: input.resources_module,
+      resources: input.resources,
+      selection: input.selection,
+      binding_state: Selection.state(input.selection),
       session_persisted?: false,
       pending_lock: nil,
-      model_catalog: model_catalog,
-      model: model,
-      model_locked?: Selection.locked?(selection),
+      model_catalog: input.model_catalog,
+      model: input.model,
+      model_locked?: Selection.locked?(input.selection),
       options: opts,
-      status: if(Selection.state(selection) == :resume_blocked, do: :unavailable, else: :idle),
-      session: session,
-      history: history,
-      history_truncated?: history_truncated?,
+      status: if(Selection.state(input.selection) == :resume_blocked, do: :unavailable, else: :idle),
+      session: input.session,
+      history: input.history,
+      history_truncated?: input.history_truncated?,
       queue: Queue.new(Keyword.get(opts, :queue_limit, 32)),
       active: nil,
       bridge: nil,
@@ -436,9 +444,6 @@ defmodule Jido.Console.Session.Thread do
     end
   end
 
-  defp new_resources(_module, %Selection{state: :resume_blocked}, _thread_id, _opts),
-    do: {:ok, nil}
-
   defp new_resources(module, %Selection{} = selection, thread_id, opts) do
     input =
       cond do
@@ -463,15 +468,10 @@ defmodule Jido.Console.Session.Thread do
   defp configure_legacy_resources(_module, resources, _selection), do: {:ok, resources}
 
   defp model_catalog(%Selection{} = selection, opts) do
-    with {:ok, entries} <- Models.list(opts) do
-      identity = selected_model_identity(selection)
-      model = if identity, do: Enum.find(entries, &(&1.identity == identity))
+    case Models.list(opts) do
+      {:ok, entries} ->
+        select_catalog_model(selection, entries)
 
-      cond do
-        selection.binding && is_nil(model) -> {:error, {:stored_model_unavailable, identity}}
-        true -> {:ok, entries, model}
-      end
-    else
       {:error, %{__exception__: true} = error} ->
         {:error, error}
 
@@ -482,6 +482,15 @@ defmodule Jido.Console.Session.Thread do
            reason: inspect(reason)
          })}
     end
+  end
+
+  defp select_catalog_model(selection, entries) do
+    identity = selected_model_identity(selection)
+    model = if identity, do: Enum.find(entries, &(&1.identity == identity))
+
+    if selection.binding && is_nil(model),
+      do: {:error, {:stored_model_unavailable, identity}},
+      else: {:ok, entries, model}
   end
 
   defp selected_model_identity(%Selection{binding: binding}) when not is_nil(binding),
@@ -578,65 +587,88 @@ defmodule Jido.Console.Session.Thread do
     operation_id = Command.lock_operation_id(command)
     command_digest = Command.first_lock_digest(command, draft_manifest["binding_digest"])
 
-    with {:ok, locked_selection} <- Selection.lock(state.selection, operation_id, command_digest),
-         locked_session = %{state.session | revision: state.session.revision + 1},
-         {:ok, locked_session} <- BindingManifest.put(locked_session, locked_selection.manifest),
-         event =
-           Event.for_item(
-             state,
-             item,
-             "prompt_queued",
-             %{
-               "input" => item.text,
-               "context" => Event.json(item.context),
-               "command_digest" => item.digest,
-               "binding_digest" => locked_selection.manifest["binding_digest"],
-               "lock_operation_id" => operation_id,
-               "first_prompt_command_digest" => command_digest
-             },
-             locked_session.revision
-           ) do
-      case Storage.lock_first_prompt(
-             locked_session,
-             event,
-             operation_id,
-             state.session.revision,
-             state.selection.generation,
-             state.storage_opts
-           ) do
-        {:ok, %{session: session, event: stored, duplicate: duplicate}} ->
-          state =
-            state
-            |> install_locked_selection(locked_selection, session)
-            |> add_history(stored)
-            |> Map.merge(%{active: item, status: :idle})
-            |> View.publish()
+    case Selection.lock(state.selection, operation_id, command_digest) do
+      {:ok, locked_selection} ->
+        prepare_first_lock(command, item, state, locked_selection, operation_id, command_digest)
 
-          send(self(), :start_active)
-          {:reply, {:ok, Command.acceptance(item, duplicate, state)}, state}
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
 
-        {:error, {kind, ^operation_id} = reason} when kind in [:timeout_unknown, :write_unknown] ->
-          pending = %{
-            operation_id: operation_id,
-            command: command,
-            item: item,
-            event: event,
-            selection: locked_selection,
-            session: locked_session
-          }
+  defp prepare_first_lock(command, item, state, locked_selection, operation_id, command_digest) do
+    draft_session = %{state.session | revision: state.session.revision + 1}
 
-          state =
-            state
-            |> Map.merge(%{pending_lock: pending, status: :reconciling, error: Event.json(Error.to_map(reason))})
-            |> View.publish()
+    case BindingManifest.put(draft_session, locked_selection.manifest) do
+      {:ok, locked_session} ->
+        event = first_prompt_event(state, item, locked_selection, locked_session, operation_id, command_digest)
+        persist_first_lock(command, item, state, locked_selection, locked_session, event, operation_id)
 
-          {:reply, {:error, reason}, state}
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
 
-        {:error, reason} ->
-          {:reply, {:error, reason}, state}
-      end
-    else
-      {:error, reason} -> {:reply, {:error, reason}, state}
+  defp first_prompt_event(state, item, locked_selection, locked_session, operation_id, command_digest) do
+    Event.for_item(
+      state,
+      item,
+      "prompt_queued",
+      %{
+        "input" => item.text,
+        "context" => Event.json(item.context),
+        "command_digest" => item.digest,
+        "binding_digest" => locked_selection.manifest["binding_digest"],
+        "lock_operation_id" => operation_id,
+        "first_prompt_command_digest" => command_digest
+      },
+      locked_session.revision
+    )
+  end
+
+  defp persist_first_lock(command, item, state, locked_selection, locked_session, event, operation_id) do
+    case Storage.lock_first_prompt(
+           locked_session,
+           event,
+           operation_id,
+           state.session.revision,
+           state.selection.generation,
+           state.storage_opts
+         ) do
+      {:ok, %{session: session, event: stored, duplicate: duplicate}} ->
+        state =
+          state
+          |> install_locked_selection(locked_selection, session)
+          |> add_history(stored)
+          |> Map.merge(%{active: item, status: :idle})
+          |> View.publish()
+
+        send(self(), :start_active)
+        {:reply, {:ok, Command.acceptance(item, duplicate, state)}, state}
+
+      {:error, {kind, ^operation_id} = reason} when kind in [:timeout_unknown, :write_unknown] ->
+        pending = %{
+          operation_id: operation_id,
+          command: command,
+          item: item,
+          event: event,
+          selection: locked_selection,
+          session: locked_session
+        }
+
+        state =
+          state
+          |> Map.merge(%{
+            pending_lock: pending,
+            status: :reconciling,
+            error: Event.json(Jido.Console.SafeDisplay.to_map(reason))
+          })
+          |> View.publish()
+
+        {:reply, {:error, reason}, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -755,9 +787,11 @@ defmodule Jido.Console.Session.Thread do
     {:reply, {:error, error}, state}
   end
 
-  defp select_model(%Command{text: identity}, state) do
-    case Selection.select_model(state.selection, identity, :tui) do
-      {:ok, selection} -> persist_selection(state, selection, :model)
+  defp select_model(%Command{text: identity, payload: payload}, state) do
+    with {:ok, origin} <- selection_origin(payload),
+         {:ok, selection} <- Selection.select_model(state.selection, identity, origin) do
+      persist_selection(state, selection, :model)
+    else
       {:error, reason} -> {:reply, {:error, model_selection_error(identity, reason)}, state}
     end
   end
@@ -781,9 +815,19 @@ defmodule Jido.Console.Session.Thread do
   defp select_execution_policy(%Command{text: id, payload: payload}, state) do
     root = Map.get(payload, "project_root", Map.get(payload, :project_root))
 
-    case Selection.select_execution_policy(state.selection, id, root, :tui) do
-      {:ok, selection} -> persist_selection(state, selection)
+    with {:ok, origin} <- selection_origin(payload),
+         {:ok, selection} <- Selection.select_execution_policy(state.selection, id, root, origin) do
+      persist_selection(state, selection)
+    else
       {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp selection_origin(payload) do
+    case Map.get(payload, "origin", Map.get(payload, :origin, "api")) do
+      "api" -> {:ok, :api}
+      "tui" -> {:ok, :tui}
+      _origin -> {:error, :invalid_selection_origin}
     end
   end
 
@@ -942,7 +986,7 @@ defmodule Jido.Console.Session.Thread do
 
       {:error, reason} ->
         finish_terminal(%{state | session: session}, "prompt_failed", %{
-          "error" => Event.json(Error.to_map(reason))
+          "error" => Event.json(Jido.Console.SafeDisplay.to_map(reason))
         })
     end
   end
@@ -952,13 +996,22 @@ defmodule Jido.Console.Session.Thread do
       finish_terminal(%{state | session: session}, "prompt_succeeded", %{"result" => Event.json(Jidoka.project(result))})
 
   defp finish_result(state, {:cancelled, cancellation}),
-    do: finish_loaded(state, "prompt_cancelled", %{"error" => Event.json(Error.to_map(cancellation))})
+    do:
+      finish_loaded(state, "prompt_cancelled", %{
+        "error" => Event.json(Jido.Console.SafeDisplay.to_map(cancellation))
+      })
 
   defp finish_result(state, {:error, reason}),
-    do: finish_loaded(state, "prompt_failed", %{"error" => Event.json(Error.to_map(reason))})
+    do:
+      finish_loaded(state, "prompt_failed", %{
+        "error" => Event.json(Jido.Console.SafeDisplay.to_map(reason))
+      })
 
   defp finish_result(state, result),
-    do: finish_loaded(state, "prompt_failed", %{"error" => Event.json(Error.to_map({:invalid_result, result}))})
+    do:
+      finish_loaded(state, "prompt_failed", %{
+        "error" => Event.json(Jido.Console.SafeDisplay.to_map({:invalid_result, result}))
+      })
 
   defp present_review(state, review) do
     projected = review |> Jidoka.project() |> Event.json()
@@ -1016,7 +1069,10 @@ defmodule Jido.Console.Session.Thread do
   defp fail_start(state, reason, true), do: unavailable(%{state | status: :finishing}, reason)
 
   defp fail_start(state, reason, false),
-    do: finish_terminal(state, "prompt_failed", %{"error" => Event.json(Error.to_map(reason))})
+    do:
+      finish_terminal(state, "prompt_failed", %{
+        "error" => Event.json(Jido.Console.SafeDisplay.to_map(reason))
+      })
 
   defp start_next(state) do
     case Queue.pop(state.queue) do

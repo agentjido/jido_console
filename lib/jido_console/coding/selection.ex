@@ -122,10 +122,18 @@ defmodule Jido.Console.Coding.Selection do
     legacy = Application.fetch_env(:jido_console, :coding_profile_resolver)
 
     case {canonical, legacy} do
-      {{:ok, _value}, {:ok, _legacy}} -> {:error, :conflicting_execution_policy_inputs}
-      {{:ok, value}, :error} -> {:ok, value}
-      {:error, {:ok, value}} -> {:ok, value}
-      {:error, :error} -> {:ok, nil}
+      {{:ok, _value}, {:ok, _legacy}} ->
+        {:error, :conflicting_execution_policy_inputs}
+
+      {{:ok, value}, :error} ->
+        {:ok, value}
+
+      {:error, {:ok, value}} ->
+        :ok = ExecutionPolicy.warn_legacy()
+        {:ok, value}
+
+      {:error, :error} ->
+        {:ok, nil}
     end
   end
 

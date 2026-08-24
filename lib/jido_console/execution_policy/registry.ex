@@ -1,7 +1,7 @@
 defmodule Jido.Console.ExecutionPolicy.Registry do
   @moduledoc "Trusted host registry for Console execution policies."
 
-  alias Jido.Console.ExecutionPolicy
+  alias Jido.Console.ExecutionPolicy.Definition
   alias Jido.Console.ExecutionPolicy.Record
 
   alias Jidoka.ExecutionEnvironment
@@ -30,13 +30,13 @@ defmodule Jido.Console.ExecutionPolicy.Registry do
   def new(opts \\ [])
 
   def new(opts) when is_list(opts) do
-    with {:ok, restricted} <- build_record(ExecutionPolicy.restricted_id(), :restricted, false, nil, opts),
+    with {:ok, restricted} <- build_record(Definition.restricted_id(), :restricted, false, nil, opts),
          {:ok, trusted} <-
            build_record(
-             ExecutionPolicy.trusted_id(),
+             Definition.trusted_id(),
              :trusted_workspace,
              true,
-             ExecutionPolicy.trusted_warning(),
+             Definition.trusted_warning(),
              opts
            ) do
       {:ok,
@@ -65,7 +65,7 @@ defmodule Jido.Console.ExecutionPolicy.Registry do
   @doc "Fetches one canonical record after alias normalization."
   @spec fetch(t(), String.t()) :: {:ok, Record.t()} | {:error, term()}
   def fetch(%__MODULE__{records: records}, id) when is_binary(id) do
-    id = ExecutionPolicy.normalize_id(id)
+    id = Definition.normalize_id(id)
 
     case Map.fetch(records, id) do
       {:ok, record} -> {:ok, record}

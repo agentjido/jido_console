@@ -9,14 +9,14 @@ defmodule Jido.Console.Coding.Environment do
   alias Jido.Console.Coding.Environment.Contract
   alias Jido.Console.Credentials
   alias Jido.Console.Env
-  alias Jido.Console.ExecutionPolicy
+  alias Jido.Console.ExecutionPolicy.Definition
   alias Jido.Console.Home
 
   @doc "Resolves one secret-free restricted environment contract."
   @spec resolve(String.t(), keyword()) :: {:ok, Contract.t()} | {:error, term()}
   def resolve(execution_policy_id, opts \\ [])
       when is_binary(execution_policy_id) and execution_policy_id != "" do
-    execution_policy_id = ExecutionPolicy.normalize_id(execution_policy_id)
+    execution_policy_id = Definition.normalize_id(execution_policy_id)
 
     with {:ok, allowlist} <- allowlist(opts),
          {:ok, credential_refs} <- credential_refs(opts),
@@ -74,7 +74,7 @@ defmodule Jido.Console.Coding.Environment do
   end
 
   defp allowlist(opts) do
-    case Keyword.get(opts, :environment_allowlist, ExecutionPolicy.environment_allowlist()) do
+    case Keyword.get(opts, :environment_allowlist, Definition.environment_allowlist()) do
       list when is_list(list) and list != [] ->
         if Enum.all?(list, &(&1 != "" and is_binary(&1))),
           do: {:ok, Enum.uniq(list)},

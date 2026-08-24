@@ -1,7 +1,7 @@
 defmodule Jido.Console.Session.Recovery do
   @moduledoc "Repairs product prompt history from durable Jidoka state."
 
-  alias Jido.Console.Error
+  alias Jido.Console.SafeDisplay
   alias Jido.Console.Session.Event
   alias Jido.Console.Storage
   alias Jidoka.Session.{Data, Lease, Store}
@@ -117,11 +117,11 @@ defmodule Jido.Console.Session.Recovery do
   end
 
   defp terminal_event(%Data{status: :cancelled, error: reason}) do
-    {"prompt_cancelled", %{"error" => Event.json(Error.to_map(reason))}}
+    {"prompt_cancelled", %{"error" => Event.json(SafeDisplay.to_map(reason))}}
   end
 
   defp terminal_event(%Data{status: :error, error: reason}) do
-    {"prompt_failed", %{"error" => Event.json(Error.to_map(reason))}}
+    {"prompt_failed", %{"error" => Event.json(SafeDisplay.to_map(reason))}}
   end
 
   defp last_request_id(%Data{requests: requests}) do

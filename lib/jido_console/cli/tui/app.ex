@@ -17,7 +17,7 @@ defmodule Jido.Console.Tui.App do
         startup: :starting,
         project_root: Keyword.get(tui_opts, :project_root) || current_directory(),
         model: Keyword.get(tui_opts, :model),
-        coding_profile: Keyword.get(tui_opts, :coding_profile),
+        execution_policy: Keyword.get(tui_opts, :execution_policy, Keyword.get(tui_opts, :coding_profile)),
         catalog_entries: Keyword.get(tui_opts, :tui_catalog_entries, [])
       )
 
@@ -128,7 +128,9 @@ defmodule Jido.Console.Tui.App do
     {clipboard_effects, effects} = Enum.split_with(effects, &match?({:copy, _text}, &1))
     commands = Enum.map(clipboard_effects, fn {:copy, text} -> Clipboard.copy(text) end)
 
-    case Effects.dispatch(tui, effects, Client, state.opts, state.workers) do
+    effect_opts = Keyword.put(state.opts, :session_subscriber, self())
+
+    case Effects.dispatch(tui, effects, SessionTUI, effect_opts, state.workers) do
       {:continue, workers} ->
         {%{state | workers: workers}, commands}
 
@@ -176,7 +178,7 @@ defmodule Jido.Console.Tui.App do
     %{
       state
       | startup: :ready,
-        activity: {:failed, :startup, reason, Jido.Console.Error.message(reason)}
+        activity: {:failed, :startup, reason, Jido.Console.SafeDisplay.message(reason)}
     }
   end
 
@@ -191,7 +193,6 @@ defmodule Jido.Console.Tui.App do
         :supervisor,
         Keyword.get(opts, :sessions, Keyword.get(opts, :supervisor, Jido.Console.Session.DynamicSupervisor))
       )
-      |> Keyword.put(:agent, Keyword.get(opts, :agent, Jido.Console.DefaultAgent))
       |> Keyword.put(:subscriber, subscriber)
 
     case SessionTUI.attach(thread_id, owner_opts) do

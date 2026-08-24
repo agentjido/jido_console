@@ -169,4 +169,65 @@ defmodule Jido.Console.AgentSource.AdmissionTest do
 
     refute_receive {:before_import, ^tools, :json}
   end
+
+  test "rejects invalid admission arguments and document shapes" do
+    assert {:error, :invalid_agent_source_admission} = Admission.admit(:invalid, :json)
+    assert {:error, :invalid_agent_source_admission} = Admission.admit("{}", :toml)
+    assert {:error, :invalid_agent_source_admission} = Admission.admit("{}", :json, :invalid)
+
+    assert {:error, {:forbidden_agent_field, "document"}} =
+             Admission.admit(~S([{"id":"not-a-document"}]), :json)
+
+    assert {:error, {:forbidden_agent_field, "agent"}} =
+             Admission.admit(~S({"agent":"not-an-object"}), :json)
+  end
+
+  test "validates flat documents, memory, runtime defaults, and callbacks" do
+    assert {:ok, %Jidoka.Agent.Spec{id: "flat_agent"}} =
+             Admission.admit(
+               ~S({"id":"flat_agent","model":"openai:gpt-4.1-mini","memory":true}),
+               :json
+             )
+
+    assert {:error, {:forbidden_agent_field, "memory"}} =
+             Admission.admit(
+               ~S({"id":"flat_agent","model":"openai:gpt-4.1-mini","memory":"shared"}),
+               :json
+             )
+
+    assert {:error, {:forbidden_agent_field, "runtime_defaults"}} =
+             Admission.admit(
+               ~S({"id":"flat_agent","model":"openai:gpt-4.1-mini","runtime_defaults":[]}),
+               :json
+             )
+
+    assert {:error, :invalid_agent_source_admission_callback} =
+             Admission.admit(@valid_json, :json, before_import: :invalid)
+  end
+
+  test "rejects malformed, multiple, and nested duplicate YAML or JSON data" do
+    assert {:error, {:invalid_syntax, :yaml}} = Admission.admit("agent: [", :yaml)
+
+    assert {:error, {:forbidden_yaml_syntax, :multiple_documents}} =
+             Admission.admit("---\nagent:\n  id: one\n---\nagent:\n  id: two\n", :yaml)
+
+    nested_duplicate =
+      ~S({"agent":{"id":"one","model":"openai:gpt-4.1-mini","metadata":[{"ok":true},{"x":1,"x":2}]}})
+
+    assert {:error, {:duplicate_key, :json}} = Admission.admit(nested_duplicate, :json)
+
+    nested_yaml_duplicate =
+      "agent:\n  id: one\n  model: openai:gpt-4.1-mini\n  metadata:\n    - ok: true\n    - duplicate: 1\n      duplicate: 2\n"
+
+    assert {:error, {:duplicate_key, :yaml}} = Admission.admit(nested_yaml_duplicate, :yaml)
+  end
+
+  test "applies the byte limit at the Jidoka import boundary" do
+    prefix = ~S({"id":"large","model":"openai:gpt-4.1-mini","instructions":")
+    suffix = ~S("})
+    document = prefix <> String.duplicate("x", 1_000_001 - byte_size(prefix) - byte_size(suffix)) <> suffix
+
+    assert byte_size(document) == 1_000_001
+    assert {:error, {:import_limit, :bytes}} = Admission.admit(document, :json)
+  end
 end

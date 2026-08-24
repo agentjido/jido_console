@@ -54,9 +54,8 @@ defmodule Jido.Console.AgentSource.Admission do
   defp syntax_preflight(bytes, :yaml) do
     with :ok <- yaml_tokens(bytes),
          {:ok, pairs} <- yaml_pairs(bytes),
-         :ok <- validate_yaml_pairs(pairs),
-         {:ok, decoded} <- yaml_decoded(bytes) do
-      {:ok, decoded}
+         :ok <- validate_yaml_pairs(pairs) do
+      yaml_decoded(bytes)
     end
   end
 
@@ -207,41 +206,43 @@ defmodule Jido.Console.AgentSource.Admission do
 
   defp admit_document(%{} = document) do
     with :ok <- reject_forbidden_nested(document) do
-      if Map.has_key?(document, "agent") do
-        with :ok <- allow_only(document, @document_fields) do
-          case document["agent"] do
-            %{} = agent ->
-              with :ok <- allow_only(agent, @agent_fields),
-                   :ok <- admit_memory(agent["memory"]),
-                   :ok <- admit_runtime_defaults(agent["runtime_defaults"]),
-                   :ok <- admit_runtime_defaults(document["runtime_defaults"]) do
-                :ok
-              end
-
-            _invalid ->
-              {:error, {:forbidden_agent_field, "agent"}}
-          end
-        end
-      else
-        with :ok <- allow_only(document, @flat_fields),
-             :ok <- admit_memory(document["memory"]),
-             :ok <- admit_runtime_defaults(document["runtime_defaults"]) do
-          :ok
-        end
-      end
+      admit_document_shape(document)
     end
   end
 
   defp admit_document(_document), do: {:error, {:forbidden_agent_field, "document"}}
 
+  defp admit_document_shape(%{"agent" => agent} = document) do
+    with :ok <- allow_only(document, @document_fields) do
+      admit_nested_agent(agent, document["runtime_defaults"])
+    end
+  end
+
+  defp admit_document_shape(document) do
+    with :ok <- allow_only(document, @flat_fields),
+         :ok <- admit_memory(document["memory"]) do
+      admit_runtime_defaults(document["runtime_defaults"])
+    end
+  end
+
+  defp admit_nested_agent(%{} = agent, document_defaults) do
+    with :ok <- allow_only(agent, @agent_fields),
+         :ok <- admit_memory(agent["memory"]),
+         :ok <- admit_runtime_defaults(agent["runtime_defaults"]) do
+      admit_runtime_defaults(document_defaults)
+    end
+  end
+
+  defp admit_nested_agent(_agent, _document_defaults),
+    do: {:error, {:forbidden_agent_field, "agent"}}
+
   defp reject_forbidden_nested(%{} = map) do
     Enum.reduce_while(map, :ok, fn {key, value}, :ok ->
       key = to_string(key)
 
-      cond do
-        key in @forbidden_fields -> {:halt, {:error, {:forbidden_agent_field, key}}}
-        true -> continue_nested(value)
-      end
+      if key in @forbidden_fields,
+        do: {:halt, {:error, {:forbidden_agent_field, key}}},
+        else: continue_nested(value)
     end)
   end
 

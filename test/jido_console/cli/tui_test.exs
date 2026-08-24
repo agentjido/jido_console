@@ -72,7 +72,7 @@ defmodule Jido.Console.TuiTest do
   } do
     task = Task.async(fn -> Tui.run(Keyword.put(opts, :session_id, "tui-thread")) end)
     assert_receive {:term_ui_started, runtime}
-    assert_receive {:frame, _initial}
+    assert await_frame("INPUT · Enter send", 5_000)
 
     send_event(event_queue, TermUI.Event.paste("hello"))
     send_event(event_queue, TermUI.Event.key(:enter))
@@ -274,7 +274,7 @@ defmodule Jido.Console.TuiTest do
 
     task = Task.async(fn -> Tui.run(opts) end)
     assert_receive {:term_ui_started, _runtime}
-    assert await_frame("STARTUP FAILED") =~ "Unable to configure the session model"
+    assert await_frame("STARTUP FAILED") =~ "Jido could not use this configuration."
 
     send_event(event_queue, TermUI.Event.key(:escape))
 
@@ -313,7 +313,7 @@ defmodule Jido.Console.TuiTest do
     assert_receive {:term_ui_started, _runtime}
     frame = await_frame("STARTUP FAILED")
     assert frame =~ "STARTUP FAILED"
-    assert frame =~ "Old Jido database backup already exists"
+    assert frame =~ "An old Jido database backup already exists"
     send_event(event_queue, TermUI.Event.key(:escape))
     assert {:error, ^reason} = Task.await(task, 2_000)
     assert_receive :terminal_closed

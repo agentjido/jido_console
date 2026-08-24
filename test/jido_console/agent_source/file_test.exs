@@ -2,6 +2,7 @@ defmodule Jido.Console.AgentSource.FileTest do
   use ExUnit.Case, async: false
 
   alias Jido.Console.AgentSource
+  alias Jido.Console.AgentSource.File, as: SourceFile
   alias Jido.Console.Digest
 
   @fixture Path.expand("../../fixtures/agents/valid.json", __DIR__)
@@ -193,5 +194,78 @@ defmodule Jido.Console.AgentSource.FileTest do
                worker_max_heap_bytes: 200_000,
                file_hooks: [after_lstat: consume_heap]
              )
+  end
+
+  test "validates loader-only path and hook options", %{root: root} do
+    assert {:error, :invalid_startup_cwd} =
+             SourceFile.resolve(@fixture, :json, startup_cwd: "")
+
+    assert {:error, :invalid_agent_source} =
+             SourceFile.resolve("", :json, startup_cwd: root)
+
+    assert {:error, :invalid_agent_source} =
+             SourceFile.resolve(<<255>>, :json, startup_cwd: root)
+
+    path = Path.join(root, "invalid-hook.json")
+    File.cp!(@fixture, path)
+
+    assert {:error, :invalid_agent_source_hook} =
+             SourceFile.resolve(path, :json,
+               startup_cwd: root,
+               file_hooks: [after_lstat: :invalid]
+             )
+  end
+
+  test "contains exceptions, throws, and abnormal worker exits", %{root: root} do
+    path = Path.join(root, "worker-failure.json")
+    File.cp!(@fixture, path)
+
+    assert {:error, :agent_source_admission_failed} =
+             SourceFile.resolve(path, :json,
+               startup_cwd: root,
+               file_hooks: [after_lstat: fn _path, _stat -> raise "private" end]
+             )
+
+    assert {:error, :agent_source_admission_failed} =
+             SourceFile.resolve(path, :json,
+               startup_cwd: root,
+               file_hooks: [after_lstat: fn _path, _stat -> throw(:private) end]
+             )
+
+    assert {:error, :agent_source_admission_failed} =
+             SourceFile.resolve(path, :json,
+               startup_cwd: root,
+               file_hooks: [after_lstat: fn _path, _stat -> Process.exit(self(), :worker_failed) end]
+             )
+  end
+
+  test "resolves a symbolic-link parent and rejects broken or looping parents", %{root: root} do
+    canonical_root = String.replace_prefix(root, "/var/", "/private/var/")
+    target = Path.join(canonical_root, "target")
+    File.mkdir!(target)
+    target_file = Path.join(target, "agent.json")
+    File.cp!(@fixture, target_file)
+
+    parent_link = Path.join(canonical_root, "parent-link")
+    File.ln_s!(target, parent_link)
+
+    assert {:ok, record} =
+             SourceFile.resolve(Path.join(parent_link, "agent.json"), :json, startup_cwd: root)
+
+    assert record.identity.path == target_file
+
+    broken_link = Path.join(canonical_root, "broken-parent")
+    File.ln_s!(Path.join(canonical_root, "missing-parent"), broken_link)
+
+    assert {:error, :agent_source_missing} =
+             SourceFile.resolve(Path.join(broken_link, "agent.json"), :json, startup_cwd: root)
+
+    first = Path.join(canonical_root, "loop-one")
+    second = Path.join(canonical_root, "loop-two")
+    File.ln_s!(second, first)
+    File.ln_s!(first, second)
+
+    assert {:error, :agent_source_unavailable} =
+             SourceFile.resolve(Path.join(first, "agent.json"), :json, startup_cwd: root)
   end
 end

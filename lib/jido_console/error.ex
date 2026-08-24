@@ -182,7 +182,11 @@ defmodule Jido.Console.Error do
   end
 
   def normalize(reason) when is_atom(reason) do
-    ExecutionFailureError.exception(message: inspect(reason), details: %{reason: reason})
+    if configuration_reason?(reason) do
+      ConfigurationError.exception(message: inspect(reason), details: %{reason: reason})
+    else
+      ExecutionFailureError.exception(message: inspect(reason), details: %{reason: reason})
+    end
   end
 
   def normalize({:unknown_runtime_profile, profile}) do
@@ -197,6 +201,14 @@ defmodule Jido.Console.Error do
   end
 
   def normalize({:session_attach_failed, reason}), do: normalize(reason)
+
+  def normalize(reason) when is_tuple(reason) and tuple_size(reason) > 0 do
+    if configuration_reason?(elem(reason, 0)) do
+      ConfigurationError.exception(message: inspect(redact(reason)), details: %{reason: reason})
+    else
+      normalize_other(reason)
+    end
+  end
 
   def normalize(%{} = reason) do
     case legacy_invalid_operation(reason) do
@@ -615,6 +627,35 @@ defmodule Jido.Console.Error do
     key = key |> to_string() |> String.downcase()
     Enum.any?(patterns, &String.contains?(key, Atom.to_string(&1)))
   end
+
+  defp configuration_reason?(reason) when is_atom(reason) do
+    code = Atom.to_string(reason)
+
+    String.starts_with?(code, [
+      "agent_source_",
+      "conflicting_execution_policy_",
+      "execution_policy_",
+      "invalid_agent_",
+      "invalid_binding_request_",
+      "invalid_coding_",
+      "invalid_execution_",
+      "invalid_interactive_",
+      "repeated_binding_",
+      "repeated_execution_policy_",
+      "repeated_interactive_",
+      "unknown_execution_policy",
+      "unknown_model",
+      "unknown_provider",
+      "unknown_runtime_profile"
+    ]) or
+      reason in [
+        :coding_module_name_forbidden,
+        :local_coding_root_required,
+        :unsupported_agent_source_format
+      ]
+  end
+
+  defp configuration_reason?(_reason), do: false
 
   # OTP 28 Regex values cannot be safely kept in module attributes when this
   # project is compiled with Elixir 1.18.

@@ -66,6 +66,24 @@ defmodule Jido.Console.Session.ClientTest do
     assert view.status == :idle
   end
 
+  test "public attach accepts one legacy policy key with one returned warning", %{opts: opts} do
+    assert {:ok, %{view: view, warnings: [warning]}} =
+             Jido.Console.attach("legacy-api-thread", Keyword.put(opts, :coding_profile, "coding.restricted"))
+
+    assert warning == "coding profile is deprecated; use execution policy"
+    assert view.binding["execution_policy"]["id"] == "coding.restricted"
+  end
+
+  test "public attach returns only a safe error projection" do
+    assert {:error, %{"code" => "execution_policy_consent_origin_forbidden", "message" => message}} =
+             Jido.Console.attach("unsafe-public-input",
+               execution_policy: "coding.restricted",
+               execution_policy_origin: :cli
+             )
+
+    refute message =~ ":cli"
+  end
+
   test "the handle resolves a replacement owner for each command", %{opts: opts, registry: registry} do
     {:ok, %{handle: handle}} = Client.attach("replacement-thread", opts)
     {:ok, owner} = Registry.lookup("replacement-thread", registry)
@@ -210,9 +228,10 @@ defmodule Jido.Console.Session.ClientTest do
   test "all control commands use the same small boundary", %{opts: opts} do
     {:ok, %{handle: handle}} = Client.attach("control-thread", opts)
 
-    assert {:error, :stale_request} = Client.cancel(handle, "missing")
-    assert {:error, :review_not_pending} = Client.approve(handle, "request", "review")
-    assert {:error, :review_not_pending} = Client.deny(handle, "request", "review")
+    assert {:ok, _selection} = TUI.select_execution_policy(handle, "coding.restricted")
+    assert {:error, :stale_request} = TUI.cancel(handle, "missing")
+    assert {:error, :review_not_pending} = TUI.approve(handle, "request", "review")
+    assert {:error, :review_not_pending} = TUI.deny(handle, "request", "review")
     assert {:ok, :removed} = Client.remove(handle, "missing")
     assert {:ok, %{events: []}} = Client.history(handle, limit: 10)
     assert {:ok, %{events: []}} = Client.history(handle, limit: 10, before_sequence: 20)

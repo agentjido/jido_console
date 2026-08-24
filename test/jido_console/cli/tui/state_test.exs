@@ -130,7 +130,7 @@ defmodule Jido.Console.Tui.StateTest do
     state = restore_closed_turn("prompt_failed", %{"error" => error})
 
     assert [%Turn{prompt: "do work", request_id: "request-1", outcome: outcome}] = state.turns
-    assert outcome == %{status: :failed, error: error}
+    assert outcome == %{status: :failed, error: "Jido stopped because of an internal error."}
   end
 
   test "restores a legacy tool validation failure as a concise message" do
@@ -143,7 +143,7 @@ defmodule Jido.Console.Tui.StateTest do
     state = restore_closed_turn("prompt_failed", %{"error" => legacy})
 
     assert [%Turn{outcome: %{status: :failed, error: error}}] = state.turns
-    assert error == "The coding.read tool requires start_line to be 1 or greater. Try the task again."
+    assert error == "A coding tool received invalid arguments. Try the task again."
     refute error =~ "invalid_operation_arguments"
   end
 
@@ -152,7 +152,7 @@ defmodule Jido.Console.Tui.StateTest do
     state = restore_closed_turn("prompt_cancelled", %{"error" => error})
 
     assert [%Turn{prompt: "do work", request_id: "request-1", outcome: outcome}] = state.turns
-    assert outcome == %{status: :cancelled, error: error}
+    assert outcome == %{status: :cancelled, error: "Jido stopped because of an internal error."}
   end
 
   test "restores an interrupted turn from closing product history" do
@@ -160,7 +160,7 @@ defmodule Jido.Console.Tui.StateTest do
     state = restore_closed_turn("prompt_interrupted", %{"reason" => reason})
 
     assert [%Turn{prompt: "do work", request_id: "request-1", outcome: outcome}] = state.turns
-    assert outcome == %{status: :interrupted, error: reason}
+    assert outcome == %{status: :interrupted, error: "Jido stopped because of an internal error."}
   end
 
   test "does not duplicate a successful transcript turn from product history" do
@@ -280,7 +280,10 @@ defmodule Jido.Console.Tui.StateTest do
 
     assert [
              %Turn{prompt: "older work", outcome: %{status: :completed}},
-             %Turn{prompt: "", outcome: %{status: :failed, error: "newer failure"}}
+             %Turn{
+               prompt: "",
+               outcome: %{status: :failed, error: "Jido stopped because of an internal error."}
+             }
            ] = state.turns
   end
 
@@ -360,7 +363,7 @@ defmodule Jido.Console.Tui.StateTest do
     {state, []} = State.update(state, {:terminal, TermUI.Event.key(:down)})
     {state, []} = State.update(state, {:terminal, TermUI.Event.key(:down)})
     {state, []} = State.update(state, {:terminal, TermUI.Event.key(:down)})
-    assert state.completion.selected_index == 2
+    assert state.completion.selected_index == 3
     assert state.history_index == nil
     assert Editor.value(state.editor) == "/"
   end

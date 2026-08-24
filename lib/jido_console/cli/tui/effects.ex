@@ -9,12 +9,26 @@ defmodule Jido.Console.Tui.Effects do
 
   @spec dispatch(State.t(), [State.effect()], module(), keyword(), Workers.t()) ::
           {:continue | :exit, Workers.t()}
-  def dispatch(state, effects, _runtime, opts, workers) do
-    client = Keyword.get(opts, :session_client_module, Client)
+  def dispatch(state, effects, runtime, opts, workers) do
+    client = Keyword.get(opts, :session_client_module, runtime || Client)
 
     Enum.reduce_while(effects, {:continue, workers}, fn
       :exit, {:continue, workers} ->
         {:halt, {:exit, workers}}
+
+      :new_session, {:continue, workers} ->
+        subscriber = Keyword.get(opts, :session_subscriber)
+        thread_id = stable_id(opts, "thread")
+        attach_opts = new_session_options(opts, subscriber)
+
+        workers =
+          Workers.start(workers, :session_new, fn ->
+            with :ok <- client.detach(state.session_client) do
+              client.attach(thread_id, attach_opts)
+            end
+          end)
+
+        {:cont, {:continue, workers}}
 
       {:start_turn, prompt}, {:continue, workers} ->
         {:cont, {:continue, start_turn(workers, state.session_client, client, opts, prompt, %{})}}
@@ -23,6 +37,26 @@ defmodule Jido.Console.Tui.Effects do
         workers =
           Workers.start(workers, :session_select_model, fn ->
             client.select_model(state.session_client, identity)
+          end)
+
+        {:cont, {:continue, workers}}
+
+      {:select_agent, source}, {:continue, workers} ->
+        workers =
+          Workers.start(workers, :session_select_agent, fn ->
+            client.select_agent(state.session_client, source)
+          end)
+
+        {:cont, {:continue, workers}}
+
+      {:select_execution_policy, id, project_root}, {:continue, workers} ->
+        workers =
+          Workers.start(workers, :session_select_execution_policy, fn ->
+            client.select_execution_policy(
+              state.session_client,
+              id,
+              if(project_root, do: [project_root: project_root], else: [])
+            )
           end)
 
         {:cont, {:continue, workers}}
@@ -66,6 +100,34 @@ defmodule Jido.Console.Tui.Effects do
     end
   end
 
+  def complete(%Worker{kind: :session_new}, outcome) do
+    case outcome do
+      {:ok, {:ok, %{handle: _handle, view: _view} = attached}} ->
+        {:event, {:session_replaced, attached}}
+
+      {:ok, {:error, reason}} ->
+        {:event, {:command_error, reason}}
+
+      {:crash, reason} ->
+        {:event, {:command_error, reason}}
+
+      {:ok, other} ->
+        {:event, {:command_error, {:invalid_new_session_result, other}}}
+    end
+  end
+
+  def complete(%Worker{kind: kind}, outcome)
+      when kind in [:session_select_agent, :session_select_execution_policy] do
+    selection_kind = if(kind == :session_select_agent, do: :agent, else: :execution_policy)
+
+    case outcome do
+      {:ok, {:ok, result}} when is_map(result) -> {:event, {:binding_selected, selection_kind, result}}
+      {:ok, {:error, reason}} -> {:event, {:command_error, reason}}
+      {:crash, reason} -> {:event, {:command_error, reason}}
+      {:ok, other} -> {:event, {:command_error, {:invalid_binding_selection_result, other}}}
+    end
+  end
+
   def complete(%Worker{kind: kind}, outcome) when kind == :session_cancel or elem(kind, 0) == :session_review do
     case outcome do
       {:ok, {:ok, :requested}} -> :ignore
@@ -95,6 +157,18 @@ defmodule Jido.Console.Tui.Effects do
       fun when is_function(fun, 1) -> fun.(prefix)
       _other -> Jidoka.Id.generate!(prefix)
     end
+  end
+
+  defp new_session_options(opts, subscriber) do
+    opts
+    |> Keyword.drop([
+      :coding_profile,
+      :execution_policy,
+      :execution_policy_direct_choice,
+      :execution_policy_origin,
+      :session_id
+    ])
+    |> Keyword.put(:subscriber, subscriber)
   end
 
   defp request_id(request), do: Map.get(request, :request_id, Map.get(request, "request_id"))

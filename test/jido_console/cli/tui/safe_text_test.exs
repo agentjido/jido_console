@@ -21,4 +21,12 @@ defmodule Jido.Console.Tui.SafeTextTest do
   test "bounds inspected summaries" do
     assert SafeText.summary(%{value: String.duplicate("x", 500)}, limit: 20) |> String.length() == 20
   end
+
+  test "removes bidirectional controls and uses the public display limit" do
+    unsafe = "safe\u202Ehidden" <> String.duplicate("x", 300)
+    summary = SafeText.summary(unsafe)
+
+    refute summary =~ "\u202E"
+    assert String.length(summary) <= Jido.Console.SafeDisplay.limit()
+  end
 end

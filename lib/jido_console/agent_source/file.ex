@@ -181,48 +181,66 @@ defmodule Jido.Console.AgentSource.File do
   defp canonical_path(source_path) do
     parent = Path.dirname(source_path)
 
-    with {:ok, canonical_parent} <- resolve_symlinks(parent, MapSet.new(), 0) do
+    with {:ok, canonical_parent} <- resolve_symlinks(parent, %{}, 0) do
       {:ok, Path.join(canonical_parent, Path.basename(source_path))}
     end
   end
 
+  @spec resolve_symlinks(Path.t(), map(), non_neg_integer()) ::
+          {:ok, Path.t()} | {:error, :agent_source_unavailable}
   defp resolve_symlinks(_path, _seen, hops) when hops > @max_symlink_hops,
     do: {:error, :agent_source_unavailable}
 
   defp resolve_symlinks(path, seen, hops) do
     path = Path.expand(path)
     [root | segments] = Path.split(path)
-    walk_segments(root, segments, [], seen, hops)
+    walk_segments(root, segments, seen, hops)
   end
 
-  defp walk_segments(current, [], _remaining, _seen, _hops), do: {:ok, current}
+  @spec walk_segments(Path.t(), [Path.t()], map(), non_neg_integer()) ::
+          {:ok, Path.t()} | {:error, :agent_source_unavailable}
+  defp walk_segments(current, [], _seen, _hops), do: {:ok, current}
 
-  defp walk_segments(current, [segment | rest], _remaining, seen, hops) do
+  defp walk_segments(current, [segment | rest], seen, hops) do
     candidate = Path.join(current, segment)
 
     case File.lstat(candidate, time: :posix) do
       {:ok, %File.Stat{type: :symlink}} ->
-        if MapSet.member?(seen, candidate) do
-          {:error, :agent_source_unavailable}
-        else
-          with {:ok, target} <- File.read_link(candidate) do
-            target_path =
-              if Path.type(target) == :absolute,
-                do: target,
-                else: Path.expand(target, Path.dirname(candidate))
-
-            combined = Enum.reduce(rest, target_path, &Path.join(&2, &1))
-            resolve_symlinks(combined, MapSet.put(seen, candidate), hops + 1)
-          else
-            {:error, _reason} -> {:error, :agent_source_unavailable}
-          end
-        end
+        walk_symlink(candidate, rest, seen, hops)
 
       {:ok, %File.Stat{type: :directory}} ->
-        walk_segments(candidate, rest, [], seen, hops)
+        walk_segments(candidate, rest, seen, hops)
 
       {:ok, %File.Stat{}} ->
         {:error, :agent_source_unavailable}
+
+      {:error, _reason} ->
+        {:error, :agent_source_unavailable}
+    end
+  end
+
+  @spec walk_symlink(Path.t(), [Path.t()], map(), non_neg_integer()) ::
+          {:ok, Path.t()} | {:error, :agent_source_unavailable}
+  defp walk_symlink(candidate, rest, seen, hops) do
+    if Map.has_key?(seen, candidate) do
+      {:error, :agent_source_unavailable}
+    else
+      resolve_symlink_target(candidate, rest, seen, hops)
+    end
+  end
+
+  @spec resolve_symlink_target(Path.t(), [Path.t()], map(), non_neg_integer()) ::
+          {:ok, Path.t()} | {:error, :agent_source_unavailable}
+  defp resolve_symlink_target(candidate, rest, seen, hops) do
+    case File.read_link(candidate) do
+      {:ok, target} ->
+        target_path =
+          if Path.type(target) == :absolute,
+            do: target,
+            else: Path.expand(target, Path.dirname(candidate))
+
+        combined = Enum.reduce(rest, target_path, &Path.join(&2, &1))
+        resolve_symlinks(combined, Map.put(seen, candidate, true), hops + 1)
 
       {:error, _reason} ->
         {:error, :agent_source_unavailable}

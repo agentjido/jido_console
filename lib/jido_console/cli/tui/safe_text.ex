@@ -3,7 +3,7 @@ defmodule Jido.Console.Tui.SafeText do
 
   alias Jido.Console.Terminal.PlainText
 
-  @summary_limit 240
+  @summary_limit 200
 
   @spec clean(term()) :: String.t()
   def clean(value), do: PlainText.clean(value)

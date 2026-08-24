@@ -20,4 +20,14 @@ defmodule Jido.Console do
   @doc "Runs one CLI invocation and returns its exit status without halting the VM."
   @spec run([String.t()], keyword()) :: :ok | {:error, pos_integer()}
   def run(args, opts \\ []), do: Jido.Console.CLI.run(args, opts)
+
+  @doc "Opens one interactive thread with validated agent and execution-policy inputs."
+  @spec attach(String.t(), keyword()) ::
+          {:ok, Jido.Console.Session.Client.attach_result()} | {:error, map()}
+  def attach(thread_id, opts \\ []) do
+    case Jido.Console.Session.Client.attach(thread_id, opts) do
+      {:ok, _attached} = result -> result
+      {:error, reason} -> {:error, Jido.Console.SafeDisplay.to_map(reason)}
+    end
+  end
 end

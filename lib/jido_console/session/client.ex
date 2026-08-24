@@ -33,11 +33,12 @@ defmodule Jido.Console.Session.Client do
          {:ok, owner} <- Server.ensure_started(thread_id, opts),
          {:ok, %{attachment_ref: attachment_ref, view: view}} <-
            Server.attach(owner, subscriber, request) do
-      {:ok,
-       %{
-         handle: %__MODULE__{thread_id: thread_id, attachment_ref: attachment_ref, owner_options: opts},
-         view: view
-       }}
+      result = %{
+        handle: %__MODULE__{thread_id: thread_id, attachment_ref: attachment_ref, owner_options: opts},
+        view: view
+      }
+
+      {:ok, maybe_warnings(result, opts)}
     end
   end
 
@@ -122,13 +123,20 @@ defmodule Jido.Console.Session.Client do
   @doc "Selects one exact model before the first prompt is durably accepted."
   @spec select_model(t(), String.t()) :: {:ok, map()} | {:error, term()}
   def select_model(%__MODULE__{} = handle, identity) when is_binary(identity) do
+    select_model_as(handle, identity, :api)
+  end
+
+  @doc false
+  @spec select_model_as(t(), String.t(), :api | :tui) :: {:ok, map()} | {:error, term()}
+  def select_model_as(%__MODULE__{} = handle, identity, origin)
+      when is_binary(identity) and origin in [:api, :tui] do
     with {:ok, command} <-
            Command.new(
              id: Jidoka.Id.generate!("command"),
              type: :select_model,
              thread_id: handle.thread_id,
              text: identity,
-             payload: %{}
+             payload: %{"origin" => Atom.to_string(origin)}
            ) do
       run(handle, command)
     end
@@ -143,11 +151,22 @@ defmodule Jido.Console.Session.Client do
   @doc "Selects one execution policy before the first prompt is durably accepted."
   @spec select_execution_policy(t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def select_execution_policy(%__MODULE__{} = handle, id, opts \\ []) when is_binary(id) do
+    select_execution_policy_as(handle, id, :api, opts)
+  end
+
+  @doc false
+  @spec select_execution_policy_as(t(), String.t(), :api | :tui, keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def select_execution_policy_as(%__MODULE__{} = handle, id, origin, opts \\ [])
+      when is_binary(id) and origin in [:api, :tui] do
     payload =
-      case Keyword.get(opts, :project_root) do
-        nil -> %{}
-        root -> %{"project_root" => root}
-      end
+      %{"origin" => Atom.to_string(origin)}
+      |> then(fn payload ->
+        case Keyword.get(opts, :project_root) do
+          nil -> payload
+          root -> Map.put(payload, "project_root", root)
+        end
+      end)
 
     with {:ok, command} <-
            Command.new(
@@ -196,7 +215,7 @@ defmodule Jido.Console.Session.Client do
              type: type,
              thread_id: handle.thread_id,
              text: value,
-             payload: %{}
+             payload: %{"origin" => "api"}
            ) do
       run(handle, command)
     end
@@ -213,4 +232,12 @@ defmodule Jido.Console.Session.Client do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp maybe_warnings(result, opts) do
+    if Keyword.has_key?(opts, :coding_profile) or Keyword.has_key?(opts, :coding_profile_resolver) do
+      Map.put(result, :warnings, [Jido.Console.ExecutionPolicy.legacy_warning()])
+    else
+      result
+    end
+  end
 end

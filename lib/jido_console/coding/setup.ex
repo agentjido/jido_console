@@ -264,26 +264,28 @@ defmodule Jido.Console.Coding.Setup do
   defp source_record(agent, opts) when is_binary(agent), do: AgentSource.resolve(agent, opts)
 
   defp source_record(agent, _opts) do
-    with {:ok, spec} <- Jidoka.Agent.Spec.from_input(agent) do
-      projection = Jidoka.project(spec)
-      identity = "compiled:" <> spec.id
-      source_bytes = Digest.semantic_bytes(:compiled_agent_source, projection)
-
-      {:ok,
-       SourceRecord.build(
-         base_spec: spec,
-         identity: identity,
-         kind: :builtin,
-         format: :compiled,
-         byte_size: byte_size(source_bytes),
-         digest: Digest.portable(source_bytes),
-         base_spec_digest: Digest.semantic(:agent_base_spec, projection),
-         agent_id: spec.id,
-         label: spec.id
-       )}
-    else
+    case Jidoka.Agent.Spec.from_input(agent) do
+      {:ok, spec} -> {:ok, compiled_source_record(spec)}
       {:error, _reason} -> {:error, :invalid_coding_agent}
     end
+  end
+
+  defp compiled_source_record(spec) do
+    projection = Jidoka.project(spec)
+    identity = "compiled:" <> spec.id
+    source_bytes = Digest.semantic_bytes(:compiled_agent_source, projection)
+
+    SourceRecord.build(
+      base_spec: spec,
+      identity: identity,
+      kind: :builtin,
+      format: :compiled,
+      byte_size: byte_size(source_bytes),
+      digest: Digest.portable(source_bytes),
+      base_spec_digest: Digest.semantic(:agent_base_spec, projection),
+      agent_id: spec.id,
+      label: spec.id
+    )
   end
 
   defp direct_policy_choice(opts) do

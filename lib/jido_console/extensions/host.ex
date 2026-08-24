@@ -14,29 +14,37 @@ defmodule Jido.Console.Extensions.Host do
 
     with {:ok, fingerprint} <- Setup.runtime_definition_fingerprint(setup),
          :ok <- expected_fingerprint(fingerprint, opts) do
-      if map_size(registry) == 0 do
-        {:ok,
-         %{
-           session: session,
-           host: nil,
-           runtime_opts: [],
-           runtime_definition_fingerprint: fingerprint,
-           compiled_operation_fingerprint: operation_fingerprint([])
-         }}
-      else
-        with {:ok, host} <- Jidoka.Extension.Host.open(session, requests, registry, :interactive) do
-          opts = Keyword.put_new(opts, :recover_coding_errors, Setup.recover_coding_errors?(setup))
+      open_registry(session, requests, setup, registry, fingerprint, opts)
+    end
+  end
 
-          case configure_host(session, host, fingerprint, opts) do
-            {:ok, runtime} ->
-              {:ok, runtime}
+  defp open_registry(session, _requests, _setup, registry, fingerprint, _opts)
+       when map_size(registry) == 0 do
+    {:ok,
+     %{
+       session: session,
+       host: nil,
+       runtime_opts: [],
+       runtime_definition_fingerprint: fingerprint,
+       compiled_operation_fingerprint: operation_fingerprint([])
+     }}
+  end
 
-            {:error, _reason} = error ->
-              Jidoka.Extension.Host.close(host)
-              error
-          end
-        end
-      end
+  defp open_registry(session, requests, setup, registry, fingerprint, opts) do
+    with {:ok, host} <- Jidoka.Extension.Host.open(session, requests, registry, :interactive) do
+      opts = Keyword.put_new(opts, :recover_coding_errors, Setup.recover_coding_errors?(setup))
+      configure_open_host(session, host, fingerprint, opts)
+    end
+  end
+
+  defp configure_open_host(session, host, fingerprint, opts) do
+    case configure_host(session, host, fingerprint, opts) do
+      {:ok, runtime} ->
+        {:ok, runtime}
+
+      {:error, _reason} = error ->
+        Jidoka.Extension.Host.close(host)
+        error
     end
   end
 

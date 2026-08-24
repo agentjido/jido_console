@@ -28,17 +28,17 @@ defmodule Jido.Console.AgentSource.Record do
           required(:minor_device) => non_neg_integer(),
           required(:inode) => non_neg_integer()
         }
-  @opaque t :: %__MODULE__{
-            base_spec: Jidoka.Agent.Spec.t(),
-            identity: String.t() | file_identity(),
-            kind: source_kind(),
-            format: source_format(),
-            byte_size: non_neg_integer(),
-            digest: String.t(),
-            base_spec_digest: String.t(),
-            agent_id: String.t(),
-            label: String.t()
-          }
+  @type t :: %__MODULE__{
+          base_spec: Jidoka.Agent.Spec.t(),
+          identity: String.t() | file_identity(),
+          kind: source_kind(),
+          format: source_format(),
+          byte_size: non_neg_integer(),
+          digest: String.t(),
+          base_spec_digest: String.t(),
+          agent_id: String.t(),
+          label: String.t()
+        }
 
   @doc false
   @spec build(keyword()) :: t()

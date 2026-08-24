@@ -1,6 +1,6 @@
 defmodule Jido.Console.Tui.Selection do
   @moduledoc """
-  TUI `/model` and `/profile` selection against the catalog and local policy.
+  Local listing and formatting data for owner-controlled TUI selections.
   """
 
   alias Jido.Console.Error
@@ -8,16 +8,23 @@ defmodule Jido.Console.Tui.Selection do
   alias Jido.Console.ExecutionPolicy.Registry, as: ExecutionPolicyRegistry
   alias Jido.Console.Models.Commands
 
-  @profiles [ExecutionPolicy.restricted_id(), ExecutionPolicy.trusted_id()]
+  @execution_policies [ExecutionPolicy.restricted_id(), ExecutionPolicy.trusted_id()]
+  @trusted_policy ExecutionPolicy.trusted_id()
   @model_tiers [:supported, :beta, :available, :unsupported]
 
   @type t :: %{
+          agent: map() | nil,
+          binding_state: atom(),
           catalog_entries: [map()],
+          coding_pack: map() | nil,
+          execution_policy_id: String.t() | nil,
+          execution_policy_requested_id: String.t() | nil,
+          execution_policy_warning: String.t() | nil,
           model: String.t() | nil,
+          model_origin: atom() | String.t() | nil,
           model_tier: atom() | nil,
           model_locked?: boolean(),
-          profile_id: String.t(),
-          profile_warning: String.t() | nil
+          workspace_identity_digest: String.t() | nil
         }
 
   @doc "Builds the initial selection from CLI options and the catalog."
@@ -25,15 +32,40 @@ defmodule Jido.Console.Tui.Selection do
   def init(opts \\ []) do
     entries = Keyword.get_lazy(opts, :catalog_entries, fn -> catalog_entries(opts) end)
     {model, tier} = initial_model(Keyword.get(opts, :model), entries)
-    {profile_id, warning} = initial_profile(Keyword.get(opts, :coding_profile))
+    {execution_policy_id, warning} = initial_execution_policy(policy_option(opts))
 
     %{
+      agent: nil,
+      binding_state: :ready_unlocked,
       catalog_entries: entries,
+      coding_pack: nil,
+      execution_policy_id: execution_policy_id,
+      execution_policy_requested_id: nil,
+      execution_policy_warning: warning,
       model: model,
+      model_origin: nil,
       model_tier: tier,
       model_locked?: false,
-      profile_id: profile_id,
-      profile_warning: warning
+      workspace_identity_digest: nil
+    }
+  end
+
+  @doc "Replaces local product fields from the complete owner binding view."
+  @spec restore_binding(t(), map(), atom()) :: t()
+  def restore_binding(selection, binding, binding_state) when is_map(binding) do
+    policy = Map.get(binding, "execution_policy", %{})
+    policy_id = Map.get(policy, "id")
+
+    %{
+      selection
+      | agent: Map.get(binding, "agent"),
+        binding_state: binding_state,
+        coding_pack: Map.get(binding, "coding_pack"),
+        execution_policy_id: policy_id,
+        execution_policy_requested_id: Map.get(policy, "requested_id"),
+        execution_policy_warning: policy_warning(policy_id),
+        model_origin: get_in(binding, ["model", "origin"]),
+        workspace_identity_digest: get_in(binding, ["workspace", "identity_digest"])
     }
   end
 
@@ -106,8 +138,8 @@ defmodule Jido.Console.Tui.Selection do
   @doc "Returns :ok when the current selection may start a turn."
   @spec admit(t()) :: :ok | {:error, String.t()}
   def admit(selection) do
-    with :ok <- model_available(selection) do
-      profile_available(selection)
+    with :ok <- binding_available(selection) do
+      model_available(selection)
     end
   end
 
@@ -116,28 +148,62 @@ defmodule Jido.Console.Tui.Selection do
   def label(selection) do
     model = selection.model || "no-model"
     tier = if selection.model_tier, do: Atom.to_string(selection.model_tier), else: "unset"
-    warning = if selection.profile_warning, do: " (not a sandbox)", else: ""
-    "#{model} #{tier} · #{selection.profile_id}#{warning}"
+    warning = if selection.execution_policy_warning, do: " (not a sandbox)", else: ""
+    policy = selection.execution_policy_id || selection.execution_policy_requested_id || "no-policy"
+    "#{model} #{tier} · #{policy}#{warning}"
   end
 
-  @doc "Returns the allowed local profiles."
+  @doc "Returns the allowed execution-policy IDs."
   @spec profiles() :: [String.t()]
-  def profiles, do: @profiles
+  def profiles, do: @execution_policies
+
+  @doc "Shows the current agent source without a private path."
+  @spec show_agent(t()) :: String.t()
+  def show_agent(%{agent: %{} = agent}) do
+    source = Map.get(agent, "source", %{})
+
+    [
+      "Agent:",
+      "id #{Map.get(agent, "id", "unknown")}",
+      "source #{Map.get(source, "kind", "unknown")}",
+      "label #{Map.get(source, "label", "unknown")}",
+      "digest #{Map.get(source, "digest", "unknown")}"
+    ]
+    |> Enum.join("\n")
+  end
+
+  def show_agent(_selection), do: "Agent selection is not available yet."
+
+  @doc "Lists execution policies and marks the owner-selected value."
+  @spec list_execution_policies(t()) :: String.t()
+  def list_execution_policies(selection) do
+    rows =
+      Enum.map_join(@execution_policies, "\n", fn id ->
+        current = if id == selection.execution_policy_id, do: " current", else: ""
+        requested = if id == selection.execution_policy_requested_id, do: " requested", else: ""
+        warning = if policy_warning(id), do: " · #{policy_warning(id)}", else: ""
+        "#{id}#{current}#{requested}#{warning}"
+      end)
+
+    "Execution policies:\n" <> rows
+  end
 
   @doc "Lists the existing profile compatibility options."
   @spec list_profiles() :: String.t()
-  def list_profiles, do: "Profiles:\n" <> Enum.join(@profiles, "\n")
+  def list_profiles, do: "Deprecated: /profile is now /execution-policy.\n" <> Enum.join(@execution_policies, "\n")
 
   @doc "Returns compatibility feedback for one profile identity."
   @spec profile_notice(String.t()) :: String.t()
   def profile_notice(profile_id) do
-    case resolve_profile(profile_id) do
-      {:ok, policy} ->
-        notice = "Start a new thread to use profile #{policy.execution_policy_id}."
-        if policy.warning, do: notice <> " " <> policy.warning, else: notice
+    "Deprecated: /profile is now /execution-policy. " <> execution_policy_notice(profile_id)
+  end
 
-      {:error, _reason} ->
-        "Unavailable profile #{profile_id}"
+  @doc "Returns local feedback for one execution-policy ID."
+  @spec execution_policy_notice(String.t()) :: String.t()
+  def execution_policy_notice(id) do
+    case resolve_execution_policy(id) do
+      {:ok, policy} -> policy.warning || "Execution policy #{policy.execution_policy_id} is available."
+      {:error, _reason} -> "Unavailable execution policy #{id}"
     end
   end
 
@@ -194,12 +260,12 @@ defmodule Jido.Console.Tui.Selection do
 
   defp initial_model(identity, _entries) when is_binary(identity), do: {identity, nil}
 
-  defp initial_profile(nil), do: {ExecutionPolicy.restricted_id(), nil}
+  defp initial_execution_policy(nil), do: {ExecutionPolicy.restricted_id(), nil}
 
-  defp initial_profile(profile_id) when is_binary(profile_id) do
-    case resolve_profile(profile_id) do
+  defp initial_execution_policy(id) when is_binary(id) do
+    case resolve_execution_policy(id) do
       {:ok, policy} -> {policy.execution_policy_id, policy.warning}
-      {:error, _reason} -> {profile_id, nil}
+      {:error, _reason} -> {id, nil}
     end
   end
 
@@ -260,12 +326,27 @@ defmodule Jido.Console.Tui.Selection do
       else: {:error, "unavailable model #{selection.model}"}
   end
 
-  defp profile_available(selection) do
-    case resolve_profile(selection.profile_id) do
-      {:ok, _profile} -> :ok
-      {:error, _reason} -> {:error, "unavailable profile #{selection.profile_id}"}
-    end
+  defp binding_available(%{binding_state: :needs_policy, execution_policy_requested_id: id}) do
+    {:error, "select execution policy #{id} with /execution-policy before starting work"}
   end
 
-  defp resolve_profile(profile_id), do: ExecutionPolicyRegistry.fetch(profile_id)
+  defp binding_available(%{binding_state: :needs_model}),
+    do: {:error, "select a catalog model with /model before starting work"}
+
+  defp binding_available(%{binding_state: :reconciling}),
+    do: {:error, "the thread binding is being reconciled"}
+
+  defp binding_available(%{binding_state: :resume_blocked}),
+    do: {:error, "the stored thread binding cannot be resumed"}
+
+  defp binding_available(_selection), do: :ok
+
+  defp policy_option(opts) do
+    Keyword.get(opts, :execution_policy, Keyword.get(opts, :coding_profile))
+  end
+
+  defp policy_warning(@trusted_policy), do: ExecutionPolicy.trusted_warning()
+  defp policy_warning(_id), do: nil
+
+  defp resolve_execution_policy(id), do: ExecutionPolicyRegistry.fetch(id)
 end

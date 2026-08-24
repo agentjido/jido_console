@@ -32,6 +32,7 @@ defmodule Jido.Console.ExecutionPolicy.RegistryTest do
       assert record.registration.profile == record.security_profile
       assert record.registration.capabilities == record.adapter_capabilities
       assert {:ok, ^record} = Record.validate(record)
+      assert Record.to_map(record)["execution_policy_id"] == id
     end
   end
 
@@ -58,6 +59,18 @@ defmodule Jido.Console.ExecutionPolicy.RegistryTest do
   test "rejects an unknown policy without calling an external resolver" do
     registry = Registry.new!()
     assert {:error, {:unknown_execution_policy, "missing"}} = Registry.fetch(registry, "missing")
+  end
+
+  test "rejects malformed policy records" do
+    record = Registry.new!() |> Registry.fetch!(ExecutionPolicy.restricted_id())
+
+    assert {:error, :invalid_execution_policy_record} = Record.validate(:invalid)
+
+    assert {:error, :invalid_execution_policy_record} =
+             Record.validate(%{record | execution_policy_id: "different"})
+
+    invalid_selection = %{record.jidoka_selection | fingerprint: "invalid"}
+    assert {:error, _reason} = Record.validate(%{record | jidoka_selection: invalid_selection})
   end
 
   defp trusted_evidence(opts) do

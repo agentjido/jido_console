@@ -30,7 +30,11 @@ defmodule Jido.Console.Session.BindingRequest do
   @spec from_options(keyword()) :: {:ok, t()} | {:error, term()}
   def from_options(opts) when is_list(opts) do
     if Keyword.keyword?(opts) do
-      with {:ok, policy} <- policy(opts),
+      with :ok <- reject_origin_fields(opts),
+           :ok <- reject_repeated(opts, [:agent_source, :coding_pack, :model, :project_root]),
+           {:ok, resolver} <- ExecutionPolicy.resolver_from_layer(opts),
+           :ok <- validate_resolver(resolver),
+           {:ok, policy} <- policy(opts),
            {:ok, model} <- optional_string(explicit(opts, :model)),
            {:ok, project_root} <- optional_string(explicit(opts, :project_root)) do
         {:ok,
@@ -69,34 +73,44 @@ defmodule Jido.Console.Session.BindingRequest do
   end
 
   defp policy(opts) do
-    canonical? = Keyword.has_key?(opts, :execution_policy)
-    legacy? = Keyword.has_key?(opts, :coding_profile)
-
-    cond do
-      canonical? and legacy? ->
-        {:error, :conflicting_execution_policy_inputs}
-
-      canonical? ->
-        normalize_policy(Keyword.get(opts, :execution_policy))
-
-      legacy? ->
-        normalize_policy(Keyword.get(opts, :coding_profile))
-
-      true ->
-        {:ok, nil}
+    with {:ok, direct} <- ExecutionPolicy.direct_choice(opts, :api) do
+      case direct do
+        nil -> {:ok, nil}
+        direct -> normalize_policy(direct.execution_policy_id)
+      end
     end
   end
 
-  defp normalize_policy(nil), do: {:error, {:invalid_execution_policy_input, nil}}
+  defp reject_origin_fields(opts) do
+    if Keyword.has_key?(opts, :execution_policy_origin),
+      do: {:error, :execution_policy_consent_origin_forbidden},
+      else: :ok
+  end
 
-  defp normalize_policy(value) when is_binary(value) do
+  defp reject_repeated(opts, keys) do
+    case Enum.find(keys, &(length(Keyword.get_values(opts, &1)) > 1)) do
+      nil -> :ok
+      key -> {:error, {:repeated_binding_input, key}}
+    end
+  end
+
+  defp validate_resolver(nil), do: :ok
+  defp validate_resolver(resolver) when is_function(resolver, 1) or is_function(resolver, 2), do: :ok
+
+  defp validate_resolver(resolver) when is_atom(resolver) do
+    if Code.ensure_loaded?(resolver) and function_exported?(resolver, :resolve, 2),
+      do: :ok,
+      else: {:error, :invalid_execution_policy_resolver}
+  end
+
+  defp validate_resolver(_resolver), do: {:error, :invalid_execution_policy_resolver}
+
+  defp normalize_policy(value) do
     case ExecutionPolicy.normalize_id(value) do
       "" -> {:error, {:invalid_execution_policy_input, value}}
       normalized -> {:ok, normalized}
     end
   end
-
-  defp normalize_policy(value), do: {:error, {:invalid_execution_policy_input, value}}
 
   defp explicit(opts, key), do: if(Keyword.has_key?(opts, key), do: Keyword.get(opts, key), else: nil)
   defp optional_string(nil), do: {:ok, nil}

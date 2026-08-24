@@ -21,6 +21,17 @@ defmodule Jido.ConsoleTest do
            end) == "jido: unknown option: --wat\n"
   end
 
+  test "shows canonical interactive flags before one deprecated alias section" do
+    help = capture_io(fn -> assert :ok = Jido.Console.run(["--help"]) end)
+
+    assert help =~ "--agent SOURCE"
+    assert help =~ "--execution-policy ID"
+    assert help =~ "Deprecated aliases:"
+    assert help =~ "--coding-profile ID"
+    assert count(help, "Deprecated aliases:") == 1
+    assert index(help, "--execution-policy ID") < index(help, "--coding-profile ID")
+  end
+
   test "rejects positional arguments" do
     assert capture_io(:stderr, fn ->
              assert {:error, 64} = Jido.Console.run(["agent.yaml"])
@@ -68,14 +79,16 @@ defmodule Jido.ConsoleTest do
     assert is_function(options[:application_startup], 0)
   end
 
-  test "parses trusted interactive coding selections" do
+  test "parses canonical interactive selections" do
     assert :ok =
              Jido.Console.run(
                [
+                 "--agent",
+                 "agents/review agent.yaml",
                  "--coding-pack",
                  "acme.coding_pack",
-                 "--coding-profile",
-                 "restricted",
+                 "--execution-policy",
+                 "coding.restricted",
                  "--project-root",
                  "/trusted/project"
                ],
@@ -84,8 +97,10 @@ defmodule Jido.ConsoleTest do
              )
 
     assert_received {:tui_options, options}
+    assert options[:agent_source] == "agents/review agent.yaml"
     assert options[:coding_pack] == "acme.coding_pack"
-    assert options[:coding_profile] == "restricted"
+    assert options[:execution_policy] == "coding.restricted"
+    assert options[:execution_policy_direct_choice].origin == :cli
     assert options[:project_root] == "/trusted/project"
 
     assert :ok =
@@ -93,6 +108,48 @@ defmodule Jido.ConsoleTest do
 
     assert_received {:tui_options, disabled}
     assert disabled[:coding_pack] == :disabled
+  end
+
+  test "accepts the legacy CLI policy name with one warning" do
+    output =
+      capture_io(:stderr, fn ->
+        assert :ok =
+                 Jido.Console.run(
+                   ["--coding-profile", "coding.local"],
+                   tui: FakeTui,
+                   test_pid: self()
+                 )
+      end)
+
+    assert output == "jido: warning: coding profile is deprecated; use execution policy\n"
+    assert_received {:tui_options, options}
+    assert options[:execution_policy] == "coding.trusted-workspace"
+    refute Keyword.has_key?(options, :coding_profile)
+  end
+
+  test "rejects policy conflicts and repeated canonical flags" do
+    for args <- [
+          [
+            "--execution-policy",
+            "coding.restricted",
+            "--coding-profile",
+            "coding.restricted"
+          ],
+          [
+            "--execution-policy",
+            "coding.restricted",
+            "--execution-policy",
+            "coding.restricted"
+          ]
+        ] do
+      output =
+        capture_io(:stderr, fn ->
+          assert {:error, 64} = Jido.Console.run(args, tui: FakeTui, test_pid: self())
+        end)
+
+      assert output =~ "jido:"
+      refute_received :tui_started
+    end
   end
 
   test "uses configuration exit status for an invalid coding selection" do
@@ -103,6 +160,19 @@ defmodule Jido.ConsoleTest do
       end)
 
     assert output =~ "invalid_coding_pack"
+  end
+
+  test "uses configuration status for source and policy errors and runtime status for open errors" do
+    for reason <- [:agent_source_missing, {:unknown_execution_policy, "missing"}] do
+      assert capture_io(:stderr, fn ->
+               assert {:error, 64} = Jido.Console.run([], tui: ErrorTui, reason: reason)
+             end) =~ "jido:"
+    end
+
+    assert capture_io(:stderr, fn ->
+             assert {:error, 1} =
+                      Jido.Console.run([], tui: ErrorTui, reason: :restricted_enforcement_unavailable)
+           end) =~ "jido:"
   end
 
   test "uses configuration exit status for a nested storage startup failure" do
@@ -122,7 +192,7 @@ defmodule Jido.ConsoleTest do
         assert {:error, 64} = Jido.Console.run([], tui: ErrorTui, reason: reason)
       end)
 
-    assert output =~ "Old Jido database backup already exists"
+    assert output =~ "old Jido database backup already exists"
   end
 
   test "defines the built-in agent" do
@@ -225,9 +295,9 @@ defmodule Jido.ConsoleTest do
 
   test "formats TUI errors at the CLI boundary" do
     reasons = [
-      {RuntimeError.exception("exception failure"), "exception failure"},
-      {"text failure", "text failure"},
-      {{:bad, :reason}, "bad"}
+      {RuntimeError.exception("exception failure"), "internal error"},
+      {"text failure", "internal error"},
+      {{:bad, :reason}, "complete the request"}
     ]
 
     for {reason, expected} <- reasons do
@@ -407,5 +477,12 @@ defmodule Jido.ConsoleTest do
       end)
 
     assert catalog_failure =~ "empty_model_policy"
+  end
+
+  defp count(text, value), do: length(String.split(text, value)) - 1
+
+  defp index(text, value) do
+    {index, _length} = :binary.match(text, value)
+    index
   end
 end

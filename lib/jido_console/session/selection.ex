@@ -4,6 +4,7 @@ defmodule Jido.Console.Session.Selection do
   alias Jido.Console.AgentSource
   alias Jido.Console.AgentSource.Record, as: SourceRecord
   alias Jido.Console.Coding.Pack
+  alias Jido.Console.Coding.Selection, as: CodingSelection
   alias Jido.Console.Digest
   alias Jido.Console.ExecutionPolicy
   alias Jido.Console.ExecutionPolicy.{Record, Selection}
@@ -84,8 +85,10 @@ defmodule Jido.Console.Session.Selection do
 
   @doc "Returns one safe binding projection for Session View."
   @spec safe_projection(t()) :: map()
-  def safe_projection(%__MODULE__{manifest: manifest}) when is_map(manifest) do
-    BindingManifest.safe_projection(manifest)
+  def safe_projection(%__MODULE__{manifest: manifest} = selection) when is_map(manifest) do
+    manifest
+    |> BindingManifest.safe_projection()
+    |> put_requested_policy(selection)
   end
 
   def safe_projection(%__MODULE__{source: %SourceRecord{} = source} = selection) do
@@ -100,14 +103,23 @@ defmodule Jido.Console.Session.Selection do
       },
       "coding_pack" => if(selection.pack, do: Pack.projection(selection.pack), else: nil),
       "model" => selection.model_choice,
-      "execution_policy" => %{
-        "id" => if(selection.policy, do: selection.policy.execution_policy_id, else: nil)
-      },
+      "execution_policy" =>
+        %{"id" => if(selection.policy, do: selection.policy.execution_policy_id, else: nil)}
+        |> Map.put("requested_id", requested_policy_id(selection)),
       "workspace" => %{"identity_digest" => nil}
     }
   end
 
   def safe_projection(%__MODULE__{}), do: %{}
+
+  defp put_requested_policy(projection, selection) do
+    put_in(projection, ["execution_policy", "requested_id"], requested_policy_id(selection))
+  end
+
+  defp requested_policy_id(%__MODULE__{source: %SourceRecord{base_spec: spec}}),
+    do: spec.execution_profile
+
+  defp requested_policy_id(%__MODULE__{}), do: nil
 
   @doc "Stores the ready draft in a new durable Jidoka session."
   @spec start_session(t(), String.t()) :: {:ok, Data.t()} | {:error, term()}
@@ -115,9 +127,8 @@ defmodule Jido.Console.Session.Selection do
         %__MODULE__{state: :ready_unlocked, binding: %Binding{} = binding, manifest: manifest},
         thread_id
       ) do
-    with {:ok, session} <- Data.start(binding.bound_spec, session_id: thread_id),
-         {:ok, session} <- BindingManifest.put(session, manifest) do
-      {:ok, session}
+    with {:ok, session} <- Data.start(binding.bound_spec, session_id: thread_id) do
+      BindingManifest.put(session, manifest)
     end
   end
 
@@ -231,9 +242,8 @@ defmodule Jido.Console.Session.Selection do
     with :ok <- match_agent(selection, request.agent_source),
          :ok <- match_pack(selection, request.coding_pack),
          :ok <- match_value(:model, selected_model(selection), request.model),
-         :ok <- match_value(:execution_policy, selected_policy(selection), request.execution_policy),
-         :ok <- match_root(selection, request.project_root) do
-      :ok
+         :ok <- match_value(:execution_policy, selected_policy(selection), request.execution_policy) do
+      match_root(selection, request.project_root)
     end
   end
 
@@ -267,6 +277,12 @@ defmodule Jido.Console.Session.Selection do
         workspace_configuration(opts)
       )
 
+    with :ok <- CodingSelection.validate_execution_policy(policy.execution_policy_id, opts) do
+      build_binding(source, pack, model_choice, policy, build_opts, generation, opts)
+    end
+  end
+
+  defp build_binding(source, pack, model_choice, policy, build_opts, generation, opts) do
     case Binding.build(source, pack, model_choice, policy, policy.workspace, build_opts) do
       {:ok, binding} ->
         with {:ok, manifest} <- BindingManifest.new(binding, draft_generation: generation) do
@@ -453,33 +469,55 @@ defmodule Jido.Console.Session.Selection do
   defp source_record(input, opts) when is_binary(input), do: AgentSource.resolve(input, opts)
 
   defp source_record(input, _opts) do
-    with {:ok, spec} <- Jidoka.Agent.Spec.from_input(input) do
-      projection = Jidoka.project(spec)
-      bytes = Digest.semantic_bytes(:compiled_agent_source, projection)
-
-      {:ok,
-       SourceRecord.build(
-         base_spec: spec,
-         identity: "compiled:" <> spec.id,
-         kind: :builtin,
-         format: :compiled,
-         byte_size: byte_size(bytes),
-         digest: Digest.portable(bytes),
-         base_spec_digest: Digest.semantic(:agent_base_spec, projection),
-         agent_id: spec.id,
-         label: spec.id
-       )}
-    else
+    case Jidoka.Agent.Spec.from_input(input) do
+      {:ok, spec} -> {:ok, compiled_source_record(spec)}
       {:error, _reason} -> {:error, :invalid_agent_source}
     end
   end
 
+  defp compiled_source_record(spec) do
+    projection = Jidoka.project(spec)
+    bytes = Digest.semantic_bytes(:compiled_agent_source, projection)
+
+    SourceRecord.build(
+      base_spec: spec,
+      identity: "compiled:" <> spec.id,
+      kind: :builtin,
+      format: :compiled,
+      byte_size: byte_size(bytes),
+      digest: Digest.portable(bytes),
+      base_spec_digest: Digest.semantic(:agent_base_spec, projection),
+      agent_id: spec.id,
+      label: spec.id
+    )
+  end
+
   defp direct_policy_choice(opts) do
-    if Keyword.has_key?(opts, :execution_policy) or Keyword.has_key?(opts, :coding_profile) do
-      origin = Keyword.get(opts, :execution_policy_origin, :api)
-      ExecutionPolicy.direct_choice(opts, origin)
+    cond do
+      Keyword.has_key?(opts, :execution_policy_origin) ->
+        {:error, :execution_policy_consent_origin_forbidden}
+
+      Keyword.has_key?(opts, :execution_policy_direct_choice) ->
+        validate_direct_policy_choice(opts)
+
+      Keyword.has_key?(opts, :execution_policy) or Keyword.has_key?(opts, :coding_profile) ->
+        ExecutionPolicy.direct_choice(opts, :api)
+
+      true ->
+        {:ok, nil}
+    end
+  end
+
+  defp validate_direct_policy_choice(opts) do
+    choice = Keyword.get(opts, :execution_policy_direct_choice)
+
+    with true <- ExecutionPolicy.valid_direct_consent?(choice),
+         {:ok, expected} <- ExecutionPolicy.direct_choice(opts, choice.origin),
+         true <- ExecutionPolicy.valid_direct_consent?(expected),
+         true <- expected.execution_policy_id == choice.execution_policy_id do
+      {:ok, choice}
     else
-      {:ok, nil}
+      _invalid -> {:error, :invalid_execution_policy_consent}
     end
   end
 

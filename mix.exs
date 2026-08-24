@@ -8,7 +8,13 @@ defmodule Jido.Console.MixProject do
   @description "Interactive terminal harness for the Jidoka agent framework."
   @jidoka_ref "e339996a52fc6f90cb4f67481cd4eb874f6b68d0"
   @term_ui_ref "e994f757239bab9bff0ebdca62289d21dc6eaf02"
-  @documented_modules [Jido.Console, Jido.Console.Error]
+  @documented_modules [
+    Jido.Console,
+    Jido.Console.AgentSource,
+    Jido.Console.Error,
+    Jido.Console.ExecutionPolicy,
+    Jido.Console.SafeDisplay
+  ]
 
   def project do
     [
@@ -91,6 +97,7 @@ defmodule Jido.Console.MixProject do
       extras: [
         "README.md",
         "ROADMAP.md",
+        "guides/jido-console.md",
         "guides/extensions.md",
         "guides/durable-continuity.md",
         "guides/multi-turn-coding.md",

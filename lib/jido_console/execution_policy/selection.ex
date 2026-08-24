@@ -1,8 +1,7 @@
 defmodule Jido.Console.ExecutionPolicy.Selection do
   @moduledoc "Pure execution-policy decision matrix and workspace-evidence selector."
 
-  alias Jido.Console.ExecutionPolicy
-  alias Jido.Console.ExecutionPolicy.{Consent, Record, Registry}
+  alias Jido.Console.ExecutionPolicy.{Configuration, Consent, Definition, Record, Registry}
   alias Jidoka.ExecutionEnvironment
 
   @schema Zoi.struct(
@@ -97,7 +96,7 @@ defmodule Jido.Console.ExecutionPolicy.Selection do
           evidence: evidence
         } = selection
       ) do
-    with true <- ExecutionPolicy.valid_direct_consent?(direct),
+    with true <- Consent.valid_direct?(direct),
          true <- direct.execution_policy_id == id,
          true <- direct.origin == origin,
          true <- record.execution_policy_id == id,
@@ -119,7 +118,7 @@ defmodule Jido.Console.ExecutionPolicy.Selection do
         {:ok, nil}
 
       id when is_binary(id) ->
-        case ExecutionPolicy.policy_request(id) do
+        case Definition.policy_request(id) do
           {:ok, request} -> {:ok, request.profile_id}
           {:error, _reason} -> {:error, :invalid_agent_execution_policy_request}
         end
@@ -133,14 +132,14 @@ defmodule Jido.Console.ExecutionPolicy.Selection do
     if Keyword.has_key?(opts, :application_proposal) do
       normalize_optional(Keyword.get(opts, :application_proposal))
     else
-      ExecutionPolicy.application_proposal()
+      Configuration.application_proposal()
     end
   end
 
   defp normalize_optional(nil), do: {:ok, nil}
 
   defp normalize_optional(id) when is_binary(id) do
-    case ExecutionPolicy.normalize_id(id) do
+    case Definition.normalize_id(id) do
       "" -> {:error, {:invalid_execution_policy_input, id}}
       normalized -> {:ok, normalized}
     end
@@ -154,7 +153,7 @@ defmodule Jido.Console.ExecutionPolicy.Selection do
         {:ok, nil}
 
       %Consent{} = consent ->
-        if ExecutionPolicy.valid_direct_consent?(consent), do: {:ok, consent}, else: invalid_consent()
+        if Consent.valid_direct?(consent), do: {:ok, consent}, else: invalid_consent()
 
       _value ->
         invalid_consent()
@@ -201,13 +200,13 @@ defmodule Jido.Console.ExecutionPolicy.Selection do
   defp effective(nil, proposal_id, nil) when is_binary(proposal_id),
     do: {proposal_id, :application}
 
-  defp effective(nil, nil, nil), do: {ExecutionPolicy.restricted_id(), :default}
+  defp effective(nil, nil, nil), do: {Definition.restricted_id(), :default}
 
   defp select_with_stored_consent(record, opts) do
     stored = Keyword.get(opts, :stored_consent)
     thread_id = Keyword.get(opts, :thread_id)
 
-    if ExecutionPolicy.valid_stored_consent?(stored) and
+    if Consent.valid_stored?(stored) and
          stored.execution_policy_id == record.execution_policy_id and
          stored.thread_id == thread_id do
       case selected(record, :stored, nil, opts) do
