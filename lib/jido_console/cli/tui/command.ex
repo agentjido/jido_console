@@ -22,6 +22,7 @@ defmodule Jido.Console.Tui.Command do
       usage: "/model [provider:model]",
       summary: "List or select a model",
       argument: :optional,
+      argument_source: :models,
       action: :model
     },
     %{

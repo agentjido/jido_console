@@ -44,6 +44,19 @@ defmodule Jido.Console.Tui.EditorTest do
     assert Editor.clear(editor) == empty
   end
 
+  test "replaces the full sanitized value and moves the grapheme cursor to the end" do
+    editor = Editor.from_text("old value") |> Editor.left()
+    editor = Editor.replace(editor, " /model openai:gpt-4.1-mini\e[2J")
+
+    assert Editor.value(editor) == " /model openai:gpt-4.1-mini"
+    assert Editor.cursor(editor) == String.length(" /model openai:gpt-4.1-mini")
+  end
+
+  test "reports the TextArea grapheme cursor" do
+    editor = Editor.from_text("a😀b") |> Editor.left()
+    assert Editor.cursor(editor) == 2
+  end
+
   test "keeps mention and escaped-at syntax as ordinary editable text" do
     editor = Editor.new() |> Editor.insert("Review @lib/value.ex and \\@literal") |> Editor.left() |> Editor.right()
     assert Editor.value(editor) == "Review @lib/value.ex and \\@literal"

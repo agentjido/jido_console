@@ -33,8 +33,10 @@ defmodule Jido.Console.Tui.View do
     prompt_limit = min(5, max(height - 4, 1))
     editor = Editor.frame(state.editor, max(width - 2, 1), prompt_limit)
     body_height = max(height - 3 - editor.height, 0)
-    review = review_rows(state.coding_reviews, width, min(div(height, 2), body_height))
-    transcript_height = max(body_height - length(review), 0)
+    completion = completion_rows(state, width)
+    content_height = max(body_height - length(completion), 0)
+    review = review_rows(state.coding_reviews, width, min(div(height, 2), content_height))
+    transcript_height = max(content_height - length(review), 0)
     row_limit = min(transcript_height + state.scroll_offset, @max_transcript_rows)
 
     transcript =
@@ -49,12 +51,62 @@ defmodule Jido.Console.Tui.View do
     status = status_row(state)
 
     prompt = for row <- 1..editor.height, do: if(row == 1, do: "> ", else: "  ")
-    rows = [title(state)] ++ transcript ++ review ++ [divider, status] ++ prompt
+    rows = [title(state)] ++ transcript ++ review ++ completion ++ [divider, status] ++ prompt
     prompt_start = height - editor.height + 1
 
     rows
     |> Frame.from_rows(width, height)
     |> Frame.overlay(editor, 3, prompt_start)
+  end
+
+  defp completion_rows(%State{} = state, width) do
+    slice = State.completion_slice(state)
+    result_count = Enum.count(state.completion.candidates, &Map.get(&1, :selectable?, false))
+
+    slice.rows
+    |> Enum.with_index()
+    |> Enum.map(fn {candidate, index} ->
+      completion_row(candidate, index == slice.selected_index, result_count, width)
+    end)
+  end
+
+  defp completion_row(%{kind: :feedback} = candidate, _selected?, _result_count, width) do
+    text = TextLayout.fit("  #{SafeText.summary(candidate.message)}", width)
+    [{text, Style.new(fg: :bright_black)}]
+  end
+
+  defp completion_row(candidate, selected?, result_count, width) do
+    marker = if selected?, do: "> ", else: "  "
+    text = marker <> completion_label(candidate)
+    text = if selected?, do: append_completion_help(text, result_count, width), else: text
+    text = TextLayout.fit(text, width)
+
+    if selected?,
+      do: [{text, Style.new(fg: :cyan, attrs: [:bold, :reverse])}],
+      else: text
+  end
+
+  defp completion_label(%{kind: :command} = candidate) do
+    "#{SafeText.summary(candidate.usage)} · #{SafeText.summary(candidate.summary)}"
+  end
+
+  defp completion_label(%{kind: :model} = candidate) do
+    current = if Map.get(candidate, :current?, false), do: " · current", else: ""
+    "#{SafeText.summary(candidate.identity)} · #{candidate.tier}#{current}"
+  end
+
+  defp completion_label(candidate), do: SafeText.summary(Map.get(candidate, :message, "Completion unavailable"))
+
+  defp append_completion_help(text, result_count, width) do
+    result = if result_count == 1, do: "1 result", else: "#{result_count} results"
+
+    [
+      " · #{result} · ↑↓ move · Tab complete · Esc close",
+      " · #{result} · ↑↓ · Tab · Esc",
+      " · #{result}"
+    ]
+    |> Enum.find("", &(TextLayout.width(text <> &1) <= width))
+    |> then(&(text <> &1))
   end
 
   defp transcript_viewport(_rows, 0, _offset, _alignment), do: []
