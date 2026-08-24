@@ -40,6 +40,55 @@ defmodule Jido.Console.Tui.SelectionTest do
            ]
   end
 
+  test "projects de-duplicated selectable model data with the current marker" do
+    entries = [
+      %{identity: "z:unsupported", provider: "z", model: "unsupported", tier: :unsupported},
+      %{identity: "b:beta", provider: "b", model: "beta", tier: :beta},
+      %{identity: "a:available", provider: "a", model: "available", tier: :available},
+      %{identity: "a:supported", provider: "a", model: "supported", tier: :supported},
+      %{identity: "b:beta", provider: "b", model: "beta", tier: :beta},
+      %{identity: "stale", provider: "x", model: "stale", tier: :supported},
+      %{identity: 42, provider: "x", model: "bad", tier: :supported}
+    ]
+
+    selection = Selection.init(catalog_entries: entries, model: "b:beta")
+
+    assert {:ok, models} = Selection.selectable_models(selection)
+
+    assert models == [
+             %{
+               identity: "a:supported",
+               provider: "a",
+               model: "supported",
+               tier: :supported,
+               current?: false
+             },
+             %{
+               identity: "b:beta",
+               provider: "b",
+               model: "beta",
+               tier: :beta,
+               current?: true
+             }
+           ]
+  end
+
+  test "model projection rejects catalogs with no selectable valid entries" do
+    for entries <- [
+          [],
+          :invalid,
+          [42],
+          [%{identity: <<255>>, provider: <<255>>, model: "bad", tier: :supported}],
+          [%{identity: "bad", tier: :supported}],
+          [%{identity: "a:available", provider: "a", model: "available", tier: :available}]
+        ] do
+      selection = Selection.init(catalog_entries: entries)
+
+      assert {:error, %Jido.Console.Error.ConfigurationError{}} =
+               Selection.selectable_models(selection)
+    end
+  end
+
   test "selects exact supported and beta identities only" do
     entries = [
       %{identity: "a:supported", provider: "a", model: "supported", tier: :supported},

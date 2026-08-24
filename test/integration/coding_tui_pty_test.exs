@@ -75,17 +75,43 @@ defmodule Jido.Console.CodingTuiPtyTest do
 
     task = Task.async(fn -> Tui.run(opts) end)
     assert_receive {:term_ui_started, runtime}, 2_000
+    on_exit(fn -> ensure_tui_stopped(runtime, task) end)
     assert_frame("INPUT · Enter send")
 
-    send_event(event_queue, TermUI.Event.paste("/help"))
-    send_event(event_queue, TermUI.Event.key(:enter))
-    assert_frame("/model [provider:model]")
+    send_event(event_queue, TermUI.Event.paste("/"))
+    assert_frame("> /help · Show slash commands")
 
-    send_event(event_queue, TermUI.Event.paste("/model"))
-    send_event(event_queue, TermUI.Event.key(:enter))
-    assert_frame("openai:gpt-4.1-mini supported current")
+    send_event(event_queue, TermUI.Event.key(:down))
+    assert_frame("> /model [provider:model] · List or select a model")
 
-    send_event(event_queue, TermUI.Event.paste("/model ollama:llama3.2"))
+    send_event(event_queue, TermUI.Event.key(:tab))
+
+    assert_frame_matching(fn frame ->
+      String.contains?(frame, "> ollama:llama3.2 · beta") and
+        String.contains?(frame, "openai:gpt-4.1-mini · supported · current")
+    end)
+
+    send_event(event_queue, TermUI.Event.paste("oll"))
+
+    filtered =
+      assert_frame_matching(fn frame ->
+        String.contains?(frame, "> /model oll") and
+          String.contains?(frame, "> ollama:llama3.2 · beta") and
+          not String.contains?(frame, "> openai:gpt-4.1-mini · supported")
+      end)
+
+    assert filtered =~ "1 result"
+
+    send_event(event_queue, TermUI.Event.key(:tab))
+
+    completed =
+      assert_frame_matching(fn frame ->
+        String.contains?(frame, "> /model ollama:llama3.2") and
+          String.contains?(frame, "JIDO · openai:gpt-4.1-mini supported") and
+          not String.contains?(frame, "Tab complete")
+      end)
+
+    refute completed =~ "Selected model ollama:llama3.2"
     send_event(event_queue, TermUI.Event.key(:enter))
     assert_frame("Selected model ollama:llama3.2 (beta)", 10_000)
 
@@ -93,7 +119,10 @@ defmodule Jido.Console.CodingTuiPtyTest do
     send_event(event_queue, TermUI.Event.key(:enter))
     assert_frame("Provider-free answer.", 5_000)
 
-    send_event(event_queue, TermUI.Event.paste("/model openai:gpt-4.1-mini"))
+    send_event(event_queue, TermUI.Event.paste("/model open"))
+    assert_frame("> openai:gpt-4.1-mini · supported")
+    send_event(event_queue, TermUI.Event.key(:tab))
+    assert_frame("> /model openai:gpt-4.1-mini")
     send_event(event_queue, TermUI.Event.key(:enter))
     assert_frame("locked after the first prompt")
 
@@ -107,6 +136,7 @@ defmodule Jido.Console.CodingTuiPtyTest do
     assert view.model == %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => true}
     refute inspect(view.transcript) =~ "/model"
     refute inspect(view.history) =~ "/model"
+    refute Map.has_key?(view, :completion)
     assert :ok = Client.detach(handle)
     assert :ok = Client.stop(handle)
   end
@@ -124,6 +154,38 @@ defmodule Jido.Console.CodingTuiPtyTest do
         if String.contains?(frame, expected), do: frame, else: await_frame(expected, deadline, frame)
     after
       remaining -> flunk("frame did not contain #{inspect(expected)}; latest frame: #{inspect(latest)}")
+    end
+  end
+
+  defp assert_frame_matching(predicate, timeout \\ 2_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    await_matching_frame(predicate, deadline, "")
+  end
+
+  defp await_matching_frame(predicate, deadline, latest) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:frame, frame} ->
+        if predicate.(frame), do: frame, else: await_matching_frame(predicate, deadline, frame)
+    after
+      remaining -> flunk("no frame matched before timeout; latest frame: #{inspect(latest)}")
+    end
+  end
+
+  defp ensure_tui_stopped(runtime, task) do
+    if Process.alive?(task.pid) do
+      TermUI.Runtime.shutdown(runtime)
+      ref = Process.monitor(task.pid)
+
+      receive do
+        {:DOWN, ^ref, :process, _pid, _reason} -> :ok
+      after
+        2_000 ->
+          Process.demonitor(ref, [:flush])
+          Process.unlink(task.pid)
+          Process.exit(task.pid, :kill)
+      end
     end
   end
 

@@ -45,6 +45,16 @@ defmodule Jido.Console.Tui.CommandTest do
     assert String.split(help, "\n") == Enum.sort(String.split(help, "\n"))
   end
 
+  test "advertises only the model argument completion source" do
+    registry = Command.registry()
+
+    assert Enum.find(registry, &(&1.name == "model")).argument_source == :models
+
+    assert registry
+           |> Enum.reject(&(&1.name == "model"))
+           |> Enum.all?(&(not Map.has_key?(&1, :argument_source)))
+  end
+
   test "unknown command feedback names available commands" do
     assert {:error, error} = Command.parse("/missing")
     message = Exception.message(error)

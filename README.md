@@ -111,9 +111,20 @@ Explain what Jido Console does in three sentences.
 Press `Enter` to send a prompt. Press `Ctrl-J` to add a line. Press `Ctrl-C` to
 cancel a running turn. Press `Esc` to exit.
 
-The prompt also accepts slash commands. Use `/help` to show the current command
-list. Use `/model` to show selectable models and the current model. Before the
-first prompt is accepted, use an exact identity to select a model:
+The prompt also accepts slash commands. Type `/` to show the command list. Use
+`Up` and `Down` to move in the list. Press `Tab` to put the selected value in
+the prompt. `Tab` does not run the command. Press `Enter` to submit the command.
+Press `Esc` to close an open suggestion list. A later `Esc` uses the normal
+exit behavior.
+
+Type `/model `, with a space, to show and filter selectable models. The list
+marks the effective model as `current`. The suggestions use local data and are
+advisory. The live session owner validates the model when you press `Enter`.
+`/provider` is not a command. Filter by provider only after `/model `.
+
+Use `/help` to show the current command list. Use `/model` to show selectable
+models and the current model. Before the first prompt is accepted, use an exact
+identity to select a model:
 
 ```text
 /model ollama:llama3.2
