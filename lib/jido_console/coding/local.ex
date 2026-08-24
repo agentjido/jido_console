@@ -1,44 +1,53 @@
 defmodule Jido.Console.Coding.Local do
-  @moduledoc "Trusted local-folder ports for an explicitly selected coding profile."
+  @moduledoc "Post-selection resource opener for a trusted execution-policy record."
 
   alias Jidoka.CodingPack.{GitPort, MutationPort, ShellPort, VerifyPort, Workspace}
-  alias Jidoka.ExecutionEnvironment
-
-  alias Jidoka.ExecutionEnvironment.{
-    AdapterCapabilities,
-    Manager,
-    PolicyRequest,
-    ProfileResolver,
-    Registration,
-    SecurityProfile
-  }
+  alias Jidoka.ExecutionEnvironment.Manager
 
   alias Jidoka.Policy.Decision
-  alias Jido.Console.Coding.Environment
   alias Jido.Console.Coding.Environment.Contract
   alias Jido.Console.Coding.Local.{Resources, Setup}
+  alias Jido.Console.ExecutionPolicy
+  alias Jido.Console.ExecutionPolicy.{Record, Registry}
 
-  @profile_id "coding.local"
-  @adapter_id "jido_console.local_folder"
-  @adapter_version "1"
+  @legacy_profile_id "coding.local"
   @wall_time_ms 120_000
-  @output_bytes 262_144
 
   @type resources :: Resources.t()
 
-  @doc "Returns the explicit trusted profile identifier."
+  @deprecated "Use execution_policy_id/0"
+  @doc "Returns the legacy explicit trusted profile identifier."
   @spec profile_id() :: String.t()
-  def profile_id, do: @profile_id
+  def profile_id, do: @legacy_profile_id
 
-  @doc "Creates folder-scoped coding ports for one validated workspace."
+  @doc "Returns the canonical trusted-workspace execution-policy identifier."
+  @spec execution_policy_id() :: String.t()
+  def execution_policy_id, do: ExecutionPolicy.trusted_id()
+
+  @deprecated "Pass an execution-policy record to prepare/3"
+  @doc "Compatibility opener that resolves a host record from the environment contract."
   @spec prepare(Workspace.t(), Contract.t()) :: {:ok, map()} | {:error, term()}
   def prepare(%Workspace{} = workspace, %Contract{} = environment_contract) do
+    with {:ok, record} <- Registry.fetch(environment_contract.execution_policy_id) do
+      prepare(record, workspace, environment_contract)
+    end
+  end
+
+  @doc "Creates folder-scoped coding ports from one validated host policy record."
+  @spec prepare(Record.t(), Workspace.t(), Contract.t()) :: {:ok, map()} | {:error, term()}
+  def prepare(
+        %Record{} = record,
+        %Workspace{} = workspace,
+        %Contract{} = environment_contract
+      ) do
     with true <- Code.ensure_loaded?(Jido.Console.Coding.Local.Adapter),
          true <- Code.ensure_loaded?(Jido.Console.Coding.Local.MutationBackend),
+         {:ok, record} <- Record.validate(record),
+         true <- record.execution_policy_id == environment_contract.execution_policy_id,
          {:ok, executables} <- executables(),
          {:ok, mutation_state} <-
            Agent.start_link(fn -> %{snapshots: %{}, snapshot_bytes: 0} end) do
-      case prepare_resources(workspace, environment_contract, executables, mutation_state) do
+      case prepare_resources(record, workspace, environment_contract, executables, mutation_state) do
         {:ok, _local} = success ->
           success
 
@@ -48,28 +57,35 @@ defmodule Jido.Console.Coding.Local do
       end
     else
       false ->
-        {:error, :local_coding_module_unavailable}
+        if Code.ensure_loaded?(Jido.Console.Coding.Local.Adapter) and
+             Code.ensure_loaded?(Jido.Console.Coding.Local.MutationBackend),
+           do: {:error, :environment_contract_execution_policy_mismatch},
+           else: {:error, :local_coding_module_unavailable}
 
       {:error, _reason} = error ->
         error
     end
   end
 
-  defp prepare_resources(workspace, environment_contract, executables, mutation_state) do
-    profile = profile(environment_contract)
-    request = PolicyRequest.new!(profile_id: profile.profile_id)
-    registration = registration(profile)
+  @doc false
+  def prepare(%Workspace{} = workspace, %Contract{} = contract, %Record{} = record),
+    do: prepare(record, workspace, contract)
 
+  defp prepare_resources(record, workspace, environment_contract, executables, mutation_state) do
     manager_opts = [
       workspace: workspace,
       executables: executables,
       environment_contract: environment_contract
     ]
 
-    with {:ok, selection} <-
-           ProfileResolver.resolve(request, fn _profile_id, _opts -> {:ok, registration} end),
-         {:ok, manager} <- Manager.start_link(selection, policy(), manager_opts) do
-      prepare_binding(manager, request, profile, mutation_state, environment_contract)
+    with {:ok, manager} <- Manager.start_link(record.jidoka_selection, policy(), manager_opts) do
+      prepare_binding(
+        manager,
+        record.policy_request,
+        record.security_profile,
+        mutation_state,
+        environment_contract
+      )
     end
   end
 
@@ -130,54 +146,6 @@ defmodule Jido.Console.Coding.Local do
     :ok
   catch
     :exit, _reason -> :ok
-  end
-
-  defp profile(%Contract{} = environment_contract) do
-    digest =
-      ExecutionEnvironment.digest(%{
-        profile_id: environment_contract.profile_id,
-        adapter_id: @adapter_id,
-        revision: 1,
-        isolation: :process,
-        network: :disabled,
-        workspace: :persistent,
-        wall_time_ms: @wall_time_ms,
-        output_bytes: @output_bytes,
-        environment_contract: Environment.digest(environment_contract)
-      })
-
-    SecurityProfile.new!(
-      profile_id: environment_contract.profile_id,
-      revision: 1,
-      digest: digest,
-      adapter_id: @adapter_id,
-      required_isolation: :process,
-      required_network: :disabled,
-      required_workspace: :persistent,
-      maximum_limits: %{
-        "wall_time_ms" => @wall_time_ms,
-        "output_bytes" => @output_bytes
-      }
-    )
-  end
-
-  defp registration(profile) do
-    capabilities =
-      AdapterCapabilities.new!(
-        adapter_id: @adapter_id,
-        adapter_version: @adapter_version,
-        isolations: [:process],
-        networks: [:disabled],
-        workspaces: [:persistent],
-        limit_keys: ["wall_time_ms", "output_bytes"],
-        capability_ids: ["shell.execute"]
-      )
-
-    Registration.new!(
-      profile: profile,
-      adapter: Jido.Console.Coding.Local.Adapter,
-      capabilities: capabilities
-    )
   end
 
   defp policy do

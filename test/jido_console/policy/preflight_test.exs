@@ -25,12 +25,16 @@ defmodule Jido.Console.Policy.PreflightTest do
              Preflight.check(
                provider: "openai",
                model: "gpt-test",
+               execution_policy_id: "coding.restricted",
                required_features: [:streaming],
                entry: entry
              )
 
     assert allowed.outcome == :allow
     assert allowed.model == "gpt-test"
+    assert allowed.execution_policy_id == "coding.restricted"
+    assert Preflight.to_jidoka(allowed).evidence["execution_policy_id"] == "coding.restricted"
+    refute Map.has_key?(Preflight.to_jidoka(allowed).evidence, "profile")
 
     assert {:error, denied} =
              Preflight.check(

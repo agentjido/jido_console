@@ -36,6 +36,7 @@ config :llm_db,
   }
 
 config :jido_console,
+  execution_policy_registry: Jido.Console.ExecutionPolicy.Registry,
   model_policy: [
     %{
       identity: "openai:gpt-4.1-mini",

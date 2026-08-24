@@ -11,9 +11,10 @@ defmodule Jido.Console.Coding.ProfileTest do
     %{opts: [jido_home: Path.join(root, "home"), project_root: root]}
   end
 
-  test "defaults to restricted execution without an explicit profile", %{opts: opts} do
+  test "compatibility facade defaults to restricted execution", %{opts: opts} do
     assert {:ok, profile} = Profile.resolve(Profile.restricted_id(), opts)
     assert profile.class == :restricted
+    assert profile.execution_policy_id == "coding.restricted"
     assert profile.sandbox? == false
     assert profile.enforcement == :pending
     refute Profile.restricted_passed?(profile)
@@ -27,19 +28,21 @@ defmodule Jido.Console.Coding.ProfileTest do
   end
 
   test "requires an explicit choice for trusted-workspace mode", %{opts: opts} do
-    assert {:error, {:explicit_profile_required, "coding.local"}} =
+    assert {:error, {:consent_required, "coding.trusted-workspace"}} =
              Profile.resolve("coding.local", opts)
 
     assert {:ok, trusted} = Profile.resolve("coding.local", opts ++ [coding_profile: "coding.local"])
     assert trusted.class == :trusted_workspace
+    assert trusted.id == "coding.trusted-workspace"
+    assert trusted.environment_contract.execution_policy_id == "coding.trusted-workspace"
     assert trusted.warning == Profile.trusted_warning()
     assert trusted.warning =~ "not a sandbox"
     assert trusted.explicit?
 
-    assert {:error, {:explicit_profile_required, "coding.trusted-workspace"}} =
+    assert {:error, {:execution_policy_mismatch, "coding.trusted-workspace", "coding.restricted"}} =
              Profile.resolve("coding.trusted-workspace", opts ++ [coding_profile: Profile.restricted_id()])
 
-    assert {:error, {:unknown_execution_profile, "missing"}} =
+    assert {:error, {:unknown_execution_policy, "missing"}} =
              Profile.resolve("missing", opts ++ [coding_profile: "missing"])
   end
 
@@ -73,9 +76,10 @@ defmodule Jido.Console.Coding.ProfileTest do
 
     assert {:ok, disabled} = Profile.resolve(nil, opts)
     assert Profile.to_map(disabled)["environment"] == %{}
+    assert Profile.to_map(disabled)["execution_policy_id"] == nil
   end
 
-  test "recognizes an application-level explicit profile choice", %{opts: opts} do
+  test "treats an application-level legacy value only as a proposal", %{opts: opts} do
     previous = Application.get_env(:jido_console, :coding_profile)
     Application.put_env(:jido_console, :coding_profile, "coding.local")
 
@@ -85,8 +89,23 @@ defmodule Jido.Console.Coding.ProfileTest do
         else: Application.put_env(:jido_console, :coding_profile, previous)
     end)
 
-    assert Profile.explicit_choice?([])
-    assert {:ok, profile} = Profile.resolve("coding.local", opts)
-    assert profile.explicit?
+    refute Profile.explicit_choice?([])
+
+    assert {:error, {:consent_required, "coding.trusted-workspace"}} =
+             Profile.resolve("coding.local", opts)
+  end
+
+  test "facade functions expose only the planned deprecation notice" do
+    {:docs_v1, _, _, _, _, _, docs} = Code.fetch_docs(Profile)
+
+    notices =
+      docs
+      |> Enum.flat_map(fn
+        {{:function, _name, _arity}, _, _, _, %{deprecated: notice}} -> [notice]
+        _entry -> []
+      end)
+      |> Enum.uniq()
+
+    assert notices == ["Use Jido.Console.ExecutionPolicy"]
   end
 end

@@ -13,7 +13,7 @@ defmodule Jido.Console.Policy.Preflight do
           outcome: atom(),
           model: String.t() | nil,
           provider: String.t() | nil,
-          profile: String.t() | nil,
+          execution_policy_id: String.t() | nil,
           required_features: [atom()],
           reason: String.t(),
           rule_id: String.t()
@@ -60,7 +60,7 @@ defmodule Jido.Console.Policy.Preflight do
       evidence: %{
         "model" => decision.model,
         "provider" => decision.provider,
-        "profile" => decision.profile,
+        "execution_policy_id" => decision.execution_policy_id,
         "required_features" => Enum.map(decision.required_features, &Atom.to_string/1)
       }
     )
@@ -169,7 +169,7 @@ defmodule Jido.Console.Policy.Preflight do
       outcome: outcome,
       provider: provider,
       model: model,
-      profile: Keyword.get(opts, :profile),
+      execution_policy_id: Keyword.get(opts, :execution_policy_id),
       required_features: required,
       reason: reason,
       rule_id: rule_id

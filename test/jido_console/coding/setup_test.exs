@@ -30,7 +30,7 @@ defmodule Jido.Console.Coding.SetupTest do
              Jido.Console.Coding.Environment.evidence(setup.environment_contract)
 
     assert setup.local_resources.environment_contract === setup.environment_contract
-    assert setup.local_resources.binding.profile_id == setup.environment_contract.profile_id
+    assert setup.local_resources.binding.profile_id == setup.environment_contract.execution_policy_id
 
     assert setup.local_resources.environment_evidence.facts["environment_contract_digest"] ==
              Jido.Console.Coding.Environment.digest(setup.environment_contract)
@@ -218,7 +218,7 @@ defmodule Jido.Console.Coding.SetupTest do
 
     resolver = fn _id -> {:error, :missing} end
 
-    assert {:error, {:unknown_runtime_profile, "missing", :missing}} =
+    assert {:error, {:unknown_execution_policy, "missing", :missing}} =
              Setup.prepare(Jido.Console.DefaultAgent,
                project_root: root,
                coding_profile: "missing",

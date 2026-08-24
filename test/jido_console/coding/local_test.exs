@@ -1,8 +1,9 @@
 defmodule Jido.Console.Coding.LocalTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Console.Coding.{Local, Setup}
+  alias Jido.Console.Coding.{Local, Setup, WorkspaceConfig}
   alias Jido.Console.Coding.Local.MutationBackend
+  alias Jido.Console.ExecutionPolicy.Registry
   alias Jido.Console.Extensions.Setup, as: ExtensionSetup
   alias Jidoka.CodingPack.{Edit, Verify, Workspace}
   alias Jidoka.ExecutionEnvironment.Manager
@@ -30,7 +31,7 @@ defmodule Jido.Console.Coding.LocalTest do
   end
 
   test "requires an explicit root and prepares local resources for the default profile", %{root: root} do
-    assert {:error, :local_coding_root_required} =
+    assert {:error, {:execution_policy_root_required, "coding.trusted-workspace"}} =
              Setup.prepare(Jido.Console.DefaultAgent, coding_profile: Local.profile_id())
 
     assert {:ok, setup} =
@@ -49,6 +50,22 @@ defmodule Jido.Console.Coding.LocalTest do
     end
   end
 
+  test "canonical and legacy trusted IDs use the same workspace root gate", %{root: root} do
+    assert {:error, :local_coding_root_required} =
+             WorkspaceConfig.build("coding.local", project_root: nil)
+
+    assert {:error, :local_coding_root_required} =
+             WorkspaceConfig.build("coding.trusted-workspace", project_root: nil)
+
+    assert {:ok, from_alias} = WorkspaceConfig.build("coding.local", project_root: root)
+
+    assert {:ok, from_canonical} =
+             WorkspaceConfig.build("coding.trusted-workspace", project_root: root)
+
+    assert from_alias.execution_profile == "coding.trusted-workspace"
+    assert from_alias == from_canonical
+  end
+
   test "local policy validates allowed requests and denies unsupported lifecycle actions", %{root: root} do
     workspace =
       Workspace.new!(
@@ -57,7 +74,10 @@ defmodule Jido.Console.Coding.LocalTest do
         execution_profile: Local.profile_id()
       )
 
-    assert {:ok, local} = Local.prepare(workspace, environment_contract(root))
+    contract = environment_contract(root)
+    record = Registry.new!() |> Registry.fetch!(contract.execution_policy_id)
+
+    assert {:ok, local} = Local.prepare(record, workspace, contract)
     resources = local.resources
     manager = resources.manager
     mutation_state = resources.mutation_state
@@ -94,10 +114,11 @@ defmodule Jido.Console.Coding.LocalTest do
       )
 
     contract = environment_contract(root)
-    assert {:ok, local} = Local.prepare(workspace, contract)
+    record = Registry.new!() |> Registry.fetch!(contract.execution_policy_id)
+    assert {:ok, local} = Local.prepare(record, workspace, contract)
     on_exit(fn -> Local.close(local.resources) end)
     assert local.resources.environment_contract === contract
-    assert local.resources.binding.profile_id == contract.profile_id
+    assert local.resources.binding.profile_id == contract.execution_policy_id
 
     assert {:ok, edit} =
              Edit.run(workspace, local.mutation, %{

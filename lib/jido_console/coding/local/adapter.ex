@@ -35,8 +35,9 @@ defmodule Jido.Console.Coding.Local.Adapter do
 
   @impl true
   def open(profile, _request, opts) do
-    with %Contract{profile_id: profile_id} <- Keyword.fetch!(opts, :environment_contract),
-         true <- profile_id == profile.profile_id do
+    with %Contract{execution_policy_id: execution_policy_id} <-
+           Keyword.fetch!(opts, :environment_contract),
+         true <- execution_policy_id == profile.profile_id do
       workspace = Keyword.fetch!(opts, :workspace)
 
       binding =

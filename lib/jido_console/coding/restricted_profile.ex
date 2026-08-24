@@ -1,14 +1,13 @@
 defmodule Jido.Console.Coding.RestrictedProfile do
-  @moduledoc "Defines the shared identity and environment defaults for restricted coding."
+  @moduledoc "Deprecated compatibility facade for `Jido.Console.ExecutionPolicy`."
 
-  @id "coding.restricted"
-  @environment_allowlist ~w(PATH LANG TERM TMPDIR HOME)
-
-  @doc "Returns the restricted coding profile identifier."
+  @deprecated "Use Jido.Console.ExecutionPolicy.restricted_id/0"
+  @doc "Returns the restricted execution-policy identifier."
   @spec id() :: String.t()
-  def id, do: @id
+  def id, do: Jido.Console.ExecutionPolicy.restricted_id()
 
+  @deprecated "Use Jido.Console.ExecutionPolicy.environment_allowlist/0"
   @doc "Returns the default restricted process environment allowlist."
   @spec environment_allowlist() :: [String.t()]
-  def environment_allowlist, do: @environment_allowlist
+  def environment_allowlist, do: Jido.Console.ExecutionPolicy.environment_allowlist()
 end

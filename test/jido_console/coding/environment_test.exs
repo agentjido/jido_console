@@ -37,6 +37,8 @@ defmodule Jido.Console.Coding.EnvironmentTest do
     refute Map.has_key?(env, "OPENAI_API_KEY")
 
     evidence = Environment.evidence(contract)
+    assert evidence["execution_policy_id"] == "coding.restricted"
+    refute Map.has_key?(evidence, "profile_id")
     assert evidence["home"] == "private"
     assert evidence["tmpdir"] == "declared"
     assert evidence["references"] == []
@@ -86,6 +88,12 @@ defmodule Jido.Console.Coding.EnvironmentTest do
     assert evidence["references"] == ["env:OPENAI_API_KEY"]
     refute inspect(evidence) =~ "sk-secret"
     assert :ok = Jidoka.ExecutionEnvironment.Contract.validate_safe_map(evidence)
+  end
+
+  test "normalizes the legacy local policy ID in the canonical contract", %{opts: opts} do
+    assert {:ok, contract} = Environment.resolve("coding.local", opts)
+    assert contract.execution_policy_id == "coding.trusted-workspace"
+    refute Map.has_key?(Map.from_struct(contract), :profile_id)
   end
 
   test "accepts broader provider variables loaded by Env", %{opts: opts} do

@@ -13,7 +13,7 @@ defmodule Jido.Console.Coding.Local.AdapterTest do
     on_exit(fn -> File.rm_rf!(root) end)
 
     contract = %Contract{
-      profile_id: Local.profile_id(),
+      execution_policy_id: Local.execution_policy_id(),
       allowlist: [],
       credential_refs: [],
       home: Path.join(root, "home"),
@@ -24,7 +24,7 @@ defmodule Jido.Console.Coding.Local.AdapterTest do
 
     profile =
       SecurityProfile.new!(
-        profile_id: contract.profile_id,
+        profile_id: contract.execution_policy_id,
         revision: 1,
         digest: "sha256:" <> String.duplicate("a", 64),
         adapter_id: "jido_console.local_folder",
