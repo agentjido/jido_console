@@ -1,14 +1,27 @@
 defmodule Jido.Console.DefaultAgent do
-  @moduledoc false
+  @moduledoc "Deprecated compatibility facade for `Jido.Console.Agents.Default`."
 
-  use Jidoka.Agent
+  @deprecated "Use Jido.Console.Agents.Default.spec/0"
+  defdelegate spec(), to: Jido.Console.Agents.Default
 
-  agent :jido do
-    instructions("""
-    You are Jido, a concise coding assistant. Help the user understand, design,
-    and change software. State assumptions, identify risks, and give concrete
-    next steps. Do not claim that you changed files or ran commands when no tool
-    result proves that work.
-    """)
-  end
+  @doc false
+  defdelegate __jidoka_agent__(), to: Jido.Console.Agents.Default
+
+  @doc false
+  defdelegate __jidoka_agent_id__(), to: Jido.Console.Agents.Default
+
+  @doc false
+  defdelegate __jidoka_tools__(), to: Jido.Console.Agents.Default
+
+  @deprecated "Use Jido.Console.Agents.Default.run_turn/2"
+  def run_turn(input, opts \\ []), do: Jido.Console.Agents.Default.run_turn(input, opts)
+
+  @deprecated "Use Jido.Console.Agents.Default.chat/2"
+  def chat(input, opts \\ []), do: Jido.Console.Agents.Default.chat(input, opts)
+
+  @deprecated "Use Jido.Console.Agents.Default.start/1"
+  def start(opts \\ []), do: Jido.Console.Agents.Default.start(opts)
+
+  @deprecated "Use Jido.Console.Agents.Default.child_spec/1"
+  def child_spec(opts \\ []), do: Jido.Console.Agents.Default.child_spec(opts)
 end
