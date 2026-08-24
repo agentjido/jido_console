@@ -3,7 +3,7 @@ defmodule Jido.Console.Session.Server do
 
   use GenServer
 
-  alias Jido.Console.Session.{Command, Registry, Thread, View}
+  alias Jido.Console.Session.{BindingRequest, Command, Registry, Thread, View}
 
   @type name :: GenServer.server()
 
@@ -44,7 +44,20 @@ defmodule Jido.Console.Session.Server do
   @doc "Attaches a subscriber and atomically returns its complete current View."
   @spec attach(name(), pid()) :: {:ok, %{attachment_ref: reference(), view: View.t()}}
   def attach(server, subscriber \\ self()) when is_pid(subscriber),
-    do: GenServer.call(server, {:attach, subscriber})
+    do:
+      attach(server, subscriber, %BindingRequest{
+        agent_source: nil,
+        coding_pack: nil,
+        model: nil,
+        execution_policy: nil,
+        project_root: nil
+      })
+
+  @doc "Attaches with explicit binding choices for owner-side conflict checks."
+  @spec attach(name(), pid(), BindingRequest.t()) ::
+          {:ok, %{attachment_ref: reference(), view: View.t()}} | {:error, term()}
+  def attach(server, subscriber, %BindingRequest{} = request) when is_pid(subscriber),
+    do: GenServer.call(server, {:attach, subscriber, request})
 
   @doc "Detaches one exact private attachment."
   @spec detach(name(), reference()) :: :ok
@@ -70,9 +83,30 @@ defmodule Jido.Console.Session.Server do
   end
 
   @impl true
-  def handle_call({:attach, subscriber}, _from, state) do
-    {attachment_ref, view, state} = View.attach(state, subscriber)
-    {:reply, {:ok, %{attachment_ref: attachment_ref, view: view}}, state}
+  def handle_call({:attach, subscriber}, from, state) do
+    handle_call(
+      {:attach, subscriber,
+       %BindingRequest{
+         agent_source: nil,
+         coding_pack: nil,
+         model: nil,
+         execution_policy: nil,
+         project_root: nil
+       }},
+      from,
+      state
+    )
+  end
+
+  def handle_call({:attach, subscriber, request}, _from, state) do
+    case Thread.attach_request(state, request) do
+      :ok ->
+        {attachment_ref, view, state} = View.attach(state, subscriber)
+        {:reply, {:ok, %{attachment_ref: attachment_ref, view: view}}, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call({:detach, attachment_ref}, _from, state),

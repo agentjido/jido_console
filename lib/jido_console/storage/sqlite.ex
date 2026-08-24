@@ -7,7 +7,7 @@ defmodule Jido.Console.Storage.SQLite do
 
   alias Exqlite.Sqlite3
   alias Jido.Console.{Digest, Home}
-  alias Jido.Console.Session.Event
+  alias Jido.Console.Session.{BindingManifest, Event, Legacy}
   alias Jido.Console.Storage.CanonicalJSON
   alias Jidoka.Session.Data
   alias Jidoka.Session.Transitions
@@ -21,7 +21,8 @@ defmodule Jido.Console.Storage.SQLite do
   @event_bytes 256 * 1_024
   @default_event_limit 200
   @max_event_limit 1_000
-  @store_version 2
+  @store_version 3
+  @previous_store_version 2
   @session_codec_version 1
   @session_codec_tag :jido_console_session
   @closing_types ~w(prompt_removed prompt_succeeded prompt_failed prompt_cancelled prompt_interrupted)
@@ -119,6 +120,70 @@ defmodule Jido.Console.Storage.SQLite do
 
   @impl true
   def put_session(%Data{} = session, opts), do: call(opts, {:put_session, session})
+
+  @doc "Replaces one unlocked binding draft with compare-and-set checks."
+  @spec put_binding_draft(
+          GenServer.server(),
+          Data.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          keyword()
+        ) :: {:ok, Data.t()} | {:error, term()}
+  def put_binding_draft(server, %Data{} = session, expected_revision, expected_generation, opts \\ []) do
+    GenServer.call(
+      server,
+      {:put_binding_draft, session, expected_revision, expected_generation, event_opts(opts)},
+      timeout(opts)
+    )
+  end
+
+  @doc "Adopts a binding draft for one fully unused legacy session."
+  @spec adopt_binding_draft(GenServer.server(), Data.t(), non_neg_integer(), keyword()) ::
+          {:ok, Data.t()} | {:error, term()}
+  def adopt_binding_draft(server, %Data{} = session, expected_revision, opts \\ []) do
+    GenServer.call(
+      server,
+      {:adopt_binding_draft, session, expected_revision},
+      timeout(opts)
+    )
+  end
+
+  @doc "Commits the locked binding and first prompt event atomically."
+  @spec lock_first_prompt(
+          GenServer.server(),
+          Data.t(),
+          Event.t(),
+          String.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          keyword()
+        ) :: {:ok, map()} | {:error, term()}
+  def lock_first_prompt(
+        server,
+        %Data{} = session,
+        %Event{} = event,
+        operation_id,
+        expected_revision,
+        expected_generation,
+        opts \\ []
+      ) do
+    GenServer.call(
+      server,
+      {:lock_first_prompt, session, event, operation_id, expected_revision, expected_generation, event_opts(opts)},
+      timeout(opts)
+    )
+  end
+
+  @doc "Installs one runtime spec through the controlled locked path."
+  @spec install_runtime_spec(GenServer.server(), Data.t(), String.t(), String.t(), keyword()) ::
+          {:ok, Data.t()} | {:error, term()}
+  def install_runtime_spec(server, %Data{} = session, binding_digest, runtime_fingerprint, opts \\ []) do
+    GenServer.call(
+      server,
+      {:install_runtime_spec, session, binding_digest, runtime_fingerprint},
+      timeout(opts)
+    )
+  end
 
   @impl true
   def get_session(session_id, opts) when is_binary(session_id), do: call(opts, {:get_session, session_id})
@@ -222,6 +287,69 @@ defmodule Jido.Console.Storage.SQLite do
     {:reply, result, state}
   end
 
+  def handle_call(
+        {:put_binding_draft, %Data{} = session, expected_revision, expected_generation, opts},
+        _from,
+        state
+      ) do
+    result =
+      transaction(state.conn, fn ->
+        put_binding_draft_conn(
+          state.conn,
+          session,
+          expected_revision,
+          expected_generation,
+          opts
+        )
+      end)
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:adopt_binding_draft, %Data{} = session, expected_revision}, _from, state) do
+    result =
+      transaction(state.conn, fn ->
+        adopt_binding_draft_conn(state.conn, session, expected_revision)
+      end)
+
+    {:reply, result, state}
+  end
+
+  def handle_call(
+        {:lock_first_prompt, %Data{} = session, %Event{} = event, operation_id, expected_revision, expected_generation,
+         opts},
+        _from,
+        state
+      ) do
+    result =
+      transaction(state.conn, fn ->
+        lock_first_prompt_conn(
+          state.conn,
+          session,
+          event,
+          operation_id,
+          expected_revision,
+          expected_generation,
+          opts
+        )
+      end)
+
+    {:reply, result, state}
+  end
+
+  def handle_call(
+        {:install_runtime_spec, %Data{} = session, binding_digest, runtime_fingerprint},
+        _from,
+        state
+      ) do
+    result =
+      transaction(state.conn, fn ->
+        install_runtime_spec_conn(state.conn, session, binding_digest, runtime_fingerprint)
+      end)
+
+    {:reply, result, state}
+  end
+
   def handle_call({:get_session, session_id}, _from, state) do
     {:reply, load_session(state.conn, session_id), state}
   end
@@ -270,6 +398,7 @@ defmodule Jido.Console.Storage.SQLite do
   defp put_session_conn(conn, %Data{} = incoming) do
     with {:ok, current} <- load_optional_session(conn, incoming.session_id),
          {:ok, %Data{} = updated} <- Transitions.put(current, incoming),
+         :ok <- preserve_binding(current, updated),
          :ok <- persist_session(conn, updated) do
       {:ok, updated}
     end
@@ -278,9 +407,259 @@ defmodule Jido.Console.Storage.SQLite do
   defp transition_session_conn(conn, session_id, operation, opts) do
     with {:ok, %Data{} = current} <- load_session(conn, session_id),
          {:ok, %Data{} = updated} <- apply_transition(current, operation, opts),
+         :ok <- preserve_binding(current, updated),
          :ok <- persist_session(conn, updated) do
       {:ok, updated}
     end
+  end
+
+  defp put_binding_draft_conn(conn, %Data{} = incoming, expected_revision, expected_generation, opts) do
+    with {:ok, %Data{} = current} <- load_session(conn, incoming.session_id),
+         :ok <- fail_at(opts, :before_session_write),
+         :ok <- expected_revision(current, expected_revision),
+         {:ok, current_manifest} <- BindingManifest.fetch(current),
+         {:ok, incoming_manifest} <- BindingManifest.fetch(incoming),
+         :ok <- draft_generation(current_manifest, expected_generation),
+         :ok <- draft_generation(incoming_manifest, expected_generation + 1),
+         :ok <- require_lock_state(current_manifest, "draft"),
+         :ok <- require_lock_state(incoming_manifest, "draft"),
+         :ok <- draft_session_transition(current, incoming),
+         :ok <- persist_session(conn, incoming),
+         :ok <- fail_at(opts, :after_session_write) do
+      {:ok, incoming}
+    end
+  end
+
+  defp adopt_binding_draft_conn(conn, %Data{} = incoming, expected_revision) do
+    with {:ok, %Data{} = current} <- load_session(conn, incoming.session_id),
+         :ok <- expected_revision(current, expected_revision),
+         true <- current.revision == 0,
+         {:error, :binding_manifest_missing} <- BindingManifest.fetch(current),
+         :ok <- require_no_thread_events(conn, current.session_id),
+         {:ok, incoming_manifest} <- BindingManifest.fetch(incoming),
+         :ok <- require_lock_state(incoming_manifest, "draft"),
+         :ok <- draft_generation(incoming_manifest, 0),
+         :ok <- draft_session_transition(current, incoming),
+         :ok <- persist_session(conn, incoming) do
+      {:ok, incoming}
+    else
+      false -> {:error, :legacy_session_has_history}
+      {:ok, _manifest} -> {:error, :binding_manifest_already_present}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp lock_first_prompt_conn(
+         conn,
+         %Data{} = incoming,
+         %Event{} = event,
+         operation_id,
+         expected_revision,
+         expected_generation,
+         opts
+       ) do
+    with {:ok, %Data{} = current} <- load_session(conn, incoming.session_id),
+         {:ok, current_manifest} <- BindingManifest.fetch(current) do
+      case current_manifest["lock_state"] do
+        "locked" ->
+          locked_retry(conn, current, current_manifest, event, operation_id)
+
+        "draft" ->
+          commit_first_lock(
+            conn,
+            current,
+            current_manifest,
+            incoming,
+            event,
+            operation_id,
+            expected_revision,
+            expected_generation,
+            opts
+          )
+      end
+    end
+  end
+
+  defp commit_first_lock(
+         conn,
+         current,
+         current_manifest,
+         incoming,
+         event,
+         operation_id,
+         expected_revision,
+         expected_generation,
+         opts
+       ) do
+    with :ok <- fail_at(opts, :before_session_write),
+         :ok <- expected_revision(current, expected_revision),
+         :ok <- draft_generation(current_manifest, expected_generation),
+         {:ok, incoming_manifest} <- BindingManifest.fetch(incoming),
+         :ok <- require_lock_state(incoming_manifest, "locked"),
+         :ok <- locked_operation(incoming_manifest, operation_id),
+         :ok <- locked_session_transition(current, incoming),
+         :ok <- validate_first_prompt_event(event, incoming, incoming_manifest),
+         {:ok, nil} <- load_event_by_id(conn, event.id),
+         :ok <- persist_session(conn, incoming),
+         :ok <- fail_at(opts, :after_session_write),
+         :ok <- fail_at(opts, :before_event_write),
+         {:ok, %{event: stored, duplicate: false}} <- append_thread_event_conn(conn, event, opts),
+         :ok <- fail_at(opts, :after_event_write) do
+      {:ok, %{session: incoming, event: stored, duplicate: false}}
+    else
+      {:ok, %Event{}} -> {:error, {:binding_lock_integrity_failed, operation_id, :event_without_lock}}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp locked_retry(conn, current, manifest, event, operation_id) do
+    with :ok <- locked_operation(manifest, operation_id),
+         :ok <- validate_first_prompt_event(event, current, manifest),
+         {:ok, %Event{} = stored} <- load_event_by_id(conn, event.id),
+         true <- Event.identity(stored) == Event.identity(event) do
+      {:ok, %{session: current, event: stored, duplicate: true}}
+    else
+      {:ok, nil} -> {:error, {:binding_lock_integrity_failed, operation_id, :lock_without_event}}
+      false -> {:error, {:binding_lock_conflict, operation_id}}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp install_runtime_spec_conn(conn, %Data{} = incoming, binding_digest, runtime_fingerprint) do
+    with {:ok, %Data{} = current} <- load_session(conn, incoming.session_id),
+         {:ok, manifest} <- BindingManifest.fetch(current),
+         :ok <- require_lock_state(manifest, "locked"),
+         true <- manifest["binding_digest"] == binding_digest,
+         true <- manifest["runtime_definition_fingerprint"] == runtime_fingerprint,
+         :ok <- runtime_session_transition(current, incoming),
+         :ok <- persist_session(conn, incoming) do
+      {:ok, incoming}
+    else
+      false -> {:error, :runtime_binding_evidence_mismatch}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp preserve_binding(nil, %Data{}), do: :ok
+
+  defp preserve_binding(%Data{} = current, %Data{} = incoming) do
+    case {BindingManifest.fetch(current), BindingManifest.fetch(incoming)} do
+      {{:error, :binding_manifest_missing}, {:error, :binding_manifest_missing}} ->
+        :ok
+
+      {{:ok, current_manifest}, {:ok, incoming_manifest}} ->
+        if current_manifest == incoming_manifest and current.spec == incoming.spec,
+          do: :ok,
+          else: {:error, :locked_binding_mutation_forbidden}
+
+      _other ->
+        {:error, :locked_binding_mutation_forbidden}
+    end
+  end
+
+  defp expected_revision(%Data{revision: revision}, revision), do: :ok
+
+  defp expected_revision(%Data{revision: revision}, expected),
+    do: {:error, {:stale_binding_revision, expected, revision}}
+
+  defp draft_generation(%{"draft_generation" => generation}, generation), do: :ok
+
+  defp draft_generation(%{"draft_generation" => generation}, expected),
+    do: {:error, {:stale_binding_generation, expected, generation}}
+
+  defp require_lock_state(%{"lock_state" => state}, state), do: :ok
+  defp require_lock_state(_manifest, state), do: {:error, {:invalid_binding_lock_state, state}}
+
+  defp locked_operation(
+         %{"lock_operation_id" => operation_id, "first_prompt_command_digest" => digest},
+         operation_id
+       )
+       when is_binary(digest),
+       do: :ok
+
+  defp locked_operation(_manifest, operation_id),
+    do: {:error, {:binding_lock_conflict, operation_id}}
+
+  defp draft_session_transition(current, incoming) do
+    with true <- unused_session?(current),
+         true <- incoming.revision == current.revision + 1,
+         true <- same_session_except_binding?(current, incoming) do
+      :ok
+    else
+      false -> {:error, :invalid_binding_draft_transition}
+    end
+  end
+
+  defp locked_session_transition(current, incoming) do
+    with true <- unused_session?(current),
+         true <- incoming.revision == current.revision + 1,
+         true <- current.spec == incoming.spec,
+         true <- same_session_except_binding?(current, incoming) do
+      :ok
+    else
+      false -> {:error, :invalid_binding_lock_transition}
+    end
+  end
+
+  defp runtime_session_transition(current, incoming) do
+    with true <- current.revision == incoming.revision,
+         true <- current.agent_id == incoming.agent_id,
+         true <- current.metadata == incoming.metadata,
+         true <- Map.delete(Map.from_struct(current), :spec) == Map.delete(Map.from_struct(incoming), :spec) do
+      :ok
+    else
+      false -> {:error, :invalid_runtime_spec_install}
+    end
+  end
+
+  defp same_session_except_binding?(current, incoming) do
+    comparable = fn session ->
+      session
+      |> Map.from_struct()
+      |> Map.drop([:agent_id, :metadata, :revision, :spec])
+    end
+
+    unrelated_metadata = fn session -> Map.delete(session.metadata, BindingManifest.metadata_key()) end
+
+    comparable.(current) == comparable.(incoming) and
+      unrelated_metadata.(current) == unrelated_metadata.(incoming)
+  end
+
+  defp unused_session?(%Data{} = session) do
+    Legacy.unused?(session)
+  end
+
+  defp require_no_thread_events(conn, session_id) do
+    case query(conn, "SELECT COUNT(*) FROM thread_events WHERE thread_id=?", [session_id]) do
+      {:ok, [[0]]} -> :ok
+      {:ok, [[_count]]} -> {:error, :legacy_session_has_events}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp validate_first_prompt_event(%Event{} = event, %Data{} = session, manifest) do
+    expected_operation_id =
+      Enum.join([session.session_id, event.queue_item_id, "binding-lock"], ":")
+
+    with true <- event.session_id == session.session_id,
+         true <- event.type == "prompt_queued",
+         true <- event.jidoka_revision == session.revision,
+         true <- manifest["lock_operation_id"] == expected_operation_id,
+         true <- event.payload["lock_operation_id"] == manifest["lock_operation_id"],
+         true <- event.payload["binding_digest"] == manifest["binding_digest"],
+         true <-
+           event.payload["first_prompt_command_digest"] ==
+             manifest["first_prompt_command_digest"] do
+      :ok
+    else
+      false -> {:error, {:binding_lock_conflict, manifest["lock_operation_id"]}}
+    end
+  end
+
+  defp fail_at(opts, stage) do
+    if Keyword.get(opts, :failure_stage) == stage,
+      do: {:error, {:injected_storage_failure, stage}},
+      else: :ok
   end
 
   defp apply_transition(session, {:claim, request}, opts), do: Transitions.claim(session, request, opts)
@@ -709,7 +1088,8 @@ defmodule Jido.Console.Storage.SQLite do
          {:ok, rows} <- all_event_rows(conn),
          {:ok, events} <- decode_event_rows(rows, []),
          :ok <- verify_event_sequences(events),
-         :ok <- verify_event_lifecycles(events) do
+         :ok <- verify_event_lifecycles(events),
+         :ok <- verify_binding_integrity(sessions, events) do
       {:ok, %{integrity: :ok, tables: 2, sessions: length(sessions), thread_events: length(events)}}
     else
       {:ok, value} -> {:error, {:sqlite_integrity_failed, value}}
@@ -760,6 +1140,58 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   defp replay_lifecycle([], _lifecycle), do: :ok
+
+  defp verify_binding_integrity(sessions, events) do
+    events_by_thread = Enum.group_by(events, & &1.session_id)
+
+    Enum.reduce_while(sessions, :ok, fn session, :ok ->
+      case verify_session_binding(session, Map.get(events_by_thread, session.session_id, [])) do
+        :ok -> {:cont, :ok}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp verify_session_binding(session, events) do
+    case BindingManifest.fetch(session) do
+      {:error, :binding_manifest_missing} ->
+        if Enum.any?(events, &is_binary(&1.payload["lock_operation_id"])),
+          do: {:error, {:binding_lock_integrity_failed, session.session_id, :event_without_manifest}},
+          else: :ok
+
+      {:error, reason} ->
+        {:error, {:binding_manifest_integrity_failed, session.session_id, reason}}
+
+      {:ok, %{"lock_state" => "draft"} = manifest} ->
+        with true <- session.agent_id == get_in(manifest, ["source", "agent_id"]),
+             true <- draft_spec_digest(session) == manifest["bound_spec_digest"],
+             false <- Enum.any?(events, &is_binary(&1.payload["lock_operation_id"])) do
+          :ok
+        else
+          _invalid -> {:error, {:binding_manifest_integrity_failed, session.session_id, :draft}}
+        end
+
+      {:ok, %{"lock_state" => "locked"} = manifest} ->
+        matches =
+          Enum.filter(events, fn event ->
+            event.type == "prompt_queued" and
+              event.payload["lock_operation_id"] == manifest["lock_operation_id"] and
+              event.payload["binding_digest"] == manifest["binding_digest"] and
+              event.payload["first_prompt_command_digest"] ==
+                manifest["first_prompt_command_digest"]
+          end)
+
+        if session.agent_id == get_in(manifest, ["source", "agent_id"]) and length(matches) == 1,
+          do: :ok,
+          else: {:error, {:binding_lock_integrity_failed, session.session_id, :operation_pair}}
+    end
+  end
+
+  defp draft_spec_digest(session) do
+    Digest.semantic(:agent_bound_spec, Jidoka.project(session.spec))
+  rescue
+    _exception -> nil
+  end
 
   defp configure(conn) do
     with :ok <- Sqlite3.execute(conn, "PRAGMA journal_mode=WAL"),
@@ -820,6 +1252,9 @@ defmodule Jido.Console.Storage.SQLite do
         {["sessions", "thread_events"], @store_version} ->
           {:ok, :current}
 
+        {["sessions", "thread_events"], @previous_store_version} ->
+          {:ok, :upgrade_previous}
+
         {tables, version} ->
           if "events" in tables or "operations" in tables,
             do: {:error, {:storage_schema_reset_required, path, version, tables}},
@@ -835,6 +1270,16 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   defp bootstrap(_conn, :current), do: :ok
+
+  defp bootstrap(conn, :upgrade_previous) do
+    with {:ok, [["ok"]]} <- query(conn, "PRAGMA integrity_check", []),
+         {:ok, []} <- query(conn, "PRAGMA foreign_key_check", []) do
+      Sqlite3.execute(conn, "PRAGMA user_version=#{@store_version}")
+    else
+      {:ok, value} -> {:error, {:sqlite_integrity_failed, value}}
+      {:error, _reason} = error -> error
+    end
+  end
 
   defp preserve_legacy_store(path, version) do
     backup = path <> ".schema-#{version}-backup"
@@ -1199,7 +1644,7 @@ defmodule Jido.Console.Storage.SQLite do
     end
   end
 
-  defp event_opts(opts), do: Keyword.take(opts, [:clock])
+  defp event_opts(opts), do: Keyword.take(opts, [:clock, :failure_stage])
 
   defp transition_opts(opts) do
     opts

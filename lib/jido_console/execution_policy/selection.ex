@@ -5,26 +5,24 @@ defmodule Jido.Console.ExecutionPolicy.Selection do
   alias Jido.Console.ExecutionPolicy.{Consent, Record, Registry}
   alias Jidoka.ExecutionEnvironment
 
-  @enforce_keys [
-    :state,
-    :execution_policy_id,
-    :record,
-    :jidoka_selection,
-    :origin,
-    :evidence
-  ]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              state: Zoi.any(),
+              execution_policy_id: Zoi.any(),
+              record: Zoi.any(),
+              jidoka_selection: Zoi.any(),
+              origin: Zoi.any(),
+              direct_choice: Zoi.any() |> Zoi.default(nil),
+              workspace: Zoi.any() |> Zoi.default(nil),
+              evidence: Zoi.any(),
+              warning: Zoi.any() |> Zoi.default(nil)
+            },
+            unrecognized_keys: :error
+          )
 
-  defstruct [
-    :state,
-    :execution_policy_id,
-    :record,
-    :jidoka_selection,
-    :origin,
-    :direct_choice,
-    :workspace,
-    :evidence,
-    :warning
-  ]
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           state: :selected,

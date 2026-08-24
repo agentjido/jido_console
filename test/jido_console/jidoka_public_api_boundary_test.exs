@@ -39,6 +39,7 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
       "Jidoka.Session.Sequence.Request",
       "Jidoka.Session.Store",
       "Jidoka.Session.Transitions",
+      "Jidoka.Memory.Store.InMemory",
       "Jidoka.Snapshot"
     ]
 

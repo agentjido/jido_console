@@ -51,7 +51,7 @@ defmodule Jido.Console.Session.ThreadResources do
        memory_store_pid: nil,
        runtime_definition_fingerprint: binding.runtime_definition_fingerprint,
        runtime_opts: [],
-       options: opts
+       options: Keyword.put(opts, :model, binding.model_id)
      }}
   end
 

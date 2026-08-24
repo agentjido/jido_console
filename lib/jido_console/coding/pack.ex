@@ -17,8 +17,14 @@ defmodule Jido.Console.Coding.Pack do
     Jidoka.CodingPack.Verify
   ]
 
-  @enforce_keys [:id, :state, :request]
-  defstruct [:id, :state, :request]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{id: Zoi.any(), state: Zoi.any(), request: Zoi.any()},
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           id: String.t() | nil,

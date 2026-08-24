@@ -19,8 +19,9 @@ defmodule Jido.Console.ExecutionPolicy.Registry do
   @maximum_limits %{"wall_time_ms" => 120_000, "output_bytes" => 262_144}
   @capability_ids ["shell.execute"]
 
-  @enforce_keys [:records]
-  defstruct [:records]
+  @schema Zoi.struct(__MODULE__, %{records: Zoi.any()}, unrecognized_keys: :error)
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{records: %{String.t() => Record.t()}}
 

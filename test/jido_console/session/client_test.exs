@@ -144,7 +144,7 @@ defmodule Jido.Console.Session.ClientTest do
     assert {:error, :invalid_command} = Client.select_model(handle, "ollama")
   end
 
-  test "replacement owner resets to the configured default model", %{opts: opts, registry: registry} do
+  test "replacement owner restores the durable selected model", %{opts: opts, registry: registry} do
     opts = Keyword.put(opts, :model, "openai:gpt-4.1-mini")
     {:ok, %{handle: handle}} = Client.attach("replacement-model", opts)
     assert {:ok, _selected} = Client.select_model(handle, "ollama:llama3.2")
@@ -155,7 +155,7 @@ defmodule Jido.Console.Session.ClientTest do
     assert_receive {:DOWN, ^monitor, :process, ^owner, :killed}
 
     assert {:ok, %View{model: model}} = Client.status(handle)
-    assert model == %{"identity" => "openai:gpt-4.1-mini", "tier" => "supported", "locked" => false}
+    assert model == %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => false}
   end
 
   test "concurrent selection and submit use one serialized model outcome", %{opts: opts} do

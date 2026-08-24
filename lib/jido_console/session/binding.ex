@@ -17,25 +17,30 @@ defmodule Jido.Console.Session.Binding do
   @direct_model_origins [:cli, :api, :tui]
   @reserved_context ["jido_console", "coding"]
 
-  @enforce_keys [
-    :source,
-    :base_spec,
-    :bound_spec,
-    :base_spec_digest,
-    :bound_spec_digest,
-    :pack,
-    :model_id,
-    :model_origin,
-    :execution_policy,
-    :workspace,
-    :workspace_configuration,
-    :workspace_configuration_digest,
-    :runtime_definition,
-    :runtime_definition_fingerprint,
-    :safe_context
-  ]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              source: Zoi.any(),
+              base_spec: Zoi.any(),
+              bound_spec: Zoi.any(),
+              base_spec_digest: Zoi.any(),
+              bound_spec_digest: Zoi.any(),
+              pack: Zoi.any(),
+              model_id: Zoi.any(),
+              model_origin: Zoi.any(),
+              execution_policy: Zoi.any(),
+              workspace: Zoi.any(),
+              workspace_configuration: Zoi.any(),
+              workspace_configuration_digest: Zoi.any(),
+              runtime_definition: Zoi.any(),
+              runtime_definition_fingerprint: Zoi.any(),
+              safe_context: Zoi.any()
+            },
+            unrecognized_keys: :error
+          )
 
-  defstruct @enforce_keys
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type model_origin :: :agent_spec | :cli | :api | :tui
   @type t :: %__MODULE__{

@@ -3,8 +3,20 @@ defmodule Jido.Console.Session.Thread do
 
   alias Jido.Console.Error
   alias Jido.Console.Models
-  alias Jido.Console.Models.Commands, as: ModelCommands
-  alias Jido.Console.Session.{Command, Event, JidokaBridge, Queue, Recovery, ThreadResources, View}
+
+  alias Jido.Console.Session.{
+    BindingManifest,
+    BindingRequest,
+    Command,
+    Event,
+    JidokaBridge,
+    Queue,
+    Recovery,
+    Selection,
+    ThreadResources,
+    View
+  }
+
   alias Jido.Console.Storage
   alias Jidoka.Session.{Data, Store}
 
@@ -16,46 +28,17 @@ defmodule Jido.Console.Session.Thread do
     storage_opts = Keyword.take(opts, [:writer, :deadline])
     store = Keyword.get(opts, :store, Storage.session_store(storage_opts))
 
-    with {:ok, resources} <- resources_module.new(thread_id, Keyword.get(opts, :agent, Jido.Console.DefaultAgent), opts),
-         {:ok, model_catalog, model} <- initial_model(opts),
-         {:ok, resources} <- configure_resources(resources_module, resources, model.identity),
-         {:ok, session} <- ensure_session(thread_id, resources_module.base_spec(resources), store),
-         {:ok, open} <- Storage.open_thread_items(thread_id, storage_opts),
-         {:ok, session, status, wake_at} <-
-           Recovery.reconcile(thread_id, session, open, store, storage_opts, now_ms(opts)),
-         {:ok, history} <- Storage.thread_events(thread_id, storage_opts) do
-      state = %{
-        thread_id: thread_id,
-        store: store,
-        storage_opts: storage_opts,
-        task_supervisor: Keyword.get(opts, :tasks, Jido.Console.Session.TaskSupervisor),
-        bridge_module: Keyword.get(opts, :bridge_module, JidokaBridge),
-        resources_module: resources_module,
-        resources: resources,
-        model_catalog: model_catalog,
-        model: model,
-        model_locked?: false,
-        options: opts,
-        status: status,
-        session: session,
-        history: history.events,
-        history_truncated?: history.history_truncated?,
-        queue: Queue.new(Keyword.get(opts, :queue_limit, 32)),
-        active: nil,
-        bridge: nil,
-        partial: [],
-        partial_publish_ref: nil,
-        partial_publish_token: nil,
-        partial_publish_run_ref: nil,
-        review: nil,
-        subscribers: %{},
-        monitors: %{},
-        revision: 0,
-        wake_ref: nil,
-        error: nil
-      }
+    case Store.get_session(store, thread_id) do
+      {:ok, %Data{} = session} ->
+        with {:ok, history} <- Storage.thread_events(thread_id, storage_opts) do
+          init_existing(session, history, resources_module, store, storage_opts, opts)
+        end
 
-      {:ok, schedule_recovery(state, wake_at)}
+      {:error, {:session_not_found, ^thread_id}} ->
+        init_new(thread_id, resources_module, store, storage_opts, opts)
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -65,7 +48,12 @@ defmodule Jido.Console.Session.Thread do
   def command(%Command{type: :cancel} = command, state), do: cancel(command, state)
   def command(%Command{type: type} = command, state) when type in [:approve, :deny], do: decide(command, state)
   def command(%Command{type: :remove} = command, state), do: remove(command, state)
+  def command(%Command{type: :select_agent} = command, state), do: select_agent(command, state)
   def command(%Command{type: :select_model} = command, state), do: select_model(command, state)
+
+  def command(%Command{type: :select_execution_policy} = command, state),
+    do: select_execution_policy(command, state)
+
   def command(%Command{type: :status}, state), do: {:reply, {:ok, View.from_thread(state)}, state}
 
   def command(%Command{type: :history, payload: payload}, state) do
@@ -77,13 +65,19 @@ defmodule Jido.Console.Session.Thread do
     {:reply, Storage.thread_events(state.thread_id, state.storage_opts ++ opts), state}
   end
 
+  @doc "Checks one attach request against the authoritative owner selection."
+  @spec attach_request(map(), BindingRequest.t()) :: :ok | {:error, term()}
+  def attach_request(%{selection: %Selection{} = selection}, %BindingRequest{} = request),
+    do: Selection.match_request(selection, request)
+
   @doc "Starts the active prompt after resource preparation."
   @spec start_active(map()) :: map()
   def start_active(state) do
     module = state.resources_module
 
-    with {:ok, resources, session} <- module.prepare(state.resources, state.session),
-         {:ok, session} <- Store.put_session(state.store, session),
+    with :ok <- require_locked_binding(state),
+         {:ok, resources, session} <- module.prepare(state.resources, state.session),
+         {:ok, session} <- persist_runtime_session(state, resources, session),
          {:ok, prompt, context} <- module.prepare_prompt(resources, state.active.text, state.active.context) do
       state = %{state | resources: resources, session: session}
       start_bridge(%{state | active: %{state.active | text: prompt, context: context}}, :prompt, nil)
@@ -178,6 +172,10 @@ defmodule Jido.Console.Session.Thread do
 
   @doc "Re-runs the durable recovery barrier."
   @spec reconcile(map()) :: {:ok, map()} | {:error, term(), map()}
+  def reconcile(%{pending_lock: pending} = state) when not is_nil(pending) do
+    reconcile_pending_lock(state, pending)
+  end
+
   def reconcile(state) do
     now = now_ms(state.options)
 
@@ -201,14 +199,309 @@ defmodule Jido.Console.Session.Thread do
     end
   end
 
+  defp reconcile_pending_lock(state, pending) do
+    with {:ok, session} <- Store.get_session(state.store, state.thread_id),
+         {:ok, events} <-
+           Storage.request_events(state.thread_id, pending.item.request_id, state.storage_opts) do
+      manifest = BindingManifest.fetch(session)
+      queued = Enum.find(events, &(&1.id == pending.event.id))
+
+      case {manifest, queued} do
+        {{:ok, stored_manifest}, %Event{} = event}
+        when stored_manifest == pending.selection.manifest ->
+          if Event.identity(event) == Event.identity(pending.event) do
+            case Storage.thread_events(state.thread_id, state.storage_opts) do
+              {:ok, history} ->
+                state =
+                  state
+                  |> install_locked_selection(pending.selection, session)
+                  |> Map.merge(%{
+                    active: pending.item,
+                    status: :idle,
+                    history: history.events,
+                    history_truncated?: history.history_truncated?
+                  })
+                  |> View.publish()
+
+                send(self(), :start_active)
+                {:ok, state}
+
+              {:error, reason} ->
+                {:error, reason, state}
+            end
+          else
+            {:error, {:binding_lock_integrity_failed, pending.operation_id}, state}
+          end
+
+        {{:ok, %{"lock_state" => "draft"}}, nil} ->
+          {:ok, View.publish(%{state | pending_lock: nil, status: :idle, error: nil})}
+
+        _other ->
+          {:error, {:binding_lock_integrity_failed, pending.operation_id}, state}
+      end
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
   @doc "Closes resources owned by this thread."
   @spec close(map()) :: term()
+  def close(%{resources: nil}), do: :ok
   def close(state), do: state.resources_module.close(state.resources)
 
   @doc "Moves the thread to an unavailable state and publishes its View."
   @spec unavailable(map(), term()) :: map()
   def unavailable(state, reason),
     do: View.publish(%{state | status: :unavailable, error: Event.json(Error.to_map(reason))})
+
+  defp init_new(thread_id, resources_module, store, storage_opts, opts) do
+    opts = Keyword.put(opts, :thread_id, thread_id)
+
+    with {:ok, selection} <- Selection.new(opts),
+         {:ok, session, persisted?} <- new_session(selection, thread_id, store),
+         {:ok, resources} <- new_resources(resources_module, selection, thread_id, opts),
+         {:ok, model_catalog, model} <- model_catalog(selection, opts) do
+      state =
+        base_state(
+          thread_id,
+          resources_module,
+          resources,
+          store,
+          storage_opts,
+          opts,
+          selection,
+          session,
+          [],
+          false,
+          model_catalog,
+          model
+        )
+
+      {:ok, %{state | session_persisted?: persisted?}}
+    else
+      {:error, %{__exception__: true} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        if model_configuration_reason?(reason) do
+          {:error,
+           Error.config_error("Unable to configure the session model", %{
+             source: :model_catalog,
+             reason: inspect(reason)
+           })}
+        else
+          {:error, reason}
+        end
+    end
+  end
+
+  defp init_existing(session, history, resources_module, store, storage_opts, opts) do
+    opts = Keyword.put(opts, :thread_id, session.session_id)
+
+    resume_opts =
+      Keyword.put(opts, :legacy_events_present?, history.events != [])
+
+    case Selection.resume(session, resume_opts) do
+      {:ok, selection} ->
+        init_resumable(session, selection, resources_module, store, storage_opts, opts)
+
+      {:rebind, selection} ->
+        with {:ok, incoming} <- Selection.put_draft(selection, session),
+             {:ok, adopted} <-
+               Storage.adopt_binding_draft(incoming, session.revision, storage_opts) do
+          init_resumable(adopted, selection, resources_module, store, storage_opts, opts)
+        end
+
+      {:blocked, selection} ->
+        init_blocked(session, history, selection, resources_module, store, storage_opts, opts)
+    end
+  end
+
+  defp init_resumable(session, selection, resources_module, store, storage_opts, opts) do
+    with {:ok, resources} <- new_resources(resources_module, selection, session.session_id, opts),
+         {:ok, model_catalog, model} <- model_catalog(selection, opts),
+         {:ok, open} <- Storage.open_thread_items(session.session_id, storage_opts),
+         {:ok, session, status, wake_at, active, queue} <-
+           recover_owner_queue(selection, session, open, store, storage_opts, opts),
+         {:ok, history} <- Storage.thread_events(session.session_id, storage_opts) do
+      state =
+        base_state(
+          session.session_id,
+          resources_module,
+          resources,
+          store,
+          storage_opts,
+          opts,
+          selection,
+          session,
+          history.events,
+          history.history_truncated?,
+          model_catalog,
+          model
+        )
+        |> Map.merge(%{status: status, active: active, queue: queue, session_persisted?: true})
+        |> schedule_recovery(wake_at)
+
+      if active && status == :idle, do: send(self(), :start_active)
+      {:ok, state}
+    end
+  end
+
+  defp init_blocked(session, history, selection, resources_module, store, storage_opts, opts) do
+    state =
+      base_state(
+        session.session_id,
+        resources_module,
+        nil,
+        store,
+        storage_opts,
+        opts,
+        selection,
+        session,
+        history.events,
+        history.history_truncated?,
+        [],
+        nil
+      )
+
+    {:ok,
+     %{
+       state
+       | status: :unavailable,
+         session_persisted?: true,
+         error: Event.json(Error.to_map({:resume_blocked, selection.blocked_reason}))
+     }}
+  end
+
+  defp base_state(
+         thread_id,
+         resources_module,
+         resources,
+         store,
+         storage_opts,
+         opts,
+         selection,
+         session,
+         history,
+         history_truncated?,
+         model_catalog,
+         model
+       ) do
+    %{
+      thread_id: thread_id,
+      store: store,
+      storage_opts: storage_opts,
+      task_supervisor: Keyword.get(opts, :tasks, Jido.Console.Session.TaskSupervisor),
+      bridge_module: Keyword.get(opts, :bridge_module, JidokaBridge),
+      resources_module: resources_module,
+      resources: resources,
+      selection: selection,
+      binding_state: Selection.state(selection),
+      session_persisted?: false,
+      pending_lock: nil,
+      model_catalog: model_catalog,
+      model: model,
+      model_locked?: Selection.locked?(selection),
+      options: opts,
+      status: if(Selection.state(selection) == :resume_blocked, do: :unavailable, else: :idle),
+      session: session,
+      history: history,
+      history_truncated?: history_truncated?,
+      queue: Queue.new(Keyword.get(opts, :queue_limit, 32)),
+      active: nil,
+      bridge: nil,
+      partial: [],
+      partial_publish_ref: nil,
+      partial_publish_token: nil,
+      partial_publish_run_ref: nil,
+      review: nil,
+      subscribers: %{},
+      monitors: %{},
+      revision: 0,
+      wake_ref: nil,
+      error: nil
+    }
+  end
+
+  defp new_session(%Selection{state: :ready_unlocked} = selection, thread_id, store) do
+    with {:ok, session} <- Selection.start_session(selection, thread_id),
+         {:ok, session} <- Store.put_session(store, session) do
+      {:ok, session, true}
+    end
+  end
+
+  defp new_session(%Selection{source: source}, thread_id, _store) when not is_nil(source) do
+    with {:ok, session} <- Data.start(source.base_spec, session_id: thread_id) do
+      {:ok, session, false}
+    end
+  end
+
+  defp new_resources(_module, %Selection{state: :resume_blocked}, _thread_id, _opts),
+    do: {:ok, nil}
+
+  defp new_resources(module, %Selection{} = selection, thread_id, opts) do
+    input =
+      cond do
+        selection.binding && module == ThreadResources -> selection.binding
+        selection.binding -> selection.binding.bound_spec
+        selection.source -> selection.source.base_spec
+        true -> Jido.Console.Agents.Default
+      end
+
+    with {:ok, resources} <- module.new(thread_id, input, opts) do
+      configure_legacy_resources(module, resources, selection)
+    end
+  end
+
+  defp configure_legacy_resources(ThreadResources, resources, _selection), do: {:ok, resources}
+
+  defp configure_legacy_resources(module, resources, %Selection{binding: binding})
+       when not is_nil(binding) do
+    configure_resources(module, resources, binding.model_id)
+  end
+
+  defp configure_legacy_resources(_module, resources, _selection), do: {:ok, resources}
+
+  defp model_catalog(%Selection{} = selection, opts) do
+    with {:ok, entries} <- Models.list(opts) do
+      identity = selected_model_identity(selection)
+      model = if identity, do: Enum.find(entries, &(&1.identity == identity))
+
+      cond do
+        selection.binding && is_nil(model) -> {:error, {:stored_model_unavailable, identity}}
+        true -> {:ok, entries, model}
+      end
+    else
+      {:error, %{__exception__: true} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error,
+         Error.config_error("Unable to configure the session model", %{
+           source: :model_catalog,
+           reason: inspect(reason)
+         })}
+    end
+  end
+
+  defp selected_model_identity(%Selection{binding: binding}) when not is_nil(binding),
+    do: binding.model_id
+
+  defp selected_model_identity(%Selection{model_choice: %{id: id}}), do: id
+  defp selected_model_identity(%Selection{}), do: nil
+
+  defp recover_owner_queue(_selection, session, open, _store, _storage_opts, opts),
+    do: recover_normally(session, open, opts)
+
+  defp recover_normally(session, open, opts) do
+    store = Keyword.get(opts, :store, Storage.session_store(Keyword.take(opts, [:writer, :deadline])))
+    storage_opts = Keyword.take(opts, [:writer, :deadline])
+
+    with {:ok, session, status, wake_at} <-
+           Recovery.reconcile(session.session_id, session, open, store, storage_opts, now_ms(opts)) do
+      {:ok, session, status, wake_at, nil, Queue.new(Keyword.get(opts, :queue_limit, 32))}
+    end
+  end
 
   defp submit(command, state) do
     digest = Command.digest(command)
@@ -221,15 +514,36 @@ defmodule Jido.Console.Session.Thread do
       nil ->
         if state.active && Queue.full?(state.queue),
           do: retry_closed_or_full(command, digest, state),
-          else: accept_new(item, state)
+          else: accept_new(command, item, state)
 
       _conflict ->
         {:reply, {:error, :command_conflict}, state}
     end
   end
 
-  defp accept_new(item, state) do
-    queued = Event.for_item(state, item, "prompt_queued", %{"input" => item.text, "command_digest" => item.digest})
+  defp accept_new(_command, _item, %{binding_state: :needs_model} = state),
+    do: {:reply, {:error, :binding_needs_model}, state}
+
+  defp accept_new(_command, _item, %{binding_state: :needs_policy} = state),
+    do: {:reply, {:error, :binding_needs_execution_policy}, state}
+
+  defp accept_new(_command, _item, %{binding_state: :resume_blocked} = state),
+    do: {:reply, {:error, {:resume_blocked, state.selection.blocked_reason}}, state}
+
+  defp accept_new(command, item, %{binding_state: :ready_unlocked} = state),
+    do: accept_first(command, item, state)
+
+  defp accept_new(_command, item, %{binding_state: :locked} = state),
+    do: accept_locked(item, state)
+
+  defp accept_locked(item, state) do
+    queued =
+      Event.for_item(state, item, "prompt_queued", %{
+        "input" => item.text,
+        "context" => Event.json(item.context),
+        "command_digest" => item.digest,
+        "binding_digest" => state.selection.manifest["binding_digest"]
+      })
 
     case append_event(state, queued) do
       {:ok, state, %{duplicate: true}} ->
@@ -257,6 +571,96 @@ defmodule Jido.Console.Session.Thread do
       {:error, reason, state} ->
         {:reply, {:error, reason}, state}
     end
+  end
+
+  defp accept_first(command, item, state) do
+    draft_manifest = state.selection.manifest
+    operation_id = Command.lock_operation_id(command)
+    command_digest = Command.first_lock_digest(command, draft_manifest["binding_digest"])
+
+    with {:ok, locked_selection} <- Selection.lock(state.selection, operation_id, command_digest),
+         locked_session = %{state.session | revision: state.session.revision + 1},
+         {:ok, locked_session} <- BindingManifest.put(locked_session, locked_selection.manifest),
+         event =
+           Event.for_item(
+             state,
+             item,
+             "prompt_queued",
+             %{
+               "input" => item.text,
+               "context" => Event.json(item.context),
+               "command_digest" => item.digest,
+               "binding_digest" => locked_selection.manifest["binding_digest"],
+               "lock_operation_id" => operation_id,
+               "first_prompt_command_digest" => command_digest
+             },
+             locked_session.revision
+           ) do
+      case Storage.lock_first_prompt(
+             locked_session,
+             event,
+             operation_id,
+             state.session.revision,
+             state.selection.generation,
+             state.storage_opts
+           ) do
+        {:ok, %{session: session, event: stored, duplicate: duplicate}} ->
+          state =
+            state
+            |> install_locked_selection(locked_selection, session)
+            |> add_history(stored)
+            |> Map.merge(%{active: item, status: :idle})
+            |> View.publish()
+
+          send(self(), :start_active)
+          {:reply, {:ok, Command.acceptance(item, duplicate, state)}, state}
+
+        {:error, {kind, ^operation_id} = reason} when kind in [:timeout_unknown, :write_unknown] ->
+          pending = %{
+            operation_id: operation_id,
+            command: command,
+            item: item,
+            event: event,
+            selection: locked_selection,
+            session: locked_session
+          }
+
+          state =
+            state
+            |> Map.merge(%{pending_lock: pending, status: :reconciling, error: Event.json(Error.to_map(reason))})
+            |> View.publish()
+
+          {:reply, {:error, reason}, state}
+
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
+      end
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp install_locked_selection(state, selection, session) do
+    %{
+      state
+      | selection: selection,
+        binding_state: :locked,
+        session: session,
+        session_persisted?: true,
+        model_locked?: true,
+        pending_lock: nil,
+        error: nil
+    }
+  end
+
+  defp add_history(state, %Event{} = stored) do
+    history = Enum.take((state.history ++ [stored]) |> Enum.reverse(), 200) |> Enum.reverse()
+
+    %{
+      state
+      | history: history,
+        history_truncated?: state.history_truncated? or length(state.history) + 1 > 200
+    }
   end
 
   defp retry_closed_or_full(command, digest, state),
@@ -342,7 +746,7 @@ defmodule Jido.Console.Session.Thread do
     end
   end
 
-  defp select_model(_command, %{model_locked?: true} = state) do
+  defp select_model(_command, %{binding_state: :locked} = state) do
     error =
       Error.validation_error("Model selection is locked after the first prompt is accepted", %{
         source: :session_model
@@ -352,19 +756,131 @@ defmodule Jido.Console.Session.Thread do
   end
 
   defp select_model(%Command{text: identity}, state) do
-    with %{tier: declared_tier} when declared_tier in [:supported, :beta] <-
-           Enum.find(state.model_catalog, &(&1.identity == identity)),
-         {:ok, provider, model} <- ModelCommands.parse_identity(identity),
-         {:ok, %{tier: validated_tier} = entry} when validated_tier in [:supported, :beta] <-
-           Models.show(provider, model, state.options),
-         {:ok, resources} <- configure_resources(state.resources_module, state.resources, identity) do
-      state = View.publish(%{state | resources: resources, model: entry})
-      {:reply, {:ok, model_projection(entry, state.model_locked?)}, state}
-    else
-      {:error, %_{} = error} -> {:reply, {:error, error}, state}
+    case Selection.select_model(state.selection, identity, :tui) do
+      {:ok, selection} -> persist_selection(state, selection, :model)
       {:error, reason} -> {:reply, {:error, model_selection_error(identity, reason)}, state}
-      _other -> {:reply, {:error, model_selection_error(identity, :not_selectable)}, state}
     end
+  end
+
+  defp select_agent(%Command{}, %{binding_state: :locked} = state),
+    do: {:reply, {:error, :binding_locked}, state}
+
+  defp select_agent(%Command{text: source}, state) do
+    case Selection.select_agent(state.selection, source) do
+      {:ok, selection} -> persist_selection(state, selection)
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp select_execution_policy(
+         %Command{},
+         %{binding_state: :locked} = state
+       ),
+       do: {:reply, {:error, :binding_locked}, state}
+
+  defp select_execution_policy(%Command{text: id, payload: payload}, state) do
+    root = Map.get(payload, "project_root", Map.get(payload, :project_root))
+
+    case Selection.select_execution_policy(state.selection, id, root, :tui) do
+      {:ok, selection} -> persist_selection(state, selection)
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp persist_selection(state, selection, reply_kind \\ :binding)
+
+  defp persist_selection(state, %Selection{state: :ready_unlocked} = selection, reply_kind) do
+    expected_revision = state.session.revision
+    expected_generation = persisted_generation(state)
+
+    with {:ok, session, persisted?} <- persist_ready_selection(state, selection),
+         {:ok, resources} <- new_resources(state.resources_module, selection, state.thread_id, state.options),
+         {:ok, model_catalog, model} <- model_catalog(selection, state.options) do
+      close_replaced_resources(state)
+
+      state =
+        View.publish(%{
+          state
+          | selection: selection,
+            binding_state: :ready_unlocked,
+            session: session,
+            session_persisted?: persisted?,
+            resources: resources,
+            model_catalog: model_catalog,
+            model: model,
+            error: nil
+        })
+
+      reply =
+        case reply_kind do
+          :model ->
+            model_projection(model, false)
+
+          :binding ->
+            %{
+              "binding_state" => "ready_unlocked",
+              "binding" => Selection.safe_projection(selection),
+              "previous_revision" => expected_revision,
+              "previous_generation" => expected_generation
+            }
+        end
+
+      {:reply, {:ok, reply}, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp persist_selection(state, %Selection{} = selection, _reply_kind) do
+    state =
+      View.publish(%{
+        state
+        | selection: selection,
+          binding_state: Selection.state(selection),
+          error: nil
+      })
+
+    {:reply,
+     {:ok,
+      %{
+        "binding_state" => Atom.to_string(Selection.state(selection)),
+        "binding" => Selection.safe_projection(selection)
+      }}, state}
+  end
+
+  defp persist_ready_selection(%{session_persisted?: false} = state, selection) do
+    with {:ok, session} <- Selection.start_session(selection, state.thread_id),
+         {:ok, session} <- Store.put_session(state.store, session) do
+      {:ok, session, true}
+    end
+  end
+
+  defp persist_ready_selection(state, selection) do
+    expected_generation = persisted_generation(state)
+
+    with {:ok, session} <- Selection.put_draft(selection, state.session),
+         {:ok, session} <-
+           Storage.put_binding_draft(
+             session,
+             state.session.revision,
+             expected_generation,
+             state.storage_opts
+           ) do
+      {:ok, session, true}
+    end
+  end
+
+  defp persisted_generation(%{session: %Data{} = session}) do
+    case BindingManifest.fetch(session) do
+      {:ok, manifest} -> manifest["draft_generation"]
+      {:error, _reason} -> 0
+    end
+  end
+
+  defp close_replaced_resources(%{resources: nil}), do: :ok
+
+  defp close_replaced_resources(state) do
+    state.resources_module.close(state.resources)
   end
 
   defp start_bridge(state, kind, review_id) do
@@ -531,49 +1047,6 @@ defmodule Jido.Console.Session.Thread do
     end
   end
 
-  defp initial_model(opts) do
-    requested = Keyword.get(opts, :model)
-
-    case Keyword.fetch(opts, :validated_model_catalog_entries) do
-      {:ok, entries} ->
-        load_initial_model(Keyword.put(opts, :entries, entries), requested)
-
-      :error ->
-        load_initial_model(Keyword.delete(opts, :entries), requested)
-    end
-  end
-
-  defp load_initial_model(opts, requested) do
-    with {:ok, entries} <- Models.list(opts),
-         {:ok, model} <- choose_initial_model(entries, requested) do
-      {:ok, entries, model}
-    else
-      {:error, %_{} = error} -> {:error, error}
-      {:error, reason} -> {:error, initial_model_error(reason)}
-    end
-  end
-
-  defp choose_initial_model(entries, nil) do
-    case Enum.find(entries, &(&1.tier == :supported)) do
-      nil -> {:error, :no_supported_model}
-      entry -> {:ok, entry}
-    end
-  end
-
-  defp choose_initial_model(entries, identity) do
-    case Enum.find(entries, &(&1.identity == identity and &1.tier in [:supported, :beta])) do
-      nil -> {:error, {:unavailable_model, identity}}
-      entry -> {:ok, entry}
-    end
-  end
-
-  defp initial_model_error(reason) do
-    Error.config_error("Unable to configure the session model", %{
-      source: :model_catalog,
-      reason: inspect(reason)
-    })
-  end
-
   defp model_selection_error(identity, reason) do
     Error.validation_error("Unavailable model #{identity}", %{
       identity: identity,
@@ -581,6 +1054,19 @@ defmodule Jido.Console.Session.Thread do
       selectable_tiers: [:supported, :beta]
     })
   end
+
+  defp model_projection(entry, locked?) do
+    %{"identity" => entry.identity, "tier" => Atom.to_string(entry.tier), "locked" => locked?}
+  end
+
+  defp model_configuration_reason?(reason) when is_atom(reason),
+    do: reason |> Atom.to_string() |> String.contains?("model")
+
+  defp model_configuration_reason?(reason) when is_tuple(reason) and tuple_size(reason) > 0 do
+    reason |> elem(0) |> model_configuration_reason?()
+  end
+
+  defp model_configuration_reason?(_reason), do: false
 
   defp configure_resources(module, resources, identity) do
     if function_exported?(module, :configure_model, 2) do
@@ -594,9 +1080,34 @@ defmodule Jido.Console.Session.Thread do
     end
   end
 
-  defp model_projection(entry, locked?) do
-    %{"identity" => entry.identity, "tier" => Atom.to_string(entry.tier), "locked" => locked?}
+  defp require_locked_binding(%{binding_state: :locked}), do: :ok
+
+  defp require_locked_binding(%{binding_state: state}) when state in [:needs_model, :needs_policy],
+    do: {:error, {:binding_not_ready, state}}
+
+  defp require_locked_binding(%{binding_state: :resume_blocked}), do: {:error, :resume_blocked}
+  defp require_locked_binding(%{binding_state: :ready_unlocked}), do: {:error, :binding_not_locked}
+  defp require_locked_binding(_legacy_state), do: :ok
+
+  defp persist_runtime_session(
+         %{selection: %Selection{state: :locked, manifest: manifest}} = state,
+         resources,
+         session
+       ) do
+    runtime_fingerprint =
+      if function_exported?(state.resources_module, :runtime_definition_fingerprint, 1),
+        do: state.resources_module.runtime_definition_fingerprint(resources),
+        else: manifest["runtime_definition_fingerprint"]
+
+    Storage.install_runtime_spec(
+      session,
+      manifest["binding_digest"],
+      runtime_fingerprint,
+      state.storage_opts
+    )
   end
+
+  defp persist_runtime_session(state, _resources, session), do: Store.put_session(state.store, session)
 
   defp lock_model(%{model_locked?: true} = state), do: state
   defp lock_model(state), do: %{state | model_locked?: true}
@@ -651,22 +1162,8 @@ defmodule Jido.Console.Session.Thread do
 
   defp current_run?(_state, _run_ref, _request_id), do: false
 
-  defp ensure_session(thread_id, spec, store) do
-    case Store.get_session(store, thread_id) do
-      {:ok, session} ->
-        {:ok, session}
-
-      {:error, {:session_not_found, ^thread_id}} ->
-        with {:ok, session} <- Data.start(spec, session_id: thread_id) do
-          Store.put_session(store, session)
-        end
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
   defp uncertain_write?({:timeout_unknown, _id}), do: true
+  defp uncertain_write?({:write_unknown, _id}), do: true
   defp uncertain_write?(_reason), do: false
 
   defp start_bridge_task(supervisor, fun) do

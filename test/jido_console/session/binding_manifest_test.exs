@@ -37,6 +37,7 @@ defmodule Jido.Console.Session.BindingManifestTest do
     assert first["model"] == %{"id" => "openai:gpt-4.1-mini", "origin" => "agent_spec"}
     assert first["execution_policy"]["id"] == "coding.restricted"
     assert first["workspace"]["identity_digest"] == context.policy.workspace.digest
+    assert first["workspace"]["configuration"] == first_config
     assert {:ok, ^first} = BindingManifest.validate(first)
   end
 

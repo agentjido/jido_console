@@ -1,7 +1,7 @@
 defmodule Jido.Console.Session.Client do
   @moduledoc "Small local client for the transport-neutral Command and View boundary."
 
-  alias Jido.Console.Session.{Command, Server, View}
+  alias Jido.Console.Session.{BindingRequest, Command, Server, View}
 
   @schema Zoi.struct(
             __MODULE__,
@@ -29,8 +29,10 @@ defmodule Jido.Console.Session.Client do
   def attach(thread_id, opts \\ []) when is_binary(thread_id) and thread_id != "" do
     subscriber = Keyword.get(opts, :subscriber, self())
 
-    with {:ok, owner} <- Server.ensure_started(thread_id, opts),
-         {:ok, %{attachment_ref: attachment_ref, view: view}} <- Server.attach(owner, subscriber) do
+    with {:ok, request} <- BindingRequest.from_options(opts),
+         {:ok, owner} <- Server.ensure_started(thread_id, opts),
+         {:ok, %{attachment_ref: attachment_ref, view: view}} <-
+           Server.attach(owner, subscriber, request) do
       {:ok,
        %{
          handle: %__MODULE__{thread_id: thread_id, attachment_ref: attachment_ref, owner_options: opts},
@@ -132,6 +134,33 @@ defmodule Jido.Console.Session.Client do
     end
   end
 
+  @doc "Selects one agent source before the first prompt is durably accepted."
+  @spec select_agent(t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def select_agent(%__MODULE__{} = handle, source) when is_binary(source) do
+    select(handle, :select_agent, source)
+  end
+
+  @doc "Selects one execution policy before the first prompt is durably accepted."
+  @spec select_execution_policy(t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def select_execution_policy(%__MODULE__{} = handle, id, opts \\ []) when is_binary(id) do
+    payload =
+      case Keyword.get(opts, :project_root) do
+        nil -> %{}
+        root -> %{"project_root" => root}
+      end
+
+    with {:ok, command} <-
+           Command.new(
+             id: Jidoka.Id.generate!("command"),
+             type: :select_execution_policy,
+             thread_id: handle.thread_id,
+             text: id,
+             payload: payload
+           ) do
+      run(handle, command)
+    end
+  end
+
   @doc "Returns the current complete view."
   @spec status(t()) :: {:ok, View.t()} | {:error, term()}
   def status(%__MODULE__{} = handle), do: run(handle, control(handle, :status))
@@ -159,6 +188,19 @@ defmodule Jido.Console.Session.Client do
   def attachment_ref(%__MODULE__{attachment_ref: attachment_ref}), do: attachment_ref
 
   defp owner(%__MODULE__{} = handle), do: Server.ensure_started(handle.thread_id, handle.owner_options)
+
+  defp select(handle, type, value) do
+    with {:ok, command} <-
+           Command.new(
+             id: Jidoka.Id.generate!("command"),
+             type: type,
+             thread_id: handle.thread_id,
+             text: value,
+             payload: %{}
+           ) do
+      run(handle, command)
+    end
+  end
 
   defp control(handle, type, attrs \\ []) do
     Command.new!(

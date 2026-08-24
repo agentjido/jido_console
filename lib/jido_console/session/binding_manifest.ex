@@ -64,6 +64,7 @@ defmodule Jido.Console.Session.BindingManifest do
         "workspace" => %{
           "identity" => portable_value(binding.workspace),
           "identity_digest" => workspace_digest(binding.workspace),
+          "configuration" => portable_value(binding.workspace_configuration),
           "configuration_digest" => binding.workspace_configuration_digest
         }
       }
@@ -253,9 +254,11 @@ defmodule Jido.Console.Session.BindingManifest do
   defp validate_workspace(%{
          "identity" => identity,
          "identity_digest" => identity_digest,
+         "configuration" => configuration,
          "configuration_digest" => configuration_digest
        }) do
     with {:ok, _identity} <- portable(identity),
+         {:ok, _configuration} <- portable(configuration),
          :ok <- optional_required_digest(identity_digest),
          :ok <- required_digest(configuration_digest) do
       :ok

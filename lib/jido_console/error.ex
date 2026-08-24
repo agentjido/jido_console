@@ -196,6 +196,8 @@ defmodule Jido.Console.Error do
     invalid_operation_error(operation, validation)
   end
 
+  def normalize({:session_attach_failed, reason}), do: normalize(reason)
+
   def normalize(%{} = reason) do
     case legacy_invalid_operation(reason) do
       {:ok, operation, validation} -> invalid_operation_error(operation, validation)

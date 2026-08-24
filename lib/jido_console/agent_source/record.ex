@@ -1,18 +1,24 @@
 defmodule Jido.Console.AgentSource.Record do
   @moduledoc "Host-owned agent source data and its immutable base specification."
 
-  @enforce_keys [
-    :base_spec,
-    :identity,
-    :kind,
-    :format,
-    :byte_size,
-    :digest,
-    :base_spec_digest,
-    :agent_id,
-    :label
-  ]
-  defstruct @enforce_keys
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              base_spec: Zoi.any(),
+              identity: Zoi.any(),
+              kind: Zoi.any(),
+              format: Zoi.any(),
+              byte_size: Zoi.any(),
+              digest: Zoi.any(),
+              base_spec_digest: Zoi.any(),
+              agent_id: Zoi.any(),
+              label: Zoi.any()
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type source_kind :: :builtin | :file
   @type source_format :: :compiled | :json | :yaml

@@ -59,11 +59,16 @@ defmodule Jido.Console.Coding.Setup do
   @spec prepare(Binding.t() | module() | Jidoka.Agent.Spec.t(), keyword()) ::
           {:ok, t()} | {:error, term()}
   def prepare(input, opts) when is_list(opts) do
-    with {:ok, binding} <- binding(input, opts),
+    with {:ok, binding} <- resolve_binding(input, opts),
          {:ok, spec} <- ProviderOptions.tune_spec(binding, opts) do
       configure(binding, spec, opts)
     end
   end
+
+  @doc "Resolves one semantic binding without opening runtime resources."
+  @spec resolve_binding(Binding.t() | module() | Jidoka.Agent.Spec.t() | String.t(), keyword()) ::
+          {:ok, Binding.t()} | {:needs_model, map()} | {:error, term()}
+  def resolve_binding(input, opts \\ []) when is_list(opts), do: binding(input, opts)
 
   @doc "Closes trusted local resources held by one resolved setup."
   @spec close(t()) :: :ok
@@ -237,7 +242,7 @@ defmodule Jido.Console.Coding.Setup do
   defp binding(%Binding{} = binding, _opts), do: {:ok, binding}
 
   defp binding(agent, opts) do
-    with {:ok, source} <- source_record(agent),
+    with {:ok, source} <- source_record(agent, opts),
          {:ok, pack} <- Pack.resolve(opts),
          {:ok, direct_choice} <- direct_policy_choice(opts),
          {:ok, policy} <- policy_selection(source.base_spec, direct_choice, opts) do
@@ -253,10 +258,12 @@ defmodule Jido.Console.Coding.Setup do
     end
   end
 
-  defp source_record(agent) when agent in [Jido.Console.Agents.Default, Jido.Console.DefaultAgent],
+  defp source_record(agent, _opts) when agent in [Jido.Console.Agents.Default, Jido.Console.DefaultAgent],
     do: AgentSource.resolve("builtin:jido")
 
-  defp source_record(agent) do
+  defp source_record(agent, opts) when is_binary(agent), do: AgentSource.resolve(agent, opts)
+
+  defp source_record(agent, _opts) do
     with {:ok, spec} <- Jidoka.Agent.Spec.from_input(agent) do
       projection = Jidoka.project(spec)
       identity = "compiled:" <> spec.id

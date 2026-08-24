@@ -11,33 +11,27 @@ defmodule Jido.Console.ExecutionPolicy.Record do
 
   alias Jidoka.ExecutionEnvironment
 
-  @enforce_keys [
-    :execution_policy_id,
-    :class,
-    :requires_workspace_root?,
-    :policy_request,
-    :security_profile,
-    :adapter_capabilities,
-    :registration,
-    :jidoka_selection,
-    :registration_fingerprint,
-    :evidence
-  ]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              execution_policy_id: Zoi.any(),
+              class: Zoi.any(),
+              warning: Zoi.any() |> Zoi.default(nil),
+              requires_workspace_root?: Zoi.any(),
+              policy_request: Zoi.any(),
+              security_profile: Zoi.any(),
+              adapter_capabilities: Zoi.any(),
+              registration: Zoi.any(),
+              jidoka_selection: Zoi.any(),
+              registration_fingerprint: Zoi.any(),
+              evidence: Zoi.any(),
+              manager_module: Zoi.any() |> Zoi.default(Jidoka.ExecutionEnvironment.Manager)
+            },
+            unrecognized_keys: :error
+          )
 
-  defstruct [
-    :execution_policy_id,
-    :class,
-    :warning,
-    :requires_workspace_root?,
-    :policy_request,
-    :security_profile,
-    :adapter_capabilities,
-    :registration,
-    :jidoka_selection,
-    :registration_fingerprint,
-    :evidence,
-    manager_module: Jidoka.ExecutionEnvironment.Manager
-  ]
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
           execution_policy_id: String.t(),

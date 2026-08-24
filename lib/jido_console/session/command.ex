@@ -5,7 +5,19 @@ defmodule Jido.Console.Session.Command do
   alias Jido.Console.Models.Commands, as: ModelCommands
   alias Jido.Console.Session.Queue
 
-  @types [:submit, :cancel, :approve, :deny, :remove, :select_model, :status, :history, :stop]
+  @types [
+    :submit,
+    :cancel,
+    :approve,
+    :deny,
+    :remove,
+    :select_agent,
+    :select_model,
+    :select_execution_policy,
+    :status,
+    :history,
+    :stop
+  ]
 
   @schema Zoi.struct(
             __MODULE__,
@@ -59,6 +71,24 @@ defmodule Jido.Console.Session.Command do
   @spec digest(t()) :: String.t()
   def digest(%__MODULE__{} = command),
     do: Digest.portable(:erlang.term_to_binary({command.text, command.payload}, [:deterministic]))
+
+  @doc false
+  @spec first_lock_digest(t(), String.t()) :: String.t()
+  def first_lock_digest(%__MODULE__{} = command, binding_digest) when is_binary(binding_digest) do
+    Digest.semantic(:first_prompt_binding_lock, %{
+      "thread_id" => command.thread_id,
+      "queue_item_id" => command.queue_item_id,
+      "request_id" => command.request_id,
+      "command_digest" => digest(command),
+      "binding_digest" => binding_digest
+    })
+  end
+
+  @doc false
+  @spec lock_operation_id(t()) :: String.t()
+  def lock_operation_id(%__MODULE__{} = command) do
+    Enum.join([command.thread_id, command.queue_item_id, "binding-lock"], ":")
+  end
 
   @doc false
   @spec item(t(), String.t()) :: map()
@@ -124,6 +154,14 @@ defmodule Jido.Console.Session.Command do
       {:error, _reason} -> {:error, :invalid_command_shape}
     end
   end
+
+  defp validate_shape(%__MODULE__{type: :select_agent, text: source})
+       when is_binary(source) and source != "",
+       do: :ok
+
+  defp validate_shape(%__MODULE__{type: :select_execution_policy, text: id})
+       when is_binary(id) and id != "",
+       do: :ok
 
   defp validate_shape(%__MODULE__{type: type}) when type in [:status, :history, :stop], do: :ok
   defp validate_shape(_command), do: {:error, :invalid_command_shape}

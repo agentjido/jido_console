@@ -12,12 +12,21 @@ defmodule Jido.Console.ExecutionPolicy.Consent do
             seal: term()
           }
 
-  defstruct execution_policy_id: nil,
-            origin: nil,
-            legacy?: false,
-            thread_id: nil,
-            evidence_digest: nil,
-            seal: nil
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              execution_policy_id: Zoi.any() |> Zoi.default(nil),
+              origin: Zoi.any() |> Zoi.default(nil),
+              legacy?: Zoi.boolean() |> Zoi.default(false),
+              thread_id: Zoi.any() |> Zoi.default(nil),
+              evidence_digest: Zoi.any() |> Zoi.default(nil),
+              seal: Zoi.any() |> Zoi.default(nil)
+            },
+            unrecognized_keys: :error
+          )
+
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
 end
 
 defmodule Jido.Console.ExecutionPolicy do
