@@ -3,11 +3,12 @@ defmodule Jido.Console.Tui.Selection do
   TUI `/model` and `/profile` selection against the catalog and local policy.
   """
 
-  alias Jido.Console.Coding.Profile
   alias Jido.Console.Error
+  alias Jido.Console.ExecutionPolicy
+  alias Jido.Console.ExecutionPolicy.Registry, as: ExecutionPolicyRegistry
   alias Jido.Console.Models.Commands
 
-  @profiles [Profile.restricted_id(), Profile.trusted_id()]
+  @profiles [ExecutionPolicy.restricted_id(), ExecutionPolicy.trusted_id()]
   @model_tiers [:supported, :beta, :available, :unsupported]
 
   @type t :: %{
@@ -131,9 +132,9 @@ defmodule Jido.Console.Tui.Selection do
   @spec profile_notice(String.t()) :: String.t()
   def profile_notice(profile_id) do
     case resolve_profile(profile_id) do
-      {:ok, profile} ->
-        notice = "Start a new thread to use profile #{profile.id}."
-        if profile.warning, do: notice <> " " <> profile.warning, else: notice
+      {:ok, policy} ->
+        notice = "Start a new thread to use profile #{policy.execution_policy_id}."
+        if policy.warning, do: notice <> " " <> policy.warning, else: notice
 
       {:error, _reason} ->
         "Unavailable profile #{profile_id}"
@@ -193,11 +194,11 @@ defmodule Jido.Console.Tui.Selection do
 
   defp initial_model(identity, _entries) when is_binary(identity), do: {identity, nil}
 
-  defp initial_profile(nil), do: {Profile.restricted_id(), nil}
+  defp initial_profile(nil), do: {ExecutionPolicy.restricted_id(), nil}
 
   defp initial_profile(profile_id) when is_binary(profile_id) do
     case resolve_profile(profile_id) do
-      {:ok, profile} -> {profile.id, profile.warning}
+      {:ok, policy} -> {policy.execution_policy_id, policy.warning}
       {:error, _reason} -> {profile_id, nil}
     end
   end
@@ -266,5 +267,5 @@ defmodule Jido.Console.Tui.Selection do
     end
   end
 
-  defp resolve_profile(profile_id), do: Profile.resolve(profile_id, coding_profile: profile_id)
+  defp resolve_profile(profile_id), do: ExecutionPolicyRegistry.fetch(profile_id)
 end
