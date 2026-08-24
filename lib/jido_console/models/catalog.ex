@@ -11,6 +11,7 @@ defmodule Jido.Console.Models.Catalog do
   @revision "jido.models.v0.1"
   @schema_version 1
   @tiers [:supported, :beta, :available, :unsupported]
+  @selectable_tiers [:supported, :beta]
   @capability_keys [
     :streaming,
     :tools,
@@ -49,6 +50,10 @@ defmodule Jido.Console.Models.Catalog do
   @doc "Returns the supported catalog tiers."
   @spec tiers() :: [atom()]
   def tiers, do: @tiers
+
+  @doc "Returns model tiers that can be bound to an interactive session."
+  @spec selectable_tiers() :: [atom()]
+  def selectable_tiers, do: @selectable_tiers
 
   @doc "Loads the configured v0.1 policy or a caller-supplied entry list."
   @spec load(keyword()) :: {:ok, t()} | {:error, term()}
@@ -172,6 +177,22 @@ defmodule Jido.Console.Models.Catalog do
       entry -> {:ok, entry}
     end
   end
+
+  @doc "Fetches and validates one selectable complete model identity."
+  @spec select(t(), String.t()) :: {:ok, entry()} | {:error, term()}
+  def select(%{entries: _entries} = catalog, identity) when is_binary(identity) do
+    with {:ok, provider, model} <- parse_identity(identity),
+         {:ok, entry} <- fetch(catalog, provider, model),
+         true <- entry.tier in @selectable_tiers do
+      {:ok, entry}
+    else
+      false -> {:error, {:unsupported_model, identity}}
+      {:error, {:unknown_model, ^identity}} -> {:error, {:unsupported_model, identity}}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  def select(_catalog, identity), do: {:error, {:invalid_model_identity, identity}}
 
   @doc "Returns supported capabilities."
   @spec claimed_features(entry()) :: [{atom(), feature()}]

@@ -15,15 +15,15 @@ defmodule Jido.Console.Coding.SelectionTest do
 
     assert {:ok,
             %{
-              pack_id: "pack",
+              pack_id: "acme.pack",
               execution_policy_id: "coding.trusted-workspace",
               profile_id: "coding.trusted-workspace"
-            }} = Selection.resolve(coding_pack: "pack", coding_profile: "coding.local")
+            }} = Selection.resolve(coding_pack: "acme.pack", coding_profile: "coding.local")
 
     assert {:error, {:invalid_coding_pack, true}} = Selection.resolve(coding_pack: true)
 
     assert {:error, {:invalid_execution_policy, false}} =
-             Selection.resolve(coding_pack: "pack", coding_profile: false)
+             Selection.resolve(coding_pack: "acme.pack", coding_profile: false)
 
     assert {:error, :conflicting_execution_policy_inputs} =
              Selection.resolve(

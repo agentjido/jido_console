@@ -22,12 +22,12 @@ defmodule Jido.Console.Coding.SetupTest do
 
     assert setup.pack_id == "jido.coding_pack"
     assert setup.profile_id == "coding.restricted"
-    assert setup.context["coding"]["profile"]["id"] == "coding.restricted"
-    assert setup.context["coding"]["profile"]["sandbox"] == false
-    assert setup.context["coding"]["profile"]["enforcement"] == "pending"
-
-    assert setup.context["coding"]["profile"]["environment"] ==
-             Jido.Console.Coding.Environment.evidence(setup.environment_contract)
+    assert setup.execution_policy_id == "coding.restricted"
+    assert setup.context["coding"]["execution_policy_id"] == "coding.restricted"
+    assert setup.context["coding"]["pack_id"] == "jido.coding_pack"
+    assert setup.context["jido_console"]["execution_policy"] == %{"id" => "coding.restricted"}
+    refute inspect(setup.context) =~ "credential"
+    refute inspect(setup.context) =~ "adapter"
 
     assert setup.local_resources.environment_contract === setup.environment_contract
     assert setup.local_resources.binding.profile_id == setup.environment_contract.execution_policy_id
@@ -218,7 +218,7 @@ defmodule Jido.Console.Coding.SetupTest do
 
     resolver = fn _id -> {:error, :missing} end
 
-    assert {:error, {:unknown_execution_policy, "missing", :missing}} =
+    assert {:error, {:unknown_execution_policy, "missing"}} =
              Setup.prepare(Jido.Console.DefaultAgent,
                project_root: root,
                coding_profile: "missing",
@@ -226,20 +226,16 @@ defmodule Jido.Console.Coding.SetupTest do
              )
   end
 
-  test "keeps restricted coding available when local executables are absent", %{root: root} do
+  test "rejects unavailable restricted enforcement without an unisolated fallback", %{root: root} do
     original_path = System.get_env("PATH")
     System.put_env("PATH", "")
 
     try do
-      assert {:ok, setup} =
+      assert {:error, :local_coding_executable_missing} =
                Setup.prepare(Jido.Console.DefaultAgent,
                  project_root: root,
                  jido_home: Path.join(root, "home-without-local-tools")
                )
-
-      assert setup.profile_id == "coding.restricted"
-      assert setup.local_resources == nil
-      assert :ok = Setup.close(setup)
     after
       if original_path, do: System.put_env("PATH", original_path), else: System.delete_env("PATH")
     end

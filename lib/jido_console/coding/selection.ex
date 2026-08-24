@@ -1,10 +1,9 @@
 defmodule Jido.Console.Coding.Selection do
   @moduledoc "Compatibility composition of independent coding-pack and execution-policy IDs."
 
+  alias Jido.Console.Coding.Pack
   alias Jido.Console.ExecutionPolicy
-  alias Jidoka.CodingPack
 
-  @default_pack CodingPack.id()
   @default_policy ExecutionPolicy.restricted_id()
 
   @type t :: %{
@@ -16,23 +15,19 @@ defmodule Jido.Console.Coding.Selection do
   @doc "Returns independent coding-pack and canonical execution-policy IDs."
   @spec resolve(keyword()) :: {:ok, t()} | {:error, term()}
   def resolve(opts) when is_list(opts) do
-    pack = Keyword.get(opts, :coding_pack, Application.get_env(:jido_console, :coding_pack, @default_pack))
-
-    with {:ok, execution_policy_id} <- policy_input(opts) do
+    with {:ok, pack} <- Pack.resolve(opts),
+         {:ok, execution_policy_id} <- policy_input(opts) do
       cond do
-        not (pack in [false, :disabled, "disabled", nil] or (is_binary(pack) and pack != "")) ->
-          {:error, {:invalid_coding_pack, pack}}
-
         not (is_binary(execution_policy_id) and execution_policy_id != "") ->
           {:error, {:invalid_execution_policy, execution_policy_id}}
 
-        module_name?(pack) or module_name?(execution_policy_id) ->
+        module_name?(execution_policy_id) ->
           {:error, :coding_module_name_forbidden}
 
         true ->
           {:ok,
            %{
-             pack_id: if(pack in [false, :disabled, "disabled", nil], do: nil, else: pack),
+             pack_id: pack.id,
              execution_policy_id: execution_policy_id,
              profile_id: execution_policy_id
            }}
@@ -150,6 +145,4 @@ defmodule Jido.Console.Coding.Selection do
 
   defp module_name?(value) when is_binary(value),
     do: String.starts_with?(value, ["Elixir.", ":"]) or String.contains?(value, "/")
-
-  defp module_name?(_value), do: false
 end

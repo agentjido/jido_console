@@ -427,7 +427,7 @@ defmodule Jido.Console.Coding.LocalTest do
   end
 
   @tag :darwin
-  test "constrains OpenAI decisions to one JSON object", %{root: root} do
+  test "preserves agent generation and constrains OpenAI decisions", %{root: root} do
     assert {:ok, setup} =
              Setup.prepare(Jido.Console.DefaultAgent,
                coding_profile: Local.profile_id(),
@@ -438,9 +438,12 @@ defmodule Jido.Console.Coding.LocalTest do
     on_exit(fn -> Setup.close(setup) end)
     opts = Jidoka.Agent.Spec.Generation.to_req_llm_opts(setup.spec.generation)
 
-    assert opts[:temperature] == 0.0
+    expected_opts =
+      Jido.Console.Agents.Default.spec().generation
+      |> Jidoka.Agent.Spec.Generation.to_req_llm_opts()
+
+    assert opts == expected_opts
     refute Keyword.has_key?(opts, :reasoning_effort)
-    assert opts[:max_tokens] == 4_000
     assert setup.spec.instructions =~ "coding.verify"
     assert setup.spec.instructions =~ ~s({"helper_id":"mix-test"})
     assert ExtensionSetup.recover_coding_errors?(setup.extension_setup)

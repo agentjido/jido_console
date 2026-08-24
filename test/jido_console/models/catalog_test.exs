@@ -262,6 +262,23 @@ defmodule Jido.Console.Models.CatalogTest do
     assert {:error, {:unknown_model, "openai:missing"}} = Models.show("openai", "missing")
   end
 
+  test "selects only an exact supported or beta identity without a fallback" do
+    assert {:ok, catalog} = Catalog.load()
+    assert {:ok, %{identity: "openai:gpt-4.1-mini"}} = Catalog.select(catalog, "openai:gpt-4.1-mini")
+    assert {:ok, %{identity: "ollama:llama3.2"}} = Catalog.select(catalog, "ollama:llama3.2")
+
+    assert {:error, {:unsupported_model, "openai:not-in-the-catalog"}} =
+             Catalog.select(catalog, "openai:not-in-the-catalog")
+
+    assert {:error, {:invalid_model_identity, "not-complete"}} =
+             Catalog.select(catalog, "not-complete")
+
+    assert {:ok, available_catalog} = Catalog.validate([valid_entry()])
+
+    assert {:error, {:unsupported_model, "openai:gpt-test"}} =
+             Catalog.select(available_catalog, "openai:gpt-test")
+  end
+
   defp valid_entry do
     feature = %{state: :unknown, evidence: nil, note: "pending"}
 
