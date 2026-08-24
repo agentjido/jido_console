@@ -19,22 +19,48 @@ defmodule Jido.Console.Tui.ViewTest do
   end
 
   test "shows useful first-run context before the first turn" do
-    state =
-      State.new(nil, {80, 16},
+    initial =
+      State.new(nil, {80, 18},
         project_root: "/work/jido_console",
         model: "openai:gpt-4.1-mini",
-        coding_profile: "coding.restricted",
+        execution_policy: "coding.restricted",
         catalog_entries: [
           %{identity: "openai:gpt-4.1-mini", provider: "openai", model: "gpt-4.1-mini", tier: :supported}
         ]
       )
 
+    state =
+      State.restore_view(
+        initial,
+        Jido.Console.Session.View.new!(
+          thread_id: "welcome",
+          status: :idle,
+          binding_state: :ready_unlocked,
+          revision: 0,
+          binding: %{
+            "agent" => %{
+              "id" => "jido",
+              "source" => %{"kind" => "builtin", "label" => "jido", "digest" => "sha256:safe"}
+            },
+            "coding_pack" => %{"id" => "jido.coding", "status" => "enabled"},
+            "model" => %{"id" => "openai:gpt-4.1-mini", "origin" => "agent_spec"},
+            "execution_policy" => %{"id" => "coding.restricted", "requested_id" => nil},
+            "workspace" => %{"identity_digest" => "sha256:workspace"}
+          },
+          model: %{"identity" => "openai:gpt-4.1-mini", "tier" => "supported", "locked" => false}
+        )
+      )
+
     text = state |> View.render() |> frame_text()
 
     assert text =~ "Jido is ready"
+    assert text =~ "Agent     jido"
+    assert text =~ "Source    builtin · jido · sha256:safe"
     assert text =~ "Model     openai:gpt-4.1-mini (supported)"
-    assert text =~ "Profile   coding.restricted"
-    assert text =~ "Workspace /work/jido_console"
+    assert text =~ "Policy    coding.restricted"
+    assert text =~ "Binding   :ready_unlocked · :idle"
+    assert text =~ "Workspace sha256:workspace"
+    refute text =~ "/work/jido_console"
     assert text =~ "Type a task below and press Enter."
     assert text =~ "Try: Explain this project"
   end
@@ -60,6 +86,52 @@ defmodule Jido.Console.Tui.ViewTest do
     assert text =~ "Fix the error above, then start Jido again."
     assert text =~ "Press Esc to exit."
     refute text =~ "Jido is ready"
+  end
+
+  test "renders a blocked resume as read-only with safe recovery guidance" do
+    state = State.new(nil, {72, 14}, session_client: :client)
+
+    view =
+      Jido.Console.Session.View.new!(
+        thread_id: "blocked",
+        status: :unavailable,
+        binding_state: :resume_blocked,
+        revision: 1,
+        error: Jido.Console.SafeDisplay.to_map({:resume_blocked, :agent_source_changed})
+      )
+
+    text = state |> State.restore_view(view) |> View.render() |> frame_text()
+
+    assert text =~ "cannot resume"
+    assert text =~ "read-only"
+    assert text =~ "/cancel"
+    assert text =~ "/new-session"
+
+    blocked = State.restore_view(state, view)
+    {blocked, []} = State.update(blocked, {:terminal, {:text, "/new-session"}})
+    assert {_blocked, [:new_session]} = State.update(blocked, {:terminal, {:key, :enter}})
+  end
+
+  test "cleans controls from owner binding values" do
+    selection =
+      Jido.Console.Tui.Selection.init(catalog_entries: [model_entry("openai", "gpt", :supported)])
+      |> Jido.Console.Tui.Selection.restore_binding(
+        %{
+          "agent" => %{
+            "id" => "safe\e[31mred\u202Ehidden",
+            "source" => %{"kind" => "file", "label" => "agent\nname", "digest" => "sha256:safe"}
+          },
+          "execution_policy" => %{"id" => "coding.restricted"}
+        },
+        :ready_unlocked
+      )
+
+    frame = View.render(%{State.new(nil, {80, 16}) | selection: selection})
+    text = frame_text(frame)
+
+    refute text =~ "\e"
+    refute text =~ "\u202E"
+    refute text =~ "agent\nname"
   end
 
   test "does not show the welcome after transcript content exists" do
@@ -113,7 +185,7 @@ defmodule Jido.Console.Tui.ViewTest do
 
     assert text =~ "/help · Show slash commands"
     assert text =~ "/model [provider:model] · List or select a model"
-    assert text =~ "3 results"
+    assert text =~ "7 results"
     assert text =~ "↑↓ move · Tab complete · Esc close"
     assert String.starts_with?(Frame.row_text(frame, selected_row), "> ")
     assert styled_row?(frame, selected_row, :reverse)

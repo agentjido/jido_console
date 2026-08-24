@@ -232,6 +232,8 @@ defmodule Jido.Console.Session.ThreadTest do
       model_catalog: [],
       model: %{identity: "openai:gpt-4.1-mini", tier: :supported},
       model_locked?: false,
+      binding_state: :locked,
+      selection: %{manifest: %{"binding_digest" => "sha256:test-binding"}},
       error: nil,
       subscribers: %{},
       monitors: %{},

@@ -50,7 +50,8 @@ to the changed files, then show me the diff and the check results.
 ## Current Capabilities
 
 - Start the interactive terminal with `jido`.
-- Use the restricted local coding profile during development.
+- Use the restricted execution policy by default during development.
+- Select compiled, YAML, or JSON agent behavior without changing tool authority.
 - Build and test a macOS ARM64 release candidate with the local release tools.
 
 ## Developer Preview: Try Jido Locally
@@ -134,6 +135,27 @@ Model selection applies to the current live session only. It locks after the
 first prompt is accepted. See the [Jido Console guide](guides/jido-console.md)
 for command behavior and model support tiers.
 
+Jido Console keeps three choices separate:
+
+| Choice | Owns | Does not own |
+| --- | --- | --- |
+| Agent source | Agent behavior, instructions, and model defaults | Coding tools or host permission |
+| Coding pack | Coding tools and workspace context | Process isolation or permission |
+| Execution policy | Host permission, limits, and isolation requirements | Agent behavior or tool definitions |
+
+The built-in agent is `builtin:jido`. You can also select one YAML, YML, or
+JSON Jidoka agent document:
+
+```sh
+./jido --agent ./agents/reviewer.yaml
+```
+
+All sources resolve to one `Jidoka.Agent.Spec` before a session can run. A file
+agent can request an execution-policy ID. It cannot define a policy, add coding
+tools, or grant itself more authority. The restricted policy remains the
+automatic default. A broader policy always needs an explicit CLI, API, or TUI
+choice.
+
 ### Explore The Repository
 
 Start the default read-only coding session from the repository root:
@@ -152,15 +174,15 @@ Summarize @README.md and identify the main CLI entry point.
 
 ### Change Files Locally
 
-The local coding profile can read, write, inspect Git, and run the registered
-`mix test` check inside the selected project root:
+The trusted-workspace execution policy can read, write, inspect Git, and run
+the registered `mix test` check inside the selected project root:
 
 ```sh
-./jido --coding-profile coding.local --project-root "$PWD"
+./jido --execution-policy coding.trusted-workspace --project-root "$PWD"
 ```
 
-This development profile is for macOS. Its tools have no network access, and
-it does not provide a general shell. When the TUI requests review, press `A` to
+This policy is not a sandbox. The current coding tools have no network access,
+and they do not provide a general shell. When the TUI requests review, press `A` to
 approve the operation or `D` to deny it. See the
 [multi-turn coding guide](guides/multi-turn-coding.md) for its tools, limits,
 file mentions, and recovery flow.
@@ -215,6 +237,10 @@ Jidoka session data owns durable execution truth. Console thread events own
 durable product history. One temporary OTP owner per thread owns the live FIFO,
 partial output, and complete revisioned View. A renderer or transport owns none
 of these authorities.
+
+Console calls the public product choice an **execution policy**. It maps that
+choice to Jidoka's existing `Jidoka.ExecutionEnvironment.SecurityProfile` and
+execution-environment contracts. Jidoka keeps its current public names.
 
 One request runs at a time in each thread. Up to 32 later prompts wait in FIFO
 order. Different thread IDs can run in parallel. A replacement owner does not

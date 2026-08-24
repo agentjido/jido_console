@@ -10,6 +10,7 @@ defmodule Jido.Console.Terminal.PlainText do
     |> String.replace("\r\n", "\n")
     |> String.replace("\r", "\n")
     |> String.replace(multiline_controls(), "")
+    |> String.replace(bidirectional_controls(), "")
   end
 
   @doc "Returns terminal-safe text on one bounded line."
@@ -19,6 +20,7 @@ defmodule Jido.Console.Terminal.PlainText do
     |> text()
     |> strip_sequences()
     |> String.replace(single_line_controls(), " ")
+    |> String.replace(bidirectional_controls(), "")
     |> String.replace(~r/\s+/u, " ")
     |> String.trim()
     |> String.slice(0, limit)
@@ -44,4 +46,5 @@ defmodule Jido.Console.Terminal.PlainText do
   defp escape, do: ~r/\x1B(?:.|$)/su
   defp multiline_controls, do: ~r/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]+/u
   defp single_line_controls, do: ~r/[\x00-\x1F\x7F-\x9F]+/u
+  defp bidirectional_controls, do: ~r/[\x{061C}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u
 end

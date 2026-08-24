@@ -1,7 +1,7 @@
 defmodule Jido.Console.Coding.WorkspaceConfig do
-  @moduledoc "Builds the bounded Jidoka workspace for the selected coding profile."
+  @moduledoc "Builds the bounded Jidoka workspace for the selected execution policy."
 
-  alias Jido.Console.Coding.Local
+  alias Jido.Console.ExecutionPolicy
   alias Jidoka.CodingPack.Workspace
 
   @local_limits %{
@@ -17,13 +17,14 @@ defmodule Jido.Console.Coding.WorkspaceConfig do
 
   @doc "Builds one workspace from trusted host options."
   @spec build(String.t(), keyword()) :: {:ok, Workspace.t()} | {:error, term()}
-  def build(profile_id, opts) do
+  def build(execution_policy_id, opts) do
+    execution_policy_id = ExecutionPolicy.normalize_id(execution_policy_id)
     root = Keyword.get(opts, :project_root, Application.get_env(:jido_console, :project_root))
 
-    if profile_id == Local.profile_id() and is_nil(root) do
+    if execution_policy_id == ExecutionPolicy.trusted_id() and is_nil(root) do
       {:error, :local_coding_root_required}
     else
-      new_workspace(profile_id, root || File.cwd!(), opts)
+      new_workspace(execution_policy_id, root || File.cwd!(), opts)
     end
   end
 
@@ -37,7 +38,7 @@ defmodule Jido.Console.Coding.WorkspaceConfig do
     )
   end
 
-  defp new_workspace(profile_id, root, opts) do
+  defp new_workspace(execution_policy_id, root, opts) do
     Workspace.new(
       root: root,
       access:
@@ -52,7 +53,7 @@ defmodule Jido.Console.Coding.WorkspaceConfig do
           :coding_limits,
           Application.get_env(:jido_console, :coding_limits, @local_limits)
         ),
-      execution_profile: profile_id
+      execution_profile: execution_policy_id
     )
   end
 end

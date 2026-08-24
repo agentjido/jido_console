@@ -26,7 +26,17 @@ defmodule Jido.Console.Tui.AutocompleteTest do
     result = derive("/", selection)
 
     assert result.context == :command
-    assert Enum.map(result.candidates, & &1.name) == ["help", "model", "profile"]
+
+    assert Enum.map(result.candidates, & &1.name) == [
+             "help",
+             "agent",
+             "execution-policy",
+             "model",
+             "profile",
+             "new-session",
+             "cancel"
+           ]
+
     assert Enum.all?(result.candidates, &(&1.kind == :command and &1.selectable?))
     assert Enum.all?(result.candidates, &is_binary(&1.usage))
     assert Enum.all?(result.candidates, &is_binary(&1.summary))

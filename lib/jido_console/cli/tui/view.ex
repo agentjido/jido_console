@@ -146,6 +146,22 @@ defmodule Jido.Console.Tui.View do
 
   defp transcript_rows(_state, _width, 0), do: []
 
+  defp transcript_rows(
+         %State{activity: {:failed, :startup, _reason, error}, selection: %{binding_state: :resume_blocked}},
+         width,
+         row_limit
+       ) do
+    [
+      "Jido cannot resume this thread",
+      "",
+      SafeText.summary(error),
+      "",
+      "This thread is read-only.",
+      "Use /new-session for a clean thread or /cancel to close this one."
+    ]
+    |> fit_priority_rows(width, row_limit)
+  end
+
   defp transcript_rows(%State{activity: {:failed, :startup, _reason, error}}, width, row_limit) do
     startup_failure_rows(error, width, row_limit)
   end
@@ -189,8 +205,18 @@ defmodule Jido.Console.Tui.View do
     model = Map.get(selection, :model) || "not selected"
     tier = Map.get(selection, :model_tier)
     model = if tier, do: "#{model} (#{tier})", else: model
-    profile = Map.get(selection, :profile_id) || "not selected"
-    workspace = state.project_root || "current directory"
+    model_origin = Map.get(selection, :model_origin) || "not selected"
+
+    policy =
+      Map.get(selection, :execution_policy_id) ||
+        Map.get(selection, :execution_policy_requested_id) || "not selected"
+
+    agent = Map.get(selection, :agent) || %{}
+    source = Map.get(agent, "source", %{})
+    pack = pack_label(Map.get(selection, :coding_pack))
+    workspace = Map.get(selection, :workspace_identity_digest) || "not locked"
+    binding_state = Map.get(selection, :binding_state, :ready_unlocked)
+    status = session_status(state.session)
 
     action =
       if state.startup == :starting,
@@ -204,8 +230,12 @@ defmodule Jido.Console.Tui.View do
       "",
       action,
       "",
-      "Model     #{SafeText.summary(model)}",
-      "Profile   #{SafeText.summary(profile)}",
+      "Agent     #{SafeText.summary(Map.get(agent, "id", "not selected"))}",
+      "Source    #{SafeText.summary(source_label(source))}",
+      "Model     #{SafeText.summary(model)} · #{SafeText.summary(model_origin)}",
+      "Pack      #{SafeText.summary(pack)}",
+      "Policy    #{SafeText.summary(policy)}",
+      "Binding   #{SafeText.summary(binding_state)} · #{SafeText.summary(status)}",
       "Workspace #{SafeText.summary(workspace)}",
       "",
       "Try: Explain this project and suggest the next small change."
@@ -223,6 +253,24 @@ defmodule Jido.Console.Tui.View do
     |> Enum.take(row_limit)
     |> Enum.map(&TextLayout.fit(&1, width))
   end
+
+  defp source_label(source) do
+    [Map.get(source, "kind"), Map.get(source, "label"), Map.get(source, "digest")]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
+    |> case do
+      "" -> "not selected"
+      label -> label
+    end
+  end
+
+  defp pack_label(%{"status" => "disabled"}), do: "disabled"
+  defp pack_label(%{"id" => id}) when is_binary(id), do: id
+  defp pack_label(%{id: id}) when is_binary(id), do: id
+  defp pack_label(_pack), do: "not selected"
+
+  defp session_status(%Jido.Console.Session.View{status: status}), do: status
+  defp session_status(_session), do: :starting
 
   defp fit_priority_rows(rows, width, row_limit) when row_limit < length(rows) do
     rows

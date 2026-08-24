@@ -8,12 +8,17 @@ Build the executable and select one project root:
 
 ```sh
 MIX_ENV=prod mix escript.build
-./jido --coding-profile coding.local --project-root "$PWD"
+./jido --execution-policy coding.trusted-workspace --project-root "$PWD"
 ```
 
-The local profile is for macOS development. It uses `sandbox-exec`, has no
-network access, and can run only registered Git and Mix helpers. It does not
-provide a general shell.
+The trusted-workspace policy is for macOS development. It is not a sandbox.
+The coding tools have no network access and can run only registered Git and Mix
+helpers. They do not provide a general shell.
+
+The execution policy supplies permission and isolation rules. The coding pack
+separately supplies coding tools and workspace context. The selected agent
+supplies behavior, instructions, and model defaults. A file agent can request
+this policy, but only the explicit command above grants it.
 
 Each thread has one temporary OTP owner. Jidoka owns request execution and the
 durable conversation. Console owns one FIFO prompt queue and the product
@@ -77,7 +82,7 @@ history reads.
 
 ## Recover From Tool Errors
 
-The local profile returns bounded coding errors as retryable observations. For
+The coding pack returns bounded coding errors as retryable observations. For
 an edit conflict:
 
 1. Read the file again.

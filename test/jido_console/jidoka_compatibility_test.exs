@@ -64,6 +64,23 @@ defmodule Jido.Console.JidokaCompatibilityTest do
     assert {:ok, _} = Jason.encode(projected)
   end
 
+  test "agent import uses the pinned public facade and Spec contract" do
+    source = ~S({"version":1,"agent":{"id":"compat_agent","model":"openai:gpt-4.1-mini"}})
+
+    assert {:ok, %Jidoka.Agent.Spec{id: "compat_agent"} = spec} =
+             Jidoka.import(source,
+               format: :json,
+               max_import_bytes: 1_000_000,
+               max_import_depth: 64,
+               max_import_nodes: 20_000,
+               yaml_merge_anchors: false,
+               discover_mcp?: false
+             )
+
+    assert Jidoka.Config.model_ref(spec.model) == "openai:gpt-4.1-mini"
+    assert is_map(Jidoka.project(spec))
+  end
+
   unless System.get_env("JIDO_CONSOLE_JIDOKA_PATH") do
     test "the immutable pin exposes the qualified durable contract" do
       assert Application.spec(:jidoka, :vsn) |> to_string() == "0.9.1"

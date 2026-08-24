@@ -15,10 +15,14 @@ defmodule Jido.Console.CLI do
   Options:
     -h, --help       Show this help
     -v, --version    Show the version
+        --agent SOURCE          Select `builtin:jido` or a YAML or JSON agent file
         --coding-pack ID        Select a trusted coding pack or `disabled`
-        --coding-profile ID     Select the trusted execution profile
+        --execution-policy ID   Select a trusted execution policy
         --project-root DIR      Select the trusted coding workspace root
         --model MODEL           Select the interactive provider and model
+
+  Deprecated aliases:
+        --coding-profile ID     Use `--execution-policy ID`
 
   With no command, start jido in an interactive terminal. Provider credentials
   are read from the environment by Jidoka's model provider.
@@ -110,11 +114,20 @@ defmodule Jido.Console.CLI do
   end
 
   defp run_interactive(args, opts) do
+    case validate_raw_interactive_args(args) do
+      :ok -> parse_interactive(args, opts)
+      {:error, reason} -> interactive_error(reason)
+    end
+  end
+
+  defp parse_interactive(args, opts) do
     case OptionParser.parse(args,
            strict: [
              help: :boolean,
              version: :boolean,
+             agent: :string,
              coding_pack: :string,
+             execution_policy: :string,
              coding_profile: :string,
              project_root: :string,
              model: :string
@@ -138,6 +151,39 @@ defmodule Jido.Console.CLI do
         usage_error()
     end
   end
+
+  defp validate_raw_interactive_args(args) do
+    counts = Enum.frequencies_by(args, &interactive_arg_key/1)
+
+    cond do
+      Map.get(counts, :execution_policy, 0) > 0 and Map.get(counts, :coding_profile, 0) > 0 ->
+        {:error, :conflicting_execution_policy_inputs}
+
+      repeated =
+          Enum.find(
+            [:agent, :coding_pack, :coding_profile, :execution_policy, :model, :project_root],
+            &(Map.get(counts, &1, 0) > 1)
+          ) ->
+        {:error, {:repeated_interactive_option, repeated}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp interactive_arg_key("--agent"), do: :agent
+  defp interactive_arg_key("--agent=" <> _value), do: :agent
+  defp interactive_arg_key("--coding-pack"), do: :coding_pack
+  defp interactive_arg_key("--coding-pack=" <> _value), do: :coding_pack
+  defp interactive_arg_key("--coding-profile"), do: :coding_profile
+  defp interactive_arg_key("--coding-profile=" <> _value), do: :coding_profile
+  defp interactive_arg_key("--execution-policy"), do: :execution_policy
+  defp interactive_arg_key("--execution-policy=" <> _value), do: :execution_policy
+  defp interactive_arg_key("--model"), do: :model
+  defp interactive_arg_key("--model=" <> _value), do: :model
+  defp interactive_arg_key("--project-root"), do: :project_root
+  defp interactive_arg_key("--project-root=" <> _value), do: :project_root
+  defp interactive_arg_key(_argument), do: :other
 
   defp run_process_status(args, opts) do
     case OptionParser.parse(args, strict: [help: :boolean], aliases: [h: :help]) do
@@ -340,9 +386,9 @@ defmodule Jido.Console.CLI do
   defp print_version, do: IO.puts("jido #{Jido.Console.Version.current()}")
 
   defp format_error(reason) do
-    Jido.Console.Error.message(reason)
+    Jido.Console.SafeDisplay.message(reason)
   rescue
-    _exception -> inspect(reason)
+    _exception -> "Jido could not complete the request."
   end
 
   defp usage_error do
@@ -352,6 +398,8 @@ defmodule Jido.Console.CLI do
 
   defp start_tui(options, opts) do
     tui = Keyword.get(opts, :tui, Jido.Console.Tui)
+    {warnings, options} = Map.pop(options, :deprecation_warnings, [])
+    Enum.each(warnings, &IO.puts(:stderr, "jido: warning: #{&1}"))
     interactive = options |> Map.to_list() |> normalize_interactive_options()
     opts = Keyword.put_new(opts, :application_startup, &start_runtime/0)
     opts = Keyword.merge(opts, interactive)
@@ -379,7 +427,12 @@ defmodule Jido.Console.CLI do
   end
 
   defp configuration_error?({code, _value})
-       when code in [:invalid_coding_pack, :invalid_execution_profile, :unknown_runtime_profile],
+       when code in [
+              :invalid_coding_pack,
+              :invalid_execution_profile,
+              :unknown_runtime_profile,
+              :repeated_interactive_option
+            ],
        do: true
 
   defp configuration_error?({:unknown_runtime_profile, _id, _reason}), do: true

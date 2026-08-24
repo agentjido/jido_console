@@ -82,6 +82,8 @@ defmodule Jido.Console.CodingTuiPtyTest do
     assert_frame("> /help · Show slash commands")
 
     send_event(event_queue, TermUI.Event.key(:down))
+    send_event(event_queue, TermUI.Event.key(:down))
+    send_event(event_queue, TermUI.Event.key(:down))
     assert_frame("> /model [provider:model] · List or select a model")
 
     send_event(event_queue, TermUI.Event.key(:tab))
@@ -137,6 +139,79 @@ defmodule Jido.Console.CodingTuiPtyTest do
     refute inspect(view.transcript) =~ "/model"
     refute inspect(view.history) =~ "/model"
     refute Map.has_key?(view, :completion)
+    assert :ok = Client.detach(handle)
+    assert :ok = Client.stop(handle)
+  end
+
+  test "selects a file agent and grants its requested policy before the first prompt", context do
+    thread_id = "coding-tui-selection-thread"
+    source = Path.join(context.root, "trusted agent.json")
+    File.cp!("test/fixtures/agents/trusted.json", source)
+    {:ok, event_queue} = Agent.start_link(fn -> :queue.new() end)
+    {:ok, validated_catalog} = Jido.Console.Models.list()
+
+    opts = [
+      name: context.name,
+      registry: context.registry,
+      sessions: context.sessions,
+      tasks: context.tasks,
+      writer: context.writer,
+      jido_home: context.root,
+      session_id: thread_id,
+      project_root: context.root,
+      coding_pack: :disabled,
+      term_ui_backend: TermUIBackend,
+      term_ui_backend_opts: [test_pid: self(), event_queue: event_queue, size: {20, 90}],
+      application_startup: fn -> :ok end,
+      process_register: fn _kind, _pid, _opts -> {:ok, %{}} end,
+      process_stop: fn _id, _opts -> :ok end,
+      validated_model_catalog_entries: validated_catalog,
+      catalog_entries: [
+        %{
+          identity: "openai:gpt-4.1-mini",
+          provider: "openai",
+          model: "gpt-4.1-mini",
+          tier: :supported
+        }
+      ]
+    ]
+
+    task = Task.async(fn -> Tui.run(opts) end)
+    assert_receive {:term_ui_started, runtime}, 2_000
+    on_exit(fn -> ensure_tui_stopped(runtime, task) end)
+    assert_frame("Agent     jido")
+
+    send_event(event_queue, TermUI.Event.paste("/agent #{source}"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+
+    assert_frame_matching(
+      fn frame ->
+        String.contains?(frame, "Agent     trusted_file_agent") and
+          String.contains?(frame, "Policy    coding.trusted-workspace")
+      end,
+      5_000
+    )
+
+    send_event(event_queue, TermUI.Event.paste("/execution-policy coding.trusted-workspace"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+
+    assert_frame_matching(
+      fn frame ->
+        String.contains?(frame, "Selected execution policy") and
+          String.contains?(frame, "coding.trusted-workspace (not a sandbox)")
+      end,
+      5_000
+    )
+
+    TermUI.Runtime.shutdown(runtime)
+    assert :ok = Task.await(task, 2_000)
+    assert_receive :terminal_closed
+
+    assert {:ok, %{handle: handle, view: view}} = Client.attach(thread_id, opts)
+    assert view.binding_state == :ready_unlocked
+    assert view.binding["agent"]["id"] == "trusted_file_agent"
+    assert view.binding["execution_policy"]["id"] == "coding.trusted-workspace"
+    assert view.history == []
     assert :ok = Client.detach(handle)
     assert :ok = Client.stop(handle)
   end

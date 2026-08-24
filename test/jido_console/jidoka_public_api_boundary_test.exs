@@ -39,6 +39,7 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
       "Jidoka.Session.Sequence.Request",
       "Jidoka.Session.Store",
       "Jidoka.Session.Transitions",
+      "Jidoka.Memory.Store.InMemory",
       "Jidoka.Snapshot"
     ]
 
@@ -220,6 +221,21 @@ defmodule Jido.Console.JidokaPublicApiBoundaryTest do
 
     assert Enum.any?(violations, &String.contains?(&1.reason, "Jidoka.Runtime.Capabilities"))
     assert Enum.any?(violations, &String.contains?(&1.reason, "Jidoka.Adapter.ReqLLM"))
+  end
+
+  test "permits agent import through the public facade and Spec contract" do
+    assert [] =
+             BoundaryScanner.audit_source("""
+             defmodule AgentSourceBoundary do
+               alias Jidoka.Agent.Spec
+
+               def import(bytes) do
+                 with {:ok, %Spec{} = spec} <- Jidoka.import(bytes, format: :json) do
+                   {:ok, Jidoka.project(spec)}
+                 end
+               end
+             end
+             """)
   end
 
   test "rejects request task ownership and direct task shutdown" do

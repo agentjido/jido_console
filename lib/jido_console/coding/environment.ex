@@ -7,21 +7,24 @@ defmodule Jido.Console.Coding.Environment do
   """
 
   alias Jido.Console.Coding.Environment.Contract
-  alias Jido.Console.Coding.RestrictedProfile
   alias Jido.Console.Credentials
   alias Jido.Console.Env
+  alias Jido.Console.ExecutionPolicy.Definition
   alias Jido.Console.Home
 
   @doc "Resolves one secret-free restricted environment contract."
   @spec resolve(String.t(), keyword()) :: {:ok, Contract.t()} | {:error, term()}
-  def resolve(profile_id, opts \\ []) when is_binary(profile_id) and profile_id != "" do
+  def resolve(execution_policy_id, opts \\ [])
+      when is_binary(execution_policy_id) and execution_policy_id != "" do
+    execution_policy_id = Definition.normalize_id(execution_policy_id)
+
     with {:ok, allowlist} <- allowlist(opts),
          {:ok, credential_refs} <- credential_refs(opts),
          :ok <- reject_credentials_in_allowlist(allowlist),
          {:ok, roots} <- ensure_roots(opts) do
       {:ok,
        %Contract{
-         profile_id: profile_id,
+         execution_policy_id: execution_policy_id,
          allowlist: allowlist,
          credential_refs: credential_refs,
          home: roots.home,
@@ -49,7 +52,7 @@ defmodule Jido.Console.Coding.Environment do
   @spec evidence(Contract.t()) :: map()
   def evidence(%Contract{} = contract) do
     %{
-      "profile_id" => contract.profile_id,
+      "execution_policy_id" => contract.execution_policy_id,
       "allowlist" => contract.allowlist,
       "references" => contract.credential_refs,
       "home" => "private",
@@ -62,7 +65,7 @@ defmodule Jido.Console.Coding.Environment do
   @spec digest(Contract.t()) :: String.t()
   def digest(%Contract{} = contract) do
     Jidoka.ExecutionEnvironment.digest(%{
-      profile_id: contract.profile_id,
+      execution_policy_id: contract.execution_policy_id,
       allowlist: contract.allowlist,
       credential_refs: contract.credential_refs,
       home: contract.home,
@@ -71,7 +74,7 @@ defmodule Jido.Console.Coding.Environment do
   end
 
   defp allowlist(opts) do
-    case Keyword.get(opts, :environment_allowlist, RestrictedProfile.environment_allowlist()) do
+    case Keyword.get(opts, :environment_allowlist, Definition.environment_allowlist()) do
       list when is_list(list) and list != [] ->
         if Enum.all?(list, &(&1 != "" and is_binary(&1))),
           do: {:ok, Enum.uniq(list)},

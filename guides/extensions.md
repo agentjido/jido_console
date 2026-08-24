@@ -1,5 +1,10 @@
 # CLI Extensions And Project Trust
 
+An agent source supplies behavior. A host coding pack supplies interactive
+coding tools and workspace context. An execution policy supplies permission
+and isolation rules. These inputs stay separate when Console builds the bound
+agent specification.
+
 Agent YAML and JSON request extensions by ID. They cannot supply a module,
 process command, image, mount, network rule, or secret. The CLI gives an ID
 meaning only through trusted host record files.

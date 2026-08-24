@@ -1,7 +1,6 @@
 defmodule Jido.Console.Tui.State do
   @moduledoc "Pure state transitions for the Jido TUI."
 
-  alias Jido.Console.Error
   alias Jido.Console.Tui.{Activity, Autocomplete, Command, Editor, SafeText, Selection, Turn}
   alias Jido.Console.Session.View, as: SessionView
   alias TermUI.Event
@@ -47,10 +46,13 @@ defmodule Jido.Console.Tui.State do
 
   @type effect ::
           {:start_turn, String.t()}
+          | {:select_agent, String.t()}
+          | {:select_execution_policy, String.t(), String.t() | nil}
           | {:select_model, String.t()}
           | {:cancel_turn, term()}
           | {:copy, String.t()}
           | {:respond_review, :approve | :deny, map(), term(), term()}
+          | :new_session
           | :exit
 
   @type t :: unquote(Zoi.type_spec(@schema))
@@ -112,7 +114,7 @@ defmodule Jido.Console.Tui.State do
     %{
       state
       | session: view,
-        selection: restore_model_selection(state.selection, view.model),
+        selection: restore_owner_selection(state.selection, view),
         messages: messages,
         turns: turns,
         next_turn_id: length(turns) + active_turn_count,
@@ -284,7 +286,7 @@ defmodule Jido.Console.Tui.State do
   end
 
   def update(%__MODULE__{activity: {:failed, :startup, _, _}} = state, {:terminal, {:key, :enter}}),
-    do: {state, []}
+    do: submit_blocked_input(state)
 
   def update(%__MODULE__{activity: {:active, _, _, _}} = state, {:terminal, {:key, :enter}}) do
     prompt = state.editor |> Editor.value() |> String.trim()
@@ -400,6 +402,20 @@ defmodule Jido.Console.Tui.State do
     notice(state, "Selected model #{identity} (#{tier})")
   end
 
+  def update(%__MODULE__{} = state, {:binding_selected, kind, result}) when is_map(result) do
+    notice(state, "Selected #{selection_kind(kind)}. Owner state was refreshed.")
+  end
+
+  def update(%__MODULE__{} = state, {:session_replaced, %{handle: handle, view: view}}) do
+    state =
+      state
+      |> Map.put(:session_client, handle)
+      |> Map.put(:startup, :ready)
+      |> restore_view(view)
+
+    notice(state, "Created a new clean session. Select any required execution policy before work starts.")
+  end
+
   def update(%__MODULE__{} = state, {:command_error, reason}) do
     notice(state, format_error(reason))
   end
@@ -436,6 +452,18 @@ defmodule Jido.Console.Tui.State do
   defp submit_regular_prompt(state, prompt), do: start_selected_turn(state, prompt)
 
   defp submit_command(state, :help), do: notice(state, Command.help())
+  defp submit_command(state, :cancel), do: {state, [:exit]}
+
+  defp submit_command(%{selection: %{binding_state: :resume_blocked}} = state, :new_session) do
+    if is_nil(state.session_client),
+      do: notice(state, "The session client is not ready."),
+      else: {state, [:new_session]}
+  end
+
+  defp submit_command(state, :new_session),
+    do: notice(state, "The new-session command is available only after an exact-resume block.")
+
+  defp submit_command(state, :show_agent), do: notice(state, Selection.show_agent(state.selection))
 
   defp submit_command(state, :list_models) do
     case Selection.list_models(state.selection) do
@@ -471,10 +499,81 @@ defmodule Jido.Console.Tui.State do
     end
   end
 
+  defp submit_command(state, {:select_agent, source}) do
+    select_binding(state, :agent, source, {:select_agent, source})
+  end
+
+  defp submit_command(state, :list_execution_policies),
+    do: notice(state, Selection.list_execution_policies(state.selection))
+
+  defp submit_command(state, {:select_execution_policy, id}) do
+    select_execution_policy(state, id, false)
+  end
+
   defp submit_command(state, :list_profiles), do: notice(state, Selection.list_profiles())
 
-  defp submit_command(state, {:select_profile, profile_id}) do
-    notice(state, Selection.profile_notice(profile_id))
+  defp submit_command(state, {:select_profile, id}) do
+    select_execution_policy(state, id, true)
+  end
+
+  defp select_execution_policy(state, id, legacy?) do
+    warning =
+      [
+        if(legacy?, do: Jido.Console.ExecutionPolicy.legacy_warning()),
+        Selection.execution_policy_notice(id)
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+
+    select_binding(
+      state,
+      :execution_policy,
+      id,
+      {:select_execution_policy, id, state.project_root},
+      warning
+    )
+  end
+
+  defp select_binding(state, kind, _value, effect, warning \\ nil) do
+    cond do
+      state.selection.binding_state == :locked ->
+        invalid_command_notice(
+          state,
+          "Selection is locked after the first prompt is accepted",
+          %{command: kind, reason: :binding_locked}
+        )
+
+      state.selection.binding_state == :resume_blocked ->
+        invalid_command_notice(
+          state,
+          "The stored thread binding cannot be changed",
+          %{command: kind, reason: :resume_blocked}
+        )
+
+      is_nil(state.session_client) ->
+        invalid_command_notice(
+          state,
+          "Jido is still starting. Try the command again when it is ready.",
+          %{command: kind, reason: :session_not_ready}
+        )
+
+      true ->
+        state =
+          state
+          |> Map.put(:editor, Editor.clear(state.editor))
+          |> Map.put(:scroll_offset, 0)
+          |> recompute_completion()
+
+        state =
+          if warning == "" or is_nil(warning) do
+            state
+          else
+            {state, []} = notice(state, warning)
+            state
+          end
+
+        {state, [effect]}
+    end
   end
 
   defp start_selected_turn(state, prompt) do
@@ -484,6 +583,15 @@ defmodule Jido.Console.Tui.State do
 
       {:error, reason} ->
         {%{state | activity: {:failed, :selection, reason, reason}}, []}
+    end
+  end
+
+  defp submit_blocked_input(state) do
+    prompt = state.editor |> Editor.value() |> String.trim()
+
+    case Command.parse(prompt) do
+      {:command, action} when action in [:new_session, :cancel, :help] -> submit_command(state, action)
+      _other -> notice(state, "This thread is read-only. Use /new-session or /cancel.")
     end
   end
 
@@ -779,14 +887,14 @@ defmodule Jido.Console.Tui.State do
   end
 
   defp format_error(reason) do
-    Error.message(reason)
+    Jido.Console.SafeDisplay.message(reason)
   rescue
-    _exception -> inspect(reason)
+    _exception -> "Jido could not complete the request."
   end
 
   defp invalid_command_notice(state, message, details) do
-    state
-    |> notice(format_error(Error.validation_error(message, details)))
+    _details = details
+    notice(state, message)
   end
 
   defp view_message(message) do
@@ -921,6 +1029,9 @@ defmodule Jido.Console.Tui.State do
   defp history_error(nil), do: nil
   defp history_error(reason), do: format_error(reason)
 
+  defp view_activity(%SessionView{active: nil, binding_state: :resume_blocked, error: error}, _id),
+    do: {{:failed, :startup, error, format_error(error)}, []}
+
   defp view_activity(%SessionView{active: nil, status: :unavailable, error: error}, _id),
     do: {{:failed, :turn, error, format_error(error)}, []}
 
@@ -1049,4 +1160,13 @@ defmodule Jido.Console.Tui.State do
   defp normalize_model_tier("unsupported"), do: :unsupported
   defp normalize_model_tier(tier) when is_atom(tier), do: tier
   defp normalize_model_tier(_tier), do: nil
+
+  defp restore_owner_selection(selection, view) do
+    selection
+    |> restore_model_selection(view.model)
+    |> Selection.restore_binding(view.binding, view.binding_state)
+  end
+
+  defp selection_kind(:agent), do: "agent source"
+  defp selection_kind(:execution_policy), do: "execution policy"
 end

@@ -47,8 +47,30 @@ live process state. It is not a durable scheduler.
 
 An attachment gets one complete, revisioned View. The View contains the
 committed transcript, current partial output, active public IDs, review, queue,
-safe resource status, and the newest 200 product events. Use the bounded
-history command to read older events.
+safe binding and resource status, and the newest 200 product events. The safe
+binding identifies the agent source by kind, label, and digest. It does not
+contain the canonical source path. Use the bounded history command to read
+older events.
+
+## Durable Binding And Exact Resume
+
+Before the first prompt, the owner stores a draft binding with an agent source,
+model and origin, coding pack, execution policy, workspace identity, semantic
+digests, and the trusted runtime-definition fingerprint. The first prompt lock
+updates the session and inserts `prompt_queued` in one SQLite transaction. A
+failure cannot leave only one side of that pair.
+
+The locked binding is authoritative on attach and owner replacement. Incoming
+explicit values are assertions only. Console rebuilds and compares the exact
+source bytes, base and bound specifications, model, policy evidence, trusted
+registration, runtime fingerprint, and workspace identity before it opens a
+provider, adapter, tool, or extension. A mismatch enters the read-only
+`resume_blocked` state. It does not silently use a current default.
+
+In the TUI, `/new-session` creates a new thread ID and copies no transcript,
+queue, lease, review, automation, result, or direct execution-policy consent.
+An agent policy request must receive a new exact user choice. `/cancel` closes
+the blocked read-only TUI.
 
 ## Owner Replacement
 
@@ -63,8 +85,26 @@ not resume old work.
   through the public Jidoka store, and closes all accepted old items.
 - Queued old items also become interrupted. They do not run after restart.
 
-The store has no data migration or compatibility layer. When this unreleased
-format changes, startup moves the old development database and its SQLite
-sidecars into a private `console.sqlite3.schema-VERSION-backup` directory. It
-then creates the current database. Startup stops without replacing the old
-database when it cannot make that backup safely.
+Active-request cancellation is supervised and durable. The remaining FIFO
+cancellation gap is tracked in
+[issue #28](https://github.com/agentjido/jido_console/issues/28). This release
+does not add a native helper for that gap.
+
+## Store Compatibility
+
+The binding release raises the Console store reader version from 2 to 3. A
+valid version 2 store gets an integrity-checked marker-only upgrade. Its session
+and event tables are not rewritten. A previous reader refuses a version 3 store
+before writes or resource callbacks, because that reader cannot preserve a
+binding manifest. In-place downgrade is not supported.
+
+A legacy session without a binding manifest can adopt the current binding only
+when every conversation, request, snapshot, result, error, lease, environment,
+metadata, lineage, and product-event field proves that the session was unused.
+All other legacy sessions remain readable but enter `resume_blocked` without a
+storage mutation.
+
+For older incompatible development schemas, startup keeps the existing backup
+behavior. It moves the database and SQLite sidecars into a private
+`console.sqlite3.schema-VERSION-backup` directory before it creates a new
+database. Startup stops when it cannot make that backup safely.

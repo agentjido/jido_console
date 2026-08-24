@@ -1,15 +1,18 @@
 defmodule Jido.Console.Session.View do
   @moduledoc "A complete, portable view of one Console thread."
 
-  alias Jido.Console.Session.{Event, Queue}
+  alias Jido.Console.Session.{Event, Queue, Selection}
 
   @statuses [:idle, :starting, :running, :review, :finishing, :reconciling, :unavailable]
+  @binding_states [:needs_model, :needs_policy, :ready_unlocked, :locked, :reconciling, :resume_blocked]
 
   @schema Zoi.struct(
             __MODULE__,
             %{
               thread_id: Zoi.string() |> Zoi.min(1),
               status: Zoi.enum(@statuses),
+              binding_state: Zoi.enum(@binding_states) |> Zoi.default(:ready_unlocked),
+              binding: Zoi.map() |> Zoi.default(%{}),
               revision: Zoi.integer() |> Zoi.gte(0),
               session_revision: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(0),
               transcript: Zoi.array(Zoi.map()) |> Zoi.default([]),
@@ -120,6 +123,8 @@ defmodule Jido.Console.Session.View do
     new!(
       thread_id: state.thread_id,
       status: state.status,
+      binding_state: binding_state(state),
+      binding: binding_projection(state),
       revision: state.revision,
       session_revision: state.session.revision,
       transcript: Enum.map(state.session.conversation.agent_state.messages, &Jidoka.project/1),
@@ -129,7 +134,7 @@ defmodule Jido.Console.Session.View do
       active: item(state.active),
       review: review(state.review),
       queue: Enum.map(Queue.to_list(state.queue), &item/1),
-      resources: state.resources_module.status(state.resources),
+      resources: resources(state),
       model: model(state),
       error: state.error
     )
@@ -149,4 +154,18 @@ defmodule Jido.Console.Session.View do
   end
 
   defp model(_state), do: nil
+
+  defp binding_state(%{status: :reconciling, pending_lock: pending}) when not is_nil(pending),
+    do: :reconciling
+
+  defp binding_state(%{binding_state: state}), do: state
+  defp binding_state(_state), do: :ready_unlocked
+
+  defp binding_projection(%{selection: %Selection{} = selection}),
+    do: Selection.safe_projection(selection)
+
+  defp binding_projection(_state), do: %{}
+
+  defp resources(%{resources: nil}), do: %{"status" => "not_prepared"}
+  defp resources(state), do: state.resources_module.status(state.resources)
 end

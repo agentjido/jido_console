@@ -467,7 +467,7 @@ defmodule Jido.Console.Session.ServerTest do
       Jidoka.Agent.Spec.new!(
         id: "review-agent",
         instructions: "Use review_lookup before the final answer.",
-        model: %{provider: :test, id: "model"},
+        model: "openai:gpt-4.1-mini",
         operations: [
           Jidoka.Agent.Spec.Operation.new!(
             name: "review_lookup",
@@ -702,6 +702,53 @@ defmodule Jido.Console.Session.ServerTest do
     refute_received {:provider_started, ^thread_id, _, _}
   end
 
+  test "replacement interrupts a queued-only first prompt and does not restart it", %{opts: opts} do
+    thread_id = "thread-queued-only-replacement"
+    seed_open_items(thread_id, 1, opts, false)
+
+    assert {:ok, owner} = Server.ensure_started(thread_id, opts)
+    assert Server.view(owner).status == :idle
+
+    assert Enum.map(Server.view(owner).history, & &1["type"]) ==
+             ["prompt_queued", "prompt_interrupted"]
+
+    refute_received {:provider_started, ^thread_id, _, _}
+  end
+
+  test "legacy history blocks binding adoption without changing the stored event", %{opts: opts} do
+    thread_id = "thread-legacy-history"
+    spec = Jido.Console.Agents.Default.spec()
+    assert {:ok, session} = Jidoka.Session.Data.start(spec, session_id: thread_id)
+    store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
+    assert {:ok, ^session} = Jidoka.Session.Store.put_session(store, session)
+
+    event =
+      Event.new!(
+        id: Event.event_id(thread_id, "legacy-item", "prompt_queued"),
+        type: "prompt_queued",
+        session_id: thread_id,
+        queue_item_id: "legacy-item",
+        request_id: "legacy-request",
+        payload: %{
+          "input" => "old prompt",
+          "context" => %{},
+          "command_digest" => "legacy-command"
+        }
+      )
+
+    assert {:ok, %{event: stored}} =
+             Storage.append_thread_event(event, writer: opts[:writer], deadline: 5_000)
+
+    assert {:ok, owner} = Server.ensure_started(thread_id, opts)
+    view = Server.view(owner)
+    assert view.binding_state == :resume_blocked
+    assert Enum.map(view.history, & &1["id"]) == [stored.id]
+
+    assert {:ok, unchanged} = Jidoka.Session.Store.get_session(store, thread_id)
+    assert unchanged == session
+    refute_received {:provider_started, ^thread_id, _, _}
+  end
+
   test "replacement keeps one durable terminal and interrupts queued FIFO items once", %{opts: opts} do
     thread_id = "thread-multi-terminal"
     seed_open_items(thread_id, 3, opts)
@@ -810,7 +857,7 @@ defmodule Jido.Console.Session.ServerTest do
     Jidoka.Agent.Spec.new!(
       id: "review-agent",
       instructions: "Use review_lookup before the final answer.",
-      model: %{provider: :test, id: "model"},
+      model: "openai:gpt-4.1-mini",
       operations: [
         Jidoka.Agent.Spec.Operation.new!(
           name: "review_lookup",
@@ -826,41 +873,111 @@ defmodule Jido.Console.Session.ServerTest do
     seed_open_items(thread_id, 1, opts)
   end
 
-  defp seed_open_items(thread_id, count, opts) do
-    spec =
-      Jidoka.Agent.Spec.new!(
-        id: "recovery-agent",
-        instructions: "Test recovery.",
-        model: %{provider: :test, id: "model"}
-      )
-
-    {:ok, session} = Jidoka.Session.Data.start(spec, session_id: thread_id)
+  defp seed_open_items(thread_id, count, opts, started? \\ true) do
+    {:ok, selection} = Jido.Console.Session.Selection.new(thread_id: thread_id)
+    {:ok, session} = Jido.Console.Session.Selection.start_session(selection, thread_id)
     store = Storage.session_store(writer: opts[:writer], deadline: 5_000)
     assert {:ok, ^session} = Jidoka.Session.Store.put_session(store, session)
 
-    for index <- 1..count,
-        type <- if(index == 1, do: ["prompt_queued", "prompt_started"], else: ["prompt_queued"]) do
+    for index <- 1..count do
       item_id = if(count == 1, do: "#{thread_id}-old-item", else: "#{thread_id}-old-item-#{index}")
       request_id = if(count == 1, do: "old-request", else: "old-request-#{index}")
 
-      event =
-        Event.new!(
-          id: "#{thread_id}:#{item_id}:#{type}",
-          type: type,
-          session_id: thread_id,
-          queue_item_id: item_id,
-          request_id: request_id,
-          payload:
-            if(type == "prompt_queued",
-              do: %{"input" => "old work #{index}", "command_digest" => "old-#{index}"},
-              else: %{}
-            )
-        )
+      if index == 1 do
+        command =
+          Command.new!(
+            id: item_id,
+            type: :submit,
+            thread_id: thread_id,
+            queue_item_id: item_id,
+            request_id: request_id,
+            text: "old work #{index}",
+            payload: %{"context" => %{}}
+          )
 
-      assert {:ok, _stored} = Storage.append_thread_event(event, writer: opts[:writer], deadline: 5_000)
+        operation_id = Command.lock_operation_id(command)
+
+        first_digest =
+          Command.first_lock_digest(command, selection.manifest["binding_digest"])
+
+        {:ok, locked} =
+          Jido.Console.Session.Selection.lock(selection, operation_id, first_digest)
+
+        {:ok, locked_session} =
+          Jido.Console.Session.BindingManifest.put(
+            %{session | revision: session.revision + 1},
+            locked.manifest
+          )
+
+        queued =
+          Event.new!(
+            id: Event.event_id(thread_id, item_id, "prompt_queued"),
+            type: "prompt_queued",
+            session_id: thread_id,
+            queue_item_id: item_id,
+            request_id: request_id,
+            jidoka_revision: locked_session.revision,
+            payload: %{
+              "input" => command.text,
+              "context" => %{},
+              "command_digest" => Command.digest(command),
+              "binding_digest" => locked.manifest["binding_digest"],
+              "lock_operation_id" => operation_id,
+              "first_prompt_command_digest" => first_digest
+            }
+          )
+
+        assert {:ok, %{session: _committed}} =
+                 Storage.lock_first_prompt(
+                   locked_session,
+                   queued,
+                   operation_id,
+                   session.revision,
+                   selection.generation,
+                   writer: opts[:writer],
+                   deadline: 5_000
+                 )
+
+        if started? do
+          started =
+            Event.new!(
+              id: Event.event_id(thread_id, item_id, "prompt_started"),
+              type: "prompt_started",
+              session_id: thread_id,
+              queue_item_id: item_id,
+              request_id: request_id,
+              payload: %{}
+            )
+
+          assert {:ok, _stored} =
+                   Storage.append_thread_event(started, writer: opts[:writer], deadline: 5_000)
+        end
+
+        Process.put({__MODULE__, thread_id, :selection}, locked)
+      else
+        locked = Process.get({__MODULE__, thread_id, :selection})
+
+        queued =
+          Event.new!(
+            id: Event.event_id(thread_id, item_id, "prompt_queued"),
+            type: "prompt_queued",
+            session_id: thread_id,
+            queue_item_id: item_id,
+            request_id: request_id,
+            payload: %{
+              "input" => "old work #{index}",
+              "context" => %{},
+              "command_digest" => "old-#{index}",
+              "binding_digest" => locked.manifest["binding_digest"]
+            }
+          )
+
+        assert {:ok, _stored} =
+                 Storage.append_thread_event(queued, writer: opts[:writer], deadline: 5_000)
+      end
     end
 
-    session
+    Process.delete({__MODULE__, thread_id, :selection})
   end
 
   defp successful_session(session) do

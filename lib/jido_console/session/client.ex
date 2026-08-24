@@ -1,7 +1,7 @@
 defmodule Jido.Console.Session.Client do
   @moduledoc "Small local client for the transport-neutral Command and View boundary."
 
-  alias Jido.Console.Session.{Command, Server, View}
+  alias Jido.Console.Session.{BindingRequest, Command, Server, View}
 
   @schema Zoi.struct(
             __MODULE__,
@@ -29,13 +29,16 @@ defmodule Jido.Console.Session.Client do
   def attach(thread_id, opts \\ []) when is_binary(thread_id) and thread_id != "" do
     subscriber = Keyword.get(opts, :subscriber, self())
 
-    with {:ok, owner} <- Server.ensure_started(thread_id, opts),
-         {:ok, %{attachment_ref: attachment_ref, view: view}} <- Server.attach(owner, subscriber) do
-      {:ok,
-       %{
-         handle: %__MODULE__{thread_id: thread_id, attachment_ref: attachment_ref, owner_options: opts},
-         view: view
-       }}
+    with {:ok, request} <- BindingRequest.from_options(opts),
+         {:ok, owner} <- Server.ensure_started(thread_id, opts),
+         {:ok, %{attachment_ref: attachment_ref, view: view}} <-
+           Server.attach(owner, subscriber, request) do
+      result = %{
+        handle: %__MODULE__{thread_id: thread_id, attachment_ref: attachment_ref, owner_options: opts},
+        view: view
+      }
+
+      {:ok, maybe_warnings(result, opts)}
     end
   end
 
@@ -120,13 +123,58 @@ defmodule Jido.Console.Session.Client do
   @doc "Selects one exact model before the first prompt is durably accepted."
   @spec select_model(t(), String.t()) :: {:ok, map()} | {:error, term()}
   def select_model(%__MODULE__{} = handle, identity) when is_binary(identity) do
+    select_model_as(handle, identity, :api)
+  end
+
+  @doc false
+  @spec select_model_as(t(), String.t(), :api | :tui) :: {:ok, map()} | {:error, term()}
+  def select_model_as(%__MODULE__{} = handle, identity, origin)
+      when is_binary(identity) and origin in [:api, :tui] do
     with {:ok, command} <-
            Command.new(
              id: Jidoka.Id.generate!("command"),
              type: :select_model,
              thread_id: handle.thread_id,
              text: identity,
-             payload: %{}
+             payload: %{"origin" => Atom.to_string(origin)}
+           ) do
+      run(handle, command)
+    end
+  end
+
+  @doc "Selects one agent source before the first prompt is durably accepted."
+  @spec select_agent(t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def select_agent(%__MODULE__{} = handle, source) when is_binary(source) do
+    select(handle, :select_agent, source)
+  end
+
+  @doc "Selects one execution policy before the first prompt is durably accepted."
+  @spec select_execution_policy(t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def select_execution_policy(%__MODULE__{} = handle, id, opts \\ []) when is_binary(id) do
+    select_execution_policy_as(handle, id, :api, opts)
+  end
+
+  @doc false
+  @spec select_execution_policy_as(t(), String.t(), :api | :tui, keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def select_execution_policy_as(%__MODULE__{} = handle, id, origin, opts \\ [])
+      when is_binary(id) and origin in [:api, :tui] do
+    payload =
+      %{"origin" => Atom.to_string(origin)}
+      |> then(fn payload ->
+        case Keyword.get(opts, :project_root) do
+          nil -> payload
+          root -> Map.put(payload, "project_root", root)
+        end
+      end)
+
+    with {:ok, command} <-
+           Command.new(
+             id: Jidoka.Id.generate!("command"),
+             type: :select_execution_policy,
+             thread_id: handle.thread_id,
+             text: id,
+             payload: payload
            ) do
       run(handle, command)
     end
@@ -160,6 +208,19 @@ defmodule Jido.Console.Session.Client do
 
   defp owner(%__MODULE__{} = handle), do: Server.ensure_started(handle.thread_id, handle.owner_options)
 
+  defp select(handle, type, value) do
+    with {:ok, command} <-
+           Command.new(
+             id: Jidoka.Id.generate!("command"),
+             type: type,
+             thread_id: handle.thread_id,
+             text: value,
+             payload: %{"origin" => "api"}
+           ) do
+      run(handle, command)
+    end
+  end
+
   defp control(handle, type, attrs \\ []) do
     Command.new!(
       Keyword.merge(
@@ -171,4 +232,12 @@ defmodule Jido.Console.Session.Client do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp maybe_warnings(result, opts) do
+    if Keyword.has_key?(opts, :coding_profile) or Keyword.has_key?(opts, :coding_profile_resolver) do
+      Map.put(result, :warnings, [Jido.Console.ExecutionPolicy.legacy_warning()])
+    else
+      result
+    end
+  end
 end

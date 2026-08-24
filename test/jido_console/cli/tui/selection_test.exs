@@ -9,7 +9,7 @@ defmodule Jido.Console.Tui.SelectionTest do
     %{identity: "ollama:llama3.2", provider: "ollama", model: "llama3.2", tier: :beta}
   ]
 
-  test "lists catalog models and allowed profiles" do
+  test "lists catalog models and allowed execution policies" do
     selection = Selection.init(catalog_entries: @entries)
     assert {:ok, models} = Selection.list_models(selection)
     assert models =~ "openai:gpt-4.1-mini supported"
@@ -17,9 +17,9 @@ defmodule Jido.Console.Tui.SelectionTest do
     assert models =~ "current"
     refute models =~ "sk-"
 
-    profiles = Selection.list_profiles()
-    assert profiles =~ "coding.restricted"
-    assert profiles =~ "coding.trusted-workspace"
+    policies = Selection.list_execution_policies(selection)
+    assert policies =~ "coding.restricted current"
+    assert policies =~ "coding.trusted-workspace"
   end
 
   test "lists only selectable tiers in stable identity order" do
@@ -133,11 +133,12 @@ defmodule Jido.Console.Tui.SelectionTest do
            ]
   end
 
-  test "profile mutation commands require a new thread" do
+  test "keeps the profile command as a warning alias" do
     selection = Selection.init(catalog_entries: @entries)
     assert selection.model == "openai:gpt-4.1-mini"
     warning = Selection.profile_notice("coding.trusted-workspace")
-    assert warning =~ "new thread"
+    assert warning =~ "Deprecated"
+    assert warning =~ "/execution-policy"
     assert warning =~ "not a sandbox"
   end
 
@@ -150,22 +151,80 @@ defmodule Jido.Console.Tui.SelectionTest do
   end
 
   test "TUI mutation commands dispatch owner selection without starting work" do
-    state = State.new(:session, {80, 12}, catalog_entries: @entries)
+    state = State.new(:session, {80, 12}, catalog_entries: @entries, session_client: :client)
     initial = state.selection
     {state, []} = State.update(state, {:terminal, {:text, "/model ollama:llama3.2"}})
     {state, effects} = State.update(state, {:terminal, {:key, :enter}})
     assert state.selection == initial
     assert state.activity == :idle
-    assert effects == []
-    assert List.last(state.command_notices) =~ "still starting"
+    assert effects == [{:select_model, "ollama:llama3.2"}]
     assert Frame.row_text(View.render(state), 1) =~ "openai:gpt-4.1-mini"
 
-    {state, []} = State.update(state, {:terminal, {:text, "/profile coding.trusted-workspace"}})
-    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    {state, []} = State.update(state, {:terminal, {:text, "/agent agents/review agent.yaml"}})
+
+    {state, [{:select_agent, "agents/review agent.yaml"}]} =
+      State.update(state, {:terminal, {:key, :enter}})
+
+    {state, []} = State.update(state, {:terminal, {:text, "/execution-policy coding.trusted-workspace"}})
+
+    {state, [{:select_execution_policy, "coding.trusted-workspace", nil}]} =
+      State.update(state, {:terminal, {:key, :enter}})
+
     assert state.selection == initial
     assert state.activity == :idle
-    assert List.last(state.command_notices) =~ "new thread"
+    assert List.last(state.command_notices) =~ "not a sandbox"
+
+    {state, []} = State.update(state, {:terminal, {:text, "/profile coding.restricted"}})
+
+    {state, [{:select_execution_policy, "coding.restricted", nil}]} =
+      State.update(state, {:terminal, {:key, :enter}})
+
+    assert List.last(state.command_notices) =~ "deprecated"
     assert Frame.row_text(View.render(state), 1) =~ "coding.restricted"
+  end
+
+  test "restores pending policy state and requires the exact owner request" do
+    selection =
+      Selection.init(catalog_entries: @entries)
+      |> Selection.restore_binding(
+        %{
+          "agent" => %{"id" => "trusted-agent", "source" => %{"kind" => "file"}},
+          "execution_policy" => %{"id" => nil, "requested_id" => "coding.trusted-workspace"}
+        },
+        :needs_policy
+      )
+
+    assert {:error, reason} = Selection.admit(selection)
+    assert reason =~ "/execution-policy"
+    assert reason =~ "coding.trusted-workspace"
+    assert Selection.list_execution_policies(selection) =~ "coding.trusted-workspace requested"
+  end
+
+  test "shows current owner values and locks selection commands" do
+    binding = %{
+      "agent" => %{
+        "id" => "reviewer",
+        "source" => %{"kind" => "file", "label" => "review.yaml", "digest" => "sha256:agent"}
+      },
+      "execution_policy" => %{"id" => "coding.restricted", "requested_id" => nil}
+    }
+
+    state = State.new(:session, {80, 14}, catalog_entries: @entries, session_client: :client)
+    selection = Selection.restore_binding(state.selection, binding, :locked)
+    state = %{state | selection: selection}
+
+    {state, []} = State.update(state, {:terminal, {:text, "/agent"}})
+    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    assert List.last(state.command_notices) =~ "review.yaml"
+    refute List.last(state.command_notices) =~ "/private/"
+
+    {state, []} = State.update(state, {:terminal, {:text, "/agent other.yaml"}})
+    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    assert List.last(state.command_notices) =~ "locked"
+
+    {state, []} = State.update(state, {:terminal, {:text, "/execution-policy coding.trusted-workspace"}})
+    {state, []} = State.update(state, {:terminal, {:key, :enter}})
+    assert List.last(state.command_notices) =~ "locked"
   end
 
   test "an unavailable model prevents the turn from starting" do

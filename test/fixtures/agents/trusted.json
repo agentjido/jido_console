@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "agent": {
+    "id": "trusted_file_agent",
+    "instructions": "Work only in the selected trusted workspace.",
+    "model": "openai:gpt-4.1-mini",
+    "execution_profile": "coding.trusted-workspace"
+  }
+}

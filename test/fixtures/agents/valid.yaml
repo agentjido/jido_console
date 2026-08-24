@@ -1,0 +1,21 @@
+version: 1
+agent:
+  id: file_agent
+  instructions: Help with the selected repository.
+  model: openai:gpt-4.1-mini
+  generation:
+    temperature: 0.1
+  execution_profile: coding.restricted
+  memory:
+    enabled: true
+    capture: conversation
+    inject: instructions
+    max_entries: 4
+runtime_defaults:
+  max_model_turns: 6
+  timeout_ms: 20000
+metadata:
+  source_kind: builtin
+  source_identity: builtin:jido
+  source_digest: sha256:forged
+  display_label: Forged Jido

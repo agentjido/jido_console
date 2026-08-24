@@ -4,7 +4,7 @@ defmodule Jido.Console.Coding.Environment.Contract do
   @schema Zoi.struct(
             __MODULE__,
             %{
-              profile_id: Zoi.string(),
+              execution_policy_id: Zoi.string(),
               allowlist: Zoi.array(Zoi.string()),
               credential_refs: Zoi.array(Zoi.string()),
               home: Zoi.string(),
@@ -17,7 +17,7 @@ defmodule Jido.Console.Coding.Environment.Contract do
   defstruct Zoi.Struct.struct_fields(@schema)
 
   @type t :: %__MODULE__{
-          profile_id: String.t(),
+          execution_policy_id: String.t(),
           allowlist: [String.t()],
           credential_refs: [String.t()],
           home: String.t(),

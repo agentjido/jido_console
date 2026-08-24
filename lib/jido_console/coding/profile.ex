@@ -1,21 +1,22 @@
 defmodule Jido.Console.Coding.Profile do
   @moduledoc """
-  Local execution-profile contract for Milestone 1.
+  Deprecated compatibility facade for `Jido.Console.ExecutionPolicy`.
 
-  Restricted execution is the default coding profile. Trusted-workspace mode
-  is an explicit option, is labelled as not a sandbox, and is excluded from
-  the restricted-execution gate.
+  This module keeps the release-line coding setup shape. New selection code
+  must use the execution-policy registry and selector.
   """
 
-  alias Jido.Console.Coding.{Environment, RestrictedProfile}
+  alias Jido.Console.Coding.Environment
   alias Jido.Console.Coding.Environment.Contract
+  alias Jido.Console.ExecutionPolicy
   alias Jido.Console.Home
 
-  @trusted_id "coding.trusted-workspace"
   @version 1
+  @deprecation "Use Jido.Console.ExecutionPolicy"
 
   @type t :: %{
-          id: String.t(),
+          id: String.t() | nil,
+          execution_policy_id: String.t() | nil,
           version: pos_integer(),
           class: :restricted | :trusted_workspace,
           explicit?: boolean(),
@@ -26,60 +27,67 @@ defmodule Jido.Console.Coding.Profile do
           roots: map()
         }
 
-  @doc "Returns the default restricted profile identifier."
+  @deprecated @deprecation
+  @doc "Returns the default restricted execution-policy identifier."
   @spec restricted_id() :: String.t()
-  def restricted_id, do: RestrictedProfile.id()
+  def restricted_id, do: ExecutionPolicy.restricted_id()
 
-  @doc "Returns the explicit trusted-workspace profile identifier."
+  @deprecated @deprecation
+  @doc "Returns the canonical trusted-workspace execution-policy identifier."
   @spec trusted_id() :: String.t()
-  def trusted_id, do: @trusted_id
+  def trusted_id, do: ExecutionPolicy.trusted_id()
 
+  @deprecated @deprecation
   @doc "Returns the trusted-workspace warning."
   @spec trusted_warning() :: String.t()
-  def trusted_warning, do: "Trusted-workspace mode is not a sandbox."
+  def trusted_warning, do: ExecutionPolicy.trusted_warning()
 
-  @doc "Returns true when the profile is the explicit trusted-workspace option."
+  @deprecated @deprecation
+  @doc "Returns true for the canonical trusted ID or its local alias."
   @spec trusted?(String.t() | nil) :: boolean()
-  def trusted?(id) when id in [@trusted_id, "coding.local"], do: true
-  def trusted?(_id), do: false
+  def trusted?(id), do: ExecutionPolicy.normalize_id(id) == ExecutionPolicy.trusted_id()
 
-  @doc "Returns true when a less-restricted profile was explicitly selected."
+  @deprecated @deprecation
+  @doc "Returns true only when this input layer contains a direct choice."
   @spec explicit_choice?(keyword()) :: boolean()
   def explicit_choice?(opts) do
-    Keyword.has_key?(opts, :coding_profile) or
-      Application.get_env(:jido_console, :coding_profile) != nil
+    Keyword.has_key?(opts, :execution_policy) or Keyword.has_key?(opts, :coding_profile)
   end
 
-  @doc "Resolves the effective profile for one coding setup."
+  @deprecated @deprecation
+  @doc "Resolves one compatibility profile through the canonical selector."
   @spec resolve(String.t() | nil, keyword()) :: {:ok, t()} | {:error, term()}
   def resolve(nil, _opts), do: {:ok, disabled()}
 
-  def resolve(profile_id, opts) when is_binary(profile_id) do
-    cond do
-      profile_id == RestrictedProfile.id() ->
-        restricted(opts, explicit?: selected?(opts, RestrictedProfile.id()))
-
-      known_trusted?(profile_id) ->
-        if selected?(opts, profile_id) do
-          trusted(profile_id, opts)
-        else
-          {:error, {:explicit_profile_required, profile_id}}
-        end
-
-      true ->
-        {:error, {:unknown_execution_profile, profile_id}}
+  def resolve(execution_policy_id, opts) when is_binary(execution_policy_id) and is_list(opts) do
+    with {:ok, direct} <- compatibility_direct_choice(opts),
+         {:ok, selection} <-
+           ExecutionPolicy.resolve(
+             agent_request: execution_policy_id,
+             direct_choice: direct,
+             project_root: Keyword.get(opts, :project_root)
+           ),
+         {:ok, contract} <- Environment.resolve(selection.execution_policy_id, opts),
+         {:ok, roots} <- roots(selection.execution_policy_id, contract, opts) do
+      {:ok, compatibility_map(selection, contract, roots, opts)}
     end
   end
 
-  @doc "Returns true when restricted boundary adapters have reported enforcement."
+  def resolve(execution_policy_id, _opts),
+    do: {:error, {:unknown_execution_policy, execution_policy_id}}
+
+  @deprecated @deprecation
+  @doc "Returns true when restricted boundary adapters reported enforcement."
   @spec restricted_passed?(t()) :: boolean()
   def restricted_passed?(%{class: :restricted, enforcement: :reported}), do: true
   def restricted_passed?(_profile), do: false
 
-  @doc "Projects the effective profile for display and run records."
+  @deprecated @deprecation
+  @doc "Projects the compatibility value with canonical policy evidence keys."
   @spec to_map(t()) :: map()
   def to_map(profile) do
     %{
+      "execution_policy_id" => profile.execution_policy_id,
       "id" => profile.id,
       "version" => profile.version,
       "class" => Atom.to_string(profile.class),
@@ -92,41 +100,51 @@ defmodule Jido.Console.Coding.Profile do
     }
   end
 
-  defp restricted(opts, extra) do
-    with {:ok, contract} <- Environment.resolve(RestrictedProfile.id(), opts),
-         {:ok, roots} <- restricted_roots(contract, opts) do
+  defp compatibility_direct_choice(opts) do
+    if explicit_choice?(opts),
+      do: ExecutionPolicy.direct_choice(opts, :api),
+      else: {:ok, nil}
+  end
+
+  defp compatibility_map(selection, contract, roots, opts) do
+    restricted? = selection.execution_policy_id == ExecutionPolicy.restricted_id()
+
+    %{
+      id: selection.execution_policy_id,
+      execution_policy_id: selection.execution_policy_id,
+      version: @version,
+      class: selection.record.class,
+      explicit?: selection.origin in [:cli, :api, :tui],
+      sandbox?: false,
+      warning: selection.warning,
+      enforcement: if(restricted?, do: Keyword.get(opts, :restricted_enforcement, :pending), else: :reported),
+      environment_contract: contract,
+      roots: roots
+    }
+  end
+
+  defp roots(id, %Contract{} = contract, opts) do
+    if id == ExecutionPolicy.restricted_id() do
+      restricted_roots(contract, opts)
+    else
       {:ok,
        %{
-         id: RestrictedProfile.id(),
-         version: @version,
-         class: :restricted,
-         explicit?: extra[:explicit?],
-         sandbox?: false,
-         warning: nil,
-         enforcement: Keyword.get(opts, :restricted_enforcement, :pending),
-         environment_contract: contract,
-         roots: roots
+         "workspace" => Keyword.get(opts, :project_root),
+         "temporary" => contract.tmpdir,
+         "home" => contract.home
        }}
     end
   end
 
-  defp trusted(profile_id, opts) do
-    with {:ok, contract} <- Environment.resolve(profile_id, opts) do
+  defp restricted_roots(%Contract{} = contract, opts) do
+    with {:ok, artifacts} <- Home.path(:artifacts, opts) do
       {:ok,
        %{
-         id: profile_id,
-         version: @version,
-         class: :trusted_workspace,
-         explicit?: true,
-         sandbox?: false,
-         warning: trusted_warning(),
-         enforcement: :reported,
-         environment_contract: contract,
-         roots: %{
-           "workspace" => Keyword.get(opts, :project_root),
-           "temporary" => contract.tmpdir,
-           "home" => contract.home
-         }
+         "workspace" => Keyword.get(opts, :project_root, File.cwd!()),
+         "toolchain" => System.find_executable("mix") || "mix",
+         "artifact" => artifacts,
+         "temporary" => contract.tmpdir,
+         "home" => contract.home
        }}
     end
   end
@@ -134,6 +152,7 @@ defmodule Jido.Console.Coding.Profile do
   defp disabled do
     %{
       id: nil,
+      execution_policy_id: nil,
       version: @version,
       class: :restricted,
       explicit?: false,
@@ -145,29 +164,10 @@ defmodule Jido.Console.Coding.Profile do
     }
   end
 
-  defp restricted_roots(%Contract{} = contract, opts) do
-    with {:ok, artifacts} <- Home.path(:artifacts, opts) do
-      workspace = Keyword.get(opts, :project_root, File.cwd!())
-
-      {:ok,
-       %{
-         "workspace" => workspace,
-         "toolchain" => System.find_executable("mix") || "mix",
-         "artifact" => artifacts,
-         "temporary" => contract.tmpdir,
-         "home" => contract.home
-       }}
-    end
-  end
-
-  defp known_trusted?(id), do: trusted?(id)
-
-  defp selected?(opts, profile_id) do
-    Keyword.get(opts, :coding_profile, Application.get_env(:jido_console, :coding_profile)) == profile_id
-  end
-
   defp root_presence(roots) when is_map(roots) do
-    Map.new(roots, fn {key, value} -> {key, if(value in [nil, ""], do: "missing", else: "declared")} end)
+    Map.new(roots, fn {key, value} ->
+      {key, if(value in [nil, ""], do: "missing", else: "declared")}
+    end)
   end
 
   defp environment_evidence(nil), do: %{}
