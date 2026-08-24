@@ -59,21 +59,8 @@ defmodule Jido.Console.CLI do
 
   defp dispatch_fast(_args), do: :continue
 
-  defp start_and_run(["stop" | _rest] = args, opts) do
-    opts = Keyword.put_new(opts, :application_startup, &start_runtime/0)
-
-    case Jido.Console.RuntimeStartup.invoke(opts) do
-      :ok ->
-        handle_run_result(run(args, opts))
-
-      {:error, reason} ->
-        {:error, status} = interactive_error(reason)
-        System.halt(status)
-    end
-  end
-
   defp start_and_run([command | _rest] = args, opts)
-       when command in ["status", "auth", "doctor", "models"] do
+       when command in ["status", "stop", "auth", "doctor", "models"] do
     handle_run_result(run(args, opts))
   end
 

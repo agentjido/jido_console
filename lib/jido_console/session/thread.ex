@@ -76,11 +76,22 @@ defmodule Jido.Console.Session.Thread do
     module = state.resources_module
 
     with :ok <- require_locked_binding(state),
-         {:ok, resources, session} <- module.prepare(state.resources, state.session),
-         {:ok, session} <- persist_runtime_session(state, resources, session),
-         {:ok, prompt, context} <- module.prepare_prompt(resources, state.active.text, state.active.context) do
-      state = %{state | resources: resources, session: session}
-      start_bridge(%{state | active: %{state.active | text: prompt, context: context}}, :prompt, nil)
+         {:ok, resources, session} <- module.prepare(state.resources, state.session) do
+      result =
+        with {:ok, session} <- persist_runtime_session(state, resources, session),
+             {:ok, prompt, context} <- module.prepare_prompt(resources, state.active.text, state.active.context) do
+          {:ok, session, prompt, context}
+        end
+
+      case result do
+        {:ok, session, prompt, context} ->
+          state = state |> Map.merge(%{resources: resources, session: session}) |> monitor_resources()
+          start_bridge(%{state | active: %{state.active | text: prompt, context: context}}, :prompt, nil)
+
+        {:error, reason} ->
+          close_new_resources(module, state.resources, resources)
+          fail_start(state, {:resource_preparation_failed, reason}, false)
+      end
     else
       {:error, reason} -> fail_start(state, {:resource_preparation_failed, reason}, false)
     end
@@ -264,6 +275,14 @@ defmodule Jido.Console.Session.Thread do
   def close(%{resources: nil}), do: :ok
   def close(state), do: state.resources_module.close(state.resources)
 
+  @doc false
+  @spec resource_pid?(map(), pid()) :: boolean()
+  def resource_pid?(state, pid), do: pid in Map.values(state.resource_monitors)
+
+  @doc false
+  @spec resource_monitor?(map(), reference(), pid()) :: boolean()
+  def resource_monitor?(state, monitor, pid), do: Map.get(state.resource_monitors, monitor) == pid
+
   @doc "Moves the thread to an unavailable state and publishes its View."
   @spec unavailable(map(), term()) :: map()
   def unavailable(state, reason),
@@ -425,6 +444,7 @@ defmodule Jido.Console.Session.Thread do
       review: nil,
       subscribers: %{},
       monitors: %{},
+      resource_monitors: %{},
       revision: 0,
       wake_ref: nil,
       error: nil
@@ -1161,6 +1181,40 @@ defmodule Jido.Console.Session.Thread do
       runtime_fingerprint,
       state.storage_opts
     )
+  end
+
+  defp monitor_resources(state) do
+    desired = owned_resource_processes(state.resources_module, state.resources) |> MapSet.new()
+
+    retained =
+      Enum.reduce(state.resource_monitors, %{}, fn {monitor, pid}, monitors ->
+        if MapSet.member?(desired, pid) do
+          Map.put(monitors, monitor, pid)
+        else
+          Process.demonitor(monitor, [:flush])
+          monitors
+        end
+      end)
+
+    retained_pids = retained |> Map.values() |> MapSet.new()
+
+    monitors =
+      desired
+      |> MapSet.difference(retained_pids)
+      |> Enum.reduce(retained, fn pid, monitors -> Map.put(monitors, Process.monitor(pid), pid) end)
+
+    %{state | resource_monitors: monitors}
+  end
+
+  defp owned_resource_processes(module, resources) do
+    if function_exported?(module, :owned_processes, 1), do: module.owned_processes(resources), else: []
+  end
+
+  defp close_new_resources(_module, current, current), do: :ok
+  defp close_new_resources(module, _current, resources), do: module.close(resources)
+
+  defp model_projection(entry, locked?) do
+    %{"identity" => entry.identity, "tier" => Atom.to_string(entry.tier), "locked" => locked?}
   end
 
   defp persist_runtime_session(state, _resources, session), do: Store.put_session(state.store, session)

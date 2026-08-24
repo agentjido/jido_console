@@ -37,9 +37,26 @@ defmodule Jido.Console.Session.Server do
   end
 
   @doc "Runs one validated thread command."
-  @spec command(name(), Command.t(), timeout()) :: {:ok, term()} | {:error, term()}
-  def command(server, %Command{} = command, timeout \\ 5_000),
+  @spec command(name(), Command.t()) :: :ok | {:ok, term()} | {:error, term()}
+  def command(server, %Command{} = command), do: command(server, command, 5_000)
+
+  @doc "Runs one direct command with a timeout, or one command for an exact attachment."
+  @spec command(name(), Command.t(), timeout()) :: :ok | {:ok, term()} | {:error, term()}
+  @spec command(name(), reference(), Command.t()) :: :ok | {:ok, term()} | {:error, term()}
+  def command(server, command_or_attachment, timeout_or_command)
+
+  def command(server, %Command{} = command, timeout),
     do: GenServer.call(server, {:command, command}, timeout)
+
+  def command(server, attachment_ref, %Command{} = command),
+    do: command(server, attachment_ref, command, 5_000)
+
+  @doc "Runs one command for an exact attachment with a timeout."
+  @spec command(name(), reference(), Command.t(), timeout()) ::
+          :ok | {:ok, term()} | {:error, term()}
+  def command(server, attachment_ref, %Command{} = command, timeout)
+      when is_reference(attachment_ref),
+      do: GenServer.call(server, {:attached_command, attachment_ref, command}, timeout)
 
   @doc "Attaches a subscriber and atomically returns its complete current View."
   @spec attach(name(), pid()) :: {:ok, %{attachment_ref: reference(), view: View.t()}}
@@ -122,6 +139,12 @@ defmodule Jido.Console.Session.Server do
 
   def handle_call(:stop, _from, state), do: {:reply, {:error, :thread_busy}, state}
 
+  def handle_call({:attached_command, attachment_ref, command}, from, state) do
+    if Map.has_key?(state.subscribers, attachment_ref),
+      do: handle_call({:command, command}, from, state),
+      else: {:reply, {:error, :not_attached}, state}
+  end
+
   def handle_call({:command, %Command{thread_id: thread_id}}, _from, %{thread_id: current} = state)
       when thread_id != current,
       do: {:reply, {:error, :cross_thread_command}, state}
@@ -161,19 +184,26 @@ defmodule Jido.Console.Session.Server do
     do: {:noreply, Thread.bridge_result(state, pid, run_ref, request_id, result)}
 
   def handle_info({:EXIT, pid, :normal}, state) do
-    if Thread.bridge_pid?(state, pid),
-      do: {:stop, {:bridge_result_missing, pid}, state},
-      else: {:noreply, state}
+    cond do
+      Thread.bridge_pid?(state, pid) -> {:stop, {:bridge_result_missing, pid}, state}
+      Thread.resource_pid?(state, pid) -> {:stop, {:thread_resource_failed, :normal}, state}
+      true -> {:noreply, state}
+    end
   end
 
   def handle_info({:EXIT, pid, reason}, state) do
-    if Thread.bridge_pid?(state, pid),
-      do: {:stop, {:bridge_exit, reason}, state},
-      else: {:noreply, state}
+    cond do
+      Thread.bridge_pid?(state, pid) -> {:stop, {:bridge_exit, reason}, state}
+      Thread.resource_pid?(state, pid) -> {:stop, {:thread_resource_failed, reason}, state}
+      true -> {:noreply, state}
+    end
   end
 
-  def handle_info({:DOWN, monitor, :process, _pid, _reason}, state),
-    do: {:noreply, View.subscriber_down(state, monitor)}
+  def handle_info({:DOWN, monitor, :process, pid, reason}, state) do
+    if Thread.resource_monitor?(state, monitor, pid),
+      do: {:stop, {:thread_resource_failed, reason}, state},
+      else: {:noreply, View.subscriber_down(state, monitor)}
+  end
 
   def handle_info(:reconcile, state) do
     case Thread.reconcile(%{state | wake_ref: nil}) do

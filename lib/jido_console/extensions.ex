@@ -19,4 +19,7 @@ defmodule Jido.Console.Extensions do
 
   @doc "Closes one host."
   defdelegate close(host), to: Host
+
+  @doc "Returns the long-lived processes owned by one host."
+  defdelegate owned_processes(host), to: Host
 end

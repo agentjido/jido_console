@@ -7,7 +7,7 @@ defmodule Jido.Console.Process do
   process identifiers or credential values.
   """
 
-  alias Jido.Console.Process.{Contract, Store, Supervisor}
+  alias Jido.Console.Process.{Contract, Control, Store, Supervisor}
 
   @type status :: Contract.status()
   @type kind :: Contract.kind()
@@ -43,13 +43,13 @@ defmodule Jido.Console.Process do
   @doc "Stops one named process. Repeated stops report that it is already stopped."
   @spec stop(String.t(), keyword()) :: {:ok, process_record()} | {:error, term()}
   def stop(name, opts \\ []) when is_binary(name) do
-    Supervisor.stop_named(name, opts)
+    if Supervisor.available?(opts), do: Supervisor.stop_named(name, opts), else: Control.stop(name, opts)
   end
 
   @doc "Stops every owned process and removes confirmed home markers."
   @spec stop_all(keyword()) :: {:ok, [process_record()]} | {:error, term()}
   def stop_all(opts \\ []) do
-    Supervisor.stop_all(opts)
+    if Supervisor.available?(opts), do: Supervisor.stop_all(opts), else: Control.stop_all(opts)
   end
 
   @doc "Removes stale active markers whose owners are no longer alive."

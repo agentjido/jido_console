@@ -74,6 +74,10 @@ defmodule Jido.Console.Coding.Setup do
   @spec close(t()) :: :ok
   def close(%__MODULE__{local_resources: resources}), do: Local.close(resources)
 
+  @doc "Returns the long-lived processes owned by one resolved setup."
+  @spec owned_processes(t()) :: [pid()]
+  def owned_processes(%__MODULE__{local_resources: resources}), do: Local.owned_processes(resources)
+
   @doc "Returns the bounded coding context that attached clients can use."
   @spec client_setup(t()) :: ClientSetup.t()
   def client_setup(%__MODULE__{} = setup) do

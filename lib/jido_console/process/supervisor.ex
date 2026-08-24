@@ -38,6 +38,15 @@ defmodule Jido.Console.Process.Supervisor do
     call(opts, :stop_all)
   end
 
+  @doc false
+  @spec available?(keyword()) :: boolean()
+  def available?(opts \\ []) do
+    case Keyword.get(opts, :name, __MODULE__) do
+      name when is_atom(name) -> is_pid(Process.whereis(name))
+      _name -> false
+    end
+  end
+
   @impl true
   @spec init(keyword()) :: {:ok, map()}
   def init(opts) do

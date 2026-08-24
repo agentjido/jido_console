@@ -148,6 +148,14 @@ defmodule Jido.Console.Coding.Local do
     :exit, _reason -> :ok
   end
 
+  @doc "Returns the long-lived processes owned by one local coding setup."
+  @spec owned_processes(resources() | nil) :: [pid()]
+  def owned_processes(nil), do: []
+
+  def owned_processes(%Resources{manager: manager, mutation_state: mutation_state}) do
+    Enum.uniq([manager, mutation_state])
+  end
+
   defp policy do
     fn request, _context ->
       outcome = if allowed_request?(request), do: :allow, else: :deny

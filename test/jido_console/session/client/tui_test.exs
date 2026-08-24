@@ -59,4 +59,16 @@ defmodule Jido.Console.Session.Client.TUITest do
     assert restored.completion.focused_identity == "openai:gpt-4.1-mini"
     assert Enum.find(restored.completion.candidates, & &1.current?).identity == "openai:gpt-4.1-mini"
   end
+
+  test "rejects an old attachment and a non-increasing view revision" do
+    current = %Client{thread_id: "tui-thread", owner_options: [], attachment_ref: make_ref()}
+    old = %Client{thread_id: "tui-thread", owner_options: [], attachment_ref: make_ref()}
+    state = State.new(View.new!(thread_id: "tui-thread", status: :idle, revision: 5), {80, 24}, session_client: current)
+
+    later = View.new!(thread_id: "tui-thread", status: :running, revision: 6)
+    assert {:error, :stale_session_attachment, ^state} = TUI.apply_view(old, state, later)
+
+    stale = View.new!(thread_id: "tui-thread", status: :idle, revision: 5)
+    assert {:error, :stale_session_view, ^state} = TUI.apply_view(current, state, stale)
+  end
 end

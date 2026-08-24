@@ -258,39 +258,85 @@ defmodule Jido.ConsoleTest do
            end) =~ "jido:"
   end
 
-  test "main starts the runtime before stopping processes" do
+  test "main stops without starting the application" do
     root = Path.join(System.tmp_dir!(), "jido-cli-stop-#{System.unique_integer([:positive])}")
-    name = String.to_atom("jido-cli-stop-#{System.unique_integer([:positive])}")
-    opts = [jido_home: root, name: name]
-    test_pid = self()
-
-    on_exit(fn ->
-      if manager = Process.whereis(name) do
-        try do
-          GenServer.stop(manager)
-        catch
-          :exit, _reason -> :ok
-        end
-      end
-
-      File.rm_rf(root)
-    end)
-
-    startup = fn ->
-      send(test_pid, :application_started)
-      {:ok, _manager} = Jido.Console.Process.Supervisor.start_link(opts)
-      :ok
-    end
+    startup = fn -> flunk("stop started the full application") end
+    on_exit(fn -> File.rm_rf(root) end)
 
     assert capture_io(fn ->
              assert :ok =
-                      Jido.Console.CLI.main(
-                        ["stop"],
-                        Keyword.put(opts, :application_startup, startup)
+                      Jido.Console.CLI.main(["stop"],
+                        jido_home: root,
+                        application_startup: startup
                       )
            end) == "jido: no owned background processes\n"
+  end
 
-    assert_receive :application_started
+  test "a separate stop process terminates the owner while its Jido home is locked" do
+    root = Path.join(System.tmp_dir!(), "jido-cli-cross-process-stop-#{System.unique_integer([:positive])}")
+    mix = System.find_executable("mix") || flunk("mix executable is unavailable")
+    project = File.cwd!()
+
+    owner_script = """
+    Application.put_env(:jido_console, :storage_options, jido_home: #{inspect(root)})
+    {:ok, _applications} = Application.ensure_all_started(:jido_console)
+    {:ok, _record} = Jido.Console.Process.register(:interactive, self(), jido_home: #{inspect(root)})
+    IO.puts("JIDO_OWNER_READY")
+    Process.sleep(:infinity)
+    """
+
+    owner =
+      Port.open(
+        {:spawn_executable, mix},
+        [
+          :binary,
+          :exit_status,
+          :stderr_to_stdout,
+          :hide,
+          args: ["run", "--no-start", "--no-compile", "-e", owner_script],
+          cd: project,
+          env: [{~c"MIX_ENV", ~c"test"}, {~c"JIDO_HOME", String.to_charlist(root)}]
+        ]
+      )
+
+    on_exit(fn ->
+      stop_port(owner)
+      File.rm_rf(root)
+    end)
+
+    assert await_port_output(owner, "JIDO_OWNER_READY", 5_000) =~ "JIDO_OWNER_READY"
+    assert {:ok, [%{name: "interactive", status: :ready}]} = Jido.Console.Process.list(jido_home: root)
+
+    previous = Process.flag(:trap_exit, true)
+
+    try do
+      path = Path.join(root, "state/console-lock.sqlite3")
+
+      assert {:error, {:home_locked, ^path}} =
+               Jido.Console.Storage.HomeLock.start_link(
+                 jido_home: root,
+                 name: String.to_atom("cross-process-lock-#{System.unique_integer([:positive])}")
+               )
+    after
+      Process.flag(:trap_exit, previous)
+    end
+
+    assert {:ok, [%{name: "interactive", status: :ready}]} = Jido.Console.Process.list(jido_home: root)
+
+    stopper_script = "Jido.Console.main([\"stop\"])"
+
+    assert {"jido: stopped interactive\n", 0} =
+             System.cmd(
+               mix,
+               ["run", "--no-start", "--no-compile", "-e", stopper_script],
+               cd: project,
+               env: [{"MIX_ENV", "test"}, {"JIDO_HOME", root}],
+               stderr_to_stdout: true
+             )
+
+    assert_receive {^owner, {:exit_status, owner_status}}, 5_000
+    assert owner_status in [0, 1]
+    assert {:ok, []} = Jido.Console.Process.list(jido_home: root)
   end
 
   test "formats TUI errors at the CLI boundary" do
@@ -484,5 +530,39 @@ defmodule Jido.ConsoleTest do
   defp index(text, value) do
     {index, _length} = :binary.match(text, value)
     index
+  end
+
+  defp await_port_output(port, expected, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_await_port_output(port, expected, deadline, "")
+  end
+
+  defp do_await_port_output(port, expected, deadline, output) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {^port, {:data, data}} ->
+        output = output <> data
+
+        if String.contains?(output, expected),
+          do: output,
+          else: do_await_port_output(port, expected, deadline, output)
+
+      {^port, {:exit_status, status}} ->
+        flunk("owner process exited with #{status} before readiness: #{output}")
+    after
+      remaining -> flunk("owner process did not become ready: #{output}")
+    end
+  end
+
+  defp stop_port(port) do
+    case Port.info(port, :os_pid) do
+      {:os_pid, os_pid} ->
+        _ = Jido.Console.Process.Tree.stop(os_pid)
+        :ok
+
+      nil ->
+        :ok
+    end
   end
 end

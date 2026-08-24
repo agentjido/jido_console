@@ -25,6 +25,63 @@ defmodule Jido.Console.Session.ServerTest do
     def list_sessions(_opts), do: {:ok, []}
   end
 
+  defmodule MonitoredResources do
+    defstruct [:thread_id, :test_pid, :spec, :processes]
+
+    def new(thread_id, _agent, opts) do
+      spec =
+        Jidoka.Agent.Spec.new!(
+          id: "monitored-resource-agent",
+          instructions: "Test monitored resources.",
+          model: %{provider: :test, id: "model"}
+        )
+
+      {:ok, %__MODULE__{thread_id: thread_id, test_pid: Keyword.fetch!(opts, :test_pid), spec: spec}}
+    end
+
+    def base_spec(resources), do: resources.spec
+    def configure_model(resources, _identity), do: {:ok, resources}
+
+    def prepare(%__MODULE__{processes: nil} = resources, session) do
+      processes =
+        Map.new([:manager, :mutation, :dispatcher], fn name ->
+          {:ok, pid} = Agent.start_link(fn -> name end)
+          {name, pid}
+        end)
+
+      send(resources.test_pid, {:monitored_resources_started, resources.thread_id, processes})
+      {:ok, %{resources | processes: processes}, session}
+    end
+
+    def prepare(resources, session), do: {:ok, resources, session}
+    def prepare_prompt(_resources, prompt, context), do: {:ok, prompt, context}
+    def runtime_opts(resources), do: [test_pid: resources.test_pid]
+
+    def owned_processes(%__MODULE__{processes: nil}), do: []
+    def owned_processes(%__MODULE__{processes: processes}), do: Map.values(processes)
+
+    def status(%__MODULE__{processes: nil}), do: %{"status" => "not_prepared"}
+
+    def status(%__MODULE__{} = resources) do
+      status = if Enum.all?(owned_processes(resources), &Process.alive?/1), do: "ready", else: "unavailable"
+      %{"status" => status}
+    end
+
+    def close(%__MODULE__{processes: nil}), do: :ok
+
+    def close(%__MODULE__{} = resources) do
+      Enum.each(resources.processes, fn {_name, pid} -> stop(pid) end)
+      send(resources.test_pid, {:monitored_resources_closed, resources.thread_id})
+      :ok
+    end
+
+    defp stop(pid) do
+      if Process.alive?(pid), do: Agent.stop(pid)
+    catch
+      :exit, _reason -> :ok
+    end
+  end
+
   setup do
     suffix = System.unique_integer([:positive])
     root = Path.join(System.tmp_dir!(), "jido-thread-owner-#{suffix}")
@@ -301,6 +358,41 @@ defmodule Jido.Console.Session.ServerTest do
     assert_eventually(fn -> Server.view(owner).status == :idle end)
     refute_received {:provider_started, _, _, _}
     assert Enum.map(Server.view(owner).history, & &1["type"]) == ["prompt_queued", "prompt_failed"]
+  end
+
+  test "an abnormal long-lived resource exit closes siblings and replaces the owner", %{opts: opts} do
+    for failed_resource <- [:manager, :mutation, :dispatcher] do
+      thread_id = "thread-resource-exit-#{failed_resource}"
+      opts = Keyword.put(opts, :resources_module, MonitoredResources)
+      {:ok, owner} = Server.ensure_started(thread_id, opts)
+      owner_monitor = Process.monitor(owner)
+
+      assert {:ok, _accepted} = Server.command(owner, command(thread_id, 1))
+      assert_receive {:monitored_resources_started, ^thread_id, processes}
+      assert_receive {:provider_started, ^thread_id, "request-1", _bridge}
+      assert Server.view(owner).resources == %{"status" => "ready"}
+
+      resource_monitors = Map.new(processes, fn {name, pid} -> {name, Process.monitor(pid)} end)
+      Process.exit(Map.fetch!(processes, failed_resource), :kill)
+
+      assert_receive {:monitored_resources_closed, ^thread_id}
+      assert_receive {:DOWN, ^owner_monitor, :process, ^owner, {:thread_resource_failed, :killed}}
+
+      Enum.each(processes, fn {name, pid} ->
+        monitor = Map.fetch!(resource_monitors, name)
+        assert_receive {:DOWN, ^monitor, :process, ^pid, _reason}
+      end)
+
+      assert {:error, :not_found} = Jido.Console.Session.Registry.lookup(thread_id, opts[:registry])
+      assert {:ok, replacement} = Server.ensure_started(thread_id, opts)
+      refute replacement == owner
+      assert List.last(Server.view(replacement).history)["type"] == "prompt_interrupted"
+
+      assert {:ok, _accepted} = Server.command(replacement, command(thread_id, 2))
+      assert_receive {:monitored_resources_started, ^thread_id, _replacement_processes}
+      assert_receive {:provider_started, ^thread_id, "request-2", replacement_bridge}
+      send(replacement_bridge, :finish)
+    end
   end
 
   test "bridge creation failure becomes one durable failed outcome", %{opts: opts} do

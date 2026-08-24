@@ -100,6 +100,14 @@ defmodule Jido.Console.Tui.State do
     end
   end
 
+  @doc false
+  @spec session_reattached(t(), term(), SessionView.t()) :: t()
+  def session_reattached(%__MODULE__{} = state, session_client, %SessionView{} = view) do
+    state
+    |> Map.put(:session_client, session_client)
+    |> restore_view(view)
+  end
+
   defp queued_prompt(%__MODULE__{activity: {:starting, {:turn, %Turn{prompt: prompt}}}}), do: prompt
   defp queued_prompt(%__MODULE__{}), do: nil
 

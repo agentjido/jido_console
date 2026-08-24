@@ -84,16 +84,19 @@ defmodule Jido.Console.Session.ClientTest do
     refute message =~ ":cli"
   end
 
-  test "the handle resolves a replacement owner for each command", %{opts: opts, registry: registry} do
+  test "an old handle cannot command a replacement owner", %{opts: opts, registry: registry} do
     {:ok, %{handle: handle}} = Client.attach("replacement-thread", opts)
     {:ok, owner} = Registry.lookup("replacement-thread", registry)
-    monitor = Process.monitor(owner)
+    monitor = Client.owner_monitor(handle)
     Process.exit(owner, :kill)
-    assert_receive {:DOWN, ^monitor, :process, ^owner, :killed}
+    message = assert_receive {:DOWN, ^monitor, :process, ^owner, :killed}
+    assert Client.owner_down?(handle, message)
 
-    assert {:ok, %View{status: :idle}} = Client.status(handle)
-    {:ok, replacement} = Registry.lookup("replacement-thread", registry)
-    refute replacement == owner
+    assert {:error, :owner_unavailable} = Client.status(handle)
+    assert {:ok, %{handle: replacement, view: %View{status: :idle}}} = Client.reattach(handle)
+    assert {:ok, %View{status: :idle}} = Client.status(replacement)
+    {:ok, replacement_owner} = Registry.lookup("replacement-thread", registry)
+    refute replacement_owner == owner
   end
 
   test "a stable command can be retried without a second provider call", %{opts: opts} do
@@ -112,14 +115,17 @@ defmodule Jido.Console.Session.ClientTest do
   test "detach stops delivery but does not stop the run", %{opts: opts} do
     {:ok, %{handle: handle}} = Client.attach("detach-thread", opts)
     attachment_ref = Client.attachment_ref(handle)
-    assert :ok = Client.detach(handle)
 
     assert {:ok, _accepted} =
              Client.submit(handle, "hold", command_id: "detach-command", request_id: "detach-request")
 
     assert_receive {:provider_started, "detach-thread", "detach-request", bridge}
-    refute_receive {:jido_console_view, ^attachment_ref, _view}, 50
+    assert_receive {:jido_console_view, ^attachment_ref, _view}
+    assert :ok = Client.detach(handle)
+    flush_views(attachment_ref)
+    assert {:error, :not_attached} = Client.status(handle)
     send(bridge, :finish)
+    refute_receive {:jido_console_view, ^attachment_ref, _view}, 50
   end
 
   test "two attachments receive independent complete views", %{opts: opts} do
@@ -172,7 +178,8 @@ defmodule Jido.Console.Session.ClientTest do
     Process.exit(owner, :kill)
     assert_receive {:DOWN, ^monitor, :process, ^owner, :killed}
 
-    assert {:ok, %View{model: model}} = Client.status(handle)
+    assert {:ok, %{handle: replacement}} = Client.reattach(handle)
+    assert {:ok, %View{model: model}} = Client.status(replacement)
     assert model == %{"identity" => "ollama:llama3.2", "tier" => "beta", "locked" => false}
   end
 
@@ -269,7 +276,7 @@ defmodule Jido.Console.Session.ClientTest do
     assert :ok = Client.detach(handle)
   end
 
-  test "detach reports a session supervisor refusal" do
+  test "detach does not start missing session infrastructure" do
     suffix = System.unique_integer([:positive])
     {:ok, rejecting} = RejectingDynamicSupervisor.start_link()
 
@@ -282,7 +289,7 @@ defmodule Jido.Console.Session.ClientTest do
       ]
     }
 
-    assert {:error, :session_start_failed} = Client.detach(handle)
+    assert :ok = Client.detach(handle)
     GenServer.stop(rejecting)
   end
 
@@ -298,4 +305,12 @@ defmodule Jido.Console.Session.ClientTest do
   defp runtime_value?(_value), do: false
 
   defp unique(label, suffix), do: String.to_atom("#{label}-#{suffix}")
+
+  defp flush_views(attachment_ref) do
+    receive do
+      {:jido_console_view, ^attachment_ref, _view} -> flush_views(attachment_ref)
+    after
+      0 -> :ok
+    end
+  end
 end

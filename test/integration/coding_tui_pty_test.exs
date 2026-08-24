@@ -139,8 +139,8 @@ defmodule Jido.Console.CodingTuiPtyTest do
     refute inspect(view.transcript) =~ "/model"
     refute inspect(view.history) =~ "/model"
     refute Map.has_key?(view, :completion)
-    assert :ok = Client.detach(handle)
     assert :ok = Client.stop(handle)
+    assert :ok = Client.detach(handle)
   end
 
   test "selects a file agent and grants its requested policy before the first prompt", context do

@@ -1,7 +1,7 @@
 defmodule Jido.Console.TuiTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Console.Session.Supervisor
+  alias Jido.Console.Session.{Registry, Server, View, Supervisor}
   alias Jido.Console.Storage.Supervisor, as: StorageSupervisor
   alias Jido.Console.Test.{TermUIBackend, ThreadBridge, ThreadResources}
   alias Jido.Console.Tui
@@ -73,6 +73,7 @@ defmodule Jido.Console.TuiTest do
     task = Task.async(fn -> Tui.run(Keyword.put(opts, :session_id, "tui-thread")) end)
     assert_receive {:term_ui_started, runtime}
     assert await_frame("INPUT · Enter send", 5_000)
+    assert {_owner, _attachment_ref, _subscriber} = await_attachment(opts[:registry], "tui-thread")
 
     send_event(event_queue, TermUI.Event.paste("hello"))
     send_event(event_queue, TermUI.Event.key(:enter))
@@ -88,6 +89,84 @@ defmodule Jido.Console.TuiTest do
     TermUI.Runtime.shutdown(runtime)
     assert :ok = Task.await(task, 2_000)
     assert_receive :terminal_closed
+  end
+
+  test "reattaches the same TUI after a session owner crash and restores its complete view", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    thread_id = "owner-restart-thread"
+    task = Task.async(fn -> Tui.run(Keyword.put(opts, :session_id, thread_id)) end)
+    assert_receive {:term_ui_started, runtime}
+    on_exit(fn -> ensure_tui_stopped(runtime, task) end)
+    assert_receive {:frame, _initial}
+
+    {owner, old_ref, subscriber} = await_attachment(opts[:registry], thread_id)
+    owner_monitor = Process.monitor(owner)
+
+    send_event(event_queue, TermUI.Event.paste("crash"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert_receive {:provider_started, ^thread_id, _request_id, _bridge}, 2_000
+    assert_receive {:DOWN, ^owner_monitor, :process, ^owner, {:bridge_exit, :provider_crash}}, 2_000
+
+    {replacement, new_ref, ^subscriber} = await_attachment(opts[:registry], thread_id, owner)
+    refute replacement == owner
+    refute new_ref == old_ref
+    assert map_size(:sys.get_state(replacement).subscribers) == 1
+
+    assert Enum.map(Server.view(replacement).history, & &1["type"]) == [
+             "prompt_queued",
+             "prompt_started",
+             "prompt_interrupted"
+           ]
+
+    restored_tui = :sys.get_state(subscriber).app_state.tui
+    assert restored_tui.session == Server.view(replacement)
+    assert List.last(restored_tui.turns).outcome.status == :interrupted
+
+    stale =
+      View.new!(
+        thread_id: thread_id,
+        status: :idle,
+        revision: 100,
+        transcript: [%{role: :assistant, content: "STALE OWNER VIEW"}]
+      )
+
+    send(subscriber, {:jido_console_view, old_ref, stale})
+    send_event(event_queue, TermUI.Event.paste("later"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert_receive {:provider_started, ^thread_id, later_request, later_bridge}, 2_000
+    assert is_binary(later_request)
+    refute await_frame("RUNNING") =~ "STALE OWNER VIEW"
+    send(later_bridge, :finish)
+  end
+
+  test "reattaches after session infrastructure replacement without duplicate subscriptions", %{
+    opts: opts,
+    event_queue: event_queue
+  } do
+    thread_id = "infrastructure-restart-thread"
+    task = Task.async(fn -> Tui.run(Keyword.put(opts, :session_id, thread_id)) end)
+    assert_receive {:term_ui_started, runtime}
+    on_exit(fn -> ensure_tui_stopped(runtime, task) end)
+    assert_receive {:frame, _initial}
+
+    {owner, old_ref, subscriber} = await_attachment(opts[:registry], thread_id)
+    owner_monitor = Process.monitor(owner)
+    task_supervisor = Process.whereis(opts[:tasks])
+    Process.exit(task_supervisor, :kill)
+    assert_receive {:DOWN, ^owner_monitor, :process, ^owner, :shutdown}, 2_000
+
+    {replacement, new_ref, ^subscriber} = await_attachment(opts[:registry], thread_id, owner)
+    refute replacement == owner
+    refute new_ref == old_ref
+    assert map_size(:sys.get_state(replacement).subscribers) == 1
+
+    send_event(event_queue, TermUI.Event.paste("after infrastructure restart"))
+    send_event(event_queue, TermUI.Event.key(:enter))
+    assert_receive {:provider_started, ^thread_id, _request_id, bridge}, 2_000
+    assert await_frame("RUNNING")
+    send(bridge, :finish)
   end
 
   test "closes command completion before the existing idle exit", %{
@@ -432,5 +511,46 @@ defmodule Jido.Console.TuiTest do
           Process.exit(task.pid, :kill)
       end
     end
+  end
+
+  defp await_attachment(registry, thread_id, previous \\ nil) do
+    deadline = System.monotonic_time(:millisecond) + 5_000
+    do_await_attachment(registry, thread_id, previous, deadline)
+  end
+
+  defp do_await_attachment(registry, thread_id, previous, deadline) do
+    result =
+      with {:ok, owner} when owner != previous <- Registry.lookup(thread_id, registry),
+           %{subscribers: subscribers} <- :sys.get_state(owner),
+           [{attachment_ref, %{pid: subscriber}}] <- Map.to_list(subscribers) do
+        {:ok, {owner, attachment_ref, subscriber}}
+      else
+        _other -> :retry
+      end
+
+    case result do
+      {:ok, attachment} ->
+        attachment
+
+      :retry ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          flunk("TUI did not attach to #{thread_id}")
+        else
+          receive do
+          after
+            10 -> do_await_attachment(registry, thread_id, previous, deadline)
+          end
+        end
+    end
+  catch
+    :exit, _reason ->
+      if System.monotonic_time(:millisecond) >= deadline do
+        flunk("TUI did not attach to #{thread_id}")
+      else
+        receive do
+        after
+          10 -> do_await_attachment(registry, thread_id, previous, deadline)
+        end
+      end
   end
 end

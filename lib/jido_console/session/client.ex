@@ -8,6 +8,8 @@ defmodule Jido.Console.Session.Client do
             %{
               thread_id: Zoi.string() |> Zoi.min(1),
               attachment_ref: Zoi.any() |> Zoi.optional() |> Zoi.default(nil),
+              owner_pid: Zoi.pid() |> Zoi.nullish(),
+              owner_monitor: Zoi.any() |> Zoi.optional() |> Zoi.default(nil),
               owner_options: Zoi.any()
             },
             unrecognized_keys: :error
@@ -19,6 +21,8 @@ defmodule Jido.Console.Session.Client do
   @opaque t :: %__MODULE__{
             thread_id: String.t(),
             attachment_ref: reference() | nil,
+            owner_pid: pid() | nil,
+            owner_monitor: reference() | nil,
             owner_options: keyword()
           }
 
@@ -33,13 +37,23 @@ defmodule Jido.Console.Session.Client do
          {:ok, owner} <- Server.ensure_started(thread_id, opts),
          {:ok, %{attachment_ref: attachment_ref, view: view}} <-
            Server.attach(owner, subscriber, request) do
+      owner_monitor = Process.monitor(owner)
+
       result = %{
-        handle: %__MODULE__{thread_id: thread_id, attachment_ref: attachment_ref, owner_options: opts},
+        handle: %__MODULE__{
+          thread_id: thread_id,
+          attachment_ref: attachment_ref,
+          owner_pid: owner,
+          owner_monitor: owner_monitor,
+          owner_options: opts
+        },
         view: view
       }
 
       {:ok, maybe_warnings(result, opts)}
     end
+  catch
+    :exit, reason -> {:error, {:session_owner_unavailable, reason}}
   end
 
   @doc "Installs a new attachment while retaining the same thread handle."
@@ -54,11 +68,8 @@ defmodule Jido.Console.Session.Client do
   def detach(%__MODULE__{attachment_ref: nil}), do: :ok
 
   def detach(%__MODULE__{} = handle) do
-    case owner(handle) do
-      {:ok, owner} -> Server.detach(owner, handle.attachment_ref)
-      {:error, :not_found} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
+    demonitor_owner(handle)
+    detach_owner(handle)
   end
 
   @doc "Builds a stable submit command that callers can retry unchanged."
@@ -87,11 +98,9 @@ defmodule Jido.Console.Session.Client do
   end
 
   @doc "Runs one prebuilt command. The command can be retried unchanged."
-  @spec run(t(), Command.t()) :: {:ok, term()} | {:error, term()}
+  @spec run(t(), Command.t()) :: :ok | {:ok, term()} | {:error, term()}
   def run(%__MODULE__{thread_id: thread_id} = handle, %Command{thread_id: thread_id} = command) do
-    with {:ok, owner} <- owner(handle) do
-      Server.command(owner, command)
-    end
+    run_owner(handle, command)
   end
 
   def run(%__MODULE__{}, %Command{}), do: {:error, :cross_thread_command}
@@ -206,7 +215,51 @@ defmodule Jido.Console.Session.Client do
   @spec attachment_ref(t()) :: reference() | nil
   def attachment_ref(%__MODULE__{attachment_ref: attachment_ref}), do: attachment_ref
 
-  defp owner(%__MODULE__{} = handle), do: Server.ensure_started(handle.thread_id, handle.owner_options)
+  @doc "Returns true when a process-down message belongs to this handle's owner."
+  @spec owner_down?(t(), term()) :: boolean()
+  def owner_down?(
+        %__MODULE__{owner_pid: owner, owner_monitor: monitor},
+        {:DOWN, monitor, :process, owner, _reason}
+      )
+      when is_pid(owner) and is_reference(monitor),
+      do: true
+
+  def owner_down?(%__MODULE__{}, _message), do: false
+
+  @doc false
+  @spec owner_monitor(t()) :: reference() | nil
+  def owner_monitor(%__MODULE__{owner_monitor: owner_monitor}), do: owner_monitor
+
+  defp run_owner(
+         %__MODULE__{owner_pid: owner, attachment_ref: attachment_ref},
+         %Command{} = command
+       )
+       when is_pid(owner) and is_reference(attachment_ref) do
+    if Process.alive?(owner) do
+      Server.command(owner, attachment_ref, command)
+    else
+      {:error, :owner_unavailable}
+    end
+  catch
+    :exit, _reason -> {:error, :owner_unavailable}
+  end
+
+  defp run_owner(%__MODULE__{}, %Command{}), do: {:error, :owner_unavailable}
+
+  defp detach_owner(%__MODULE__{owner_pid: owner, attachment_ref: attachment_ref}) when is_pid(owner) do
+    if Process.alive?(owner), do: Server.detach(owner, attachment_ref), else: :ok
+  catch
+    :exit, _reason -> :ok
+  end
+
+  defp detach_owner(%__MODULE__{}), do: :ok
+
+  defp demonitor_owner(%__MODULE__{owner_monitor: monitor}) when is_reference(monitor) do
+    Process.demonitor(monitor, [:flush])
+    :ok
+  end
+
+  defp demonitor_owner(%__MODULE__{}), do: :ok
 
   defp select(handle, type, value) do
     with {:ok, command} <-

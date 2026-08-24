@@ -86,6 +86,11 @@ defmodule Jido.Console.Extensions.Host do
   def close(nil), do: {:ok, []}
   def close(host), do: Jidoka.Extension.Host.close(host)
 
+  @doc "Returns the public dispatcher process owned by one host."
+  @spec owned_processes(Jidoka.Extension.Host.t() | nil) :: [pid()]
+  def owned_processes(nil), do: []
+  def owned_processes(%Jidoka.Extension.Host{dispatcher: dispatcher}), do: [dispatcher]
+
   defp configure_host(session, host, fingerprint, opts) do
     sources = Jidoka.Extension.Host.operation_sources(host)
 

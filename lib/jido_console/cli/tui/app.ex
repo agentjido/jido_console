@@ -50,6 +50,12 @@ defmodule Jido.Console.Tui.App do
 
   def update({:startup_complete, result}, state), do: complete_startup(result, state)
 
+  def update({:reattach_session, owner_monitor}, state) do
+    if not state.closing? and current_owner_monitor(state) == owner_monitor,
+      do: reattach_session(state, owner_monitor),
+      else: {state, []}
+  end
+
   def update({:terminal, event}, state) do
     state.tui
     |> State.update({:terminal, event})
@@ -80,13 +86,11 @@ defmodule Jido.Console.Tui.App do
     end
   end
 
-  def handle_info({:DOWN, worker_ref, :process, worker_pid, reason}, state) do
-    case Workers.take_down(state.workers, worker_pid, worker_ref) do
-      {:ok, worker, workers} ->
-        complete_effect(worker, {:crash, {:effect_worker_down, reason}}, %{state | workers: workers})
-
-      :error ->
-        :noreply
+  def handle_info({:DOWN, monitor, :process, pid, reason}, state) do
+    if not state.closing? and current_owner_monitor(state) == monitor do
+      reattach_session(state, monitor)
+    else
+      handle_worker_down(state, pid, monitor, reason)
     end
   end
 
@@ -169,6 +173,33 @@ defmodule Jido.Console.Tui.App do
       {:error, reason} -> {%{state | tui: failure_state(reason, tui)}, []}
     end
   end
+
+  defp reattach_session(state, owner_monitor) do
+    case SessionTUI.reattach(state.tui.session_client, subscriber: self()) do
+      {:ok, %{handle: handle, view: view}} ->
+        tui = State.session_reattached(state.tui, handle, view)
+        {%{state | tui: tui}, []}
+
+      {:error, _reason} ->
+        delay = Keyword.get(state.opts, :session_reattach_interval_ms, 25)
+        {state, [Command.timer(delay, {:reattach_session, owner_monitor})]}
+    end
+  end
+
+  defp handle_worker_down(state, worker_pid, worker_ref, reason) do
+    case Workers.take_down(state.workers, worker_pid, worker_ref) do
+      {:ok, worker, workers} ->
+        complete_effect(worker, {:crash, {:effect_worker_down, reason}}, %{state | workers: workers})
+
+      :error ->
+        :noreply
+    end
+  end
+
+  defp current_owner_monitor(%{tui: %{session_client: handle}}) when not is_nil(handle),
+    do: Client.owner_monitor(handle)
+
+  defp current_owner_monitor(_state), do: nil
 
   defp startup_failed(reason, state) do
     {%{state | tui: failure_state(reason, state.tui)}, []}

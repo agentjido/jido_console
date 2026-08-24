@@ -106,9 +106,11 @@ defmodule Jido.Console.Session.ThreadResources do
 
   @doc "Prepares resources and derives a fresh runtime spec from the bound spec."
   @spec prepare(t(), Data.t()) :: {:ok, t(), Data.t()} | {:error, term()}
-  def prepare(%__MODULE__{setup: setup} = resources, %Data{} = session)
-      when not is_nil(setup),
-      do: {:ok, resources, session}
+  def prepare(%__MODULE__{setup: setup} = resources, %Data{} = session) when not is_nil(setup) do
+    if Enum.all?(owned_processes(resources), &Process.alive?/1),
+      do: {:ok, resources, session},
+      else: {:error, :resources_unavailable}
+  end
 
   def prepare(%__MODULE__{} = resources, %Data{} = session) do
     opts = Keyword.put(resources.options, :thread_id, resources.thread_id)
@@ -193,12 +195,24 @@ defmodule Jido.Console.Session.ThreadResources do
   @spec status(t()) :: map()
   def status(%__MODULE__{setup: nil}), do: %{"status" => "not_prepared"}
 
-  def status(%__MODULE__{setup: setup}) do
+  def status(%__MODULE__{setup: setup} = resources) do
+    status = if Enum.all?(owned_processes(resources), &Process.alive?/1), do: "ready", else: "unavailable"
+
     %{
-      "status" => "ready",
+      "status" => status,
       "coding" => if(setup.pack_id, do: "enabled", else: "disabled"),
       "execution_policy_id" => Map.get(setup, :execution_policy_id, Map.get(setup, :profile_id))
     }
+  end
+
+  @doc "Returns all long-lived resource processes owned by this thread."
+  @spec owned_processes(t()) :: [pid()]
+  def owned_processes(%__MODULE__{setup: nil}), do: []
+
+  def owned_processes(%__MODULE__{} = resources) do
+    (setup_processes(resources) ++ Extensions.owned_processes(resources.extension_host))
+    |> Enum.filter(&is_pid/1)
+    |> Enum.uniq()
   end
 
   @doc "Closes all private resources for this thread."
@@ -277,4 +291,8 @@ defmodule Jido.Console.Session.ThreadResources do
   end
 
   defp close_memory_store(_pid), do: :ok
+
+  defp setup_processes(%__MODULE__{setup_module: module, setup: setup}) do
+    if function_exported?(module, :owned_processes, 1), do: module.owned_processes(setup), else: []
+  end
 end

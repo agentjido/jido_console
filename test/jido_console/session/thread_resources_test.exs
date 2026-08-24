@@ -32,6 +32,8 @@ defmodule Jido.Console.Session.ThreadResourcesTest do
 
     def prepare_prompt(_setup, prompt), do: {:ok, prompt, %{}}
 
+    def owned_processes(%{local_resources: %{manager: manager}}), do: [manager]
+
     def close(%{local_resources: %{manager: manager}}) do
       if Process.alive?(manager), do: Agent.stop(manager)
       :ok
@@ -193,6 +195,28 @@ defmodule Jido.Console.Session.ThreadResourcesTest do
     assert Process.alive?(memory_pid)
     assert :ok = ThreadResources.close(prepared)
     refute Process.alive?(memory_pid)
+  end
+
+  test "a dead owned process makes prepared resources unavailable" do
+    assert {:ok, resources} =
+             ThreadResources.new("thread-dead-resource", Jido.Console.DefaultAgent,
+               setup_module: PrivateSetup,
+               test_pid: self()
+             )
+
+    assert {:ok, prepared, _session} = ThreadResources.prepare(resources, session(resources))
+    assert_receive {:private_setup, "thread-dead-resource", manager}
+    assert ThreadResources.owned_processes(prepared) == [manager]
+    Agent.stop(manager)
+
+    assert ThreadResources.status(prepared) == %{
+             "status" => "unavailable",
+             "coding" => "disabled",
+             "profile_id" => nil
+           }
+
+    assert {:error, :resources_unavailable} = ThreadResources.prepare(prepared, session(prepared))
+    assert :ok = ThreadResources.close(prepared)
   end
 
   defp session(resources) do

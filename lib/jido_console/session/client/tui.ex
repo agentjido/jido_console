@@ -48,10 +48,18 @@ defmodule Jido.Console.Session.Client.TUI do
   @doc "Applies one complete semantic View to renderer-local state."
   @spec apply_view(Client.t(), State.t(), View.t()) :: {:ok, State.t()} | {:error, term(), State.t()}
   def apply_view(handle, state, %View{thread_id: thread_id} = view) do
-    if Client.thread_id(handle) == thread_id do
-      {:ok, State.restore_view(state, view)}
-    else
-      {:error, :cross_thread_view, state}
+    cond do
+      Client.thread_id(handle) != thread_id ->
+        {:error, :cross_thread_view, state}
+
+      stale_attachment?(handle, state.session_client) ->
+        {:error, :stale_session_attachment, state}
+
+      stale_revision?(state.session, view) ->
+        {:error, :stale_session_view, state}
+
+      true ->
+        {:ok, State.restore_view(state, view)}
     end
   end
 
@@ -63,4 +71,13 @@ defmodule Jido.Console.Session.Client.TUI do
       {:error, _reason} -> []
     end
   end
+
+  defp stale_attachment?(_handle, nil), do: false
+
+  defp stale_attachment?(handle, current) do
+    Client.attachment_ref(handle) != Client.attachment_ref(current)
+  end
+
+  defp stale_revision?(%View{revision: current}, %View{revision: incoming}), do: incoming <= current
+  defp stale_revision?(_current, _incoming), do: false
 end
