@@ -33,13 +33,14 @@ It adds the product services that a complete coding console needs:
 Jidoka remains the only agent runtime. Jido Console does not copy the Jidoka
 turn engine, tool loop, request controller, journal, or snapshot model.
 
-The programmatic Elixir interface is a primary product surface. The Agent
-Client Protocol interface is the standard editor-integration surface. The
-terminal, JSON client, automation client, future LiveView workbench, and future
-remote clients are adapters over the same session contract.
+Jido Console has several peer product surfaces: an Elixir API, terminal UI,
+Agent Client Protocol endpoint, LiveView workbench, automation interface, and
+possible native desktop client. They use the same renderer-neutral Console
+client contract. No product surface is the system authority.
 
-This is not a terminal application with an internal API. It is an OTP
-application with several clients, one of which is a terminal.
+This is not a terminal application with an internal API. It is not an API with
+optional renderers. It is an OTP session application with several equal client
+surfaces.
 
 ## 2. Main Architecture Rules
 
@@ -92,7 +93,11 @@ The following terms are the public product language.
 | **Console instance** | One configured and supervised Jido Console runtime in an OTP node. The first supported form is one default instance. |
 | **Session** | The durable user-facing unit of work. It contains a root agent, conversation, commands, clients, child-agent tree, execution bindings, and product history. |
 | **Session reference** | A portable reference to a Console instance and session. It contains no process identity. |
-| **Client** | A terminal, JSON process, Phoenix process, automation process, or other consumer of the programmatic contract. |
+| **Client contract** | The renderer-neutral command, query, receipt, view, update, and attachment semantics that every surface uses. It is not one transport or language API. |
+| **Client** | An Elixir process, terminal UI, ACP host, LiveView process, native desktop application, automation process, or other consumer of the shared client contract. |
+| **Surface** | One supported way that a user or host interacts with Console, such as TUI, Elixir, ACP, LiveView, or native desktop. |
+| **Surface adapter** | Code that maps one surface to the shared client contract and keeps presentation state outside session truth. |
+| **Transport** | A byte-level connection, such as stdio or a local socket. A transport does not define session semantics. |
 | **Attachment** | One monitored client connection to one session generation. A client can detach without stopping the session. |
 | **ACP** | The Agent Client Protocol. In this plan, ACP does not mean a different protocol with the same acronym. |
 | **ACP Agent endpoint** | The protocol role that Jido Console presents to an ACP Client. It is an adapter, not a Jido agent definition. |
@@ -146,13 +151,14 @@ The migration must be explicit:
 ## 5. System Shape
 
 ```text
-Elixir API   ACP Client   Terminal   JSON   Automation   LiveView   Remote later
-     \           |           |       |          |           |          /
-      +----------+-----------+-------+----------+-----------+---------+
+Elixir API   TUI   ACP   LiveView   GPUI desktop   JSON   Automation
+     \        |     |       |            |          |         /
+      +-------+-----+-------+------------+----------+--------+
                                       |
-                      Jido.Console public facade
+                 surface and transport adapters
                                       |
-                 renderer-neutral session client contract
+                 Jido.Console client contract
+                 commands, queries, views, updates
                                       |
                          Console session control plane
                     /          |             |          \
@@ -163,15 +169,15 @@ Elixir API   ACP Client   Terminal   JSON   Automation   LiveView   Remote later
                              default               sandbox, remote
 ```
 
-Every product surface crosses the same Console boundary. A client cannot call
-a session owner, a Jidoka request controller, a store writer, or an execution
-provider directly.
+Every product surface crosses the same Console client contract. A client
+cannot call a session owner, a Jidoka request controller, a store writer, or an
+execution provider directly.
 
-## 6. Programmatic Interface
+## 6. Elixir Programmatic Interface
 
-The programmatic interface is a supported local client surface. It must be
-usable from Phoenix, a background worker, a test, an umbrella application, or
-another OTP application.
+The Elixir API is one supported peer client surface. It must be usable from
+Phoenix, a background worker, a test, an umbrella application, or another OTP
+application.
 
 ### 6.1 Runtime integration
 
@@ -194,10 +200,11 @@ references must not depend on a hard-coded registered name.
 Infrastructure configuration belongs to the Console instance. Session binding
 choices belong to a session. Do not mix the two option families.
 
-### 6.2 Public facade
+### 6.2 Elixir facade
 
-`Jido.Console` is the main facade. Lower modules can define data structures and
-advanced operations, but an ordinary host must not call a server process.
+`Jido.Console` is the Elixir binding for the shared client contract. Lower
+modules can define data structures and advanced operations, but an ordinary
+host must not call a server process.
 
 Target use:
 
@@ -240,7 +247,7 @@ The full facade must cover:
 - Read views, history, receipts, outcomes, catalogs, and capabilities.
 - Checkpoint, restore, or export only when the selected adapters support it.
 
-### 6.3 Public interface rules
+### 6.3 Elixir interface rules
 
 The public interface must:
 
@@ -255,21 +262,7 @@ The public interface must:
 - Document sync and async completion for every operation.
 - Use the same admission and validation path as all other clients.
 
-### 6.4 Phoenix boundary
-
-A Phoenix application is a host and client adapter. It is not a second agent
-runtime.
-
-A LiveView or Channel process does this:
-
-1. The host authenticates the user.
-2. The host authorizes access to the application session.
-3. The process attaches through `Jido.Console`.
-4. It stores the opaque client handle in server-side state.
-5. It translates browser input to typed Console calls.
-6. It translates Console messages and views to browser data.
-7. It detaches when the process stops.
-
+Phoenix can use this Elixir binding for the LiveView adapter in Section 19.3.
 Core Jido Console does not depend on Phoenix, Phoenix PubSub, Ecto, or a web
 transport.
 
@@ -1011,19 +1004,24 @@ Jido.Console.Instance.Supervisor                 rest_for_one
 |-- Jido.Console.Execution.Supervisor
 |   |-- profile and adapter registry
 |   `-- Jidoka execution-environment managers
-`-- Jido.Console.Session.Supervisor
-    |-- session Registry
-    `-- session DynamicSupervisor
-        `-- Session.RuntimeSupervisor x N
+|-- Jido.Console.Session.Supervisor
+|   |-- session Registry
+|   `-- session DynamicSupervisor
+|       `-- Session.RuntimeSupervisor x N
+`-- Jido.Console.Client.Supervisor
+    |-- ACP connection supervisor
+    `-- local-protocol connection supervisor
 
 Jidoka.Supervisor                                owned by Jidoka
 
-ACP, terminal, JSON, Phoenix, automation         clients outside session trees
+Elixir callers, TUI, LiveView, GPUI              clients outside session trees
 ```
 
 Storage starts before session mutation. Execution registries start before a
 session can acquire a resource. `rest_for_one` stops later mutation owners when
-an earlier authority fails.
+an earlier authority fails. Client transport adapters start after session
+ownership. If the session plane restarts, supervised transport connections
+restart and clients must attach again.
 
 ### 16.2 Per-session tree
 
@@ -1146,23 +1144,172 @@ Rules:
 
 ## 19. Client Surfaces
 
-All clients use the programmatic contract.
+All clients use the same semantic client contract. The Elixir API is one
+binding of that contract. It is not the contract itself.
 
-| Surface | Role |
-| --- | --- |
-| Elixir API | Primary supported embedding surface |
-| Agent Client Protocol | Standard editor and external-agent-client surface; Console presents the ACP Agent role |
-| Terminal UI | Interactive local client and renderer |
-| JSONL | Experimental local protocol and session-boundary pressure test |
-| Automation | Non-interactive local commands and typed exit results |
-| LiveView | Supported local web workbench in its roadmap milestone |
-| Remote protocol later | Authenticated adapter over the same command, query, and delivery semantics |
+| Surface | Boundary | Role |
+| --- | --- | --- |
+| Elixir API | In-process calls and messages | Supported OTP embedding surface |
+| Terminal UI | In-process client and terminal renderer | Full local interactive product surface |
+| Agent Client Protocol | Versioned JSON-RPC protocol | Standard editor and external-agent-client surface; Console presents the ACP Agent role |
+| LiveView | In-process server client plus browser rendering | Local web workbench and multi-window web surface |
+| Native desktop, such as GPUI | Versioned local Console transport | Native desktop workbench outside the BEAM |
+| JSONL | Experimental local protocol | Session-boundary pressure test and migration input for the local Console transport |
+| Automation | In-process or local transport calls | Non-interactive commands and typed exit results |
+| Remote protocol later | Authenticated transport adapter | Remote use of the same command, query, and delivery semantics |
 
 No surface gets a private mutation path. A surface can add local usability,
 such as key bindings, browser presence, or JSON encoding, but it cannot change
 session semantics.
 
-### 19.1 ACP decision
+### 19.1 Shared client contract
+
+The shared client contract is the stable center for all surfaces:
+
+```text
+Client.Contract
+  negotiate capabilities
+  start, load, list, release, and close sessions
+  attach, reattach, detach, and subscribe
+  submit commands and receive receipts
+  run read-only queries
+  receive a snapshot and ordered updates
+  detect gaps and refresh a snapshot
+  receive command and task outcomes
+  answer reviews
+```
+
+The contract defines semantics, identities, ordering, bounds, and errors. It
+does not require one transport, serialization format, renderer, UI framework,
+or programming language.
+
+Each surface adapter owns only:
+
+- Capability negotiation for that surface.
+- Authentication context supplied by its host.
+- Translation from UI or protocol input to typed Console commands and queries.
+- Translation from Console views and updates to surface data.
+- Connection, focus, navigation, and presentation state.
+- Transport backpressure and reconnect behavior when it has a transport.
+
+Each surface adapter must not own:
+
+- A separate session state machine.
+- Direct Jidoka request control.
+- Durable command or event writes.
+- A private permission path.
+- Execution authority outside the selected execution adapter.
+- A different meaning for a command, receipt, view revision, or outcome.
+
+A surface can implement a subset. It must negotiate or document that subset.
+It must not accept an unsupported operation and then apply different behavior.
+
+### 19.2 Terminal UI
+
+The TUI is a full product surface, not a sample wrapper around the API.
+
+- It uses the in-process client contract.
+- It owns terminal setup, keyboard input, focus, layout, and rendering.
+- It converts slash commands and key actions to typed Console commands.
+- It renders semantic views and updates. It does not inspect owner state.
+- It supports attach, detach, reconnect, review, cancellation, session choice,
+  and child-work visibility through the same contract as other surfaces.
+- Terminal exit does not close durable sessions unless the user sends an
+  explicit session command.
+- TUI-specific state, such as scroll position and focused pane, stays outside
+  `Session.View`.
+
+The TUI can ship before another visual client. This delivery order does not
+make it the architecture authority.
+
+### 19.3 LiveView client
+
+A LiveView workbench is another full surface over the in-process contract.
+
+```text
+Browser
+  `-- Phoenix LiveView process          presentation and web interaction
+      `-- Jido.Console client handle    one attachment
+          `-- shared client contract
+```
+
+Rules:
+
+- The Phoenix host authenticates users and authorizes session access.
+- Each LiveView or shared server process holds an opaque Console client handle.
+- Browser events become typed commands only after server-side validation.
+- Console snapshots and updates become assigns or streams.
+- LiveView reconnect uses the session ID and known view revision. It does not
+  create a second durable session.
+- Phoenix PubSub can distribute presentation data, but it is not Console truth.
+- Browser presence, tabs, route state, and component state stay in the Phoenix
+  application.
+- Core Jido Console does not depend on Phoenix. The supported adapter can live
+  in an optional package or integration namespace.
+
+### 19.4 Native desktop and GPUI client
+
+A native desktop application is an out-of-process client. It cannot call the
+Elixir facade directly.
+
+[GPUI](https://github.com/zed-industries/zed/blob/main/crates/gpui/README.md)
+is one possible Rust UI framework. It is GPU accelerated and suitable for a
+native workbench, but it is still pre-1.0 and can have breaking changes. The
+Console architecture must not depend on GPUI types or its state model.
+
+```text
+GPUI desktop application
+  |-- windows, panels, editor state, keyboard input
+  `-- Console local client
+      `-- versioned local transport
+          `-- Jido.Console.Client.LocalProtocol
+              `-- shared client contract
+                  `-- Console session control plane
+```
+
+The native desktop surface needs more Console data than core ACP defines. It
+must be able to show the session catalog, complete safe view, child-agent tree,
+lanes, receipts, reviews, storage status, and execution status. Do not add
+Console-specific methods to standard ACP only to serve the desktop UI.
+
+Use a versioned local Console protocol as a direct encoding of the shared
+client contract. The first transport can be newline-delimited JSON-RPC over
+standard input and output between the Rust application and a bundled BEAM
+backend process. A local Unix-domain socket can be added later for reconnect,
+multiple windows, or a long-lived backend. Both transports must preserve the
+same protocol semantics.
+
+Native desktop rules:
+
+- The BEAM backend owns Console and Jidoka. GPUI owns only desktop presentation
+  and local interaction state.
+- The Rust desktop application is a separate client and release artifact. GPUI
+  is not an Elixir or Mix dependency.
+- The desktop application launches or connects to a Console backend and
+  completes capability negotiation before session access.
+- The local protocol uses the same command, query, receipt, snapshot, update,
+  review, and outcome types as the Elixir binding.
+- A GPUI window or workspace can create one attachment. Several windows can
+  attach to the same Console session.
+- UI-process failure detaches its attachments. Durable sessions and accepted
+  work follow normal Console recovery policy.
+- Local transport uses inherited pipes or an authenticated local socket. It
+  does not listen on a public network interface by default.
+- The writer queue is bounded, and reconnect uses a view revision and snapshot
+  refresh.
+- GPUI framework changes remain inside the desktop application. They do not
+  change Console protocol or session types.
+
+The experimental JSONL client can supply test cases and lessons for this
+protocol. It does not become the stable desktop protocol without explicit
+versioning, capability negotiation, and delivery semantics.
+
+ACP remains the interoperability protocol for compatible editors and agent
+clients. The shared Console client contract remains the rich product contract
+for TUI, LiveView, native desktop, and automation surfaces. The Console local
+protocol is its out-of-process encoding for clients such as a GPUI application.
+
+### 19.5 ACP decision
 
 Jido Console must implement the Agent side of the
 [Agent Client Protocol](https://agentclientprotocol.com/protocol/v1/overview).
@@ -1172,7 +1319,7 @@ An editor, IDE, or other ACP host is the ACP Client.
 ACP Client
   `-- JSON-RPC transport
       `-- Jido.Console.Client.ACP       ACP Agent endpoint
-          `-- Jido.Console facade      normal client contract
+          `-- Jido.Console.Client.Contract
               `-- Session.Server       command admission and projection
                   `-- Jidoka           agent runtime
 ```
@@ -1187,7 +1334,7 @@ is a draft. Support for it needs a separate codec, capability review, and
 conformance proof. The connection must negotiate the version during
 `initialize` and advertise only implemented capabilities.
 
-### 19.2 ACP identity and lifecycle mapping
+### 19.6 ACP identity and lifecycle mapping
 
 One ACP endpoint is bound to one Console instance. The ACP `sessionId` is the
 Console `session_id`. Do not add a second durable ACP-to-Console session map.
@@ -1216,7 +1363,7 @@ requires cancellation and resource release. Console keeps the durable session
 available for later load or resume unless the client uses a separately
 advertised delete operation.
 
-### 19.3 ACP connection and attachment state
+### 19.7 ACP connection and attachment state
 
 The ACP adapter keeps private connection state:
 
@@ -1246,7 +1393,7 @@ receipt and turn state remain authoritative. After reconnect, the client must
 load or resume the session and inspect history. The adapter must not resubmit a
 prompt only because its response was lost.
 
-### 19.4 ACP prompt lifecycle
+### 19.8 ACP prompt lifecycle
 
 The [ACP prompt-turn contract](https://agentclientprotocol.com/protocol/v1/prompt-turn)
 maps to one Console input and one root Jidoka turn:
@@ -1281,7 +1428,7 @@ Rules:
 - Final Jidoka outcomes map to ACP stop reasons without exposing private error
   or provider data.
 
-### 19.5 ACP session updates
+### 19.9 ACP session updates
 
 The ACP adapter converts safe Console and Jidoka projections to
 `session/update` notifications. It does not forward raw internal events.
@@ -1311,7 +1458,7 @@ recoverable. It must not use unbounded memory.
 Message, tool-call, plan, request, and child identities must remain stable for
 the life of the Console session. Renderer labels are not identities.
 
-### 19.6 ACP permissions and Console reviews
+### 19.10 ACP permissions and Console reviews
 
 ACP lets the Agent endpoint call `session/request_permission` on the Client.
 This maps to a durable Console review. It does not replace Console policy.
@@ -1341,7 +1488,7 @@ Rules:
 - Permission request IDs map to exact Console review, Jidoka request, and
   operation IDs.
 
-### 19.7 ACP working directories, MCP, filesystem, and terminals
+### 19.11 ACP working directories, MCP, filesystem, and terminals
 
 ACP session creation includes an absolute working directory and can include MCP
 server declarations. ACP Clients can also advertise filesystem and terminal
@@ -1399,7 +1546,7 @@ ACP Client capabilities do not have to become the selected executor. A Console
 session can use its configured local filesystem, local process, sandbox, or
 remote adapter and use ACP only for control and presentation.
 
-### 19.8 ACP modes, configuration, and commands
+### 19.12 ACP modes, configuration, and commands
 
 Console advertises only modes and configuration options that have a stable
 mapping to Console concepts.
@@ -1421,7 +1568,7 @@ safe child progress in the root ACP session. A later optional ACP extension can
 expose the complete child tree and direct child commands, but it must advertise
 its capability and keep every child under the same Console session.
 
-### 19.9 ACP transport and authentication
+### 19.13 ACP transport and authentication
 
 The initial supported transport is ACP standard input and output. The
 [ACP transport contract](https://agentclientprotocol.com/protocol/v1/transports)
@@ -1440,7 +1587,7 @@ method. A custom or future network transport requires host authentication,
 authorization, connection limits, and secure transport before session access.
 The draft ACP Streamable HTTP transport is not an initial requirement.
 
-### 19.10 ACP process boundary
+### 19.14 ACP process boundary
 
 ACP transport processes stay outside per-session runtime trees:
 
@@ -1457,7 +1604,7 @@ An ACP connection failure detaches its Console client handles and stops its
 pending protocol bridges. It does not become a session-owner failure. Console
 session recovery remains independent of transport recovery.
 
-### 19.11 ACP compatibility and conformance
+### 19.15 ACP compatibility and conformance
 
 ACP is a versioned protocol, not a loose JSON format.
 
@@ -1493,6 +1640,10 @@ Configuration has three levels:
 
 Do not let a command replace instance configuration.
 
+Surface configuration, such as terminal key bindings, LiveView routes, window
+layout, or GPUI themes, belongs to the surface host. It is not Console session
+configuration.
+
 Default behavior:
 
 - One local Console instance.
@@ -1506,6 +1657,9 @@ Default behavior:
   profile.
 - Local filesystem read support for an explicit workspace.
 - ACP stdio support only when the host or user starts the ACP entry point.
+- Local Console protocol support only when a desktop or external client starts
+  or connects to its transport adapter.
+- No GPUI dependency in the BEAM application.
 - No remote clients or remote executors by default.
 
 The CLI and an embedded host use the same default resolver.
@@ -1517,6 +1671,14 @@ The target module map is a guide, not a demand for one large rename:
 ```text
 Jido.Console                              public facade
 Jido.Console.Instance                     named OTP runtime
+
+Jido.Console.Client.Contract              shared semantic client boundary
+Jido.Console.Client.Capabilities
+Jido.Console.Client.Supervisor
+Jido.Console.Client.LocalProtocol
+Jido.Console.Client.LocalProtocol.Codec.V1
+Jido.Console.Client.TUI
+Jido.Console.Client.LiveView              optional integration
 
 Jido.Console.Session                      session operations and data
 Jido.Console.Session.Ref
@@ -1554,7 +1716,7 @@ Jido.Console.ModelCatalog
 Jido.Console.Client.ACP                    ACP Agent endpoint
 Jido.Console.Client.ACP.Connection
 Jido.Console.Client.ACP.Codec.V1
-Jido.Console.Client.*                      terminal, JSON, and later adapters
+Jido.Console.Client.*                      JSON, automation, and later adapters
 ```
 
 Use the existing public Jidoka modules for execution, agent specs, sessions,
@@ -1569,9 +1731,10 @@ Deliver this architecture through small roadmap-owned units.
 
 - Make this document the target architecture source.
 - Change new public design language from thread to session.
-- Define the complete `Jido.Console` facade and typed error families.
+- Define the shared client contract and typed error families.
+- Define `Jido.Console` as the Elixir binding of that contract.
 - Keep CLI startup, VM halt, parsing, and terminal IO outside the facade.
-- Add one programmatic embedding guide and contract test.
+- Add one Elixir embedding guide and shared contract test.
 
 Roadmap fit: supervised session plane and renderer-neutral client contract.
 
@@ -1581,7 +1744,7 @@ Roadmap fit: supervised session plane and renderer-neutral client contract.
 - Replace the private untyped owner map with a private state struct.
 - Complete attach snapshot, bounded delivery, acknowledgement, gaps, and
   reattach.
-- Make terminal and JSON clients use the same facade.
+- Make terminal, Elixir, and JSON clients use the same semantic contract.
 - Introduce JSON protocol session terminology in a new protocol version.
 
 Roadmap fit: multi-client session plane.
@@ -1623,7 +1786,7 @@ Roadmap fit: supervised multi-agent work.
 
 - Add the supervised ACP stdio entry point and version 1 codec.
 - Map ACP session creation, load or resume, prompt, update, permission, cancel,
-  and close to the normal Console facade.
+  and close to the shared Console client contract.
 - Map one ACP session ID directly to one Console session ID.
 - Report Jidoka output, operations, plans, and child progress as safe ACP
   updates.
@@ -1632,12 +1795,18 @@ Roadmap fit: supervised multi-agent work.
   optional execution adapter.
 - Run schema, transcript, conformance, and independent-client tests.
 
-Roadmap fit: renderer-neutral clients and editor integration after the stable
-programmatic contract.
+Roadmap fit: renderer-neutral clients and editor integration after the shared
+client contract is stable.
 
 ### Phase G: additional clients
 
+- Keep the TUI on the shared contract as the complete local terminal surface.
 - Add the supported local LiveView workbench as a client adapter.
+- Define the versioned local Console protocol and replace or evolve the
+  experimental JSONL pressure-test client.
+- Build one native desktop proof with a bundled BEAM backend and a GPUI or
+  equivalent renderer.
+- Keep GPUI-specific state and dependencies outside the Console core.
 - Add extension points only after the core client and policy contracts settle.
 - Add authenticated remote clients only after identity, delivery, and recovery
   contracts are proven locally.
@@ -1649,7 +1818,7 @@ Roadmap fit: local workbench, then extensions and remote operation.
 Use recorded or injected Jidoka results for contract tests. Live model calls are
 not required for architecture proof.
 
-### 23.1 Programmatic surface
+### 23.1 Shared client contract and Elixir API
 
 Prove that:
 
@@ -1657,7 +1826,7 @@ Prove that:
 - The host starts or loads a session through `Jido.Console`.
 - No programmatic call halts the VM or writes terminal output.
 - Phoenix-like client processes can attach and detach with opaque handles.
-- TUI and JSON use the same command admission and view logic.
+- Elixir, TUI, and JSON bindings use the same command admission and view logic.
 
 ### 23.2 Session and client behavior
 
@@ -1728,9 +1897,28 @@ Prove that:
 - No raw Jidoka event, credential, internal process, or provider handle appears
   in ACP data.
 
+### 23.7 Visual surfaces and local protocol
+
+Prove that:
+
+- The TUI uses only the shared client contract for session mutation and views.
+- TUI-only focus, layout, and scroll state does not enter `Session.View`.
+- A LiveView process attaches, receives a snapshot, handles updates, detects a
+  gap, and refreshes without a private Console path.
+- Browser disconnect removes only the LiveView attachment.
+- The local Console protocol preserves command, query, receipt, view, update,
+  review, and outcome semantics across the process boundary.
+- A native desktop test client can launch a BEAM backend, attach to a session,
+  submit input, answer a review, observe child work, and reconnect.
+- Two native windows can observe the same session without becoming session
+  owners.
+- A GPUI framework update cannot change the local Console protocol contract.
+- A slow or failed desktop connection cannot create an unbounded queue or stop
+  unrelated session work.
+
 ## 24. Initial Non-Goals
 
-This plan does not require these items in the first complete programmatic
+This plan does not require these items in the first complete multi-surface
 release:
 
 - A distributed Console registry.
@@ -1744,6 +1932,9 @@ release:
 - Silent background merges into a user workspace.
 - A replacement for Jidoka execution state.
 - A Phoenix dependency in core Console code.
+- Full feature parity in every client in one release.
+- A permanent GPUI dependency before the native desktop proof succeeds.
+- GPUI types or state in the BEAM backend or shared protocol.
 - A claim that local host execution is secure isolation.
 - Adoption of Litter Box before adapter qualification.
 
@@ -1751,8 +1942,14 @@ release:
 
 The architecture is in place when:
 
-- `Jido.Console` is a complete, supported programmatic surface.
-- CLI, TUI, JSON, ACP, tests, and embedded hosts use the same session contract.
+- The renderer-neutral client contract has complete command, query, receipt,
+  view, update, review, and outcome semantics.
+- The Elixir API is a complete supported binding of the client contract.
+- CLI, TUI, JSON, ACP, LiveView, native desktop tests, and embedded hosts use
+  the same session semantics.
+- The TUI is a complete local product surface and owns no session truth.
+- A LiveView adapter and versioned local desktop protocol can be implemented
+  without a new session state machine.
 - A conforming ACP Client can create or resume a Console session and control
   its Jidoka root agent without a Console-specific protocol method.
 - Public language and new protocols use `session`, not `thread`.

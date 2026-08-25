@@ -9,9 +9,9 @@
 > release, installation contract, API, or data format.
 
 Jido Console is a BEAM-native, embeddable control plane for coding-agent
-sessions built on [Jidoka](https://github.com/agentjido/jidoka). It provides a
-programmatic Elixir interface and an interactive terminal for supervised
-sessions.
+sessions built on [Jidoka](https://github.com/agentjido/jidoka). It supports an
+interactive terminal, a programmatic Elixir API, and other clients over one
+shared session contract.
 
 The package, OTP application, and namespace are `jido_console`,
 `:jido_console`, and `Jido.Console`. The user command remains `jido`.
@@ -227,8 +227,9 @@ Use `mix precommit` and `mix test --cover` before a pull request. See the
 ## Roadmap and Work Ownership
 
 The [architecture plan](JIDO_CONSOLE_PLAN.md) defines the target product
-boundaries, programmatic surface, session model, agent-orchestration model,
-storage adapters, execution boundary, and Agent Client Protocol surface.
+boundaries, shared client contract, Elixir API, TUI, LiveView and native
+desktop surfaces, session model, agent-orchestration model, storage adapters,
+execution boundary, and Agent Client Protocol surface.
 
 The [roadmap guide](ROADMAP.md) links the canonical roadmap, milestone
 definitions, change history, and 12-hour ownership policy. Each milestone has
