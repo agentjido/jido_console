@@ -228,7 +228,7 @@ Use `mix precommit` and `mix test --cover` before a pull request. See the
 
 The [architecture plan](JIDO_CONSOLE_PLAN.md) defines the target product
 boundaries, programmatic surface, session model, agent-orchestration model,
-storage adapters, and execution boundary.
+storage adapters, execution boundary, and Agent Client Protocol surface.
 
 The [roadmap guide](ROADMAP.md) links the canonical roadmap, milestone
 definitions, change history, and 12-hour ownership policy. Each milestone has

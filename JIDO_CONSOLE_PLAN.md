@@ -28,13 +28,15 @@ It adds the product services that a complete coding console needs:
 - Storage selection and recovery.
 - Execution selection, workspace control, and evidence.
 - Safe views and renderer-neutral output.
+- An Agent Client Protocol endpoint for editors and other ACP clients.
 
 Jidoka remains the only agent runtime. Jido Console does not copy the Jidoka
 turn engine, tool loop, request controller, journal, or snapshot model.
 
-The programmatic Elixir interface is a primary product surface. The terminal,
-JSON client, automation client, future LiveView workbench, and future remote
-clients are adapters over the same session contract.
+The programmatic Elixir interface is a primary product surface. The Agent
+Client Protocol interface is the standard editor-integration surface. The
+terminal, JSON client, automation client, future LiveView workbench, and future
+remote clients are adapters over the same session contract.
 
 This is not a terminal application with an internal API. It is an OTP
 application with several clients, one of which is a terminal.
@@ -49,8 +51,9 @@ These rules control the design:
    execution state.
 3. **Make the Elixir API complete.** A host application must not need CLI,
    terminal, or JSON code.
-4. **Keep clients replaceable.** A client translates input and renders output.
-   It does not own session life.
+4. **Keep clients replaceable.** A client translates protocol input and output.
+   It does not own session life. A client-hosted file or terminal capability
+   must still cross the execution boundary.
 5. **Give each live session one owner.** One supervised Console process admits
    commands and orders Console state changes for a session.
 6. **Put child work under its session.** A child agent, lane, task, attempt,
@@ -78,7 +81,7 @@ These rules control the design:
 | Storage adapter | Durable Console records and a conforming Jidoka session store | Product policy or client rendering |
 | Execution adapter | Workspace and execution resource operations inside declared capabilities | Agent behavior, Console authorization, or session identity |
 | Host application | Authentication, authorization, tenants, routes, web sessions, and application records | Jidoka internals or Console session mutation rules |
-| Client adapter | Input translation, local interaction, and rendering | Durable truth or session life |
+| Client adapter | Protocol translation, local interaction, rendering, and optional client-hosted capabilities presented through an execution adapter | Durable truth, policy, or session life |
 
 ## 4. Canonical Vocabulary
 
@@ -91,6 +94,10 @@ The following terms are the public product language.
 | **Session reference** | A portable reference to a Console instance and session. It contains no process identity. |
 | **Client** | A terminal, JSON process, Phoenix process, automation process, or other consumer of the programmatic contract. |
 | **Attachment** | One monitored client connection to one session generation. A client can detach without stopping the session. |
+| **ACP** | The Agent Client Protocol. In this plan, ACP does not mean a different protocol with the same acronym. |
+| **ACP Agent endpoint** | The protocol role that Jido Console presents to an ACP Client. It is an adapter, not a Jido agent definition. |
+| **Release** | Stop one live session runtime and free transient resources while keeping the durable session resumable. |
+| **Close** | End a Console session so that it admits no new work. It is separate from resource release and durable deletion. |
 | **Command** | A typed request to change Console session state or control work. |
 | **Query** | A read-only request for a view, history page, catalog, capability report, or status. |
 | **Receipt** | Durable evidence that Console admitted or rejected a command. |
@@ -139,9 +146,9 @@ The migration must be explicit:
 ## 5. System Shape
 
 ```text
-Elixir host API    Terminal    JSON    Automation    LiveView    Remote later
-       \              |         |          |            |            /
-        +-------------+---------+----------+------------+-----------+
+Elixir API   ACP Client   Terminal   JSON   Automation   LiveView   Remote later
+     \           |           |       |          |           |          /
+      +----------+-----------+-------+----------+-----------+---------+
                                       |
                       Jido.Console public facade
                                       |
@@ -224,7 +231,7 @@ Target use:
 
 The full facade must cover:
 
-- Start, load, list, fork, close, and inspect sessions.
+- Start, load, list, fork, release, close, and inspect sessions.
 - Attach, reattach, detach, and subscribe clients.
 - Submit, queue, steer, remove, cancel, approve, and deny.
 - Select agent, model, coding pack, execution policy, executor, and workspace
@@ -1011,7 +1018,7 @@ Jido.Console.Instance.Supervisor                 rest_for_one
 
 Jidoka.Supervisor                                owned by Jidoka
 
-Terminal, JSON, Phoenix, automation              clients outside session trees
+ACP, terminal, JSON, Phoenix, automation         clients outside session trees
 ```
 
 Storage starts before session mutation. Execution registries start before a
@@ -1144,6 +1151,7 @@ All clients use the programmatic contract.
 | Surface | Role |
 | --- | --- |
 | Elixir API | Primary supported embedding surface |
+| Agent Client Protocol | Standard editor and external-agent-client surface; Console presents the ACP Agent role |
 | Terminal UI | Interactive local client and renderer |
 | JSONL | Experimental local protocol and session-boundary pressure test |
 | Automation | Non-interactive local commands and typed exit results |
@@ -1153,6 +1161,324 @@ All clients use the programmatic contract.
 No surface gets a private mutation path. A surface can add local usability,
 such as key bindings, browser presence, or JSON encoding, but it cannot change
 session semantics.
+
+### 19.1 ACP decision
+
+Jido Console must implement the Agent side of the
+[Agent Client Protocol](https://agentclientprotocol.com/protocol/v1/overview).
+An editor, IDE, or other ACP host is the ACP Client.
+
+```text
+ACP Client
+  `-- JSON-RPC transport
+      `-- Jido.Console.Client.ACP       ACP Agent endpoint
+          `-- Jido.Console facade      normal client contract
+              `-- Session.Server       command admission and projection
+                  `-- Jidoka           agent runtime
+```
+
+ACP controls a Jidoka agent through Console. It does not call Jidoka directly.
+It does not get a separate session owner, store, review path, or execution
+path.
+
+The first supported ACP target is the current stable ACP version 1 contract.
+The [ACP version 2 contract](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/v2/overview.mdx)
+is a draft. Support for it needs a separate codec, capability review, and
+conformance proof. The connection must negotiate the version during
+`initialize` and advertise only implemented capabilities.
+
+### 19.2 ACP identity and lifecycle mapping
+
+One ACP endpoint is bound to one Console instance. The ACP `sessionId` is the
+Console `session_id`. Do not add a second durable ACP-to-Console session map.
+
+An ACP connection can attach to more than one Console session. A Console
+session can also have terminal, Elixir, JSON, LiveView, or other ACP clients at
+the same time.
+
+| ACP method or notification | Console action |
+| --- | --- |
+| `initialize` | Negotiate the ACP version and exact client and Agent capabilities. It does not create a Console session. |
+| ACP authentication method | Delegate authentication to the configured host boundary. Do not authenticate inside Jidoka. |
+| `session/new` | Validate the working directory and requested resources, then call the normal Console session-start path. Return the Console session ID. |
+| `session/list` | Query the authorized Console session catalog with bounded pagination. |
+| `session/load` or `session/resume` | Load the durable Console session, prove its binding, attach the ACP connection, and replay only the protocol-required safe history. |
+| `session/prompt` | Submit one Console input command and keep the JSON-RPC request open until the related root turn ends. |
+| `session/cancel` | Send the normal Console cancellation command for the active ACP prompt. This ACP message is a notification and gets no JSON-RPC response. |
+| `session/close` | Cancel foreground work, detach the ACP attachment, and release transient session resources. Keep durable state resumable. |
+| `session/delete` | Delete durable data only when Console advertises this optional capability and host policy permits it. |
+| `session/set_mode` | Submit a validated Console mode command. A mode cannot grant authority. |
+| `session/set_config_option` | Submit a validated selection command before its Console lock point. |
+
+ACP `session/close` is not the same as permanent Console close or durable
+delete. The [ACP session contract](https://agentclientprotocol.com/protocol/v1/session-setup)
+requires cancellation and resource release. Console keeps the durable session
+available for later load or resume unless the client uses a separately
+advertised delete operation.
+
+### 19.3 ACP connection and attachment state
+
+The ACP adapter keeps private connection state:
+
+```text
+ACP.Connection
+  negotiated_version
+  client_info
+  client_capabilities
+  authentication_state
+  transport_generation
+  session_id -> Console client handle
+  json_rpc_id -> prompt bridge
+  permission_request_id -> Console review identity
+  bounded writer queue
+```
+
+This state is transient. It contains process and transport data and must not be
+stored in a Console session record.
+
+The prompt bridge correlates one ACP JSON-RPC request with one Console command,
+Jidoka turn, and final stop reason. A JSON-RPC request ID is only a connection
+identity. It is not a durable Console command ID. The adapter creates a stable
+Console command ID and keeps the correlation until completion.
+
+If the connection fails before the ACP response arrives, the durable Console
+receipt and turn state remain authoritative. After reconnect, the client must
+load or resume the session and inspect history. The adapter must not resubmit a
+prompt only because its response was lost.
+
+### 19.4 ACP prompt lifecycle
+
+The [ACP prompt-turn contract](https://agentclientprotocol.com/protocol/v1/prompt-turn)
+maps to one Console input and one root Jidoka turn:
+
+```text
+session/prompt request
+  -> validate ACP attachment and content capabilities
+  -> create and admit Console submit command
+  -> map accepted input to one Jidoka root turn
+  -> send bounded session/update notifications
+  -> resolve reviews through ACP permission requests
+  -> return session/prompt result with the final stop reason
+```
+
+Rules:
+
+- The ACP prompt request stays open until the related turn completes, fails,
+  or is cancelled.
+- A Console acceptance receipt is internal protocol progress. It is not the
+  final ACP prompt response.
+- At most one ACP prompt request from one attachment can be active for one
+  session. A second request returns a protocol error.
+- If another client owns the active root turn, Console can admit the ACP input
+  to its bounded queue. The ACP request remains pending. A full queue returns a
+  protocol error.
+- A prompt content block is accepted only when both sides negotiated its type.
+- Text, image, embedded resource, and resource-link content map to bounded
+  Jidoka input content. Unsupported or oversized content fails before command
+  admission.
+- A file URI does not grant file access. The path still passes workspace and
+  execution-policy validation.
+- Final Jidoka outcomes map to ACP stop reasons without exposing private error
+  or provider data.
+
+### 19.5 ACP session updates
+
+The ACP adapter converts safe Console and Jidoka projections to
+`session/update` notifications. It does not forward raw internal events.
+
+| Console or Jidoka fact | ACP projection |
+| --- | --- |
+| Accepted user input | User message update when the ACP version requires or permits it |
+| Safe agent output | Agent message chunk with a stable message ID |
+| Public plan state | ACP plan update |
+| Operation start | ACP tool-call update with the Jidoka operation ID as correlation evidence |
+| Operation progress or result | ACP tool-call status and bounded safe content |
+| Available Console command set | Available-commands update |
+| Effective mode or configuration | Mode or configuration update |
+| Durable child-agent progress | Root-session plan or tool-call update with safe child correlation |
+| Turn completion | Final `session/prompt` response and stop reason |
+
+Do not send hidden model reasoning as ACP thought content. Console can send an
+explicit, safe reasoning summary only when Jidoka produced that summary as
+public output.
+
+ACP has notifications but no Console delivery acknowledgement. Therefore, the
+adapter owns a bounded writer queue. If the ACP client cannot keep up, the
+adapter stops new updates, cancels or fails the affected prompt according to
+policy, closes the connection if needed, and keeps the durable Console session
+recoverable. It must not use unbounded memory.
+
+Message, tool-call, plan, request, and child identities must remain stable for
+the life of the Console session. Renderer labels are not identities.
+
+### 19.6 ACP permissions and Console reviews
+
+ACP lets the Agent endpoint call `session/request_permission` on the Client.
+This maps to a durable Console review. It does not replace Console policy.
+
+```text
+Jidoka operation needs review
+  -> Console persists pending review
+  -> ACP adapter sends session/request_permission
+  -> ACP Client returns one advertised option
+  -> adapter submits Console approve or deny command
+  -> Console persists the first valid decision
+  -> Jidoka continues or stops the operation
+```
+
+Rules:
+
+- Permission options are derived from the Console review and effective policy.
+- An ACP Client can choose only an option that Console advertised.
+- An ACP approval cannot add a tool, path, credential, network mode, or
+  isolation level that the effective policy denied.
+- The initiating ACP attachment is the normal permission responder.
+- Another authorized Console client can decide the same durable review. The
+  first valid durable decision wins, and the ACP request resolves to that
+  decision.
+- ACP cancellation resolves pending permission requests as cancelled.
+- Connection loss uses the safe policy. The default is no approval.
+- Permission request IDs map to exact Console review, Jidoka request, and
+  operation IDs.
+
+### 19.7 ACP working directories, MCP, filesystem, and terminals
+
+ACP session creation includes an absolute working directory and can include MCP
+server declarations. ACP Clients can also advertise filesystem and terminal
+capabilities. All of these inputs stay behind Console policy.
+
+#### Working directory
+
+- ACP `cwd` is a workspace binding request.
+- Console canonicalizes it and checks host authorization before session start.
+- The resulting primary workspace identity becomes part of the session binding.
+- An ACP path is absolute at the protocol edge. Console and execution adapters
+  still enforce canonical roots, symlinks, limits, and allowed operations.
+- Console must not advertise ACP additional-directory support until it can
+  validate and safely rebind the complete root set on load or resume.
+
+#### MCP server declarations
+
+- An ACP-provided MCP declaration is a resource request, not authority.
+- Console validates the server identity, command, arguments, environment, and
+  transport against a host allowlist and the execution policy.
+- A session binding records a safe identity and digest, not raw secrets.
+- Console can reject non-empty MCP server lists when no approved resolver is
+  configured.
+- ACP cannot start an arbitrary local command only because the client supplied
+  it in `session/new`.
+
+#### Client-hosted file and terminal operations
+
+Console can use negotiated ACP Client capabilities through an optional
+`Jido.Console.Execution.ACPClient` adapter:
+
+```text
+Jidoka operation
+  -> Jidoka execution-environment policy
+  -> ACPClient adapter
+  -> reverse ACP filesystem or terminal method
+  -> portable Jidoka execution result
+```
+
+The adapter must:
+
+- Intersect ACP Client capabilities with host authorization, Console policy,
+  agent authority, workspace roots, and remaining budget.
+- Report that the client owns the actual file or terminal mechanism.
+- Treat its live connection as a transient execution handle.
+- Store only the client identity, capability digest, workspace binding, and
+  portable evidence.
+- Fail when the ACP connection is unavailable.
+- Never fall back to the local filesystem or local process adapter without an
+  explicit new selection.
+- Use the normal Jidoka execution request, result, binding, and manager
+  contracts.
+
+ACP Client capabilities do not have to become the selected executor. A Console
+session can use its configured local filesystem, local process, sandbox, or
+remote adapter and use ACP only for control and presentation.
+
+### 19.8 ACP modes, configuration, and commands
+
+Console advertises only modes and configuration options that have a stable
+mapping to Console concepts.
+
+- An ACP mode can select behavior such as ask, plan, or code.
+- A mode can reduce available operations or change agent instructions through
+  an approved binding rule.
+- A mode cannot broaden execution policy or credential scope.
+- Agent, model, coding-pack, execution-policy, and workspace selections keep
+  their normal Console lock points.
+- A configuration update that conflicts with a locked binding returns an ACP
+  error. It does not silently replace the binding.
+- ACP slash commands map to typed Console commands. They do not call terminal
+  command handlers.
+
+Child-agent controls do not need custom core ACP methods. A root prompt can use
+bounded Jidoka subagents or start approved Console child work. Console reports
+safe child progress in the root ACP session. A later optional ACP extension can
+expose the complete child tree and direct child commands, but it must advertise
+its capability and keep every child under the same Console session.
+
+### 19.9 ACP transport and authentication
+
+The initial supported transport is ACP standard input and output. The
+[ACP transport contract](https://agentclientprotocol.com/protocol/v1/transports)
+uses newline-delimited UTF-8 JSON-RPC.
+
+- Provide a non-interactive entry point such as `jido acp`.
+- Read only ACP JSON-RPC from standard input.
+- Write only ACP JSON-RPC to standard output.
+- Send optional diagnostic logs to standard error with secret redaction.
+- Keep the reader, writer, request bridge, and session attachments supervised.
+- Stop only the ACP adapter when its transport ends. Do not stop durable Console
+  sessions only because the client process exits.
+
+Local stdio can use launch-time host trust and advertise no ACP authentication
+method. A custom or future network transport requires host authentication,
+authorization, connection limits, and secure transport before session access.
+The draft ACP Streamable HTTP transport is not an initial requirement.
+
+### 19.10 ACP process boundary
+
+ACP transport processes stay outside per-session runtime trees:
+
+```text
+Jido.Console.Client.ACP.Supervisor
+`-- ACP.Connection
+    |-- ACP.Reader
+    |-- ACP.Writer
+    `-- ACP.RequestBridge
+         `-- Console attachment x N
+```
+
+An ACP connection failure detaches its Console client handles and stops its
+pending protocol bridges. It does not become a session-owner failure. Console
+session recovery remains independent of transport recovery.
+
+### 19.11 ACP compatibility and conformance
+
+ACP is a versioned protocol, not a loose JSON format.
+
+The implementation must:
+
+- Keep version-specific schemas and codecs outside `Session.Server`.
+- Validate every inbound and outbound protocol message.
+- Follow JSON-RPC request, response, notification, error, and batch rules.
+- Advertise only capabilities that pass protocol tests.
+- Accept unknown extension data only where the negotiated ACP version permits
+  it.
+- Use official schema fixtures and conformance tools when available.
+- Test against at least one independent ACP Client.
+- Keep golden transcripts for initialize, new, load or resume, prompt, update,
+  permission, cancel, close, and failure flows.
+- Run all ACP tests with recorded or injected Jidoka results.
+
+Core ACP support is complete only when an independent ACP Client can create or
+resume a Console session, control a Jidoka root agent, observe tool and child
+progress, answer reviews, cancel work, and release the session without using a
+Console-specific method.
 
 ## 20. Configuration and Safe Defaults
 
@@ -1179,6 +1505,7 @@ Default behavior:
 - No direct host write unless the user or host selects a trusted workspace
   profile.
 - Local filesystem read support for an explicit workspace.
+- ACP stdio support only when the host or user starts the ACP entry point.
 - No remote clients or remote executors by default.
 
 The CLI and an embedded host use the same default resolver.
@@ -1218,11 +1545,15 @@ Jido.Console.Storage.Memory                test only
 Jido.Console.Execution                    policy and selection facade
 Jido.Console.Execution.LocalFilesystem
 Jido.Console.Execution.LocalProcess
+Jido.Console.Execution.ACPClient           optional client-hosted executor
 Jido.Console.Execution.LitterBox           possible adapter
 
 Jido.Console.Workspace
 Jido.Console.AgentSource
 Jido.Console.ModelCatalog
+Jido.Console.Client.ACP                    ACP Agent endpoint
+Jido.Console.Client.ACP.Connection
+Jido.Console.Client.ACP.Codec.V1
 Jido.Console.Client.*                      terminal, JSON, and later adapters
 ```
 
@@ -1288,7 +1619,23 @@ Roadmap fit: local coding first, isolated and remote execution later.
 
 Roadmap fit: supervised multi-agent work.
 
-### Phase F: additional clients
+### Phase F: ACP protocol surface
+
+- Add the supervised ACP stdio entry point and version 1 codec.
+- Map ACP session creation, load or resume, prompt, update, permission, cancel,
+  and close to the normal Console facade.
+- Map one ACP session ID directly to one Console session ID.
+- Report Jidoka output, operations, plans, and child progress as safe ACP
+  updates.
+- Add bounded output and connection-failure behavior.
+- Qualify ACP-provided filesystem and terminal capabilities through the
+  optional execution adapter.
+- Run schema, transcript, conformance, and independent-client tests.
+
+Roadmap fit: renderer-neutral clients and editor integration after the stable
+programmatic contract.
+
+### Phase G: additional clients
 
 - Add the supported local LiveView workbench as a client adapter.
 - Add extension points only after the core client and policy contracts settle.
@@ -1359,6 +1706,28 @@ Prove that:
   record.
 - Session close cleans or durably tracks every acquired resource.
 
+### 23.6 ACP
+
+Prove that:
+
+- An independent ACP Client initializes the Console endpoint and sees only
+  implemented capabilities.
+- `session/new` returns the Console session ID.
+- Load or resume attaches to the same durable Console and Jidoka root state.
+- One ACP prompt produces one Console command and one Jidoka root turn.
+- Console and Jidoka progress maps to valid, ordered, bounded ACP updates.
+- An ACP permission response becomes one exact durable Console review decision.
+- ACP cancellation stops the related Jidoka work and returns the correct stop
+  reason on the open prompt request.
+- ACP close releases transient resources without deleting durable session
+  state.
+- A disconnected ACP Client cannot leave an approved review, unbounded writer
+  queue, or untracked execution handle.
+- ACP filesystem, terminal, and MCP requests cannot bypass host or execution
+  policy.
+- No raw Jidoka event, credential, internal process, or provider handle appears
+  in ACP data.
+
 ## 24. Initial Non-Goals
 
 This plan does not require these items in the first complete programmatic
@@ -1366,7 +1735,9 @@ release:
 
 - A distributed Console registry.
 - Multi-node session ownership transfer.
-- A remote public protocol.
+- A remote public protocol beyond the local ACP stdio surface.
+- Draft ACP Streamable HTTP support.
+- A Console-specific ACP extension for direct child-agent control.
 - Per-session storage adapters.
 - A general plugin marketplace.
 - An unbounded autonomous child-agent swarm.
@@ -1381,7 +1752,9 @@ release:
 The architecture is in place when:
 
 - `Jido.Console` is a complete, supported programmatic surface.
-- CLI, TUI, JSON, tests, and embedded hosts use the same session contract.
+- CLI, TUI, JSON, ACP, tests, and embedded hosts use the same session contract.
+- A conforming ACP Client can create or resume a Console session and control
+  its Jidoka root agent without a Console-specific protocol method.
 - Public language and new protocols use `session`, not `thread`.
 - Jidoka remains the only agent runtime and execution-state owner.
 - One Console session can supervise a bounded tree of durable child agents.
