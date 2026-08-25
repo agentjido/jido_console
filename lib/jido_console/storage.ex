@@ -1,5 +1,11 @@
 defmodule Jido.Console.Storage do
-  @moduledoc "Public access to the SQLite session and thread-event store."
+  @moduledoc """
+  Public access to adapter-based session and thread-event storage.
+
+  `Jido.Console.Storage.SQLite` is the default adapter. Set `:adapter` in the
+  `:storage_options` application configuration or pass it in the call options
+  to use a module that implements `Jido.Console.Storage.Adapter`.
+  """
 
   alias Jido.Console.Session.Event
   alias Jido.Console.Storage.SQLite
@@ -7,17 +13,27 @@ defmodule Jido.Console.Storage do
 
   @deadline 1_000
 
+  @doc "Returns the selected storage adapter."
+  @spec adapter(keyword()) :: module()
+  def adapter(opts \\ []) when is_list(opts) do
+    opts
+    |> options()
+    |> Keyword.get(:adapter, SQLite)
+  end
+
   @doc "Returns the configured public Jidoka store reference."
   @spec session_store(keyword()) :: Jidoka.Session.Store.store()
   def session_store(opts \\ []) do
-    {SQLite, pid: writer(opts), call_timeout: deadline(opts)}
+    {adapter, owner, adapter_opts} = resolve(opts)
+    adapter.session_store(owner, adapter_opts)
   end
 
   @doc "Appends one ordered product-history event."
   @spec append_thread_event(Event.t(), keyword()) ::
           {:ok, %{event: Event.t(), duplicate: boolean()}} | {:error, term()}
   def append_thread_event(%Event{} = event, opts \\ []) do
-    write_call(fn -> SQLite.append_thread_event(writer(opts), event, sqlite_opts(opts)) end, event.id)
+    {adapter, owner, adapter_opts} = resolve(opts)
+    write_call(fn -> adapter.append_thread_event(owner, event, adapter_opts) end, event.id)
   end
 
   @doc "Replaces one unlocked binding draft with compare-and-set checks."
@@ -106,29 +122,56 @@ defmodule Jido.Console.Storage do
   @spec thread_events(String.t(), keyword()) ::
           {:ok, %{events: [Event.t()], history_truncated?: boolean()}} | {:error, term()}
   def thread_events(thread_id, opts \\ []) when is_binary(thread_id) do
-    read_call(fn -> SQLite.thread_events(writer(opts), thread_id, sqlite_opts(opts)) end)
+    {adapter, owner, adapter_opts} = resolve(opts)
+    read_call(fn -> adapter.thread_events(owner, thread_id, adapter_opts) end)
   end
 
   @doc "Returns all accepted items that do not have a closing outcome."
   @spec open_thread_items(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
   def open_thread_items(thread_id, opts \\ []) when is_binary(thread_id) do
-    read_call(fn -> SQLite.open_thread_items(writer(opts), thread_id, sqlite_opts(opts)) end)
+    {adapter, owner, adapter_opts} = resolve(opts)
+    read_call(fn -> adapter.open_thread_items(owner, thread_id, adapter_opts) end)
   end
 
   @doc "Returns product events for one public Jidoka request ID."
   @spec request_events(String.t(), String.t(), keyword()) :: {:ok, [Event.t()]} | {:error, term()}
   def request_events(thread_id, request_id, opts \\ [])
       when is_binary(thread_id) and is_binary(request_id) do
-    read_call(fn -> SQLite.request_events(writer(opts), thread_id, request_id, sqlite_opts(opts)) end)
+    {adapter, owner, adapter_opts} = resolve(opts)
+    read_call(fn -> adapter.request_events(owner, thread_id, request_id, adapter_opts) end)
   end
 
-  @doc "Checks SQLite and all stored values."
+  @doc "Checks the adapter and all stored values."
   @spec inspect_store(keyword()) :: {:ok, map()} | {:error, term()}
-  def inspect_store(opts \\ []), do: read_call(fn -> SQLite.inspect_store(writer(opts), sqlite_opts(opts)) end)
+  def inspect_store(opts \\ []) do
+    {adapter, owner, adapter_opts} = resolve(opts)
+    read_call(fn -> adapter.inspect_store(owner, adapter_opts) end)
+  end
 
   @doc "Returns small storage counts."
   @spec status(keyword()) :: {:ok, map()} | {:error, term()}
-  def status(opts \\ []), do: read_call(fn -> SQLite.status(writer(opts), sqlite_opts(opts)) end)
+  def status(opts \\ []) do
+    {adapter, owner, adapter_opts} = resolve(opts)
+    read_call(fn -> adapter.status(owner, adapter_opts) end)
+  end
+
+  defp resolve(opts) do
+    opts = options(opts)
+    adapter = Keyword.get(opts, :adapter, SQLite)
+    owner = Keyword.get(opts, :writer, Jido.Console.Storage.Writer)
+
+    adapter_opts =
+      opts
+      |> Keyword.delete(:adapter)
+      |> Keyword.put_new(:call_timeout, Keyword.get(opts, :deadline, @deadline))
+
+    {adapter, owner, adapter_opts}
+  end
+
+  defp options(opts) do
+    configured = Application.get_env(:jido_console, :storage_options, [])
+    Keyword.merge(configured, opts)
+  end
 
   defp write_call(fun, operation_id) do
     fun.()
@@ -149,7 +192,6 @@ defmodule Jido.Console.Storage do
     :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
     :exit, _reason -> {:error, :storage_unavailable}
   end
-
   defp sqlite_opts(opts) do
     Keyword.take(opts, [:before_sequence, :call_timeout, :clock, :failure_stage, :limit])
     |> Keyword.put_new(:call_timeout, deadline(opts))

@@ -25,7 +25,7 @@ defmodule Jido.Console.Session.Thread do
   def init(opts) do
     thread_id = Keyword.fetch!(opts, :thread_id)
     resources_module = Keyword.get(opts, :resources_module, ThreadResources)
-    storage_opts = Keyword.take(opts, [:writer, :deadline])
+    storage_opts = Keyword.take(opts, [:adapter, :writer, :deadline])
     store = Keyword.get(opts, :store, Storage.session_store(storage_opts))
 
     case Store.get_session(store, thread_id) do

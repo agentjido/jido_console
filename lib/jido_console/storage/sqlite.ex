@@ -3,6 +3,7 @@ defmodule Jido.Console.Storage.SQLite do
 
   use GenServer
 
+  @behaviour Jido.Console.Storage.Adapter
   @behaviour Jidoka.Session.Store
 
   alias Exqlite.Sqlite3
@@ -93,6 +94,7 @@ defmodule Jido.Console.Storage.SQLite do
   @type option :: {:name, GenServer.name()} | {:path, Path.t()} | {:jido_home, Path.t()}
 
   @doc "Starts the one writable SQLite owner."
+  @impl Jido.Console.Storage.Adapter
   @spec start_link([option()]) :: GenServer.on_start()
   def start_link(opts \\ []) when is_list(opts) do
     GenServer.start_link(__MODULE__, opts, Keyword.take(opts, [:name]))
@@ -116,6 +118,13 @@ defmodule Jido.Console.Storage.SQLite do
       event_page_max: @max_event_limit,
       session_bytes: @session_bytes
     }
+  end
+
+  @doc "Returns the public Jidoka store reference for this owner."
+  @impl Jido.Console.Storage.Adapter
+  @spec session_store(GenServer.server(), keyword()) :: Jidoka.Session.Store.store()
+  def session_store(server, opts) do
+    {__MODULE__, pid: server, call_timeout: timeout(opts)}
   end
 
   @impl true
@@ -225,6 +234,7 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   @doc "Appends one validated product event."
+  @impl Jido.Console.Storage.Adapter
   @spec append_thread_event(GenServer.server(), Event.t(), keyword()) ::
           {:ok, %{event: Event.t(), duplicate: boolean()}} | {:error, term()}
   def append_thread_event(server, event, opts \\ []) do
@@ -232,6 +242,7 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   @doc "Returns one bounded newest-first history window in chronological order."
+  @impl Jido.Console.Storage.Adapter
   @spec thread_events(GenServer.server(), String.t(), keyword()) ::
           {:ok, %{events: [Event.t()], history_truncated?: boolean()}} | {:error, term()}
   def thread_events(server, thread_id, opts \\ []) when is_binary(thread_id) do
@@ -241,12 +252,14 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   @doc "Returns all nonterminal accepted items with their stored lifecycle events."
+  @impl Jido.Console.Storage.Adapter
   @spec open_thread_items(GenServer.server(), String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
   def open_thread_items(server, thread_id, opts \\ []) when is_binary(thread_id) do
     GenServer.call(server, {:open_thread_items, thread_id}, timeout(opts))
   end
 
   @doc "Returns all stored events for one public request identity."
+  @impl Jido.Console.Storage.Adapter
   @spec request_events(GenServer.server(), String.t(), String.t(), keyword()) ::
           {:ok, [Event.t()]} | {:error, term()}
   def request_events(server, thread_id, request_id, opts \\ [])
@@ -255,12 +268,14 @@ defmodule Jido.Console.Storage.SQLite do
   end
 
   @doc "Checks schema, SQLite integrity, codecs, sequences, and event lifecycles."
+  @impl Jido.Console.Storage.Adapter
   @spec inspect_store(GenServer.server(), keyword()) :: {:ok, map()} | {:error, term()}
   def inspect_store(server, opts \\ []) do
     GenServer.call(server, :inspect_store, timeout(opts))
   end
 
   @doc "Returns small storage counts."
+  @impl Jido.Console.Storage.Adapter
   @spec status(GenServer.server(), keyword()) :: {:ok, map()} | {:error, term()}
   def status(server, opts \\ []) do
     GenServer.call(server, :status, timeout(opts))

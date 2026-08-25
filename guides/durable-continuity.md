@@ -16,6 +16,19 @@ SQLite uses `WAL` mode and `synchronous=FULL`. One process owns the writable
 connection. A home lock prevents two Console processes from writing to the
 same home.
 
+All storage access uses the `Jido.Console.Storage.Adapter` contract. SQLite is
+the default adapter. A host can set another adapter in its application
+configuration:
+
+```elixir
+config :jido_console, :storage_options,
+  adapter: MyConsole.Storage,
+  adapter_option: :value
+```
+
+The selected module must implement the `Jido.Console.Storage.Adapter`
+behaviour.
+
 ## Stored Data
 
 The runtime has two tables:
