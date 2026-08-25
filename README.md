@@ -8,9 +8,10 @@
 > Jido Console is in active development. It does not have a stable public
 > release, installation contract, API, or data format.
 
-Jido Console is a BEAM-native local coding harness built on
-[Jidoka](https://github.com/agentjido/jidoka). It provides an interactive
-terminal for supervised coding-agent sessions.
+Jido Console is a BEAM-native, embeddable control plane for coding-agent
+sessions built on [Jidoka](https://github.com/agentjido/jidoka). It provides a
+programmatic Elixir interface and an interactive terminal for supervised
+sessions.
 
 The package, OTP application, and namespace are `jido_console`,
 `:jido_console`, and `Jido.Console`. The user command remains `jido`.
@@ -24,7 +25,7 @@ the direction, improve the contributor path, and prepare the first milestones.
 | --- | --- |
 | Learn what we are building | Read [Current Capabilities](#current-capabilities). No Elixir setup is required. If the direction interests you, [star the repository](https://github.com/agentjido/jido_console) and [join Discord](https://jido.run/discord). |
 | Help as a contributor | Read [CONTRIBUTING.md](CONTRIBUTING.md), then ask in [Help and Q&A](https://github.com/agentjido/jido_console/discussions/categories/help-and-q-a) for a small task that is ready now. |
-| Review the product or architecture | Read the [roadmap](ROADMAP.md), then raise one clear question in [Roadmap and design](https://github.com/agentjido/jido_console/discussions/categories/roadmap-and-design). |
+| Review the product or architecture | Read the [architecture plan](JIDO_CONSOLE_PLAN.md) and [roadmap](ROADMAP.md), then raise one clear question in [Roadmap and design](https://github.com/agentjido/jido_console/discussions/categories/roadmap-and-design). |
 
 The roadmap is proposed, and public implementation issues are not open yet.
 Confirm the scope in a Discussion before you change code.
@@ -162,9 +163,9 @@ choice.
 `jido json` is a local pressure-test client for the session boundary. Its
 version 1 data format is experimental and can change without compatibility.
 It reads one JSON object from each stdin line and writes only JSON objects to
-stdout. It can attach to more than one thread.
+stdout. It can attach to more than one session.
 
-Start an attached thread and request its current complete view:
+Start an attached session and request its current complete view:
 
 ```sh
 printf '%s\n' \
@@ -174,11 +175,12 @@ printf '%s\n' \
   | ./jido json --coding-pack disabled
 ```
 
-Each input must have `version`, `id`, `type`, and `thread_id`. A `submit`
-input must also have `text` and a stable `request_id`. The client supports
-attach, reattach, detach, submit, cancel, approve, deny, remove, model
-selection, status, history, and idle-owner stop operations. EOF detaches the
-JSON client and does not stop active session work.
+Each input must have `version`, `id`, `type`, and `thread_id`. Version 1 keeps
+this legacy field name; the product term is session. A `submit` input must also
+have `text` and a stable `request_id`. The client supports attach, reattach,
+detach, submit, cancel, approve, deny, remove, model selection, status,
+history, and idle-owner stop operations. EOF detaches the JSON client and does
+not stop active session work.
 
 ### Explore The Repository
 
@@ -224,6 +226,10 @@ Use `mix precommit` and `mix test --cover` before a pull request. See the
 
 ## Roadmap and Work Ownership
 
+The [architecture plan](JIDO_CONSOLE_PLAN.md) defines the target product
+boundaries, programmatic surface, session model, agent-orchestration model,
+storage adapters, and execution boundary.
+
 The [roadmap guide](ROADMAP.md) links the canonical roadmap, milestone
 definitions, change history, and 12-hour ownership policy. Each milestone has
 one `milestone.md`. Generated epics live under the owning milestone. Each epic
@@ -242,6 +248,7 @@ in a Discussion before you start code work.
 | `dev/` | Developer and test-only Mix tasks, release assembly, and acceptance tooling |
 | `release/` | Controlled release policy, packaging, and acceptance inputs |
 | `rel/` | Source launcher and package overlay files used by the native artifact builder |
+| `JIDO_CONSOLE_PLAN.md` | Target architecture, concepts, and public boundaries |
 | `roadmap/` | Canonical roadmap, milestone definitions, and roadmap changelog |
 | `test/` | Unit, integration, terminal, and release contract tests |
 
@@ -257,19 +264,19 @@ Controlled fixtures stay under `release/fixtures/`. Release tools stay under
 | [Jidoka](https://github.com/agentjido/jidoka) | Runtime for sessions, effects, tools, cancellation, and recovery |
 | Jido Console | User-facing terminal and session control plane |
 
-Jidoka session data owns durable execution truth. Console thread events own
-durable product history. One temporary OTP owner per thread owns the live FIFO,
-partial output, and complete revisioned View. A renderer or transport owns none
-of these authorities.
+Jidoka session data owns durable execution truth. Console session events own
+durable product history. One temporary OTP owner per session owns the live
+FIFO, partial output, and complete revisioned View. A renderer or transport
+owns none of these authorities.
 
 Console calls the public product choice an **execution policy**. It maps that
 choice to Jidoka's existing `Jidoka.ExecutionEnvironment.SecurityProfile` and
 execution-environment contracts. Jidoka keeps its current public names.
 
-One request runs at a time in each thread. Up to 32 later prompts wait in FIFO
-order. Different thread IDs can run in parallel. A replacement owner does not
+One request runs at a time in each session. Up to 32 later prompts wait in FIFO
+order. Different session IDs can run in parallel. A replacement owner does not
 resume old work; it waits for a live Jidoka lease or records interruption after
-the lease expires. See [local thread storage](guides/durable-continuity.md) for
+the lease expires. See [local session storage](guides/durable-continuity.md) for
 the storage and recovery contract.
 
 Jido Console collects no usage data or telemetry. Never include credentials in

@@ -1,5 +1,9 @@
 # Jido Console Roadmap Guide
 
+The target product architecture is in
+[`JIDO_CONSOLE_PLAN.md`](JIDO_CONSOLE_PLAN.md). This roadmap owns delivery
+order, milestone scope, and release gates.
+
 The canonical roadmap is in [`roadmap/README.md`](roadmap/README.md).
 
 - Milestone definitions: [`roadmap/milestones/`](roadmap/milestones/README.md)
