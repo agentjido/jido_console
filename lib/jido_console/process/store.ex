@@ -1,10 +1,11 @@
 defmodule Jido.Console.Process.Store do
   @moduledoc "Persists process markers under the Jido home run directory."
 
+  alias Jido.Console.Document
   alias Jido.Console.Home
   alias Jido.Console.Process.Contract
 
-  @stored_keys ~w(failure kind name owner_os_pid readiness status)
+  @max_marker_bytes 16_384
 
   @doc "Lists stored process markers."
   @spec list(keyword()) :: {:ok, [map()]} | {:error, term()}
@@ -102,13 +103,14 @@ defmodule Jido.Console.Process.Store do
   end
 
   defp read_file(path) do
-    with {:ok, contents} <- File.read(path),
-         {:ok, decoded} <- Jason.decode(contents),
+    with {:ok, %{type: :regular}} <- File.lstat(path),
+         {:ok, decoded, _contents} <- Document.decode_file(path, max_file_bytes: @max_marker_bytes),
          {:ok, record} <- decode(decoded),
          true <- Path.basename(path) == filename(Contract.key(record)) do
       {:ok, record}
     else
       {:error, :enoent} -> {:error, :process_not_found}
+      {:ok, %{type: type}} -> {:error, {:process_marker_invalid, path, {:not_regular, type}}}
       false -> {:error, {:process_marker_invalid, path, :process_identity_conflict}}
       {:error, reason} -> {:error, {:process_marker_invalid, path, reason}}
     end
@@ -128,18 +130,16 @@ defmodule Jido.Console.Process.Store do
   end
 
   defp decode(map) when is_map(map) do
-    with true <- Enum.sort(Map.keys(map)) == @stored_keys,
-         {:ok, kind} <- existing_atom(Map.get(map, "kind")),
-         {:ok, status} <- existing_atom(Map.get(map, "status")),
-         name when is_binary(name) <- Map.get(map, "name"),
-         readiness when is_binary(readiness) <- Map.get(map, "readiness") do
+    with {:ok, parsed} <- Zoi.parse(marker_schema(), map),
+         {:ok, kind} <- existing_atom(parsed["kind"]),
+         {:ok, status} <- existing_atom(parsed["status"]) do
       Contract.restore(%{
         kind: kind,
-        name: name,
+        name: parsed["name"],
         status: status,
-        readiness: readiness,
-        failure: Map.get(map, "failure"),
-        owner_os_pid: os_pid(Map.get(map, "owner_os_pid"))
+        readiness: parsed["readiness"],
+        failure: parsed["failure"],
+        owner_os_pid: parsed["owner_os_pid"]
       })
     else
       _invalid -> {:error, :invalid_process_marker}
@@ -156,6 +156,22 @@ defmodule Jido.Console.Process.Store do
 
   defp existing_atom(_value), do: :error
 
-  defp os_pid(value) when is_integer(value) and value > 1, do: value
-  defp os_pid(_value), do: nil
+  defp marker_schema do
+    catalog = Contract.catalog()
+    kinds = catalog |> Map.keys() |> Enum.map(&Atom.to_string/1)
+    names = catalog |> Map.values() |> Enum.map(& &1.name)
+    statuses = Enum.map(Contract.statuses(), &Atom.to_string/1)
+
+    Zoi.map(
+      %{
+        "failure" => Zoi.string() |> Zoi.nullable(),
+        "kind" => Zoi.enum(kinds),
+        "name" => Zoi.enum(names),
+        "owner_os_pid" => Zoi.integer() |> Zoi.gte(2) |> Zoi.nullable(),
+        "readiness" => Zoi.string() |> Zoi.min(1),
+        "status" => Zoi.enum(statuses)
+      },
+      unrecognized_keys: :error
+    )
+  end
 end

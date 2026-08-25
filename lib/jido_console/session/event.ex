@@ -24,7 +24,7 @@ defmodule Jido.Console.Session.Event do
               type: Zoi.enum(@types),
               schema_version: Zoi.integer() |> Zoi.gte(1) |> Zoi.default(@schema_version),
               jidoka_revision: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(nil),
-              payload: Zoi.map() |> Zoi.default(%{}),
+              payload: Zoi.map(Zoi.string(), Zoi.json(), []) |> Zoi.default(%{}),
               sequence: Zoi.integer() |> Zoi.positive() |> Zoi.optional() |> Zoi.default(nil),
               committed_at_ms: Zoi.integer() |> Zoi.gte(0) |> Zoi.optional() |> Zoi.default(nil)
             },

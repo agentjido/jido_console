@@ -5,15 +5,15 @@ defmodule Jido.Console.InteractiveOptions do
 
   @schema Zoi.map(
             %{
-              agent_source: Zoi.string() |> Zoi.optional(),
-              coding_pack: Zoi.string() |> Zoi.optional(),
+              agent_source: Zoi.string() |> Zoi.min(1) |> Zoi.optional(),
+              coding_pack: Zoi.string() |> Zoi.min(1) |> Zoi.optional(),
               deprecation_warnings: Zoi.array(Zoi.string()) |> Zoi.optional(),
-              execution_policy: Zoi.string() |> Zoi.optional(),
+              execution_policy: Zoi.string() |> Zoi.min(1) |> Zoi.optional(),
               execution_policy_direct_choice: Zoi.any() |> Zoi.optional(),
               help: Zoi.boolean() |> Zoi.optional(),
-              model: Zoi.string() |> Zoi.optional(),
+              model: Zoi.string() |> Zoi.min(1) |> Zoi.optional(),
               model_origin: Zoi.literal(:cli) |> Zoi.optional(),
-              project_root: Zoi.string() |> Zoi.optional(),
+              project_root: Zoi.string() |> Zoi.min(1) |> Zoi.optional(),
               version: Zoi.boolean() |> Zoi.optional()
             },
             unrecognized_keys: :error

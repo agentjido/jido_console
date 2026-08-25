@@ -443,6 +443,56 @@ defmodule Jido.Console.ProcessTest do
              Store.get(Contract.identity(:interactive), opts)
   end
 
+  test "validates missing, extra, and malformed persisted marker fields", %{opts: opts} do
+    identity = Contract.identity(:interactive)
+    {:ok, dir} = Jido.Console.Home.path(:run, opts)
+    File.mkdir_p!(dir)
+    path = Path.join(dir, "interactive.interactive.json")
+
+    valid = %{
+      "failure" => nil,
+      "kind" => "interactive",
+      "name" => "interactive",
+      "owner_os_pid" => nil,
+      "readiness" => "ready",
+      "status" => "running"
+    }
+
+    for invalid <- [
+          Map.delete(valid, "status"),
+          Map.put(valid, "future", true),
+          Map.put(valid, "owner_os_pid", 1),
+          Map.put(valid, "owner_os_pid", "123"),
+          Map.put(valid, "readiness", ""),
+          Map.put(valid, "failure", %{"message" => "failed"})
+        ] do
+      File.write!(path, Jason.encode!(invalid))
+
+      assert {:error, {:process_marker_invalid, ^path, :invalid_process_marker}} =
+               Store.get(identity, opts)
+    end
+  end
+
+  test "rejects nonregular and oversized persisted marker files", %{opts: opts, root: root} do
+    identity = Contract.identity(:interactive)
+    {:ok, dir} = Jido.Console.Home.path(:run, opts)
+    File.mkdir_p!(dir)
+    path = Path.join(dir, "interactive.interactive.json")
+    target = Path.join(root, "marker-target.json")
+    File.write!(target, "{}")
+    File.ln_s!(target, path)
+
+    assert {:error, {:process_marker_invalid, ^path, {:not_regular, :symlink}}} =
+             Store.get(identity, opts)
+
+    File.rm!(path)
+    File.write!(path, String.duplicate(" ", 16_385))
+
+    assert {:error,
+            {:process_marker_invalid, ^path, {:file_read_failed, ^path, {:file_too_large, ^path, 16_385, 16_384}}}} =
+             Store.get(identity, opts)
+  end
+
   test "jido status and stop use the process contract", %{opts: opts} do
     pid = spawn(fn -> Elixir.Process.sleep(:infinity) end)
     assert {:ok, _} = Process.register(:interactive, pid, opts)

@@ -11,7 +11,7 @@ defmodule Jido.Console.Session.EventTest do
         session_id: "thread-1",
         queue_item_id: "command-1",
         request_id: "request-1",
-        payload: %{input: "hello"}
+        payload: %{"input" => "hello"}
       )
 
     assert {:ok, ^event} = Event.validate(event)
@@ -33,6 +33,9 @@ defmodule Jido.Console.Session.EventTest do
     assert {:error, :invalid_thread_event} = Event.new(%{attrs | type: "lease_claimed"})
     assert {:error, {:unsupported_thread_event_schema, 2}} = Event.new(Map.put(attrs, :schema_version, 2))
     assert {:error, :invalid_thread_event} = Event.new(Map.delete(attrs, :request_id))
+    assert {:error, :invalid_thread_event} = Event.new(Map.put(attrs, :payload, %{input: "hello"}))
+    assert {:error, :invalid_thread_event} = Event.new(Map.put(attrs, :payload, %{"input" => self()}))
+    assert {:error, :invalid_thread_event} = Event.new(Map.put(attrs, :payload, []))
   end
 
   test "classifies start and closing outcomes" do
@@ -84,7 +87,7 @@ defmodule Jido.Console.Session.EventTest do
   test "projects event identity, views, classifications, and arbitrary JSON values" do
     state = %{thread_id: "thread-1"}
     item = %{id: "item-1", request_id: "request-1"}
-    event = Event.for_item(state, item, "prompt_started", %{answer: :ok}, 7) |> Event.commit(2, 10)
+    event = Event.for_item(state, item, "prompt_started", %{"answer" => "ok"}, 7) |> Event.commit(2, 10)
 
     assert Event.started?(event)
     assert Event.closing?(%{event | type: "prompt_failed"})
@@ -95,7 +98,7 @@ defmodule Jido.Console.Session.EventTest do
              "committed_at_ms" => 10,
              "id" => "thread-1:item-1:prompt_started",
              "jidoka_revision" => 7,
-             "payload" => %{answer: :ok},
+             "payload" => %{"answer" => "ok"},
              "queue_item_id" => "item-1",
              "request_id" => "request-1",
              "sequence" => 2,

@@ -192,6 +192,7 @@ defmodule Jido.Console.Storage do
     :exit, {:timeout, _call} -> {:error, :storage_reader_timeout}
     :exit, _reason -> {:error, :storage_unavailable}
   end
+
   defp sqlite_opts(opts) do
     Keyword.take(opts, [:before_sequence, :call_timeout, :clock, :failure_stage, :limit])
     |> Keyword.put_new(:call_timeout, deadline(opts))

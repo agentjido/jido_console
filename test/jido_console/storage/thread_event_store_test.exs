@@ -358,6 +358,35 @@ defmodule Jido.Console.Storage.ThreadEventStoreTest do
     assert {:error, {:thread_event_integrity_failed, "json-event", _reason}} = Storage.inspect_store(context.store_opts)
   end
 
+  test "reads persisted payloads only when they match the event JSON object schema", context do
+    assert {:ok, _} =
+             Storage.append_thread_event(
+               event("payload-shape-event", "payload-shape-item", "payload-shape-request", "prompt_queued"),
+               context.store_opts
+             )
+
+    path = Path.join(context.root, "state/console.sqlite3")
+    assert {:ok, conn} = Sqlite3.open(path)
+    invalid = "[]"
+
+    assert :ok =
+             update(
+               conn,
+               "UPDATE thread_events SET payload_digest=?, encoded_bytes=?, payload_json=? WHERE event_id=?",
+               [
+                 Digest.portable(invalid),
+                 byte_size(invalid),
+                 {:blob, invalid},
+                 "payload-shape-event"
+               ]
+             )
+
+    assert :ok = Sqlite3.close(conn)
+
+    assert {:error, {:thread_event_integrity_failed, "payload-shape-event", :invalid_thread_event}} =
+             Storage.thread_events("thread-one", context.store_opts)
+  end
+
   test "inspection rejects an event row with an incorrect byte count", context do
     assert {:ok, _} =
              Storage.append_thread_event(

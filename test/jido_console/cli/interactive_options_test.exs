@@ -7,8 +7,19 @@ defmodule Jido.Console.InteractiveOptionsTest do
     assert {:ok, %{help: true, model: "openai:model"}} =
              InteractiveOptions.parse(help: true, model: "openai:model")
 
+    assert {:ok, %{}} = InteractiveOptions.parse([])
+
     assert {:error, {:invalid_interactive_options, _errors}} =
              InteractiveOptions.parse(help: "true", unknown: true)
+
+    assert {:error, {:invalid_interactive_options, _errors}} =
+             InteractiveOptions.parse(model: "")
+
+    assert {:error, {:invalid_interactive_options, _errors}} =
+             InteractiveOptions.parse(%{model: "openai:model"})
+
+    assert {:error, {:invalid_interactive_options, _errors}} =
+             InteractiveOptions.parse([:invalid])
   end
 
   test "normalizes canonical agent and policy options with CLI origin" do
