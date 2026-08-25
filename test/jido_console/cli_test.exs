@@ -15,6 +15,13 @@ defmodule Jido.ConsoleTest do
     def run(opts), do: {:error, Keyword.fetch!(opts, :reason)}
   end
 
+  defmodule FakeJSON do
+    def run(opts) do
+      send(Keyword.fetch!(opts, :test_pid), {:json_started, opts})
+      :ok
+    end
+  end
+
   test "rejects unknown options" do
     assert capture_io(:stderr, fn ->
              assert {:error, 1} = Jido.Console.run(["--wat"])
@@ -53,6 +60,51 @@ defmodule Jido.ConsoleTest do
   test "starts the TUI with no arguments" do
     assert :ok = Jido.Console.run([], tui: FakeTui, test_pid: self())
     assert_received :tui_started
+  end
+
+  test "starts the JSON client after runtime startup and forwards trusted options" do
+    test_pid = self()
+
+    startup = fn ->
+      send(test_pid, :application_started)
+      :ok
+    end
+
+    output =
+      capture_io(fn ->
+        assert :ok =
+                 Jido.Console.run(
+                   [
+                     "json",
+                     "--coding-pack",
+                     "disabled",
+                     "--coding-profile",
+                     "restricted",
+                     "--project-root",
+                     "/trusted/project",
+                     "--model",
+                     "openai:gpt-4.1-mini"
+                   ],
+                   json_client: FakeJSON,
+                   test_pid: test_pid,
+                   application_startup: startup
+                 )
+      end)
+
+    assert output == ""
+    assert_receive :application_started
+    assert_receive {:json_started, options}
+    assert options[:coding_pack] == :disabled
+    assert options[:coding_profile] == "restricted"
+    assert options[:project_root] == "/trusted/project"
+    assert options[:model] == "openai:gpt-4.1-mini"
+  end
+
+  test "shows JSON help without starting the runtime" do
+    startup = fn -> flunk("JSON help started the runtime") end
+    help = capture_io(fn -> assert :ok = Jido.Console.CLI.main(["json", "--help"], application_startup: startup) end)
+    assert help =~ "jido json [OPTIONS]"
+    assert help =~ "experimental `json` client"
   end
 
   test "main opens the TUI before application startup" do

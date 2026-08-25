@@ -52,6 +52,7 @@ to the changed files, then show me the diff and the check results.
 - Start the interactive terminal with `jido`.
 - Use the restricted execution policy by default during development.
 - Select compiled, YAML, or JSON agent behavior without changing tool authority.
+- Use the experimental local JSONL client with `jido json`.
 - Build and test a macOS ARM64 release candidate with the local release tools.
 
 ## Developer Preview: Try Jido Locally
@@ -155,6 +156,29 @@ agent can request an execution-policy ID. It cannot define a policy, add coding
 tools, or grant itself more authority. The restricted policy remains the
 automatic default. A broader policy always needs an explicit CLI, API, or TUI
 choice.
+
+### Experimental JSONL Client
+
+`jido json` is a local pressure-test client for the session boundary. Its
+version 1 data format is experimental and can change without compatibility.
+It reads one JSON object from each stdin line and writes only JSON objects to
+stdout. It can attach to more than one thread.
+
+Start an attached thread and request its current complete view:
+
+```sh
+printf '%s\n' \
+  '{"version":1,"id":"attach-1","type":"attach","thread_id":"example"}' \
+  '{"version":1,"id":"status-1","type":"status","thread_id":"example"}' \
+  '{"version":1,"id":"detach-1","type":"detach","thread_id":"example"}' \
+  | ./jido json --coding-pack disabled
+```
+
+Each input must have `version`, `id`, `type`, and `thread_id`. A `submit`
+input must also have `text` and a stable `request_id`. The client supports
+attach, reattach, detach, submit, cancel, approve, deny, remove, model
+selection, status, history, and idle-owner stop operations. EOF detaches the
+JSON client and does not stop active session work.
 
 ### Explore The Repository
 

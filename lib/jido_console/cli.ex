@@ -11,6 +11,7 @@ defmodule Jido.Console.CLI do
     jido doctor [--provider NAME] [--env-file FILE]
     jido models list
     jido models show PROVIDER MODEL
+    jido json [OPTIONS]
 
   Options:
     -h, --help       Show this help
@@ -26,6 +27,9 @@ defmodule Jido.Console.CLI do
 
   With no command, start jido in an interactive terminal. Provider credentials
   are read from the environment by Jidoka's model provider.
+
+  The experimental `json` client reads one JSON command per stdin line and
+  writes JSONL results and complete session views to stdout.
   """
 
   @doc false
@@ -45,7 +49,7 @@ defmodule Jido.Console.CLI do
   defp dispatch_fast([flag]) when flag in ["--version", "-v"], do: print_version()
 
   defp dispatch_fast([command, flag])
-       when command in ["status", "stop", "doctor", "auth", "models"] and
+       when command in ["status", "stop", "doctor", "auth", "models", "json"] and
               flag in ["--help", "-h"],
        do: print_help()
 
@@ -94,6 +98,9 @@ defmodule Jido.Console.CLI do
 
       ["models" | rest] ->
         run_models(rest, opts)
+
+      ["json" | rest] ->
+        run_json(rest, opts)
 
       _args ->
         run_interactive(args, opts)
@@ -171,6 +178,45 @@ defmodule Jido.Console.CLI do
   defp interactive_arg_key("--project-root"), do: :project_root
   defp interactive_arg_key("--project-root=" <> _value), do: :project_root
   defp interactive_arg_key(_argument), do: :other
+
+  defp run_json(args, opts) do
+    case validate_raw_interactive_args(args) do
+      :ok -> parse_json(args, opts)
+      {:error, reason} -> interactive_error(reason)
+    end
+  end
+
+  defp parse_json(args, opts) do
+    case OptionParser.parse(args,
+           strict: [
+             help: :boolean,
+             version: :boolean,
+             agent: :string,
+             coding_pack: :string,
+             execution_policy: :string,
+             coding_profile: :string,
+             project_root: :string,
+             model: :string
+           ],
+           aliases: [h: :help, v: :version]
+         ) do
+      {options, [], []} ->
+        case Jido.Console.InteractiveOptions.parse(options) do
+          {:ok, %{help: true}} -> print_help()
+          {:ok, %{version: true}} -> print_version()
+          {:ok, options} -> start_json(options, opts)
+          {:error, reason} -> interactive_error(reason)
+        end
+
+      {_options, _arguments, invalid} when invalid != [] ->
+        invalid
+        |> Enum.map_join(", ", fn {option, _value} -> option end)
+        |> fail("unknown option: ")
+
+      _other ->
+        usage_error()
+    end
+  end
 
   defp run_process_status(args, opts) do
     case OptionParser.parse(args, strict: [help: :boolean], aliases: [h: :help]) do
@@ -394,6 +440,23 @@ defmodule Jido.Console.CLI do
     case tui.run(opts) do
       :ok -> :ok
       {:error, reason} -> interactive_error(reason)
+    end
+  end
+
+  defp start_json(options, opts) do
+    json_client = Keyword.get(opts, :json_client, Jido.Console.Session.Client.JSON)
+    interactive = options |> Map.to_list() |> normalize_interactive_options()
+    json_opts = Keyword.merge(opts, interactive)
+
+    case Jido.Console.RuntimeStartup.invoke(json_opts) do
+      :ok ->
+        case json_client.run(json_opts) do
+          :ok -> :ok
+          {:error, reason} -> interactive_error(reason)
+        end
+
+      {:error, reason} ->
+        interactive_error(reason)
     end
   end
 
