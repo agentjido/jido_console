@@ -212,8 +212,8 @@ defmodule Jido.Console.CodingTuiPtyTest do
     assert view.binding["agent"]["id"] == "trusted_file_agent"
     assert view.binding["execution_policy"]["id"] == "coding.trusted-workspace"
     assert view.history == []
-    assert :ok = Client.detach(handle)
     assert :ok = Client.stop(handle)
+    assert :ok = Client.detach(handle)
   end
 
   defp assert_frame(expected, timeout \\ 2_000) do

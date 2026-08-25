@@ -1183,6 +1183,8 @@ defmodule Jido.Console.Session.Thread do
     )
   end
 
+  defp persist_runtime_session(state, _resources, session), do: Store.put_session(state.store, session)
+
   defp monitor_resources(state) do
     desired = owned_resource_processes(state.resources_module, state.resources) |> MapSet.new()
 
@@ -1212,12 +1214,6 @@ defmodule Jido.Console.Session.Thread do
 
   defp close_new_resources(_module, current, current), do: :ok
   defp close_new_resources(module, _current, resources), do: module.close(resources)
-
-  defp model_projection(entry, locked?) do
-    %{"identity" => entry.identity, "tier" => Atom.to_string(entry.tier), "locked" => locked?}
-  end
-
-  defp persist_runtime_session(state, _resources, session), do: Store.put_session(state.store, session)
 
   defp lock_model(%{model_locked?: true} = state), do: state
   defp lock_model(state), do: %{state | model_locked?: true}

@@ -180,7 +180,7 @@ defmodule Jido.Console.Session.Command do
 
   def validate_shape(%__MODULE__{type: :select_agent, text: source} = command, _opts) do
     if present?(source) and empty_fields?(command, [:queue_item_id, :request_id, :review_id]) and
-         command.payload == %{},
+         valid_selection_payload?(command.payload, false),
        do: :ok,
        else: invalid_shape()
   end

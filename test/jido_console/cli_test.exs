@@ -95,7 +95,10 @@ defmodule Jido.ConsoleTest do
     assert_receive :application_started
     assert_receive {:json_started, options}
     assert options[:coding_pack] == :disabled
-    assert options[:coding_profile] == "restricted"
+    assert options[:execution_policy] == "restricted"
+    assert options[:execution_policy_direct_choice].origin == :cli
+    assert options[:deprecation_warnings] == [Jido.Console.ExecutionPolicy.legacy_warning()]
+    refute Keyword.has_key?(options, :coding_profile)
     assert options[:project_root] == "/trusted/project"
     assert options[:model] == "openai:gpt-4.1-mini"
   end

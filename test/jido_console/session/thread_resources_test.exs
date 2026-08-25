@@ -212,7 +212,7 @@ defmodule Jido.Console.Session.ThreadResourcesTest do
     assert ThreadResources.status(prepared) == %{
              "status" => "unavailable",
              "coding" => "disabled",
-             "profile_id" => nil
+             "execution_policy_id" => nil
            }
 
     assert {:error, :resources_unavailable} = ThreadResources.prepare(prepared, session(prepared))

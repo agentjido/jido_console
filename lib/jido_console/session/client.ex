@@ -60,7 +60,7 @@ defmodule Jido.Console.Session.Client do
   @spec reattach(t(), keyword()) :: {:ok, attach_result()} | {:error, term()}
   def reattach(%__MODULE__{} = handle, opts \\ []) do
     _ = detach(handle)
-    attach(handle.thread_id, Keyword.merge(handle.owner_options, opts))
+    attach(handle.thread_id, Keyword.merge(reattach_options(handle.owner_options), opts))
   end
 
   @doc "Detaches one exact attachment without stopping thread work."
@@ -292,5 +292,18 @@ defmodule Jido.Console.Session.Client do
     else
       result
     end
+  end
+
+  defp reattach_options(options) do
+    Keyword.drop(options, [
+      :agent_source,
+      :coding_pack,
+      :coding_profile,
+      :execution_policy,
+      :execution_policy_direct_choice,
+      :model,
+      :model_origin,
+      :project_root
+    ])
   end
 end
