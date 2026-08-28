@@ -5,8 +5,9 @@
 [![Discord](https://img.shields.io/badge/discord-join-5865F2.svg?logo=discord&logoColor=white)](https://jido.run/discord)
 
 > [!WARNING]
-> Jido Console is in active development. It does not have a stable public
-> release, installation contract, API, or data format.
+> Jido Console is unstable and under very active development. The current
+> implementation can be substantially rewritten. It does not have a stable
+> public release, installation contract, API, or data format.
 
 Jido Console is a BEAM-native, embeddable control plane for coding-agent
 sessions built on [Jidoka](https://github.com/agentjido/jidoka). It supports an
