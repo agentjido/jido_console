@@ -130,7 +130,7 @@ defmodule Jido.Console.MixProject do
     [
       # Runtime dependencies
       {:dotenvy, "~> 1.1"},
-      {:exqlite, "== 0.39.0"},
+      {:exqlite, "== 0.40.0"},
       {:jason, "~> 1.4"},
       jidoka_dep(),
       {:req_llm, "~> 1.20.0"},
